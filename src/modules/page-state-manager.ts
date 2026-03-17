@@ -13,6 +13,7 @@ import {
   PageStateManagerConfig,
   isPageState,
 } from '../types/page-state.js';
+import { CONFIG } from '../config.js';
 
 /**
  * Event handler type for navigation events
@@ -43,7 +44,7 @@ export class PageStateManager {
   constructor(config: Partial<PageStateManagerConfig> = {}) {
     this.config = {
       enableHistory: true,
-      maxHistoryLength: 50,
+      maxHistoryLength: CONFIG.MAX_NAVIGATION_HISTORY,
       enableUrlSync: false,
       enableBrowserHistory: false,
       ...config,

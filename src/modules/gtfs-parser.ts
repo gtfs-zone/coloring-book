@@ -1,5 +1,6 @@
 import JSZip from 'jszip';
 import Papa from 'papaparse';
+import { CONFIG } from '../config.js';
 import { GTFSDatabase, GTFSDatabaseRecord } from './gtfs-database.js';
 import { GTFS_FILES, GTFSFilePresence, GTFS_TABLES } from '../types/gtfs.js';
 import { loadingStateManager } from './loading-state-manager.js';
@@ -715,7 +716,7 @@ export class GTFSParser {
   // Search functionality
   searchStops(query: string) {
     const stops = this.getFileDataSyncTyped(GTFS_TABLES.STOPS) || [];
-    if (!query || query.trim().length < 2) {
+    if (!query || query.trim().length < CONFIG.SEARCH_MIN_QUERY_LENGTH) {
       return [];
     }
 
@@ -732,12 +733,12 @@ export class GTFSParser {
           (stop.stop_desc && stop.stop_desc.toLowerCase().includes(searchTerm))
         );
       })
-      .slice(0, 10); // Limit to 10 results
+      .slice(0, CONFIG.SEARCH_RESULTS_LIMIT);
   }
 
   searchRoutes(query: string) {
     const routes = this.getFileDataSyncTyped(GTFS_TABLES.ROUTES) || [];
-    if (!query || query.trim().length < 2) {
+    if (!query || query.trim().length < CONFIG.SEARCH_MIN_QUERY_LENGTH) {
       return [];
     }
 
@@ -756,11 +757,11 @@ export class GTFSParser {
             route.route_desc.toLowerCase().includes(searchTerm))
         );
       })
-      .slice(0, 10); // Limit to 10 results
+      .slice(0, CONFIG.SEARCH_RESULTS_LIMIT);
   }
 
   searchAll(query: string) {
-    if (!query || query.trim().length < 2) {
+    if (!query || query.trim().length < CONFIG.SEARCH_MIN_QUERY_LENGTH) {
       return { stops: [], routes: [] };
     }
 
@@ -773,7 +774,7 @@ export class GTFSParser {
   // Async versions of search methods that use IndexedDB
   async searchStopsAsync(query: string) {
     const stops = (await this.getFileDataTyped(GTFS_TABLES.STOPS)) || [];
-    if (!query || query.trim().length < 2) {
+    if (!query || query.trim().length < CONFIG.SEARCH_MIN_QUERY_LENGTH) {
       return [];
     }
 
@@ -790,12 +791,12 @@ export class GTFSParser {
           (stop.stop_desc && stop.stop_desc.toLowerCase().includes(searchTerm))
         );
       })
-      .slice(0, 10); // Limit to 10 results
+      .slice(0, CONFIG.SEARCH_RESULTS_LIMIT);
   }
 
   async searchRoutesAsync(query: string) {
     const routes = (await this.getFileDataTyped(GTFS_TABLES.ROUTES)) || [];
-    if (!query || query.trim().length < 2) {
+    if (!query || query.trim().length < CONFIG.SEARCH_MIN_QUERY_LENGTH) {
       return [];
     }
 
@@ -814,11 +815,11 @@ export class GTFSParser {
             route.route_desc.toLowerCase().includes(searchTerm))
         );
       })
-      .slice(0, 10); // Limit to 10 results
+      .slice(0, CONFIG.SEARCH_RESULTS_LIMIT);
   }
 
   async searchAllAsync(query: string) {
-    if (!query || query.trim().length < 2) {
+    if (!query || query.trim().length < CONFIG.SEARCH_MIN_QUERY_LENGTH) {
       return { stops: [], routes: [] };
     }
 

@@ -26,13 +26,13 @@ Clean start is acceptable — existing IndexedDB data is not migrated.
 ## Checklist
 
 ### Phase 0 — Configuration Module
-- [ ] Create `src/config.ts` with all magic numbers
-- [ ] Update `editor.ts` (DEBOUNCE_DELAY, Clusterize constants)
-- [ ] Update `page-state-manager.ts` (MAX_NAVIGATION_HISTORY = 50)
-- [ ] Update `gtfs-parser.ts` (SEARCH_RESULTS_LIMIT = 10, SEARCH_MIN_QUERY_LENGTH = 2)
-- [ ] Update `gtfs-database.ts` (DB_NAME, DB_VERSION)
-- [ ] Update any other consumers of inline magic numbers
-- [ ] User confirms: `npm run build` succeeds, app loads normally
+- [x] Create `src/config.ts` with all magic numbers
+- [x] Update `editor.ts` (DEBOUNCE_DELAY, Clusterize constants)
+- [x] Update `page-state-manager.ts` (MAX_NAVIGATION_HISTORY = 50)
+- [x] Update `gtfs-parser.ts` (SEARCH_RESULTS_LIMIT = 10, SEARCH_MIN_QUERY_LENGTH = 2)
+- [x] Update `gtfs-database.ts` (DB_NAME, DB_VERSION)
+- [x] Update any other consumers of inline magic numbers
+- [x] User confirms: `npm run build` succeeds, app loads normally
 
 ### Phase 0.5 — Rename "Objects" → "Browse" Throughout
 The label already reads "Browse" in the UI but the underlying identifiers still say `objects`. This phase makes the code consistent with the visible label.
