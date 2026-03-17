@@ -1,4 +1,5 @@
 import Papa from 'papaparse';
+import { CONFIG } from '../config.js';
 import { EditorView, basicSetup } from 'codemirror';
 import { EditorState } from '@codemirror/state';
 import { placeholder } from '@codemirror/view';
@@ -99,7 +100,7 @@ export class Editor {
   private headers: string[] = [];
   private pendingUpdates: Map<string, string | number | boolean> = new Map();
   private debounceTimeout: NodeJS.Timeout | null = null;
-  private readonly DEBOUNCE_DELAY = 500; // 500ms debounce
+  private readonly DEBOUNCE_DELAY = CONFIG.DEBOUNCE_DELAY;
   private lastTextModified: number = 0;
   private lastTableModified: number = 0;
 
@@ -454,8 +455,8 @@ export class Editor {
           rows: rows,
           scrollId: 'scrollArea',
           contentId: 'contentArea',
-          rows_in_block: 50, // Number of rows to render at once
-          blocks_in_cluster: 4, // Number of blocks to keep in memory
+          rows_in_block: CONFIG.CLUSTERIZE_ROWS_IN_BLOCK,
+          blocks_in_cluster: CONFIG.CLUSTERIZE_BLOCKS_IN_CLUSTER,
           tag: 'tr', // Table row tag
         });
 

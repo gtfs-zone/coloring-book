@@ -1,5 +1,6 @@
 import { openDB, DBSchema, IDBPDatabase } from 'idb';
 import { GTFS_FILES } from '../types/gtfs.js';
+import { CONFIG } from '../config.js';
 import { databaseFallbackManager } from './database-fallback-manager.js';
 import {
   Agency,
@@ -117,8 +118,8 @@ export class GTFSDatabase {
     clearDatabase(): Promise<void>;
     compactDatabase(): Promise<void>;
   } | null = null;
-  private readonly dbName = 'GTFSZoneDB';
-  private readonly dbVersion = 3; // Incremented for natural key migration
+  private readonly dbName = CONFIG.DB_NAME;
+  private readonly dbVersion = CONFIG.DB_VERSION;
   private isUsingFallback = false;
 
   constructor() {}
