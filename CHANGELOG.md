@@ -1,3 +1,13 @@
+## v0.4.2 (2026-03-17)
+
+### Refactor
+
+- rm unused files
+
+### Perf
+
+- npm update
+
 ## v0.4.1 (2025-12-24)
 
 ### Fix
