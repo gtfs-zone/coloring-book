@@ -5,7 +5,7 @@
 export const CONFIG = {
   // IndexedDB
   DB_NAME: 'GTFSZoneDB',
-  DB_VERSION: 3,
+  DB_VERSION: 4,
 
   // Editor (table view)
   DEBOUNCE_DELAY: 500, // ms before flushing pending cell updates to IndexedDB

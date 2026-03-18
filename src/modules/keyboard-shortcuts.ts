@@ -13,7 +13,7 @@ export class KeyboardShortcuts {
     searchController?: {
       clearSearch: () => void;
     };
-    objectsNavigation?: {
+    browseNavigation?: {
       searchQuery: string;
       render: () => void;
     };
@@ -41,7 +41,7 @@ export class KeyboardShortcuts {
     searchController?: {
       clearSearch: () => void;
     };
-    objectsNavigation?: {
+    browseNavigation?: {
       searchQuery: string;
       render: () => void;
     };
@@ -138,9 +138,9 @@ export class KeyboardShortcuts {
     this.addShortcut(
       'ctrl+2',
       () => {
-        this.switchToTab('objects');
+        this.switchToTab('browse');
       },
-      'Switch to Objects tab'
+      'Switch to Browse tab'
     );
 
     this.addShortcut(
@@ -256,7 +256,7 @@ export class KeyboardShortcuts {
     }
 
     // Clear objects search
-    const objectsSearch = document.getElementById('objects-search');
+    const objectsSearch = document.getElementById('browse-search');
     if (objectsSearch) {
       (objectsSearch as HTMLInputElement).value = '';
     }
@@ -272,9 +272,9 @@ export class KeyboardShortcuts {
     }
 
     // Clear objects navigation search
-    if (this.gtfsEditor.objectsNavigation) {
-      this.gtfsEditor.objectsNavigation.searchQuery = '';
-      this.gtfsEditor.objectsNavigation.render();
+    if (this.gtfsEditor.browseNavigation) {
+      this.gtfsEditor.browseNavigation.searchQuery = '';
+      this.gtfsEditor.browseNavigation.render();
     }
   }
 

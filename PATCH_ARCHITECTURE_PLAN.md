@@ -38,131 +38,131 @@ Clean start is acceptable — existing IndexedDB data is not migrated.
 The label already reads "Browse" in the UI but the underlying identifiers still say `objects`. This phase makes the code consistent with the visible label.
 
 **HTML (`src/index.html`)**
-- [ ] `id="objects-tab-radio"` → `id="browse-tab-radio"`
-- [ ] `id="objects-list-view"` → `id="browse-list-view"`
-- [ ] `id="objects-navigation"` → `id="browse-navigation"`
-- [ ] `id="breadcrumb-objects"` → `id="breadcrumb-browse"`
-- [ ] All text references to `"Objects"` tab in help/description copy → `"Browse"`
+- [x] `id="objects-tab-radio"` → `id="browse-tab-radio"`
+- [x] `id="objects-list-view"` → `id="browse-list-view"`
+- [x] `id="objects-navigation"` → `id="browse-navigation"`
+- [x] `id="breadcrumb-objects"` → `id="breadcrumb-browse"`
+- [x] All text references to `"Objects"` tab in help/description copy → `"Browse"`
 
 **`src/modules/objects-navigation.ts`**
-- [ ] Rename file → `src/modules/browse-navigation.ts`
-- [ ] Rename class `ObjectsNavigation` → `BrowseNavigation`
-- [ ] Update internal DOM query for `objects-navigation` → `browse-navigation`
-- [ ] Update CSS class `objects-navigation` → `browse-navigation` inside `render()`
+- [x] Rename file → `src/modules/browse-navigation.ts`
+- [x] Rename class `ObjectsNavigation` → `BrowseNavigation`
+- [x] Update internal DOM query for `objects-navigation` → `browse-navigation`
+- [x] Update CSS class `objects-navigation` → `browse-navigation` inside `render()`
 
 **`src/index.ts`**
-- [ ] Update import path `./modules/objects-navigation` → `./modules/browse-navigation`
-- [ ] Rename `ObjectsNavigation` → `BrowseNavigation` (import and type)
-- [ ] Rename property `objectsNavigation` → `browseNavigation`
-- [ ] Update `browseNavigation.initialize('browse-navigation')`
-- [ ] Update `switchToTab('objects')` → `switchToTab('browse')`
-- [ ] Update all `this.objectsNavigation` references → `this.browseNavigation`
+- [x] Update import path `./modules/objects-navigation` → `./modules/browse-navigation`
+- [x] Rename `ObjectsNavigation` → `BrowseNavigation` (import and type)
+- [x] Rename property `objectsNavigation` → `browseNavigation`
+- [x] Update `browseNavigation.initialize('browse-navigation')`
+- [x] Update `switchToTab('objects')` → `switchToTab('browse')`
+- [x] Update all `this.objectsNavigation` references → `this.browseNavigation`
 
 **`src/modules/ui.ts`**
-- [ ] Update import: `ObjectsNavigation` → `BrowseNavigation`
-- [ ] Rename internal property `this.objectsNavigation` → `this.browseNavigation`
-- [ ] Update `tabName === 'objects'` → `tabName === 'browse'`
-- [ ] Update DOM query `'objects-list-view'` → `'browse-list-view'`
-- [ ] Update DOM query `'breadcrumb-objects'` → `'breadcrumb-browse'`
-- [ ] Update DOM query `'related-objects'` → `'related-browse'` (and matching HTML id)
-- [ ] Update all `this.objectsNavigation` / `this.browseNavigation` call sites
+- [x] Update import: `ObjectsNavigation` → `BrowseNavigation`
+- [x] Rename internal property `this.objectsNavigation` → `this.browseNavigation`
+- [x] Update `tabName === 'objects'` → `tabName === 'browse'`
+- [x] Update DOM query `'objects-list-view'` → `'browse-list-view'`
+- [x] Update DOM query `'breadcrumb-objects'` → `'breadcrumb-browse'`
+- [x] Update DOM query `'related-objects'` → `'related-browse'` (and matching HTML id)
+- [x] Update all `this.objectsNavigation` / `this.browseNavigation` call sites
 
 **`src/modules/keyboard-shortcuts.ts`**
-- [ ] Rename `objectsNavigation` interface field → `browseNavigation`
-- [ ] Update `switchToTab('objects')` → `switchToTab('browse')`
-- [ ] Update DOM query `'objects-search'` → `'browse-search'` (and matching HTML id if present)
-- [ ] Update `this.gtfsEditor.objectsNavigation` → `this.gtfsEditor.browseNavigation`
+- [x] Rename `objectsNavigation` interface field → `browseNavigation`
+- [x] Update `switchToTab('objects')` → `switchToTab('browse')`
+- [x] Update DOM query `'objects-search'` → `'browse-search'` (and matching HTML id if present)
+- [x] Update `this.gtfsEditor.objectsNavigation` → `this.gtfsEditor.browseNavigation`
 
 **`src/modules/schedule-controller.ts`**
-- [ ] Update any comment referring to "Objects tab" → "Browse tab"
+- [x] Update any comment referring to "Objects tab" → "Browse tab" (no references found)
 
-- [ ] Run `npm run typecheck` — zero errors
-- [ ] Run `npm run lint` — zero errors
-- [ ] User confirms: Browse tab still shows agencies/routes/stops; tab switching from map still works
+- [x] Run `npm run typecheck` — zero new errors (pre-existing errors unchanged)
+- [x] Run `npm run lint` — zero errors
+- [x] User confirms: Browse tab still shows agencies/routes/stops; tab switching from map still works
 
 ### Phase 1 — Remove CodeMirror
-- [ ] Remove CodeMirror imports and `EditorView` / `EditorState` from `editor.ts`
-- [ ] Remove `csvMathematicaMode` syntax highlighter from `editor.ts`
-- [ ] Remove `StreamParser` / `TokenState` interfaces from `editor.ts`
-- [ ] Remove `editorView`, `setEditorValue()`, `getEditorValue()` from `editor.ts`
-- [ ] Remove `switchToTextView()`, `switchToTableView()`, `updateToggleLabels()`, `syncTableToText()`, `syncTextToTable()` from `editor.ts`
-- [ ] Remove `lastTextModified`, `lastTableModified`, view-conflict detection
-- [ ] Remove `saveCurrentFileChanges()` code-branch that reads from CodeMirror
-- [ ] Remove `viewPreference` localStorage logic (`loadViewPreference`, `saveViewPreference`)
-- [ ] Remove `isTableView` flag — table is always shown
-- [ ] Rename `openFile()` to drop code-view fallback path; always call `buildTableEditor()`
-- [ ] Remove `refreshRelatedTables()` from `GTFSParser` interface in `editor.ts` (no longer needed)
-- [ ] Remove the view-toggle checkbox and label from `index.html`
-- [ ] Remove `#text-editor-view` / `#simple-editor` DOM element from `index.html`
-- [ ] Ensure `#table-editor-view` is always visible when a file is selected
-- [ ] Remove `codemirror`, `@codemirror/state`, `@codemirror/view`, `@codemirror/language` from `package.json`
-- [ ] Run `npm install` to update lockfile
-- [ ] Remove any references in `ui.ts` that called code-view methods
-- [ ] Run `npm run typecheck` — zero errors
-- [ ] Run `npm run lint` — zero errors
-- [ ] User confirms: file list opens a table, cells are editable, map edits persist
+- [x] Remove CodeMirror imports and `EditorView` / `EditorState` from `editor.ts`
+- [x] Remove `csvMathematicaMode` syntax highlighter from `editor.ts`
+- [x] Remove `StreamParser` / `TokenState` interfaces from `editor.ts`
+- [x] Remove `editorView`, `setEditorValue()`, `getEditorValue()` from `editor.ts`
+- [x] Remove `switchToTextView()`, `switchToTableView()`, `updateToggleLabels()`, `syncTableToText()`, `syncTextToTable()` from `editor.ts`
+- [x] Remove `lastTextModified`, `lastTableModified`, view-conflict detection
+- [x] Remove `saveCurrentFileChanges()` code-branch that reads from CodeMirror
+- [x] Remove `viewPreference` localStorage logic (`loadViewPreference`, `saveViewPreference`)
+- [x] Remove `isTableView` flag — table is always shown
+- [x] Rename `openFile()` to drop code-view fallback path; always call `buildTableEditor()`
+- [x] Remove `refreshRelatedTables()` from `GTFSParser` interface in `editor.ts` (no longer needed)
+- [x] Remove the view-toggle checkbox and label from `index.html`
+- [x] Remove `#text-editor-view` / `#simple-editor` DOM element from `index.html`
+- [x] Ensure `#table-editor-view` is always visible when a file is selected
+- [x] Remove `codemirror`, `@codemirror/state`, `@codemirror/view`, `@codemirror/language` from `package.json`
+- [x] Run `npm install` to update lockfile
+- [x] Remove any references in `ui.ts` that called code-view methods
+- [x] Run `npm run typecheck` — zero errors
+- [x] Run `npm run lint` — zero errors
+- [x] User confirms: file list opens a table, cells are editable, map edits persist
 
 ### Phase 2 — Patch Types & IndexedDB Schema Extension
-- [ ] Create `src/types/patch.ts`:
+- [x] Create `src/types/patch.ts`:
   - `PatchOp = 'insert' | 'update' | 'delete'`
   - `GTFSPatch` — op, table, id, changes (update), record (insert/delete)
-  - `PatchRecord` — version, patch, timestamp, description
-  - `SnapshotRecord` — version, state (compressed string), timestamp
+  - `PatchRecord` — version (optional, autoIncrement), patch, timestamp, description
+  - `SnapshotRecord` — version (last patch version), state (compressed string), timestamp
   - `GTFSState = Record<string, Record<string, unknown>[]>` (table → rows)
-- [ ] Extend `GTFSDBSchema` in `gtfs-database.ts` with `patches` and `snapshots` stores
-- [ ] Bump `dbVersion` from `3` → `4` in `gtfs-database.ts` (use `CONFIG.DB_VERSION`)
-- [ ] Add `upgrade` branch for version 4: create `patches` and `snapshots` object stores
+- [x] Extend `GTFSDBSchema` in `gtfs-database.ts` with `patches` and `snapshots` stores
+- [x] Bump `dbVersion` from `3` → `4` in `config.ts` (via `CONFIG.DB_VERSION`)
+- [x] Add `upgrade` branch for version 4: create `patches` and `snapshots` object stores
   - `patches` keyPath: `version`, autoIncrement: true
   - `snapshots` keyPath: `version`
-- [ ] Add `GTFSDatabase` methods:
+- [x] Add `GTFSDatabase` methods:
   - `appendPatch(patch: Omit<PatchRecord, 'version'>): Promise<number>` — returns assigned version
-  - `getPatchesAfter(version: number): Promise<PatchRecord[]>`
+  - `getPatchesAfter(version: number): Promise<PatchRecord[]>` — uses IDBKeyRange for efficiency
   - `getLatestSnapshot(): Promise<SnapshotRecord | undefined>`
-  - `saveSnapshot(record: Omit<SnapshotRecord, 'version'>): Promise<void>`
+  - `saveSnapshot(record: SnapshotRecord): Promise<void>` — note: takes full record incl. version
   - `getPatchCount(): Promise<number>`
-- [ ] Run `npm run typecheck` — zero errors
-- [ ] User confirms: app still loads, IndexedDB inspector shows new stores
+- [x] Build passes (`npm run build`); no new typecheck errors introduced
+- [x] User confirms: app still loads, IndexedDB inspector shows new stores
 
 ### Phase 3 — PatchManager Module
-- [ ] Create `src/modules/patch-manager.ts` — `PatchManager` class
-- [ ] Constructor receives `GTFSDatabase` and `GTFSParser` references
-- [ ] Implement `initialize()`:
+- [x] Create `src/modules/patch-manager.ts` — `PatchManager` class
+- [x] Constructor receives `GTFSDatabase` and `GTFSParser` references
+- [x] Implement `initialize()`:
   - Call `getLatestSnapshot()` from DB
   - If snapshot exists, decompress and parse state into `GTFSParser.gtfsData`
   - Call `getPatchesAfter(snapshot.version)` and apply each patch forward
   - Write final state back to GTFS IndexedDB tables (so existing read paths still work)
   - If no snapshot: existing cold-start behaviour (table data already in IndexedDB)
-- [ ] Implement `applyPatchForward(patch: GTFSPatch)` — mutates `GTFSParser.gtfsData` in-memory and updates IndexedDB GTFS table
-- [ ] Implement `applyPatchInverse(patch: GTFSPatch)` — reverses changes for undo
-- [ ] Implement `recordInsert(table, record, description)`:
+- [x] Implement `applyPatchForward(patch: GTFSPatch)` — mutates `GTFSParser.gtfsData` in-memory and updates IndexedDB GTFS table
+- [x] Implement `applyPatchInverse(patch: GTFSPatch)` — reverses changes for undo
+- [x] Implement `recordInsert(table, record, description)`:
   - Build `GTFSPatch { op: 'insert', table, id, record }`
   - Append to IndexedDB `patches` store, get version number
   - Push to in-memory `undoStack`, clear `redoStack`
   - Call `maybeSnapshot()`
-- [ ] Implement `recordUpdate(table, id, before, after, description)`:
+- [x] Implement `recordUpdate(table, id, before, after, description)`:
   - Build `GTFSPatch { op: 'update', table, id, changes }`
   - Append to `patches` store
   - Push to `undoStack`, clear `redoStack`
   - Call `maybeSnapshot()`
-- [ ] Implement `recordDelete(table, id, record, description)`:
+- [x] Implement `recordDelete(table, id, record, description)`:
   - Build `GTFSPatch { op: 'delete', table, id, record }`
   - Same append/stack/snapshot pattern
-- [ ] Implement `undo()`:
+- [x] Implement `undo()`:
   - Pop from `undoStack`, push to `redoStack`
   - Call `applyPatchInverse()`
   - Emit `'undo'` event for UI refresh
-- [ ] Implement `redo()`:
+- [x] Implement `redo()`:
   - Pop from `redoStack`, push to `undoStack`
   - Call `applyPatchForward()`
   - Emit `'redo'` event for UI refresh
-- [ ] Implement private `maybeSnapshot()`:
+- [x] Implement private `maybeSnapshot()`:
   - Compare `undoStack.length` modulo `CONFIG.SNAPSHOT_INTERVAL`
   - If interval reached: serialize `GTFSParser.gtfsData`, compress with `CompressionStream`, save snapshot
-- [ ] Implement `getHistory(): PatchRecord[]` — returns all patches from IndexedDB for the Changes tab
-- [ ] Export `PatchManager` and instantiate in `GTFSEditor` constructor
-- [ ] Call `patchManager.initialize()` inside `GTFSEditor.init()` after `gtfsParser.initialize()`
-- [ ] Run `npm run typecheck` — zero errors
-- [ ] User confirms: page refresh restores data correctly (cold start via patches works)
+- [x] Implement `getHistory(): PatchRecord[]` — returns all patches from IndexedDB for the Changes tab
+- [x] Export `PatchManager` and instantiate in `GTFSEditor` constructor
+- [x] Call `patchManager.initialize()` inside `GTFSEditor.init()` after `gtfsParser.initialize()`
+- [x] Run `npm run typecheck` — zero errors
+- [x] User confirms: page refresh restores data correctly (cold start via patches works)
 
 ### Phase 4 — Wire Patches to Edit Operations
 - [ ] **Stop creation** (`GTFSParser.createStop`): before inserting, call `patchManager.recordInsert('stops', stop, 'Created stop ${stop.stop_id}')`

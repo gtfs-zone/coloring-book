@@ -525,6 +525,14 @@ export class GTFSParser {
     return this.gtfsData[fileName]?.data || null;
   }
 
+  // Directly replace the in-memory data array for a file (used by PatchManager)
+  setInMemoryFileData(fileName: string, data: GTFSDatabaseRecord[]): void {
+    if (!this.gtfsData[fileName]) {
+      this.gtfsData[fileName] = { content: '', data: [], errors: [] };
+    }
+    this.gtfsData[fileName].data = data;
+  }
+
   // Type-safe synchronous file data retrieval
   getFileDataSyncTyped<T extends GTFSTableName>(
     fileName: `${T}.txt`

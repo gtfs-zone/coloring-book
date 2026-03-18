@@ -1,30 +1,12 @@
-import Papa from 'papaparse';
 import { CONFIG } from '../config.js';
-import { EditorView, basicSetup } from 'codemirror';
-import { EditorState } from '@codemirror/state';
-import { placeholder } from '@codemirror/view';
-import { StreamLanguage } from '@codemirror/language';
 import Clusterize from 'clusterize.js';
 import {
   getGTFSFieldDescription,
   createTooltip,
 } from '../utils/zod-tooltip-helper.js';
 
-// Types for CodeMirror streaming
-interface StreamParser {
-  match(pattern: string | RegExp): string | null;
-  next(): string;
-  eol(): boolean;
-}
-
-interface TokenState {
-  lineStart: boolean;
-  firstLine: boolean;
-}
-
 interface GTFSParser {
   updateFileInMemory(fileName: string, content: string): void;
-  refreshRelatedTables(fileName: string): Promise<void>;
   getFileContent(fileName: string): string;
   getFileData(fileName: string): Promise<unknown[]>;
   updateFileContent(fileName: string, content: string): Promise<void>;
@@ -42,184 +24,18 @@ interface GTFSParser {
 
 type CSVRow = Record<string, string | number | boolean>;
 
-// Simple Mathematica-inspired syntax highlighting for CSV
-const csvMathematicaMode = {
-  name: 'csv-mathematica',
-  startState: function () {
-    return { lineStart: true, firstLine: true };
-  },
-  token: function (stream: StreamParser, state: TokenState) {
-    // Handle quoted strings first
-    if (stream.match(/"[^"]*"/)) {
-      return 'string'; // Quoted values as strings (green)
-    }
-
-    // Handle numbers (integers and floats)
-    if (stream.match(/\b\d+\.?\d*\b/)) {
-      return 'number'; // Numbers (orange/red)
-    }
-
-    // Handle commas
-    if (stream.match(/,/)) {
-      return 'operator'; // Commas as operators
-    }
-
-    // Handle headers on first line
-    if (state.firstLine && stream.match(/[A-Za-z][A-Za-z0-9_]*/)) {
-      return 'keyword'; // Headers as keywords (blue)
-    }
-
-    // Handle IDs and identifiers
-    if (stream.match(/[A-Za-z][A-Za-z0-9_]*/)) {
-      return 'variable'; // Regular text as variables
-    }
-
-    // Reset firstLine at end of first line
-    if (stream.eol() && state.firstLine) {
-      state.firstLine = false;
-    }
-
-    // Default - consume one character
-    if (!stream.eol()) {
-      stream.next();
-    }
-    return null;
-  },
-};
-
 export class Editor {
-  private editor: HTMLElement | null = null;
-  private editorView: EditorView | null = null;
-  private editorElementId: string;
   private currentFile: string | null = null;
-  private isTableView: boolean = false;
   private tableData: CSVRow[] | null = null;
   private gtfsParser: GTFSParser | null = null;
-  private viewPreference: 'code' | 'table';
   private clusterize: Clusterize | null = null;
   private headers: string[] = [];
   private pendingUpdates: Map<string, string | number | boolean> = new Map();
   private debounceTimeout: NodeJS.Timeout | null = null;
   private readonly DEBOUNCE_DELAY = CONFIG.DEBOUNCE_DELAY;
-  private lastTextModified: number = 0;
-  private lastTableModified: number = 0;
-
-  constructor(editorElementId: string = 'simple-editor') {
-    this.editorElementId = editorElementId;
-    this.viewPreference = this.loadViewPreference();
-  }
 
   initialize(gtfsParser: GTFSParser): void {
     this.gtfsParser = gtfsParser;
-
-    // Initialize CodeMirror editor
-    this.editor = document.getElementById(this.editorElementId);
-    if (!this.editor) {
-      return;
-    }
-
-    // Create CodeMirror editor instance
-    const startState = EditorState.create({
-      doc: '',
-      extensions: [
-        basicSetup,
-        StreamLanguage.define(csvMathematicaMode),
-        placeholder('Select a file from the sidebar to edit its content...'),
-        // Track text changes for conflict detection
-        EditorView.updateListener.of((update) => {
-          if (update.docChanged) {
-            this.lastTextModified = Date.now();
-          }
-        }),
-        // Use a light theme by default, could add theme switching later
-        EditorView.theme({
-          '&': {
-            fontSize: '14px',
-            height: '100%',
-          },
-          '.cm-content': {
-            padding: '10px',
-          },
-          '.cm-focused': {
-            outline: 'none',
-          },
-          '.cm-placeholder': {
-            color: '#999',
-            fontSize: '14px',
-          },
-        }),
-      ],
-    });
-
-    // Clear the container and create CodeMirror view
-    this.editor.innerHTML = '';
-    this.editorView = new EditorView({
-      state: startState,
-      parent: this.editor,
-    });
-
-    // Initialize toggle state
-    this.updateToggleLabels();
-
-    // Initially hide toggle until a file is opened
-    const viewToggle = document.getElementById('view-toggle-checkbox');
-    if (viewToggle && viewToggle.parentElement) {
-      viewToggle.parentElement.style.display = 'none';
-    }
-  }
-
-  loadViewPreference(): 'code' | 'table' {
-    try {
-      return window.localStorage.getItem('gtfs-editor-view-preference') ===
-        'table'
-        ? 'table'
-        : 'code';
-    } catch {
-      return 'code'; // Default to text view
-    }
-  }
-
-  saveViewPreference(isTableView: boolean): void {
-    try {
-      window.localStorage.setItem(
-        'gtfs-editor-view-preference',
-        isTableView ? 'table' : 'text'
-      );
-    } catch {
-      // Ignore localStorage errors
-    }
-  }
-
-  updateToggleLabels(): void {
-    const textOption = document.querySelector('.toggle-text.text-option');
-    const tableOption = document.querySelector('.toggle-text.table-option');
-
-    if (textOption && tableOption) {
-      if (this.isTableView) {
-        textOption.classList.remove('active');
-        tableOption.classList.add('active');
-      } else {
-        textOption.classList.add('active');
-        tableOption.classList.remove('active');
-      }
-    }
-  }
-
-  // Helper methods for CodeMirror
-  setEditorValue(content: string): void {
-    if (this.editorView) {
-      this.editorView.dispatch({
-        changes: {
-          from: 0,
-          to: this.editorView.state.doc.length,
-          insert: content,
-        },
-      });
-    }
-  }
-
-  getEditorValue(): string {
-    return this.editorView ? this.editorView.state.doc.toString() : '';
   }
 
   async openFile(fileName: string): Promise<void> {
@@ -242,36 +58,16 @@ export class Editor {
       fileNameElement.textContent = fileName;
     }
 
-    // Determine if file can be viewed as table (CSV files)
-    const canShowTable = fileName.endsWith('.txt');
-    const viewToggle = document.getElementById('view-toggle-checkbox');
-
-    if (canShowTable) {
-      // Show toggle and set to saved preference
-      if (viewToggle && viewToggle.parentElement) {
-        viewToggle.parentElement.style.display = 'flex';
-        if (this.viewPreference === 'table') {
-          await this.switchToTableView();
-        } else {
-          this.switchToTextView();
-        }
-      }
-    } else {
-      // Hide toggle and switch to text view
-      if (viewToggle && viewToggle.parentElement) {
-        viewToggle.parentElement.style.display = 'none';
-      }
-      this.switchToTextView();
+    // Show table editor view
+    const tableView = document.getElementById('table-editor-view');
+    if (tableView) {
+      tableView.classList.remove('hidden');
     }
 
-    // Update editor content
-    this.setEditorValue(this.gtfsParser.getFileContent(fileName));
+    await this.buildTableEditor();
   }
 
   async closeEditor(): Promise<void> {
-    // Save current changes
-    await this.saveCurrentFileChanges();
-
     // Flush any pending database updates
     if (this.debounceTimeout) {
       clearTimeout(this.debounceTimeout);
@@ -291,8 +87,6 @@ export class Editor {
   }
 
   clearEditor() {
-    // Clear the editor content
-    this.setEditorValue('');
     this.currentFile = null;
 
     // Clear table view
@@ -301,82 +95,6 @@ export class Editor {
       this.clusterize = null;
     }
     this.tableData = null;
-
-    // Switch to text view
-    this.switchToTextView();
-  }
-
-  switchToTextView() {
-    this.isTableView = false;
-    this.viewPreference = 'code';
-    this.saveViewPreference(false);
-
-    // Update toggle state
-    const viewToggle = document.getElementById(
-      'view-toggle-checkbox'
-    ) as HTMLInputElement;
-    if (viewToggle) {
-      viewToggle.checked = false;
-    }
-
-    // Update text labels
-    this.updateToggleLabels();
-
-    // Show text editor, hide table editor
-    const textView = document.getElementById('text-editor-view');
-    const tableView = document.getElementById('table-editor-view');
-
-    if (textView) {
-      textView.classList.remove('hidden');
-    }
-    if (tableView) {
-      tableView.classList.add('hidden');
-    }
-
-    // Conflict detection: sync table to text if table was modified more recently
-    if (this.tableData && this.lastTableModified > this.lastTextModified) {
-      this.syncTableToText();
-    }
-  }
-
-  async switchToTableView() {
-    if (!this.currentFile) {
-      return;
-    }
-
-    this.isTableView = true;
-    this.viewPreference = 'table';
-    this.saveViewPreference(true);
-
-    // Update toggle state
-    const viewToggle = document.getElementById(
-      'view-toggle-checkbox'
-    ) as HTMLInputElement;
-    if (viewToggle) {
-      viewToggle.checked = true;
-    }
-
-    // Update text labels
-    this.updateToggleLabels();
-
-    // Show table editor, hide text editor
-    const textView = document.getElementById('text-editor-view');
-    const tableView = document.getElementById('table-editor-view');
-
-    if (textView) {
-      textView.classList.add('hidden');
-    }
-    if (tableView) {
-      tableView.classList.remove('hidden');
-    }
-
-    // Conflict detection: if text was modified more recently, warn and update table
-    if (this.lastTextModified > this.lastTableModified) {
-      await this.syncTextToTable();
-    }
-
-    // Build table
-    await this.buildTableEditor();
   }
 
   async buildTableEditor() {
@@ -505,7 +223,6 @@ export class Editor {
 
     // Update local table data immediately for UI responsiveness
     this.tableData[rowIndex][col] = value;
-    this.lastTableModified = Date.now();
 
     // Add visual indicator that changes are pending
     input.classList.add('pending-save');
@@ -522,73 +239,12 @@ export class Editor {
     this.debounceDatabaseUpdate();
   }
 
-  syncTableToText() {
-    if (!this.tableData) {
-      return;
-    }
-
-    // Convert table data back to CSV
-    const csv = Papa.unparse(this.tableData);
-    this.setEditorValue(csv);
-    this.lastTextModified = Date.now();
-
-    // Update the parser's data
-    if (this.gtfsParser && this.currentFile) {
-      this.gtfsParser.updateFileContent(this.currentFile, csv);
-    }
-  }
-
-  async syncTextToTable() {
-    if (!this.currentFile || !this.editorView) {
-      return;
-    }
-
-    try {
-      const content = this.getEditorValue();
-
-      // Parse CSV content
-      const parseResult = Papa.parse(content, {
-        header: true,
-        skipEmptyLines: true,
-        transformHeader: (header: string) => header.trim(),
-      });
-
-      if (parseResult.errors.length > 0) {
-        // eslint-disable-next-line no-console
-        console.warn(
-          'CSV parsing errors when syncing text to table:',
-          parseResult.errors
-        );
-      }
-
-      // Update table data
-      this.tableData = parseResult.data;
-      this.lastTableModified = Date.now();
-
-      // Update IndexedDB with parsed data
-      if (this.gtfsParser) {
-        await this.gtfsParser.updateFileContent(this.currentFile, content);
-      }
-    } catch (error) {
-      // eslint-disable-next-line no-console
-      console.error('Error syncing text to table:', error);
-    }
-  }
-
   async saveCurrentFileChanges() {
     if (!this.currentFile || !this.gtfsParser) {
       return;
     }
 
-    if (this.isTableView && this.tableData) {
-      // Save from table - flush any pending updates first
-      await this.flushPendingUpdates();
-      this.syncTableToText();
-    } else if (this.editorView) {
-      // Save from CodeMirror editor - parse content and update IndexedDB
-      const content = this.getEditorValue();
-      await this.gtfsParser.updateFileContent(this.currentFile, content);
-    }
+    await this.flushPendingUpdates();
   }
 
   private debounceDatabaseUpdate(): void {
