@@ -194,7 +194,7 @@ export class ExportManager {
     // Create metadata
     const metadata = {
       exportedAt: new Date().toISOString(),
-      source: 'gtfs.zone',
+      source: 'edit.gtfs.zone',
       version: '1.0',
       format: 'json',
       options: _options,
