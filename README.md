@@ -92,6 +92,15 @@ npm run build
 - [ ] **Component Library**: Reusable UI components
 - [ ] **Performance Monitoring**: Real-time performance metrics
 
+## Releasing
+
+Deployments are triggered by pushing a version tag. The Forgejo CI will build and copy the output to the server.
+
+```bash
+cz bump              # bumps version, updates changelog, creates tag (run on main only)
+git push --follow-tags
+```
+
 ## Contributing
 
 1. Fork the repository

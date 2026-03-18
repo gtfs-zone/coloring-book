@@ -29,7 +29,7 @@ npm run typecheck    # TypeScript type check without emit
 
 # Release
 npm run commit       # Interactive commit with Commitizen (use instead of git commit)
-npm run release      # Semantic versioning release
+cz bump              # Bump version, update changelog, create tag (run on main only)
 ```
 
 Playwright requires the app to be served first (`npm run serve`) before tests run — the config points to `http://localhost:8080/dist`.
