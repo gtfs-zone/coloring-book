@@ -1,0 +1,10 @@
+while IFS=' ' read -r local_ref local_sha remote_ref remote_sha; do
+  case "$local_ref" in
+    refs/tags/v*)
+      if ! git merge-base --is-ancestor "$local_sha" origin/main; then
+        echo "Error: $local_ref does not point to a commit on main. Version tags must be pushed from main."
+        exit 1
+      fi
+      ;;
+  esac
+done
