@@ -89,7 +89,6 @@
     "jszip": "^3.10.1",
     "maplibre-gl": "^5.7.2",
     "papaparse": "^5.5.3",
-    "priceless-mathematica": "github:JerryI/codemirror6-mathematica-sugar",
     "string-hash": "^1.1.3",
     "zod": "^4.1.9"
   },
