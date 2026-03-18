@@ -97,11 +97,9 @@ npm run build
 Deployments are triggered by pushing a version tag. The Forgejo CI will build and copy the output to the server.
 
 ```bash
-npm run release  # bumps version, creates tag
+cz bump              # bumps version, updates changelog, creates tag (run on main only)
 git push --follow-tags
 ```
-
-Version tags must point to a commit on `main` — a `pre-push` hook will reject tags pushed from other branches.
 
 ## Contributing
 
