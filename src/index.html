@@ -313,7 +313,7 @@
           <input
             type="radio"
             name="main_tabs"
-            id="objects-tab-radio"
+            id="browse-tab-radio"
             class="tab"
             aria-label="Browse"
             checked="checked"
@@ -322,8 +322,8 @@
             class="tab-content h-full overflow-y-auto bg-base-100 border-base-300 p-0"
           >
             <!-- Objects List View -->
-            <div id="objects-list-view" class="h-full">
-              <div id="objects-navigation" class="p-4 overflow-y-auto h-full">
+            <div id="browse-list-view" class="h-full">
+              <div id="browse-navigation" class="p-4 overflow-y-auto h-full">
                 <div class="text-base-content/50 text-sm text-center py-8">
                   No GTFS data to explore
                 </div>
@@ -339,7 +339,7 @@
                     <div class="breadcrumbs text-sm">
                       <ul id="breadcrumb-list">
                         <li>
-                          <a id="breadcrumb-objects">
+                          <a id="breadcrumb-browse">
                             <svg
                               xmlns="http://www.w3.org/2000/svg"
                               fill="none"
@@ -382,7 +382,7 @@
                   <!-- Related Objects -->
                   <div class="border-t border-base-300 p-4">
                     <h3 class="text-sm font-semibold mb-3">Related Objects</h3>
-                    <div id="related-objects" class="space-y-2">
+                    <div id="related-browse" class="space-y-2">
                       <!-- Related objects will be populated here -->
                     </div>
                   </div>
@@ -427,38 +427,10 @@
                       >None</span
                     >
                   </div>
-
-                  <!-- View Toggle -->
-                  <div class="flex items-center gap-2 ml-auto">
-                    <div class="join">
-                      <button
-                        class="join-item btn btn-sm btn-active toggle-text"
-                        data-view="text"
-                      >
-                        Text
-                      </button>
-                      <button
-                        class="join-item btn btn-sm toggle-text"
-                        data-view="table"
-                      >
-                        Table
-                      </button>
-                    </div>
-                    <input
-                      type="checkbox"
-                      id="view-toggle-checkbox"
-                      class="hidden"
-                    />
-                  </div>
                 </div>
 
                 <!-- Editor Content -->
                 <div class="flex-1 overflow-hidden">
-                  <div id="text-editor-view" class="h-full">
-                    <div id="simple-editor-container" class="h-full">
-                      <div id="simple-editor" class="h-full"></div>
-                    </div>
-                  </div>
                   <div id="table-editor-view" class="h-full hidden">
                     <div id="table-container" class="h-full overflow-auto">
                       <div id="table-editor" class="h-full"></div>
@@ -496,7 +468,7 @@
                       drag & drop a GTFS ZIP file
                     </li>
                     <li>
-                      <strong>Explore your data:</strong> Use the "Objects" tab
+                      <strong>Explore your data:</strong> Use the "Browse" tab
                       to navigate agencies, routes, trips, and stops
                     </li>
                     <li>
@@ -701,11 +673,11 @@
                     </li>
                     <li>
                       • <strong>Map navigation:</strong> Click on stops or
-                      routes in the Objects tab to highlight them on the map
+                      routes in the Browse tab to highlight them on the map
                     </li>
                     <li>
                       • <strong>Search:</strong> Use the search bar on the map
-                      or in the Objects tab to find specific data
+                      or in the Browse tab to find specific data
                     </li>
                     <li>
                       • <strong>Export format:</strong> Exported files maintain

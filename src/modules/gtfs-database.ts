@@ -2,6 +2,7 @@ import { openDB, DBSchema, IDBPDatabase } from 'idb';
 import { GTFS_FILES } from '../types/gtfs.js';
 import { CONFIG } from '../config.js';
 import { databaseFallbackManager } from './database-fallback-manager.js';
+import { PatchRecord, SnapshotRecord } from '../types/patch.js';
 import {
   Agency,
   Routes,
@@ -102,6 +103,15 @@ export interface GTFSDBSchema extends DBSchema {
     key: string; // Fixed key "project" for single project mode
     value: ProjectMetadata;
   };
+  // Patch history stores
+  patches: {
+    key: number; // autoIncrement version
+    value: PatchRecord;
+  };
+  snapshots: {
+    key: number; // last patch version included in this snapshot
+    value: SnapshotRecord;
+  };
 }
 
 export class GTFSDatabase {
@@ -162,6 +172,19 @@ export class GTFSDatabase {
             existingStores.forEach((storeName) => {
               db.deleteObjectStore(storeName);
             });
+          }
+
+          if (oldVersion < 4) {
+            // Migration to version 4: add patch history stores
+            if (!db.objectStoreNames.contains('patches')) {
+              db.createObjectStore('patches', {
+                keyPath: 'version',
+                autoIncrement: true,
+              });
+            }
+            if (!db.objectStoreNames.contains('snapshots')) {
+              db.createObjectStore('snapshots', { keyPath: 'version' });
+            }
           }
 
           // Create tables for all possible GTFS files with natural key schema
@@ -1484,6 +1507,64 @@ export class GTFSDatabase {
         blockingReferences: ['Error checking references'],
       };
     }
+  }
+
+  // ===== PATCH HISTORY OPERATIONS =====
+
+  /**
+   * Append a patch to the history log. Returns the assigned version number.
+   */
+  async appendPatch(patch: Omit<PatchRecord, 'version'>): Promise<number> {
+    if (!this.db) {
+      throw new Error('Database not initialized');
+    }
+    const version = await this.db.add('patches', patch as PatchRecord);
+    return version as number;
+  }
+
+  /**
+   * Get all patches with a version greater than the given version.
+   */
+  async getPatchesAfter(version: number): Promise<PatchRecord[]> {
+    if (!this.db) {
+      throw new Error('Database not initialized');
+    }
+    const range = IDBKeyRange.lowerBound(version, true); // exclusive
+    return this.db.getAll('patches', range);
+  }
+
+  /**
+   * Get the most recent snapshot, or undefined if none exists.
+   */
+  async getLatestSnapshot(): Promise<SnapshotRecord | undefined> {
+    if (!this.db) {
+      throw new Error('Database not initialized');
+    }
+    const all = await this.db.getAll('snapshots');
+    if (all.length === 0) {
+      return undefined;
+    }
+    return all.reduce((a, b) => (a.version > b.version ? a : b));
+  }
+
+  /**
+   * Persist a snapshot. version should equal the last patch version included.
+   */
+  async saveSnapshot(record: SnapshotRecord): Promise<void> {
+    if (!this.db) {
+      throw new Error('Database not initialized');
+    }
+    await this.db.put('snapshots', record);
+  }
+
+  /**
+   * Return the total number of patches stored.
+   */
+  async getPatchCount(): Promise<number> {
+    if (!this.db) {
+      throw new Error('Database not initialized');
+    }
+    return this.db.count('patches');
   }
 
   /**

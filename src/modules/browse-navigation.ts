@@ -1,6 +1,6 @@
 /**
- * Objects Navigation Module
- * Handles the hierarchical navigation UI for Objects mode
+ * Browse Navigation Module
+ * Handles the hierarchical navigation UI for Browse mode
  * Uses PageStateManager for state management and breadcrumb navigation
  */
 
@@ -20,7 +20,7 @@ import {
   ContentRendererDependencies,
 } from './page-content-renderer.js';
 
-export class ObjectsNavigation {
+export class BrowseNavigation {
   private relationships: {
     hasDataAsync: () => Promise<boolean>;
     getAgenciesAsync: () => Promise<Record<string, unknown>[]>;
@@ -154,7 +154,7 @@ export class ObjectsNavigation {
     this.container = document.getElementById(containerId);
     if (!this.container) {
       // eslint-disable-next-line no-console
-      console.error(`Objects navigation container ${containerId} not found`);
+      console.error(`Browse navigation container ${containerId} not found`);
       return;
     }
 
@@ -270,7 +270,9 @@ export class ObjectsNavigation {
     // No more direct tab manipulation - PageStateManager handles navigation
     // Tab switching should be handled by a navigation event listener at the app level
 
-    console.log('Map callbacks set up to use PageStateManager navigation');
+    console.log(
+      'Browse: Map callbacks set up to use PageStateManager navigation'
+    );
   }
 
   private async navigateToRouteById(route_id: string): Promise<void> {
@@ -303,7 +305,7 @@ export class ObjectsNavigation {
       const pageContent = await this.contentRenderer.renderPage(pageState);
 
       this.container.innerHTML = `
-        <div class="objects-navigation h-full flex flex-col">
+        <div class="browse-navigation h-full flex flex-col">
           ${this.renderBreadcrumbs(breadcrumbs)}
           <div class="content flex-1 overflow-y-auto">
             ${pageContent}
@@ -314,7 +316,7 @@ export class ObjectsNavigation {
       this.attachEventListeners();
     } catch (error) {
       // eslint-disable-next-line no-console
-      console.error('Error rendering objects navigation:', error);
+      console.error('Error rendering browse navigation:', error);
       this.renderErrorState();
     }
   }
@@ -325,7 +327,7 @@ export class ObjectsNavigation {
     }
 
     this.container.innerHTML = `
-      <div class="objects-navigation h-full flex flex-col">
+      <div class="browse-navigation h-full flex flex-col">
         ${this.renderBreadcrumbs([])}
         <div class="content flex-1 flex items-center justify-center">
           <div class="text-center">
@@ -345,7 +347,7 @@ export class ObjectsNavigation {
     }
 
     this.container.innerHTML = `
-      <div class="objects-navigation h-full flex flex-col">
+      <div class="browse-navigation h-full flex flex-col">
         ${this.renderBreadcrumbs([])}
         <div class="content flex-1 flex items-center justify-center">
           <div class="text-center">
