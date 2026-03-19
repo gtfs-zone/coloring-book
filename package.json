@@ -1,5 +1,5 @@
 {
-  "name": "gtfs.zone",
+  "name": "edit.gtfs.zone",
   "version": "0.0.0-development",
   "description": "A fast, simple editor for GTFS transit data - inspired by geojson.io",
   "main": "src/index.html",
