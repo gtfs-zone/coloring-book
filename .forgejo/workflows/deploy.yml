@@ -28,7 +28,7 @@ jobs:
 
       - name: Deploy
         run: |
-          echo "Copying build to /sites/gtfs.zone"
-          mkdir -p /sites/gtfs.zone
-          rm -rf /sites/gtfs.zone/*
-          cp -vr dist/. /sites/gtfs.zone/
+          echo "Copying build to /sites/edit.gtfs.zone"
+          mkdir -p /sites/edit.gtfs.zone
+          rm -rf /sites/edit.gtfs.zone/*
+          cp -vr dist/. /sites/edit.gtfs.zone/
