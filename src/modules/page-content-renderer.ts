@@ -102,6 +102,17 @@ export interface ContentRendererDependencies {
     direction_id?: string
   ) => void;
   onEntityCreated?: () => void;
+
+  // Patch manager for recording edits
+  patchManager?: {
+    recordUpdate: (
+      table: string,
+      id: string,
+      before: Record<string, unknown>,
+      after: Record<string, unknown>,
+      description: string
+    ) => Promise<void>;
+  };
 }
 
 /**
@@ -432,6 +443,7 @@ export class PageContentRenderer {
     // Update AgencyViewController dependencies in case database became available
     const agencyViewDependencies: AgencyViewDependencies = {
       gtfsDatabase: this.dependencies.gtfsDatabase,
+      patchManager: this.dependencies.patchManager,
       onRouteClick: this.dependencies.onRouteClick,
     };
     this.agencyViewController.updateDependencies(agencyViewDependencies);

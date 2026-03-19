@@ -25,6 +25,15 @@ export interface AgencyViewDependencies {
       data: Record<string, unknown>
     ) => Promise<void>;
   };
+  patchManager?: {
+    recordUpdate: (
+      table: string,
+      id: string,
+      before: Record<string, unknown>,
+      after: Record<string, unknown>,
+      description: string
+    ) => Promise<void>;
+  };
   onRouteClick: (route_id: string) => void;
 }
 
@@ -293,6 +302,15 @@ export class AgencyViewController {
         'agency',
         this.currentAgencyId,
         { [field]: processedValue }
+      );
+
+      // Record patch
+      await this.dependencies.patchManager?.recordUpdate(
+        'agency',
+        this.currentAgencyId,
+        { [field]: prevValue },
+        { [field]: processedValue },
+        `Updated ${this.getFieldDisplayName(field)} for agency ${this.currentAgencyId}`
       );
 
       // Store new value for future comparisons

@@ -21,6 +21,9 @@ export class InteractionHandler {
   private isDragging = false;
   private draggedStopId: string | null = null;
 
+  // Local copy of stops GeoJSON for drag — avoids reading MapLibre's private _data
+  private stopsGeoJSON: GeoJSON.FeatureCollection | null = null;
+
   constructor(map: MapLibreMap, gtfsParser: GTFSParser) {
     this.map = map;
     this.gtfsParser = gtfsParser;
@@ -32,6 +35,10 @@ export class InteractionHandler {
    */
   public setCallbacks(callbacks: Partial<InteractionCallbacks>): void {
     this.callbacks = { ...this.callbacks, ...callbacks };
+  }
+
+  public setStopsGeoJSON(data: GeoJSON.FeatureCollection): void {
+    this.stopsGeoJSON = data;
   }
 
   /**
@@ -227,13 +234,11 @@ export class InteractionHandler {
 
     // Update the stop position in the GeoJSON source
     const source = this.map.getSource('stops') as GeoJSONSource;
-    if (!source) {
+    if (!source || !this.stopsGeoJSON) {
       return;
     }
 
-    const data = (
-      source as GeoJSONSource & { _data: GeoJSON.FeatureCollection }
-    )._data;
+    const data = this.stopsGeoJSON;
 
     // Find and update the feature coordinates
     const featureIndex = data.features.findIndex(
@@ -258,13 +263,11 @@ export class InteractionHandler {
     }
 
     const source = this.map.getSource('stops') as GeoJSONSource;
-    if (!source) {
+    if (!source || !this.stopsGeoJSON) {
       return;
     }
 
-    const data = (
-      source as GeoJSONSource & { _data: GeoJSON.FeatureCollection }
-    )._data;
+    const data = this.stopsGeoJSON;
     const finalPosition = data.features.find(
       (f) => f.properties && f.properties.stop_id === this.draggedStopId
     );

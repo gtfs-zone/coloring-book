@@ -86,6 +86,11 @@ export class GTFSEditor {
       this.gtfsParser
     );
 
+    // Inject patchManager so edit operations are recorded
+    this.gtfsParser.setPatchManager(this.patchManager);
+    this.editor.setPatchManager(this.patchManager);
+    this.browseNavigation.setPatchManager(this.patchManager);
+
     this.init().catch((error) => {
       console.error('Failed to initialize GTFSEditor:', error);
       notifications.showError(
@@ -144,6 +149,29 @@ export class GTFSEditor {
 
       // Initialize search controller
       this.searchController.initialize();
+
+      // Wire undo/redo events to refresh editor and map
+      const refreshAfterUndoRedo = async () => {
+        const openFile = this.editor.getCurrentFile();
+        if (openFile) {
+          await this.editor.buildTableEditor();
+        }
+        await this.mapController.updateMap();
+      };
+      this.patchManager.on('undo', () => {
+        refreshAfterUndoRedo().catch((e: unknown) =>
+          notifications.showError(
+            `Failed to refresh after undo/redo: ${e instanceof Error ? e.message : String(e)}`
+          )
+        );
+      });
+      this.patchManager.on('redo', () => {
+        refreshAfterUndoRedo().catch((e: unknown) =>
+          notifications.showError(
+            `Failed to refresh after undo/redo: ${e instanceof Error ? e.message : String(e)}`
+          )
+        );
+      });
 
       // Initialize keyboard shortcuts
       this.keyboardShortcuts.initialize();
@@ -247,6 +275,35 @@ export class GTFSEditor {
    */
   public onGTFSDataReloaded(): void {
     updateBreadcrumbLookup(this.gtfsParser);
+  }
+
+  public undoEdit(): void {
+    const stackSize = this.patchManager.canUndo;
+    if (!stackSize) {
+      notifications.showInfo('Nothing to undo');
+      return;
+    }
+    this.patchManager
+      .undo()
+      .catch((e: unknown) =>
+        notifications.showError(
+          `Undo failed: ${e instanceof Error ? e.message : String(e)}`
+        )
+      );
+  }
+
+  public redoEdit(): void {
+    if (!this.patchManager.canRedo) {
+      notifications.showInfo('Nothing to redo');
+      return;
+    }
+    this.patchManager
+      .redo()
+      .catch((e: unknown) =>
+        notifications.showError(
+          `Redo failed: ${e instanceof Error ? e.message : String(e)}`
+        )
+      );
   }
 
   // Navigation helper methods for global access

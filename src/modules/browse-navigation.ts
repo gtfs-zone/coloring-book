@@ -87,6 +87,27 @@ export class BrowseNavigation {
   private container: HTMLElement | null = null;
   private isLoading: boolean = false;
   private contentRenderer: PageContentRenderer | null = null;
+  private patchManager: {
+    recordUpdate: (
+      table: string,
+      id: string,
+      before: Record<string, unknown>,
+      after: Record<string, unknown>,
+      description: string
+    ) => Promise<void>;
+  } | null = null;
+
+  setPatchManager(pm: {
+    recordUpdate: (
+      table: string,
+      id: string,
+      before: Record<string, unknown>,
+      after: Record<string, unknown>,
+      description: string
+    ) => Promise<void>;
+  }): void {
+    this.patchManager = pm;
+  }
 
   constructor(
     gtfsRelationships: {
@@ -260,6 +281,7 @@ export class BrowseNavigation {
         direction_id?: string
       ) => navigateToTimetable(route_id, service_id, direction_id),
       onEntityCreated: () => this.render(),
+      patchManager: this.patchManager ?? undefined,
     };
 
     this.contentRenderer = new PageContentRenderer(dependencies);

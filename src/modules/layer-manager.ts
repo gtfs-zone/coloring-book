@@ -23,6 +23,9 @@ export interface HighlightLayerOptions {
 export class LayerManager {
   private map: MapLibreMap;
   private gtfsParser: GTFSParser;
+  public onStopsDataUpdated:
+    | ((data: GeoJSON.FeatureCollection) => void)
+    | null = null;
 
   // Default options
   private defaultStopOptions: StopLayerOptions = {
@@ -122,6 +125,7 @@ export class LayerManager {
         data: stopsGeoJSONWithIds,
       });
     }
+    this.onStopsDataUpdated?.(stopsGeoJSONWithIds);
 
     // Add background stops layer if enabled
     if (finalOptions.showBackground) {
@@ -562,6 +566,7 @@ export class LayerManager {
     };
 
     stopsSource.setData(stopsGeoJSONWithIds);
+    this.onStopsDataUpdated?.(stopsGeoJSONWithIds);
     console.log(`🔄 Updated stops data: ${validStops.length} stops`);
   }
 

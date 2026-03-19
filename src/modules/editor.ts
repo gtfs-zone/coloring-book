@@ -4,6 +4,7 @@ import {
   getGTFSFieldDescription,
   createTooltip,
 } from '../utils/zod-tooltip-helper.js';
+import { generateCompositeKeyFromRecord } from '../utils/gtfs-primary-keys.js';
 
 interface GTFSParser {
   updateFileInMemory(fileName: string, content: string): void;
@@ -16,10 +17,24 @@ interface GTFSParser {
       key: string,
       data: Record<string, unknown>
     ): Promise<void>;
-    getNaturalKeyFields(tableName: string): string[];
-    generateKey(tableName: string, data: Record<string, unknown>): string;
   };
   // Add other methods as needed
+}
+
+interface PatchManagerRef {
+  recordUpdate(
+    table: string,
+    id: string,
+    before: Record<string, unknown>,
+    after: Record<string, unknown>,
+    description: string
+  ): Promise<void>;
+}
+
+interface PendingUpdate {
+  rowIndex: number;
+  rowData: CSVRow;
+  originalInput: HTMLInputElement | null;
 }
 
 type CSVRow = Record<string, string | number | boolean>;
@@ -30,12 +45,18 @@ export class Editor {
   private gtfsParser: GTFSParser | null = null;
   private clusterize: Clusterize | null = null;
   private headers: string[] = [];
-  private pendingUpdates: Map<string, string | number | boolean> = new Map();
+  private pendingUpdates: Map<string, PendingUpdate> = new Map();
+  private pendingBeforeRows: Map<number, CSVRow> = new Map();
+  private patchManager: PatchManagerRef | null = null;
   private debounceTimeout: NodeJS.Timeout | null = null;
   private readonly DEBOUNCE_DELAY = CONFIG.DEBOUNCE_DELAY;
 
   initialize(gtfsParser: GTFSParser): void {
     this.gtfsParser = gtfsParser;
+  }
+
+  setPatchManager(pm: PatchManagerRef): void {
+    this.patchManager = pm;
   }
 
   async openFile(fileName: string): Promise<void> {
@@ -83,6 +104,7 @@ export class Editor {
 
     // Clear pending updates
     this.pendingUpdates.clear();
+    this.pendingBeforeRows.clear();
     this.currentFile = null;
   }
 
@@ -221,6 +243,11 @@ export class Editor {
       return;
     }
 
+    // Capture before state for this row before any mutation
+    if (!this.pendingBeforeRows.has(rowIndex)) {
+      this.pendingBeforeRows.set(rowIndex, { ...this.tableData[rowIndex] });
+    }
+
     // Update local table data immediately for UI responsiveness
     this.tableData[rowIndex][col] = value;
 
@@ -265,13 +292,16 @@ export class Editor {
     }
 
     try {
-      const tableName = this.currentFile.replace('.txt', 's');
+      const tableName = this.currentFile.replace('.txt', '');
       const updates = Array.from(this.pendingUpdates.values());
+
+      // Track rows already patched to emit one patch per row
+      const patchedRows = new Set<number>();
 
       // Perform batch updates to IndexedDB using natural keys
       for (const update of updates) {
         // Generate natural key for the row data
-        const naturalKey = this.gtfsParser.gtfsDatabase.generateKey(
+        const naturalKey = generateCompositeKeyFromRecord(
           tableName,
           update.rowData
         );
@@ -281,6 +311,24 @@ export class Editor {
           naturalKey,
           update.rowData
         );
+
+        // Record patch once per row (combining all column changes)
+        if (this.patchManager && !patchedRows.has(update.rowIndex)) {
+          patchedRows.add(update.rowIndex);
+          const beforeRow = this.pendingBeforeRows.get(update.rowIndex);
+          if (beforeRow && this.tableData) {
+            const afterRow = {
+              ...this.tableData[update.rowIndex],
+            } as Record<string, unknown>;
+            await this.patchManager.recordUpdate(
+              tableName,
+              naturalKey,
+              beforeRow as Record<string, unknown>,
+              afterRow,
+              `Edited row in ${tableName}`
+            );
+          }
+        }
 
         // Remove pending indicator
         if (update.originalInput) {
@@ -298,6 +346,7 @@ export class Editor {
 
       // Clear pending updates
       this.pendingUpdates.clear();
+      this.pendingBeforeRows.clear();
 
       // eslint-disable-next-line no-console
       console.log(`Saved ${updates.length} table cell updates to IndexedDB`);

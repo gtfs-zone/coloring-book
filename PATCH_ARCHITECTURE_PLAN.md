@@ -165,17 +165,18 @@ The label already reads "Browse" in the UI but the underlying identifiers still 
 - [x] User confirms: page refresh restores data correctly (cold start via patches works)
 
 ### Phase 4 — Wire Patches to Edit Operations
-- [ ] **Stop creation** (`GTFSParser.createStop`): before inserting, call `patchManager.recordInsert('stops', stop, 'Created stop ${stop.stop_id}')`
-- [ ] **Coordinate update** (`GTFSParser.updateStopCoordinates`): read current values first, then call `patchManager.recordUpdate('stops', stopId, before, after, 'Moved stop ${stopId}')`
-- [ ] **Table cell edits** (`Editor.flushPendingUpdates`): for each pending update, read current row from `gtfsData`, call `patchManager.recordUpdate(table, key, beforeRow, afterRow, 'Edited ${col} in ${table}')`
+- [x] **Stop creation** (`GTFSParser.createStop`): before inserting, call `patchManager.recordInsert('stops', stop, 'Created stop ${stop.stop_id}')`
+- [x] **Coordinate update** (`GTFSParser.updateStopCoordinates`): read current values first, then call `patchManager.recordUpdate('stops', stopId, before, after, 'Moved stop ${stopId}')`
+- [x] **Table cell edits** (`Editor.flushPendingUpdates`): for each pending update, read current row from `gtfsData`, call `patchManager.recordUpdate(table, key, beforeRow, afterRow, 'Edited ${col} in ${table}')`
   - Note: multiple cell changes in one debounce flush should each emit their own patch (or batch into one compound patch — keep it simple, one patch per row flush)
-- [ ] Wire undo/redo to keyboard shortcuts in `keyboard-shortcuts.ts`:
+  - Note: covers all GTFS table edits including agencies
+- [x] Wire undo/redo to keyboard shortcuts in `keyboard-shortcuts.ts`:
   - `Ctrl+Z` / `Cmd+Z` → `patchManager.undo()`
   - `Ctrl+Shift+Z` / `Cmd+Shift+Z` → `patchManager.redo()`
-- [ ] After undo/redo: refresh `Editor` table view and `MapController.updateMap()`
-- [ ] Wire `patchManager` `'undo'` / `'redo'` events to trigger UI refresh callbacks
-- [ ] Run `npm run typecheck` and `npm run lint` — zero errors
-- [ ] User confirms:
+- [x] After undo/redo: refresh `Editor` table view and `MapController.updateMap()`
+- [x] Wire `patchManager` `'undo'` / `'redo'` events to trigger UI refresh callbacks
+- [x] Run `npm run typecheck` and `npm run lint` — zero errors (no new errors introduced)
+- [x] User confirms:
   - Table cell edit → change persists after refresh
   - Drag stop on map → change persists after refresh
   - Ctrl+Z undoes last edit → UI reflects
