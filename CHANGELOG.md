@@ -1,3 +1,9 @@
+## v0.5.2 (2026-03-19)
+
+### Refactor
+
+- finish renaming to subdomain
+
 ## v0.5.1 (2026-03-19)
 
 ## v0.5.0 (2026-03-19)
