@@ -15,13 +15,34 @@ interface GTFSFileData<T = GTFSDatabaseRecord> {
 // Type-safe table name to entity type mapping
 type GTFSTableName = keyof GTFSTableMap;
 
+interface PatchManagerRef {
+  recordInsert(
+    table: string,
+    id: string,
+    record: Record<string, unknown>,
+    description: string
+  ): Promise<void>;
+  recordUpdate(
+    table: string,
+    id: string,
+    before: Record<string, unknown>,
+    after: Record<string, unknown>,
+    description: string
+  ): Promise<void>;
+}
+
 export class GTFSParser {
   private gtfsData: { [fileName: string]: GTFSFileData } = {};
   public gtfsDatabase: GTFSDatabase;
+  private patchManager: PatchManagerRef | null = null;
 
   constructor() {
     this.gtfsData = {};
     this.gtfsDatabase = new GTFSDatabase();
+  }
+
+  setPatchManager(pm: PatchManagerRef): void {
+    this.patchManager = pm;
   }
 
   /**
@@ -892,6 +913,15 @@ export class GTFSParser {
     // Insert into database
     await this.gtfsDatabase.insertRows(tableName, [stop]);
 
+    // Record patch
+    const stopId = String(stop.stop_id);
+    await this.patchManager?.recordInsert(
+      tableName,
+      stopId,
+      stop as Record<string, unknown>,
+      `Created stop ${stopId}`
+    );
+
     // Update file content (regenerate CSV)
     this.updateStopsFileContent();
 
@@ -932,23 +962,41 @@ export class GTFSParser {
         (stop) => stop.stop_id === stopId
       );
       if (stopIndex !== -1) {
+        // Capture before state for patch
+        const beforeRow = { ...stopsData.data[stopIndex] } as Record<
+          string,
+          unknown
+        >;
+
         // Update coordinates in memory
         stopsData.data[stopIndex].stop_lat = lat.toString();
         stopsData.data[stopIndex].stop_lon = lng.toString();
+
+        // Update in database
+        const updateData = {
+          stop_lat: lat.toString(),
+          stop_lon: lng.toString(),
+        };
+        await this.gtfsDatabase.updateRow(tableName, stopId, updateData);
+
+        // Record patch
+        const afterRow = { ...stopsData.data[stopIndex] } as Record<
+          string,
+          unknown
+        >;
+        await this.patchManager?.recordUpdate(
+          tableName,
+          stopId,
+          beforeRow,
+          afterRow,
+          `Moved stop ${stopId}`
+        );
       } else {
         throw new Error(`Stop ${stopId} not found in in-memory data`);
       }
     } else {
       throw new Error('Stops data not available in memory');
     }
-
-    // Update in database
-    const updateData = {
-      stop_lat: lat.toString(),
-      stop_lon: lng.toString(),
-    };
-
-    await this.gtfsDatabase.updateRow(tableName, stopId, updateData);
 
     // Update file content (regenerate CSV)
     this.updateStopsFileContent();

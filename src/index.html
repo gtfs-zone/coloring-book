@@ -90,6 +90,52 @@
               </svg>
             </label>
 
+            <!-- Undo / Redo -->
+            <div class="flex items-center gap-1">
+              <button
+                id="undo-btn"
+                class="btn btn-ghost btn-sm btn-square"
+                title="Undo (Ctrl+Z)"
+                onclick="window.gtfsEditor?.undoEdit()"
+              >
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  class="h-5 w-5"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    d="M3 10h10a5 5 0 0 1 0 10H9M3 10l4-4M3 10l4 4"
+                  />
+                </svg>
+              </button>
+              <button
+                id="redo-btn"
+                class="btn btn-ghost btn-sm btn-square"
+                title="Redo (Ctrl+Shift+Z)"
+                onclick="window.gtfsEditor?.redoEdit()"
+              >
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  class="h-5 w-5"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    d="M21 10H11a5 5 0 0 0 0 10h4M21 10l-4-4M21 10l-4 4"
+                  />
+                </svg>
+              </button>
+            </div>
+
             <!-- Load Dropdown -->
             <div class="dropdown dropdown-end">
               <div
