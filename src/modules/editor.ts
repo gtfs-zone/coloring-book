@@ -26,8 +26,7 @@ interface PatchManagerRef {
     table: string,
     id: string,
     before: Record<string, unknown>,
-    after: Record<string, unknown>,
-    description: string
+    after: Record<string, unknown>
   ): Promise<void>;
 }
 
@@ -324,8 +323,7 @@ export class Editor {
               tableName,
               naturalKey,
               beforeRow as Record<string, unknown>,
-              afterRow,
-              `Edited row in ${tableName}`
+              afterRow
             );
           }
         }

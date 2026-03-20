@@ -5,7 +5,7 @@
 export const CONFIG = {
   // IndexedDB
   DB_NAME: 'GTFSZoneDB',
-  DB_VERSION: 4,
+  DB_VERSION: 5,
 
   // Editor (table view)
   DEBOUNCE_DELAY: 500, // ms before flushing pending cell updates to IndexedDB
@@ -21,5 +21,4 @@ export const CONFIG = {
 
   // Patch system (used from Phase 3 onward)
   SNAPSHOT_INTERVAL: 50, // take a full snapshot every N patches
-  MAX_UNDO_HISTORY: 200, // in-memory undo stack cap
 } as const;
