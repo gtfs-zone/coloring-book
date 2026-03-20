@@ -21,6 +21,7 @@ import {
 import { PageStateManager } from './modules/page-state-manager';
 import { navigateToTimetable } from './modules/navigation-actions';
 import { PatchManager } from './modules/patch-manager';
+import { HistoryController } from './modules/history-controller';
 import './styles/main.css';
 
 declare global {
@@ -48,6 +49,7 @@ export class GTFSEditor {
   public themeController: ThemeController;
   public pageStateManager: PageStateManager;
   public patchManager: PatchManager;
+  public historyController: HistoryController;
 
   constructor() {
     this.gtfsParser = new GTFSParser();
@@ -85,6 +87,7 @@ export class GTFSEditor {
       this.gtfsParser.gtfsDatabase,
       this.gtfsParser
     );
+    this.historyController = new HistoryController();
 
     // Inject patchManager so edit operations are recorded
     this.gtfsParser.setPatchManager(this.patchManager);
@@ -112,6 +115,7 @@ export class GTFSEditor {
 
       // Restore state from patch history (snapshot + subsequent patches)
       await this.patchManager.initialize();
+      this.historyController.initialize(this.patchManager);
 
       // Check if there's existing data in IndexedDB, only create empty feed if none exists
       const existingMetadata =
@@ -158,20 +162,16 @@ export class GTFSEditor {
         }
         await this.mapController.updateMap();
       };
-      this.patchManager.on('undo', () => {
+      const onUndoRedoJump = () => {
         refreshAfterUndoRedo().catch((e: unknown) =>
           notifications.showError(
             `Failed to refresh after undo/redo: ${e instanceof Error ? e.message : String(e)}`
           )
         );
-      });
-      this.patchManager.on('redo', () => {
-        refreshAfterUndoRedo().catch((e: unknown) =>
-          notifications.showError(
-            `Failed to refresh after undo/redo: ${e instanceof Error ? e.message : String(e)}`
-          )
-        );
-      });
+      };
+      this.patchManager.on('undo', onUndoRedoJump);
+      this.patchManager.on('redo', onUndoRedoJump);
+      this.patchManager.on('jump', onUndoRedoJump);
 
       // Initialize keyboard shortcuts
       this.keyboardShortcuts.initialize();

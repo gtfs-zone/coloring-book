@@ -71,7 +71,9 @@ export class UIController {
     document
       .getElementById('example-columbia')
       ?.addEventListener('click', (e) => {
-        const url = e.target.dataset.url;
+        // Use currentTarget so clicks on child elements (text/icons) still find the data-url
+        const url = (e.currentTarget as HTMLElement).dataset.url;
+        console.log('[UI] Example feed clicked, url:', url);
         if (url) {
           this.loadGTFSFromURL(url);
         }
@@ -79,7 +81,8 @@ export class UIController {
       });
 
     document.getElementById('example-west')?.addEventListener('click', (e) => {
-      const url = e.target.dataset.url;
+      const url = (e.currentTarget as HTMLElement).dataset.url;
+      console.log('[UI] Example feed clicked, url:', url);
       if (url) {
         this.loadGTFSFromURL(url);
       }

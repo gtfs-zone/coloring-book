@@ -14,14 +14,14 @@ import {
   parseCompositeKey,
 } from '../utils/gtfs-primary-keys.js';
 
-type PatchEventType = 'undo' | 'redo' | 'change';
+type PatchEventType = 'undo' | 'redo' | 'change' | 'jump';
 type PatchEventListener = () => void;
 
 export class PatchManager {
   private db: GTFSDatabase;
   private parser: GTFSParser;
-  private undoStack: PatchRecord[] = [];
-  private redoStack: PatchRecord[] = [];
+  private currentVersion = 0;
+  private headVersion = 0;
   private listeners = new Map<PatchEventType, Set<PatchEventListener>>();
 
   constructor(db: GTFSDatabase, parser: GTFSParser) {
@@ -34,178 +34,241 @@ export class PatchManager {
    * Called once after GTFSParser.initialize().
    */
   async initialize(): Promise<void> {
+    const { currentVersion, headVersion } = await this.db.getVersions();
+    this.currentVersion = currentVersion;
+    this.headVersion = headVersion;
+
     const snapshot = await this.db.getLatestSnapshot();
-    if (!snapshot) {
-      return; // No snapshot — IndexedDB tables are already current
-    }
+    if (snapshot) {
+      const stateJson = await decompress(snapshot.state);
+      const state: GTFSState = JSON.parse(stateJson);
 
-    const stateJson = await decompress(snapshot.state);
-    const state: GTFSState = JSON.parse(stateJson);
-
-    // Restore each GTFS table to DB and in-memory
-    for (const [table, rows] of Object.entries(state)) {
-      const fileName = `${table}.txt`;
-      await this.db.clearTable(table);
-      if (rows.length > 0) {
-        await this.db.insertRows(table, rows as GTFSDatabaseRecord[]);
+      // Restore each GTFS table to DB and in-memory
+      for (const [table, rows] of Object.entries(state)) {
+        const fileName = `${table}.txt`;
+        await this.db.clearTable(table);
+        if (rows.length > 0) {
+          await this.db.insertRows(table, rows as GTFSDatabaseRecord[]);
+        }
+        this.parser.setInMemoryFileData(fileName, rows as GTFSDatabaseRecord[]);
       }
-      this.parser.setInMemoryFileData(fileName, rows as GTFSDatabaseRecord[]);
     }
 
-    // Replay patches that came after the snapshot
-    const patches = await this.db.getPatchesAfter(snapshot.version);
+    // Replay patches only up to currentVersion (handles mid-undo refresh)
+    const patches = await this.db.getPatchesAfter(snapshot?.version ?? 0);
     for (const record of patches) {
+      if (record.version! > this.currentVersion) {
+        break;
+      }
       await this.applyPatchForward(record.patch);
     }
   }
 
   /** Apply a patch in the forward direction (mutates memory + IndexedDB). */
   async applyPatchForward(patch: GTFSPatch): Promise<void> {
-    const fileName = `${patch.table}.txt`;
+    const { source, forward } = patch;
+    const fileName = `${source.table}.txt`;
     const data = this.parser.getFileDataSync(fileName);
 
     if (patch.op === 'insert') {
-      const record = patch.record as GTFSDatabaseRecord;
+      const record = (forward as { record: Record<string, unknown> })
+        .record as GTFSDatabaseRecord;
       if (data) {
         data.push(record);
       }
-      await this.db.insertRows(patch.table, [record]);
+      await this.db.insertRows(source.table, [record]);
     } else if (patch.op === 'delete') {
       if (data) {
-        const idx = this.findRecordIndex(data, patch.id, patch.table);
+        const idx = this.findRecordIndex(data, source.id, source.table);
         if (idx !== -1) {
           data.splice(idx, 1);
         }
       }
-      await this.db.deleteRow(patch.table, patch.id);
+      await this.db.deleteRow(source.table, source.id);
     } else if (patch.op === 'update') {
-      const changes = patch.changes!;
+      const changes = (forward as { changes: Record<string, unknown> }).changes;
       if (data) {
-        const idx = this.findRecordIndex(data, patch.id, patch.table);
+        const idx = this.findRecordIndex(data, source.id, source.table);
         if (idx !== -1) {
-          for (const [field, [, after]] of Object.entries(changes)) {
-            (data[idx] as Record<string, unknown>)[field] = after;
+          for (const [field, value] of Object.entries(changes)) {
+            (data[idx] as Record<string, unknown>)[field] = value;
           }
         }
       }
       const delta: Partial<GTFSDatabaseRecord> = {};
-      for (const [field, [, after]] of Object.entries(changes)) {
-        delta[field] = after as string | number | boolean | undefined;
+      for (const [field, value] of Object.entries(changes)) {
+        delta[field] = value as string | number | boolean | undefined;
       }
-      await this.db.updateRow(patch.table, patch.id, delta);
+      await this.db.updateRow(source.table, source.id, delta);
     }
   }
 
   /** Apply a patch in the reverse direction (undo). */
   async applyPatchInverse(patch: GTFSPatch): Promise<void> {
-    const fileName = `${patch.table}.txt`;
+    const { source, inverse } = patch;
+    const fileName = `${source.table}.txt`;
     const data = this.parser.getFileDataSync(fileName);
 
     if (patch.op === 'insert') {
-      // Inverse of insert → delete
+      // Inverse of insert → delete by id
       if (data) {
-        const idx = this.findRecordIndex(data, patch.id, patch.table);
+        const idx = this.findRecordIndex(data, source.id, source.table);
         if (idx !== -1) {
           data.splice(idx, 1);
         }
       }
-      await this.db.deleteRow(patch.table, patch.id);
+      await this.db.deleteRow(source.table, source.id);
     } else if (patch.op === 'delete') {
-      // Inverse of delete → insert
-      const record = patch.record as GTFSDatabaseRecord;
+      // Inverse of delete → re-insert full record
+      const record = (inverse as { record: Record<string, unknown> })
+        .record as GTFSDatabaseRecord;
       if (data) {
         data.push(record);
       }
-      await this.db.insertRows(patch.table, [record]);
+      await this.db.insertRows(source.table, [record]);
     } else if (patch.op === 'update') {
-      // Inverse: apply [before] values
-      const changes = patch.changes!;
+      // Inverse: apply before values
+      const changes = (inverse as { changes: Record<string, unknown> }).changes;
       if (data) {
-        const idx = this.findRecordIndex(data, patch.id, patch.table);
+        const idx = this.findRecordIndex(data, source.id, source.table);
         if (idx !== -1) {
-          for (const [field, [before]] of Object.entries(changes)) {
-            (data[idx] as Record<string, unknown>)[field] = before;
+          for (const [field, value] of Object.entries(changes)) {
+            (data[idx] as Record<string, unknown>)[field] = value;
           }
         }
       }
       const delta: Partial<GTFSDatabaseRecord> = {};
-      for (const [field, [before]] of Object.entries(changes)) {
-        delta[field] = before as string | number | boolean | undefined;
+      for (const [field, value] of Object.entries(changes)) {
+        delta[field] = value as string | number | boolean | undefined;
       }
-      await this.db.updateRow(patch.table, patch.id, delta);
+      await this.db.updateRow(source.table, source.id, delta);
     }
   }
 
   async recordInsert(
     table: string,
     id: string,
-    record: Record<string, unknown>,
-    description: string
+    record: Record<string, unknown>
   ): Promise<void> {
-    const patch: GTFSPatch = { op: 'insert', table, id, record };
-    await this.appendAndPush(patch, description);
+    const patch: GTFSPatch = {
+      op: 'insert',
+      source: { table, id },
+      forward: { record },
+      inverse: { id },
+    };
+    await this.appendAndPush(patch);
   }
 
   async recordUpdate(
     table: string,
     id: string,
     before: Record<string, unknown>,
-    after: Record<string, unknown>,
-    description: string
+    after: Record<string, unknown>
   ): Promise<void> {
-    const changes: Record<string, [unknown, unknown]> = {};
+    const forwardChanges: Record<string, unknown> = {};
+    const inverseChanges: Record<string, unknown> = {};
     for (const key of Object.keys(after)) {
       if (before[key] !== after[key]) {
-        changes[key] = [before[key], after[key]];
+        forwardChanges[key] = after[key];
+        inverseChanges[key] = before[key];
       }
     }
-    if (Object.keys(changes).length === 0) {
+    if (Object.keys(forwardChanges).length === 0) {
       return;
     }
-    const patch: GTFSPatch = { op: 'update', table, id, changes };
-    await this.appendAndPush(patch, description);
+    const patch: GTFSPatch = {
+      op: 'update',
+      source: { table, id },
+      forward: { changes: forwardChanges },
+      inverse: { changes: inverseChanges },
+    };
+    await this.appendAndPush(patch);
   }
 
   async recordDelete(
     table: string,
     id: string,
-    record: Record<string, unknown>,
-    description: string
+    record: Record<string, unknown>
   ): Promise<void> {
-    const patch: GTFSPatch = { op: 'delete', table, id, record };
-    await this.appendAndPush(patch, description);
+    const patch: GTFSPatch = {
+      op: 'delete',
+      source: { table, id },
+      forward: { id },
+      inverse: { record },
+    };
+    await this.appendAndPush(patch);
   }
 
   async undo(): Promise<void> {
-    const record = this.undoStack.pop();
+    if (this.currentVersion === 0) {
+      return;
+    }
+    const record = await this.db.getPatch(this.currentVersion);
     if (!record) {
       return;
     }
-    this.redoStack.push(record);
     await this.applyPatchInverse(record.patch);
+    this.currentVersion--;
+    await this.db.setVersions(this.currentVersion, this.headVersion);
     this.emit('undo');
   }
 
   async redo(): Promise<void> {
-    const record = this.redoStack.pop();
+    if (this.currentVersion === this.headVersion) {
+      return;
+    }
+    const record = await this.db.getPatch(this.currentVersion + 1);
     if (!record) {
       return;
     }
-    this.undoStack.push(record);
     await this.applyPatchForward(record.patch);
+    this.currentVersion++;
+    await this.db.setVersions(this.currentVersion, this.headVersion);
     this.emit('redo');
   }
 
   get canUndo(): boolean {
-    return this.undoStack.length > 0;
+    return this.currentVersion > 0;
   }
 
   get canRedo(): boolean {
-    return this.redoStack.length > 0;
+    return this.currentVersion < this.headVersion;
   }
 
-  async getHistory(): Promise<PatchRecord[]> {
-    return this.db.getPatchesAfter(0);
+  get version(): number {
+    return this.currentVersion;
+  }
+
+  async jumpToVersion(target: number): Promise<void> {
+    if (target === this.currentVersion) {
+      return;
+    }
+    if (target < this.currentVersion) {
+      for (let v = this.currentVersion; v > target; v--) {
+        const record = await this.db.getPatch(v);
+        if (record) {
+          await this.applyPatchInverse(record.patch);
+        }
+      }
+    } else {
+      for (let v = this.currentVersion + 1; v <= target; v++) {
+        const record = await this.db.getPatch(v);
+        if (record) {
+          await this.applyPatchForward(record.patch);
+        }
+      }
+    }
+    this.currentVersion = target;
+    await this.db.setVersions(this.currentVersion, this.headVersion);
+    this.emit('jump');
+  }
+
+  async getHistory(): Promise<(PatchRecord & { applied: boolean })[]> {
+    const all = await this.db.getPatchesAfter(0);
+    return all.map((r) => ({
+      ...r,
+      applied: r.version! <= this.currentVersion,
+    }));
   }
 
   on(event: PatchEventType, listener: PatchEventListener): void {
@@ -221,20 +284,18 @@ export class PatchManager {
 
   // ===== Private helpers =====
 
-  private async appendAndPush(
-    patch: GTFSPatch,
-    description: string
-  ): Promise<void> {
+  private async appendAndPush(patch: GTFSPatch): Promise<void> {
+    if (this.currentVersion < this.headVersion) {
+      await this.db.deletePatchesAfter(this.currentVersion);
+      this.headVersion = this.currentVersion;
+    }
     const version = await this.db.appendPatch({
       patch,
       timestamp: Date.now(),
-      description,
     });
-    this.undoStack.push({ version, patch, timestamp: Date.now(), description });
-    if (this.undoStack.length > CONFIG.MAX_UNDO_HISTORY) {
-      this.undoStack.shift();
-    }
-    this.redoStack = [];
+    this.currentVersion = version;
+    this.headVersion = version;
+    await this.db.setVersions(this.currentVersion, this.headVersion);
     await this.maybeSnapshot();
     this.emit('change');
   }
@@ -263,12 +324,13 @@ export class PatchManager {
   }
 
   private async maybeSnapshot(): Promise<void> {
-    const count = this.undoStack.length;
-    if (count === 0 || count % CONFIG.SNAPSHOT_INTERVAL !== 0) {
+    if (
+      this.currentVersion === 0 ||
+      this.currentVersion % CONFIG.SNAPSHOT_INTERVAL !== 0
+    ) {
       return;
     }
 
-    const latestVersion = this.undoStack[this.undoStack.length - 1].version!;
     const state: GTFSState = {};
     for (const fileName of this.parser.getAllFileNames()) {
       const table = fileName.replace('.txt', '').replace('.geojson', '');
@@ -280,7 +342,7 @@ export class PatchManager {
 
     const compressed = await compress(JSON.stringify(state));
     const record: SnapshotRecord = {
-      version: latestVersion,
+      version: this.currentVersion,
       state: compressed,
       timestamp: Date.now(),
     };

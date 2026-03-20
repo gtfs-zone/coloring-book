@@ -4,15 +4,18 @@
 
 export type PatchOp = 'insert' | 'update' | 'delete';
 
+/** Direction-specific payload — one of three shapes. */
+export type PatchData =
+  | { record: Record<string, unknown> } // full row (insert forward / delete inverse)
+  | { changes: Record<string, unknown> } // field map (update — just the after/before values)
+  | { id: string }; // key-only (insert inverse / delete forward)
+
 /** A single semantic change to one GTFS record. */
 export interface GTFSPatch {
   op: PatchOp;
-  table: string;
-  id: string;
-  /** For 'update': field-level diffs as [before, after] tuples */
-  changes?: Record<string, [unknown, unknown]>;
-  /** For 'insert' and 'delete': the full record */
-  record?: Record<string, unknown>;
+  source: { table: string; id: string; col?: string };
+  forward: PatchData;
+  inverse: PatchData;
 }
 
 /** Persisted patch entry in IndexedDB (version is the autoIncrement key). */
@@ -20,7 +23,6 @@ export interface PatchRecord {
   version?: number; // absent on write, assigned by autoIncrement on read
   patch: GTFSPatch;
   timestamp: number; // Date.now()
-  description: string;
 }
 
 /** Compressed full-state checkpoint. */

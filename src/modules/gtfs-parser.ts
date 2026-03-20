@@ -19,15 +19,13 @@ interface PatchManagerRef {
   recordInsert(
     table: string,
     id: string,
-    record: Record<string, unknown>,
-    description: string
+    record: Record<string, unknown>
   ): Promise<void>;
   recordUpdate(
     table: string,
     id: string,
     before: Record<string, unknown>,
-    after: Record<string, unknown>,
-    description: string
+    after: Record<string, unknown>
   ): Promise<void>;
 }
 
@@ -426,23 +424,32 @@ export class GTFSParser {
   }
 
   async parseFromURL(url: string): Promise<void> {
+    // eslint-disable-next-line no-console
+    console.log('[GTFSParser] Fetching GTFS from URL:', url);
+    let response: Response;
     try {
+      response = await fetch(url);
+    } catch (networkError) {
+      const msg =
+        networkError instanceof TypeError
+          ? `Network error — could not reach ${url}. Check your connection or whether the server allows cross-origin requests (CORS).`
+          : `Fetch failed: ${networkError instanceof Error ? networkError.message : String(networkError)}`;
       // eslint-disable-next-line no-console
-      console.log('Loading GTFS from URL:', url);
-
-      const response = await fetch(url);
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-
-      const blob = await response.blob();
-      await this.parseFile(blob);
-      return;
-    } catch (error) {
-      // eslint-disable-next-line no-console
-      console.error('Error loading GTFS from URL:', error);
-      throw error;
+      console.error('[GTFSParser]', msg, networkError);
+      throw new Error(msg);
     }
+
+    if (!response.ok) {
+      const msg = `HTTP ${response.status} ${response.statusText} from ${url}`;
+      // eslint-disable-next-line no-console
+      console.error('[GTFSParser]', msg);
+      throw new Error(msg);
+    }
+
+    // eslint-disable-next-line no-console
+    console.log('[GTFSParser] Download complete, parsing ZIP...');
+    const blob = await response.blob();
+    await this.parseFile(blob);
   }
 
   async updateFileContent(fileName: string, content: string): Promise<void> {
@@ -918,8 +925,7 @@ export class GTFSParser {
     await this.patchManager?.recordInsert(
       tableName,
       stopId,
-      stop as Record<string, unknown>,
-      `Created stop ${stopId}`
+      stop as Record<string, unknown>
     );
 
     // Update file content (regenerate CSV)
@@ -988,8 +994,7 @@ export class GTFSParser {
           tableName,
           stopId,
           beforeRow,
-          afterRow,
-          `Moved stop ${stopId}`
+          afterRow
         );
       } else {
         throw new Error(`Stop ${stopId} not found in in-memory data`);

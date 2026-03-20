@@ -112,6 +112,11 @@ export interface GTFSDBSchema extends DBSchema {
     key: number; // last patch version included in this snapshot
     value: SnapshotRecord;
   };
+  // Version pointer store
+  meta: {
+    key: string;
+    value: { key: string; currentVersion: number; headVersion: number };
+  };
 }
 
 export class GTFSDatabase {
@@ -184,6 +189,12 @@ export class GTFSDatabase {
             }
             if (!db.objectStoreNames.contains('snapshots')) {
               db.createObjectStore('snapshots', { keyPath: 'version' });
+            }
+          }
+
+          if (oldVersion < 5) {
+            if (!db.objectStoreNames.contains('meta')) {
+              db.createObjectStore('meta', { keyPath: 'key' });
             }
           }
 
@@ -1565,6 +1576,62 @@ export class GTFSDatabase {
       throw new Error('Database not initialized');
     }
     return this.db.count('patches');
+  }
+
+  /**
+   * Get the current and head version pointers from the meta store.
+   */
+  async getVersions(): Promise<{
+    currentVersion: number;
+    headVersion: number;
+  }> {
+    if (!this.db) {
+      return { currentVersion: 0, headVersion: 0 };
+    }
+    const entry = await this.db.get('meta', 'versions');
+    return entry
+      ? { currentVersion: entry.currentVersion, headVersion: entry.headVersion }
+      : { currentVersion: 0, headVersion: 0 };
+  }
+
+  /**
+   * Persist the current and head version pointers.
+   */
+  async setVersions(
+    currentVersion: number,
+    headVersion: number
+  ): Promise<void> {
+    if (!this.db) {
+      throw new Error('Database not initialized');
+    }
+    await this.db.put('meta', { key: 'versions', currentVersion, headVersion });
+  }
+
+  /**
+   * Delete all patches with a version greater than the given version.
+   */
+  async deletePatchesAfter(version: number): Promise<void> {
+    if (!this.db) {
+      throw new Error('Database not initialized');
+    }
+    const range = IDBKeyRange.lowerBound(version, true); // exclusive
+    const tx = this.db.transaction('patches', 'readwrite');
+    let cursor = await tx.store.openCursor(range);
+    while (cursor) {
+      await cursor.delete();
+      cursor = await cursor.continue();
+    }
+    await tx.done;
+  }
+
+  /**
+   * Get a single patch by its version number.
+   */
+  async getPatch(version: number): Promise<PatchRecord | undefined> {
+    if (!this.db) {
+      throw new Error('Database not initialized');
+    }
+    return this.db.get('patches', version);
   }
 
   /**

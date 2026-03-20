@@ -183,7 +183,46 @@ The label already reads "Browse" in the UI but the underlying identifiers still 
   - Ctrl+Shift+Z redoes → UI reflects
   - Multiple undo/redo cycles work correctly
 
-### Phase 5 — Changes Tab (Read-Only History)
+### Phase 5 — Refactor Undo/Redo to Version-Pointer Model ✅
+
+The Phase 4 implementation used in-memory `undoStack`/`redoStack`. This phase replaces that with a persistent version-pointer model so undo/redo state survives page refresh.
+
+**Schema changes (DB version 4 → 5)**
+- [x] Bump `CONFIG.DB_VERSION` from `4` → `5` in `src/config.ts`
+- [x] Add `meta` object store in the DB upgrade handler (keyPath: `'key'`, no autoIncrement)
+- [x] Update `GTFSDBSchema` in `gtfs-database.ts` to include `meta` store type
+- [x] Add `GTFSDatabase` methods:
+  - `getVersions(): Promise<{ currentVersion: number; headVersion: number }>`
+  - `setVersions(currentVersion: number, headVersion: number): Promise<void>`
+  - `deletePatchesAfter(version: number): Promise<void>`
+  - `getPatch(version: number): Promise<PatchRecord | undefined>`
+
+**Patch type changes (`src/types/patch.ts`)**
+- [x] Remove `description` field from `GTFSPatch` and `PatchRecord`
+- [x] Add `source: { table: string; id: string; col?: string }` to `GTFSPatch`
+- [x] Replace per-op fields with explicit `forward: PatchData` and `inverse: PatchData`
+- [x] Add `PatchData` discriminated union type
+
+**PatchManager refactor (`src/modules/patch-manager.ts`)**
+- [x] Replace `undoStack`/`redoStack` with `currentVersion`/`headVersion` pointers
+- [x] Remove `MAX_UNDO_HISTORY` cap from config and usage
+- [x] `initialize()` reads `meta` versions and replays only up to `currentVersion`
+- [x] `recordInsert` / `recordUpdate` / `recordDelete` — no `description` param; builds `forward`+`inverse`; truncates future on edit-after-undo; persists versions
+- [x] `undo()` / `redo()` — look up patch by version number, persist updated pointers
+- [x] `applyPatchForward` / `applyPatchInverse` — read from `patch.forward` / `patch.inverse`
+- [x] `getHistory()` — annotates each record with `applied: boolean`
+- [x] `maybeSnapshot()` — uses `currentVersion` instead of stack length
+- [x] `description` args removed from all call sites in `gtfs-parser.ts` and `editor.ts`
+- [x] Run `npm run typecheck` and `npm run lint` — zero errors in changed files
+- [x] `npm run build` — clean build
+- [x] User confirmed working
+
+**Also fixed (discovered during testing)**
+- [x] `map-controller.ts`: removed blocking `await routeRenderer.ensureInitialized()` from startup — UI button handlers now register immediately regardless of tile load speed
+- [x] `gtfs-parser.ts` (`parseFromURL`): improved CORS/network error messages with console logging
+- [x] `ui.ts`: fixed `e.target` → `e.currentTarget` on example feed buttons; added click-time console logging
+
+### Phase 6 — Changes Tab
 - [ ] Add a new tab between "Files" and "Help" in `index.html`:
   - Radio: `id="changes-tab-radio"`, `name="main_tabs"`
   - Label: "Changes"
@@ -191,19 +230,30 @@ The label already reads "Browse" in the UI but the underlying identifiers still 
 - [ ] Create `src/modules/history-controller.ts` — `HistoryController` class
 - [ ] `initialize(patchManager: PatchManager)` — renders patch list into `#changes-panel`
 - [ ] `render()` — fetches `patchManager.getHistory()`, builds a DaisyUI-styled list:
-  - Each item: timestamp (relative, e.g. "2 min ago"), operation badge (`insert` / `update` / `delete`), table name, record id, description
+  - Each item: timestamp (relative, e.g. "2 min ago"), operation badge (`insert` / `update` / `delete`), table name, record id
+  - Derive human-readable label from `patch.source` (e.g. "Edited stop_name in stops / stop_123", "Created stop stop_456")
+  - Visually distinguish applied vs undone patches (undone items dimmed / struck-through)
+  - Highlight the current version entry (the most recently applied patch)
   - Use DaisyUI `badge` component for op type with semantic colours (success/warning/error)
   - Empty state: "No changes yet" with a subtle icon
+- [ ] **Click-to-rollback**: clicking any entry calls `patchManager.jumpToVersion(version)`:
+  - Implement `jumpToVersion(target: number)` on `PatchManager`:
+    - If `target < currentVersion`: replay inverses from `currentVersion` down to `target + 1`
+    - If `target > currentVersion`: replay forwards from `currentVersion + 1` up to `target`
+    - Set `currentVersion = target`, persist via `db.setVersions(currentVersion, headVersion)`
+    - Emit a `'jump'` event for UI refresh
+  - After jump: refresh `Editor` table view and `MapController.updateMap()` (same as undo/redo)
 - [ ] Auto-refresh `render()` after each `recordInsert` / `recordUpdate` / `recordDelete`
-- [ ] Auto-refresh after undo/redo
+- [ ] Auto-refresh after undo/redo/jump (listen to `'undo'` / `'redo'` / `'jump'` events from `PatchManager`)
 - [ ] Instantiate `HistoryController` in `GTFSEditor`
 - [ ] Update `TabManager.switchToTab` callers to be aware of new `'changes'` tab if needed
 - [ ] Run `npm run typecheck` and `npm run lint` — zero errors
 - [ ] User confirms:
-  - Tab appears in correct order: Browse | Files | Changes | Help (Browse rename was done in Phase 0.5)
+  - Tab appears in correct order: Browse | Files | Changes | Help
   - After editing, Changes tab shows entries
-  - Undo removes the entry (or marks it undone)
-  - Read-only — no click-to-rollback UI yet
+  - Clicking an earlier entry rolls state back; map and table update
+  - Clicking a struck-through (undone) entry re-applies up to that point
+  - Ctrl+Z / Ctrl+Shift+Z and clicking in the tab stay in sync
 
 ---
 
@@ -214,7 +264,7 @@ The label already reads "Browse" in the UI but the underlying identifiers still 
 | `src/config.ts` | **New** — all magic numbers |
 | `src/types/patch.ts` | **New** — patch/snapshot types |
 | `src/modules/patch-manager.ts` | **New** — core patch engine |
-| `src/modules/history-controller.ts` | **New** — Changes tab UI |
+| `src/modules/history-controller.ts` | **New** — Changes tab UI (Phase 6) |
 | `src/modules/editor.ts` | **Remove** CodeMirror; table-only |
 | `src/modules/gtfs-database.ts` | Add `patches`/`snapshots` stores, new methods |
 | `src/modules/gtfs-parser.ts` | Emit patches from `createStop`, `updateStopCoordinates` |
@@ -248,19 +298,33 @@ async function compress(data: string): Promise<string> {
 }
 ```
 
-### Patch format for `update`
+### Patch format
+Each patch stores both directions so neither side needs to be recomputed at undo/redo time:
 ```typescript
 {
-  op: 'update',
-  table: 'stops',
-  id: 'stop_123',
-  changes: {
-    stop_name: ['Old Name', 'New Name'],
-    stop_lat:  [37.774, 37.775],
-  }
+  op: 'update',                          // canonical op
+  source: { table: 'stops', id: 'stop_123', col: 'stop_name' },
+  forward: { changes: { stop_name: 'New Name', stop_lat: 37.775 } },
+  inverse: { changes: { stop_name: 'Old Name', stop_lat: 37.774 } },
+}
+
+// insert — forward applies the record; inverse deletes it
+{
+  op: 'insert',
+  source: { table: 'stops', id: 'stop_456' },
+  forward: { record: { stop_id: 'stop_456', ... } },
+  inverse: { id: 'stop_456' },
+}
+
+// delete — forward removes; inverse re-inserts
+{
+  op: 'delete',
+  source: { table: 'stops', id: 'stop_789' },
+  forward: { id: 'stop_789' },
+  inverse: { record: { stop_id: 'stop_789', ... } },
 }
 ```
-Inverse is simply swapping `[before, after]` → `[after, before]`.
+Human-readable labels are derived from `source` at render time — no `description` field stored.
 
 ### DB version bump
 Current: `dbVersion = 3`. Phase 2 bumps to `4`. The `upgrade` callback adds two new stores; existing GTFS data is untouched (clean start means the old data is gone anyway, but upgrade is non-destructive by design).
@@ -268,8 +332,14 @@ Current: `dbVersion = 3`. Phase 2 bumps to `4`. The `upgrade` callback adds two 
 ### Table name derivation in `Editor.flushPendingUpdates`
 Current code does `fileName.replace('.txt', 's')` — this is brittle. In Phase 4, use the same `getTableName()` helper from `GTFSParser` (strip `.txt`) which is already correct.
 
-### Undo stack & patch retention
-Patches are kept indefinitely in IndexedDB — never pruned. The in-memory undo/redo stacks are session-only and capped at `CONFIG.MAX_UNDO_HISTORY` to bound memory use. The stacks are pointer/version references; the authoritative record is always the `patches` store.
+### Undo/redo model (version pointers)
+Two integers drive the system: `currentVersion` (where we are now) and `headVersion` (the furthest-forward patch ever written). Both are persisted in the `meta` IndexedDB store so undo/redo state survives refresh.
+
+- **Undo**: apply `patch.inverse` at `currentVersion`, decrement `currentVersion`.
+- **Redo**: apply `patch.forward` at `currentVersion + 1`, increment `currentVersion`.
+- **Edit after undo**: truncate patches after `currentVersion` (`deletePatchesAfter`), reset `headVersion = currentVersion`, then append normally. Linear history — no branching.
+
+Patches are never pruned (except when truncated by an edit-after-undo). `CONFIG.MAX_UNDO_HISTORY` is no longer needed and can be removed.
 
 ---
 
@@ -282,4 +352,4 @@ npm run lint        # zero warnings
 npm run build       # clean build
 ```
 
-Playwright tests (`npm test`) should be run after Phase 4 to catch regressions in the edit flow.
+Playwright tests (`npm test`) should be run after Phase 5 to catch regressions in the edit flow.
