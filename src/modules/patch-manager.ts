@@ -239,6 +239,41 @@ export class PatchManager {
     return this.currentVersion;
   }
 
+  async revertPatch(version: number): Promise<void> {
+    const record = await this.db.getPatch(version);
+    if (!record) {
+      return;
+    }
+    const { patch } = record;
+
+    let inverted: GTFSPatch;
+    if (patch.op === 'update') {
+      inverted = {
+        op: 'update',
+        source: patch.source,
+        forward: patch.inverse,
+        inverse: patch.forward,
+      };
+    } else if (patch.op === 'insert') {
+      inverted = {
+        op: 'delete',
+        source: patch.source,
+        forward: patch.inverse,
+        inverse: patch.forward,
+      };
+    } else {
+      inverted = {
+        op: 'insert',
+        source: patch.source,
+        forward: patch.inverse,
+        inverse: patch.forward,
+      };
+    }
+
+    await this.applyPatchForward(inverted);
+    await this.appendAndPush(inverted);
+  }
+
   async jumpToVersion(target: number): Promise<void> {
     if (target === this.currentVersion) {
       return;

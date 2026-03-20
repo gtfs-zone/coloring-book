@@ -114,6 +114,11 @@ export interface ContentRendererDependencies {
       before: Record<string, unknown>,
       after: Record<string, unknown>
     ) => Promise<void>;
+    recordInsert: (
+      table: string,
+      id: string,
+      record: Record<string, unknown>
+    ) => Promise<void>;
   };
 
   // Parser for reading in-memory GTFS data (used by patch bridge)
@@ -450,8 +455,6 @@ export class PageContentRenderer {
     // Update AgencyViewController dependencies in case database became available
     const agencyViewDependencies: AgencyViewDependencies = {
       gtfsDatabase: this.dependencies.gtfsDatabase,
-      patchManager: this.dependencies.patchManager,
-      parser: this.dependencies.parser,
       onRouteClick: this.dependencies.onRouteClick,
     };
     this.agencyViewController.updateDependencies(agencyViewDependencies);
@@ -791,7 +794,8 @@ export class PageContentRenderer {
         if (this.dependencies.onEntityCreated) {
           this.dependencies.onEntityCreated();
         }
-      }
+      },
+      this.dependencies.patchManager
     );
 
     // Find all inline creation inputs
