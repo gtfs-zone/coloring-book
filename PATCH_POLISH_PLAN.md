@@ -1,0 +1,175 @@
+# Patch System Polish — Implementation Plan
+
+## Overview
+
+Follow-on to the completed patch architecture. Phase 6 (Changes tab) is live. This plan addresses four rough edges:
+
+1. **Wiring gap** — most form inputs (e.g. `feed_default_lang` in feed_info) never record patches. Only agency view and the table editor do. The fix must be abstracted — not manually added per-controller.
+2. **No feedback** — no notifications or console logging on any patch event.
+3. **Thin Changes tab** — entries show `table / id` only; no before/after field values, no Undo button in the UI.
+4. **No baseline** — no affordance to revert all the way back to the initial feed load state.
+
+---
+
+## Architecture Notes
+
+### Why the wiring gap exists
+
+| Code path | Patch recorded? | How |
+|---|---|---|
+| `editor.ts` `flushPendingUpdates()` | ✅ | Calls `patchManager.recordUpdate()` explicitly |
+| `agency-view-controller.ts` | ✅ | Uses `attachFormPatchListeners()` bridge (Phase 1 done) |
+| `page-content-renderer.ts` feed_info | ✅ | Uses `attachFormPatchListeners()` bridge (Phase 1 done) |
+| Any future browse-view controller | ✅ by default | Call `attachFormPatchListeners()` after rendering |
+
+### Fix strategy
+
+All browse-view form fields already render with `data-field` and `data-table` attributes. The missing piece is a `data-record-id` attribute so a centralized handler can identify which record to update. With that in place, a single utility (`attachFormPatchListeners`) can handle patch recording for any form generically.
+
+`patchManager.recordUpdate()` → `applyPatchForward()` → updates both parser memory AND IndexedDB. Controllers can stop calling `gtfsDatabase.updateRow()` separately.
+
+---
+
+## Checklist
+
+### Phase 1 — Centralized Form Patch Bridge ✅
+
+**New file: `src/utils/form-patch-bridge.ts`**
+- [x] Export `interface FormPatchDeps { patchManager; parser }` (structural types, not class imports)
+- [x] Export `function attachFormPatchListeners(container: HTMLElement, deps: FormPatchDeps): void`
+  - Queries `input[data-field][data-table][data-record-id]`, `select[...]`, `textarea[...]` inside `container`
+  - For each element, attaches a `change` listener:
+    - Read `rawTable` from `data-table` (e.g. `"agency.txt"`), strip `.txt` for `table`, read `field` and `recordId`
+    - Look up before value via `deps.parser.getFileDataSync(rawTable)` + `GTFS_PRIMARY_KEYS[rawTable]`
+    - If `before === newValue`, return early (no-op)
+    - Call `deps.patchManager.recordUpdate(table, recordId, { [field]: before }, { [field]: newValue })`
+
+**Add `data-record-id` to rendered form inputs**
+- [x] `src/utils/field-component.ts` — added `recordId?: string` to `FieldConfig`; emits `data-record-id` on all three renderers (`renderTextInput`, `renderSelectInput`, `renderTextareaInput`)
+- [x] `src/modules/agency-view-controller.ts` — `.map(c => ({ ...c, recordId: this.currentAgencyId ?? '' }))` on generated configs
+- [x] `src/modules/page-content-renderer.ts` — `.map(c => ({ ...c, recordId: 'feed_info' }))` on generated configs
+
+**Migrate AgencyViewController**
+- [x] Removed `updateAgencyProperty()` entirely
+- [x] Removed agency field wiring block in `addEventListeners()`; kept route-item click wiring
+- [x] Removed `fieldValues: Map<string, string>` (no longer needed)
+- [x] Removed `getFieldDisplayName()` (no longer needed)
+- [x] Removed unused `notifications` import
+- [x] Added `parser?` to `AgencyViewDependencies`; fixed `patchManager` to 4-param signature
+- [x] `addEventListeners()` now calls `attachFormPatchListeners()` when both deps are available
+
+**Migrate PageContentRenderer**
+- [x] Removed `updateFeedInfoProperty()`
+- [x] Removed `addFeedInfoEventListeners()` and its call site
+- [x] Replaced with inline `attachFormPatchListeners()` call in `addEventListeners()`
+- [x] Removed unused `convertValueToGTFS` and `GTFSFieldType` imports
+- [x] Added `parser?` to `ContentRendererDependencies`; fixed `patchManager` to 4-param signature
+- [x] Threads `parser` through to `AgencyViewDependencies` in `renderAgency()`
+- [x] `src/modules/browse-navigation.ts` — fixed `patchManager` to 4-param; passes `gtfsRelationshipsInstance.gtfsParser` as `parser`
+
+**Verify Phase 1**
+- [x] `npm run typecheck` — no new errors (pre-existing errors in `index.ts` and `gtfs-database.ts` unchanged)
+- [x] `npm run lint` — zero errors in changed files
+- [x] `npm run build` — clean build (✓ 148 modules, 3.29s)
+- [x] Edit `feed_default_lang` → entry appears in Changes tab immediately
+- [x] Refresh → value persists
+- [x] Edit agency name → still recorded, no duplicate entry in Changes tab
+
+---
+
+### Phase 2 — Verbose Notifications + Console Logging
+
+**New file: `src/utils/patch-label.ts`**
+- [ ] Export `function humanLabel(patch: GTFSPatch | undefined): string`:
+  - `op === 'update'`: `"Updated ${fields} in ${source.table} / ${source.id}"` where `fields` = `source.col ?? Object.keys((forward as {changes:...}).changes).join(', ')`
+  - `op === 'insert'`: `"Created ${source.table} / ${source.id}"`
+  - `op === 'delete'`: `"Deleted ${source.table} / ${source.id}"`
+  - Fallback for undefined patch: `"Unknown change"`
+
+**Update patch event system (`src/modules/patch-manager.ts`)**
+- [ ] Update `PatchEventListener` type: `type PatchEventListener = (record?: PatchRecord) => void`
+- [ ] Update `emit()` private method to accept and forward an optional `PatchRecord` payload
+- [ ] In `appendAndPush()`: emit `'change'` with the freshly persisted `PatchRecord`
+- [ ] In `undo()`: emit `'undo'` with the patch record that was just inversed
+- [ ] In `redo()`: emit `'redo'` with the patch record that was just applied forward
+- [ ] In `jumpToVersion()`: emit `'jump'` (no specific record needed — it's a bulk operation)
+- [ ] Update all existing `on()` / `emit()` call sites that pass `PatchEventListener` to match the new signature
+
+**Wire notifications in `src/index.ts`**
+- [ ] Import `humanLabel` from `src/utils/patch-label.ts`
+- [ ] Add listener: `patchManager.on('change', (r) => { console.log('[patch:change]', r); notifications.showInfo(humanLabel(r?.patch), { duration: 3000 }); })`
+- [ ] Add listener: `patchManager.on('undo', (r) => { console.log('[patch:undo]', r); notifications.showInfo(\`Undone: ${humanLabel(r?.patch)}\`, { duration: 3000 }); })`
+- [ ] Add listener: `patchManager.on('redo', (r) => { console.log('[patch:redo]', r); notifications.showInfo(\`Redone: ${humanLabel(r?.patch)}\`, { duration: 3000 }); })`
+
+**Update HistoryController to use new listener signature**
+- [ ] `src/modules/history-controller.ts` — update the `on('undo', rerender)` etc. lambdas to accept the optional record param (even if ignored): `patchManager.on('undo', () => rerender())`
+
+**Verify Phase 2**
+- [ ] `npm run typecheck` — zero errors
+- [ ] `npm run lint` — zero warnings
+- [ ] `npm run build` — clean build
+- [ ] Edit any field → toast appears, browser console logs `[patch:change]` with full record
+- [ ] Ctrl+Z → toast "Undone: …", console logs `[patch:undo]`
+- [ ] Ctrl+Shift+Z → toast "Redone: …", console logs `[patch:redo]`
+
+---
+
+### Phase 3 — Enhanced Changes Tab + UI Buttons
+
+**Inline before/after field diffs (`src/modules/history-controller.ts`)**
+- [ ] Import `humanLabel` from `src/utils/patch-label.ts`; replace the `labelFor()` function with it
+- [ ] Add `function renderFieldDiffs(patch: GTFSPatch): string` helper:
+  - For `update`: iterate `Object.entries((patch.inverse as { changes: ... }).changes)`, render each field as `<div class="text-xs"><span class="opacity-60">${field}:</span> <span class="line-through opacity-50">"${before}"</span> → <span>"${after}"</span></div>`; get after from `(patch.forward as { changes: ... }).changes[field]`
+  - For `insert`: iterate fields of `(patch.forward as { record: ... }).record`, show `<div class="text-xs"><span class="opacity-60">${field}:</span> "${value}"</div>` for the first 3–4 fields (truncate with "…" to avoid overflow)
+  - For `delete`: same but from `(patch.inverse as { record: ... }).record`
+- [ ] In `render()`, inside the patch list loop, append the `renderFieldDiffs(patch)` HTML beneath the existing badge + label row for each entry
+
+**"Undo on top" button**
+- [ ] In `render()`, before the patch list, prepend a toolbar:
+  ```html
+  <div class="flex justify-end p-2">
+    <button id="undo-top-btn" class="btn btn-sm btn-ghost gap-1">↩ Undo</button>
+  </div>
+  ```
+- [ ] After inserting into the DOM, wire `#undo-top-btn` click → `this.patchManager.undo()`
+- [ ] Disable the button (add `disabled` attribute) when `currentVersion === 0` — expose `getCurrentVersion(): number` on `PatchManager` if not already public
+
+**Feed load baseline entry**
+- [ ] In `render()`, after the patch list `<ul>`, append a static synthetic entry at the bottom:
+  ```html
+  <li class="flex items-center gap-2 px-3 py-2 opacity-50 border-t border-base-300">
+    <span class="badge badge-ghost badge-sm">origin</span>
+    <span class="flex-1 text-sm">Feed loaded</span>
+    <button id="revert-all-btn" class="btn btn-xs btn-ghost">Revert all</button>
+  </li>
+  ```
+- [ ] Wire `#revert-all-btn` click → `this.patchManager.jumpToVersion(0)`
+- [ ] No DB or PatchManager changes required — `jumpToVersion(0)` already works correctly
+
+**Expose `getCurrentVersion()` on PatchManager if needed**
+- [ ] `src/modules/patch-manager.ts` — add `getCurrentVersion(): number { return this.currentVersion; }` if the Undo button needs to check it
+
+**Verify Phase 3**
+- [ ] `npm run typecheck` — zero errors
+- [ ] `npm run lint` — zero warnings
+- [ ] `npm run build` — clean build
+- [ ] Changes tab shows field diffs inline (e.g. `feed_default_lang: "en" → "fr"`)
+- [ ] "↩ Undo" button is enabled when patches exist, disabled at version 0
+- [ ] Clicking "↩ Undo" undoes the last patch; tab re-renders
+- [ ] "Feed loaded" entry always visible at bottom
+- [ ] Clicking "Revert all" rolls back to initial state; map and table refresh
+
+---
+
+## Key File Map
+
+| File | Change |
+|---|---|
+| `src/utils/form-patch-bridge.ts` | **New** — centralized form input patch listener |
+| `src/utils/patch-label.ts` | **New** — `humanLabel()` shared across notifications and Changes tab |
+| `src/utils/field-component.ts` | Add `recordId` param; emit `data-record-id` on inputs |
+| `src/modules/agency-view-controller.ts` | Remove `updateAgencyProperty()` + manual wiring; use bridge |
+| `src/modules/page-content-renderer.ts` | Remove `updateFeedInfoProperty()` + manual wiring; use bridge |
+| `src/modules/patch-manager.ts` | Event payload signature; expose `getCurrentVersion()` |
+| `src/modules/history-controller.ts` | Field diffs, Undo button, Feed load baseline entry |
+| `src/index.ts` | Add notification listeners for change/undo/redo |

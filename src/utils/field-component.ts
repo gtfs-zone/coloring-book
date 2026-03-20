@@ -58,6 +58,8 @@ export interface FieldConfig {
   inputClasses?: string;
   /** Whether the field is readonly (typically for primary keys) */
   readonly?: boolean;
+  /** Record identifier used for patch tracking (e.g. agency_id value, or 'feed_info') */
+  recordId?: string;
   /** GTFS field type for specialized handling */
   gtfsFieldType?: GTFSFieldType;
 }
@@ -172,6 +174,7 @@ function renderTextInput(config: FieldConfig, inputId: string): string {
       class="input"
       data-field="${config.field}"
       ${config.tableName ? `data-table="${config.tableName}"` : ''}
+      ${config.recordId !== undefined ? `data-record-id="${escapeHtml(config.recordId)}"` : ''}
       ${config.gtfsFieldType ? `data-gtfs-type="${config.gtfsFieldType}"` : ''}
       value="${escapeHtml(displayValue)}"
       placeholder="${escapeHtml(config.placeholder || '')}"
@@ -213,6 +216,7 @@ function renderSelectInput(config: FieldConfig, inputId: string): string {
       class="select"
       data-field="${config.field}"
       ${config.tableName ? `data-table="${config.tableName}"` : ''}
+      ${config.recordId !== undefined ? `data-record-id="${escapeHtml(config.recordId)}"` : ''}
       ${config.required ? 'required' : ''}
       ${config.readonly ? 'disabled' : ''}
     >
@@ -237,6 +241,7 @@ function renderTextareaInput(config: FieldConfig, inputId: string): string {
       class="textarea"
       data-field="${config.field}"
       ${config.tableName ? `data-table="${config.tableName}"` : ''}
+      ${config.recordId !== undefined ? `data-record-id="${escapeHtml(config.recordId)}"` : ''}
       placeholder="${escapeHtml(config.placeholder || '')}"
       ${config.required ? 'required' : ''}
       ${config.readonly ? 'disabled' : ''}

@@ -24,9 +24,12 @@ import {
   generateFieldConfigsFromSchema,
 } from '../utils/field-component.js';
 import { FeedInfoSchema, RoutesSchema, GTFS_TABLES } from '../types/gtfs.js';
-import { convertValueToGTFS } from '../utils/field-formatters.js';
-import { GTFSFieldType } from '../types/gtfs-field-types.js';
 import { InlineEntityCreator } from '../utils/inline-entity-creator.js';
+import {
+  attachFormPatchListeners,
+  type FormPatchDeps,
+} from '../utils/form-patch-bridge.js';
+import type { GTFSDatabaseRecord } from './gtfs-database.js';
 import { notifications } from './notification-system.js';
 
 /**
@@ -109,9 +112,13 @@ export interface ContentRendererDependencies {
       table: string,
       id: string,
       before: Record<string, unknown>,
-      after: Record<string, unknown>,
-      description: string
+      after: Record<string, unknown>
     ) => Promise<void>;
+  };
+
+  // Parser for reading in-memory GTFS data (used by patch bridge)
+  parser?: {
+    getFileDataSync: (fileName: string) => GTFSDatabaseRecord[] | null;
   };
 }
 
@@ -414,7 +421,7 @@ export class PageContentRenderer {
       FeedInfoSchema,
       feedInfo,
       GTFS_TABLES.FEED_INFO
-    );
+    ).map((c) => ({ ...c, recordId: 'feed_info' }));
 
     // Render all fields using the reusable field component
     const fieldsHtml = renderFormFields(fieldConfigs);
@@ -444,6 +451,7 @@ export class PageContentRenderer {
     const agencyViewDependencies: AgencyViewDependencies = {
       gtfsDatabase: this.dependencies.gtfsDatabase,
       patchManager: this.dependencies.patchManager,
+      parser: this.dependencies.parser,
       onRouteClick: this.dependencies.onRouteClick,
     };
     this.agencyViewController.updateDependencies(agencyViewDependencies);
@@ -751,47 +759,20 @@ export class PageContentRenderer {
     // It will only attach to service-related elements
     this.serviceViewController.addEventListeners(container);
 
-    // Add feed_info field event listeners
-    this.addFeedInfoEventListeners(container);
+    // Add feed_info field patch listeners via bridge
+    if (this.dependencies.patchManager && this.dependencies.parser) {
+      const patchDeps: FormPatchDeps = {
+        patchManager: this.dependencies.patchManager,
+        parser: this.dependencies.parser,
+      };
+      attachFormPatchListeners(container, patchDeps);
+    }
 
     // Add inline entity creation event listeners
     this.addInlineCreationListeners(container);
 
     // Add service selection dropdown listener
     this.addServiceSelectionListener(container);
-  }
-
-  /**
-   * Add event listeners for feed_info fields
-   */
-  private addFeedInfoEventListeners(container: HTMLElement): void {
-    const feedInfoFields = container.querySelectorAll(
-      '[data-field][data-table="feed_info.txt"]'
-    );
-
-    feedInfoFields.forEach((input) => {
-      const field = input.getAttribute('data-field');
-      if (!field) {
-        return;
-      }
-
-      const handleUpdate = async () => {
-        let value = (
-          input as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement
-        ).value;
-
-        // Convert value to GTFS format if a GTFS field type is specified
-        const gtfsType = input.getAttribute('data-gtfs-type');
-        if (gtfsType) {
-          value = convertValueToGTFS(value, gtfsType as GTFSFieldType);
-        }
-
-        await this.updateFeedInfoProperty(field, value);
-      };
-
-      // Use 'change' event to fire when value changes and element loses focus
-      input.addEventListener('change', handleUpdate);
-    });
   }
 
   /**
@@ -849,33 +830,6 @@ export class PageContentRenderer {
         }
       });
     });
-  }
-
-  /**
-   * Update a feed_info property in the database
-   */
-  private async updateFeedInfoProperty(
-    field: string,
-    value: string
-  ): Promise<void> {
-    if (!this.dependencies.gtfsDatabase) {
-      console.error('Database not available');
-      return;
-    }
-
-    try {
-      // For single-row tables like feed_info, use the table name as the key
-      await this.dependencies.gtfsDatabase.updateRow('feed_info', 'feed_info', {
-        [field]: value,
-      });
-
-      notifications.showSuccess(`Updated ${field}`);
-    } catch (error) {
-      console.error('Error updating feed_info property:', error);
-      notifications.showError(
-        `Failed to update ${field}: ${error instanceof Error ? error.message : 'Unknown error'}`
-      );
-    }
   }
 
   /**
