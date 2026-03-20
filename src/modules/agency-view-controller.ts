@@ -11,11 +11,6 @@ import {
   generateFieldConfigsFromSchema,
 } from '../utils/field-component.js';
 import { GTFS_TABLES, AgencySchema } from '../types/gtfs.js';
-import {
-  attachFormPatchListeners,
-  type FormPatchDeps,
-} from '../utils/form-patch-bridge.js';
-import type { GTFSDatabaseRecord } from './gtfs-database.js';
 
 export interface AgencyViewDependencies {
   gtfsDatabase?: {
@@ -28,17 +23,6 @@ export interface AgencyViewDependencies {
       key: string,
       data: Record<string, unknown>
     ) => Promise<void>;
-  };
-  patchManager?: {
-    recordUpdate: (
-      table: string,
-      id: string,
-      before: Record<string, unknown>,
-      after: Record<string, unknown>
-    ) => Promise<void>;
-  };
-  parser?: {
-    getFileDataSync: (fileName: string) => GTFSDatabaseRecord[] | null;
   };
   onRouteClick: (route_id: string) => void;
 }
@@ -276,15 +260,6 @@ export class AgencyViewController {
    * Add event listeners for interactive elements
    */
   addEventListeners(container: HTMLElement): void {
-    // Attach patch listeners for all agency fields with record IDs
-    if (this.dependencies.patchManager && this.dependencies.parser) {
-      const patchDeps: FormPatchDeps = {
-        patchManager: this.dependencies.patchManager,
-        parser: this.dependencies.parser,
-      };
-      attachFormPatchListeners(container, patchDeps);
-    }
-
     // Route item clicks
     const routeItems = container.querySelectorAll('.route-item');
     routeItems.forEach((item) => {

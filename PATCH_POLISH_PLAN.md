@@ -108,51 +108,38 @@ All browse-view form fields already render with `data-field` and `data-table` at
 - [x] `npm run typecheck` — zero new errors (pre-existing errors in `index.ts` and `gtfs-database.ts` unchanged)
 - [x] `npm run lint` — zero errors in changed files (pre-existing `no-console` warnings only)
 - [x] `npm run build` — clean build (✓ 149 modules, 3.30s)
-- [ ] Edit any field → toast appears, browser console logs `[patch:change]` with full record
-- [ ] Ctrl+Z → toast "Undone: …", console logs `[patch:undo]`
-- [ ] Ctrl+Shift+Z → toast "Redone: …", console logs `[patch:redo]`
+- [x] Edit any field → toast appears, browser console logs `[patch:change]` with full record
+- [x] Ctrl+Z → toast "Undone: …", console logs `[patch:undo]`
+- [x] Ctrl+Shift+Z → toast "Redone: …", console logs `[patch:redo]`
 
 ---
 
-### Phase 3 — Enhanced Changes Tab + UI Buttons
+### Phase 3 — Enhanced Changes Tab + UI Buttons ✅
 
 **Inline before/after field diffs (`src/modules/history-controller.ts`)**
-- [ ] Import `humanLabel` from `src/utils/patch-label.ts`; replace the `labelFor()` function with it
-- [ ] Add `function renderFieldDiffs(patch: GTFSPatch): string` helper:
-  - For `update`: iterate `Object.entries((patch.inverse as { changes: ... }).changes)`, render each field as `<div class="text-xs"><span class="opacity-60">${field}:</span> <span class="line-through opacity-50">"${before}"</span> → <span>"${after}"</span></div>`; get after from `(patch.forward as { changes: ... }).changes[field]`
-  - For `insert`: iterate fields of `(patch.forward as { record: ... }).record`, show `<div class="text-xs"><span class="opacity-60">${field}:</span> "${value}"</div>` for the first 3–4 fields (truncate with "…" to avoid overflow)
-  - For `delete`: same but from `(patch.inverse as { record: ... }).record`
-- [ ] In `render()`, inside the patch list loop, append the `renderFieldDiffs(patch)` HTML beneath the existing badge + label row for each entry
+- [x] Import `humanLabel` from `src/utils/patch-label.ts`; replace the `labelFor()` function with it
+- [x] Add `function renderFieldDiffs(patch: GTFSPatch): string` helper:
+  - For `update`: renders each changed field as `before → after` with strikethrough on old value
+  - For `insert`/`delete`: shows first 4 fields of the record (truncates with "…" if more)
+- [x] In `render()`, inside the patch list loop, append `renderFieldDiffs(patch)` HTML beneath badge + label row
 
 **"Undo on top" button**
-- [ ] In `render()`, before the patch list, prepend a toolbar:
-  ```html
-  <div class="flex justify-end p-2">
-    <button id="undo-top-btn" class="btn btn-sm btn-ghost gap-1">↩ Undo</button>
-  </div>
-  ```
-- [ ] After inserting into the DOM, wire `#undo-top-btn` click → `this.patchManager.undo()`
-- [ ] Disable the button (add `disabled` attribute) when `currentVersion === 0` — expose `getCurrentVersion(): number` on `PatchManager` if not already public
+- [x] In `render()`, before the patch list, prepend a toolbar with `↩ Undo` button
+- [x] Wire button click → `this.patchManager.undo()`
+- [x] Disable the button when `currentVersion === 0` (uses existing `version` getter on PatchManager)
 
 **Feed load baseline entry**
-- [ ] In `render()`, after the patch list `<ul>`, append a static synthetic entry at the bottom:
-  ```html
-  <li class="flex items-center gap-2 px-3 py-2 opacity-50 border-t border-base-300">
-    <span class="badge badge-ghost badge-sm">origin</span>
-    <span class="flex-1 text-sm">Feed loaded</span>
-    <button id="revert-all-btn" class="btn btn-xs btn-ghost">Revert all</button>
-  </li>
-  ```
-- [ ] Wire `#revert-all-btn` click → `this.patchManager.jumpToVersion(0)`
-- [ ] No DB or PatchManager changes required — `jumpToVersion(0)` already works correctly
+- [x] In `render()`, after the patch list, append a static "Feed loaded" entry at the bottom (shown always, even in empty state)
+- [x] Wire `#revert-all-btn` click → `this.patchManager.jumpToVersion(0)`
+- [x] No DB or PatchManager changes required — `jumpToVersion(0)` already works correctly
 
 **Expose `getCurrentVersion()` on PatchManager if needed**
-- [ ] `src/modules/patch-manager.ts` — add `getCurrentVersion(): number { return this.currentVersion; }` if the Undo button needs to check it
+- [x] Not needed — existing `version` getter is sufficient
 
 **Verify Phase 3**
-- [ ] `npm run typecheck` — zero errors
-- [ ] `npm run lint` — zero warnings
-- [ ] `npm run build` — clean build
+- [x] `npm run typecheck` — zero new errors (pre-existing test file errors only)
+- [x] `npm run lint` — zero errors (pre-existing `no-console` warnings only)
+- [x] `npm run build` — clean build (✓ 3.71s)
 - [ ] Changes tab shows field diffs inline (e.g. `feed_default_lang: "en" → "fr"`)
 - [ ] "↩ Undo" button is enabled when patches exist, disabled at version 0
 - [ ] Clicking "↩ Undo" undoes the last patch; tab re-renders

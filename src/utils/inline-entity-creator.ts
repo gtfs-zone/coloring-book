@@ -11,11 +11,20 @@ import {
   createDefaultService,
 } from './default-values';
 
+interface PatchManagerLike {
+  recordInsert: (
+    table: string,
+    id: string,
+    record: Record<string, unknown>
+  ) => Promise<void>;
+}
+
 export class InlineEntityCreator {
   constructor(
     private database: GTFSDatabase,
     private notificationSystem: NotificationSystem,
-    private onEntityCreated: () => void
+    private onEntityCreated: () => void,
+    private patchManager?: PatchManagerLike
   ) {}
 
   /**
@@ -63,6 +72,11 @@ export class InlineEntityCreator {
       // Create new agency with defaults
       const newAgency = createDefaultAgency(trimmedId);
       await this.database.insertRows('agency', [newAgency]);
+      await this.patchManager?.recordInsert(
+        'agency',
+        trimmedId,
+        newAgency as unknown as Record<string, unknown>
+      );
 
       this.notificationSystem.show(`Agency "${trimmedId}" created`, 'success');
       this.onEntityCreated();
@@ -101,6 +115,11 @@ export class InlineEntityCreator {
       // Create new service with defaults
       const newService = createDefaultService(trimmedId);
       await this.database.insertRows('calendar', [newService]);
+      await this.patchManager?.recordInsert(
+        'calendar',
+        trimmedId,
+        newService as unknown as Record<string, unknown>
+      );
 
       this.notificationSystem.show(`Service "${trimmedId}" created`, 'success');
       this.onEntityCreated();
@@ -148,6 +167,11 @@ export class InlineEntityCreator {
       // Create new route with defaults
       const newRoute = createDefaultRoute(trimmedId, finalAgencyId);
       await this.database.insertRows('routes', [newRoute]);
+      await this.patchManager?.recordInsert(
+        'routes',
+        trimmedId,
+        newRoute as unknown as Record<string, unknown>
+      );
 
       this.notificationSystem.show(`Route "${trimmedId}" created`, 'success');
       this.onEntityCreated();
