@@ -22,6 +22,7 @@ import { PageStateManager } from './modules/page-state-manager';
 import { navigateToTimetable } from './modules/navigation-actions';
 import { PatchManager } from './modules/patch-manager';
 import { HistoryController } from './modules/history-controller';
+import { humanLabel } from './utils/patch-label';
 import './styles/main.css';
 
 declare global {
@@ -172,6 +173,24 @@ export class GTFSEditor {
       this.patchManager.on('undo', onUndoRedoJump);
       this.patchManager.on('redo', onUndoRedoJump);
       this.patchManager.on('jump', onUndoRedoJump);
+
+      // Patch notifications + console logging
+      this.patchManager.on('change', (r) => {
+        console.log('[patch:change]', r);
+        notifications.showInfo(humanLabel(r?.patch), { duration: 3000 });
+      });
+      this.patchManager.on('undo', (r) => {
+        console.log('[patch:undo]', r);
+        notifications.showInfo(`Undone: ${humanLabel(r?.patch)}`, {
+          duration: 3000,
+        });
+      });
+      this.patchManager.on('redo', (r) => {
+        console.log('[patch:redo]', r);
+        notifications.showInfo(`Redone: ${humanLabel(r?.patch)}`, {
+          duration: 3000,
+        });
+      });
 
       // Initialize keyboard shortcuts
       this.keyboardShortcuts.initialize();

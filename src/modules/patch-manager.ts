@@ -15,7 +15,7 @@ import {
 } from '../utils/gtfs-primary-keys.js';
 
 type PatchEventType = 'undo' | 'redo' | 'change' | 'jump';
-type PatchEventListener = () => void;
+type PatchEventListener = (record?: PatchRecord) => void;
 
 export class PatchManager {
   private db: GTFSDatabase;
@@ -210,7 +210,7 @@ export class PatchManager {
     await this.applyPatchInverse(record.patch);
     this.currentVersion--;
     await this.db.setVersions(this.currentVersion, this.headVersion);
-    this.emit('undo');
+    this.emit('undo', record);
   }
 
   async redo(): Promise<void> {
@@ -224,7 +224,7 @@ export class PatchManager {
     await this.applyPatchForward(record.patch);
     this.currentVersion++;
     await this.db.setVersions(this.currentVersion, this.headVersion);
-    this.emit('redo');
+    this.emit('redo', record);
   }
 
   get canUndo(): boolean {
@@ -289,19 +289,17 @@ export class PatchManager {
       await this.db.deletePatchesAfter(this.currentVersion);
       this.headVersion = this.currentVersion;
     }
-    const version = await this.db.appendPatch({
-      patch,
-      timestamp: Date.now(),
-    });
+    const timestamp = Date.now();
+    const version = await this.db.appendPatch({ patch, timestamp });
     this.currentVersion = version;
     this.headVersion = version;
     await this.db.setVersions(this.currentVersion, this.headVersion);
     await this.maybeSnapshot();
-    this.emit('change');
+    this.emit('change', { version, patch, timestamp });
   }
 
-  private emit(event: PatchEventType): void {
-    this.listeners.get(event)?.forEach((l) => l());
+  private emit(event: PatchEventType, record?: PatchRecord): void {
+    this.listeners.get(event)?.forEach((l) => l(record));
   }
 
   private findRecordIndex(

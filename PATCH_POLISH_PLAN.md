@@ -77,37 +77,37 @@ All browse-view form fields already render with `data-field` and `data-table` at
 
 ---
 
-### Phase 2 — Verbose Notifications + Console Logging
+### Phase 2 — Verbose Notifications + Console Logging ✅
 
 **New file: `src/utils/patch-label.ts`**
-- [ ] Export `function humanLabel(patch: GTFSPatch | undefined): string`:
+- [x] Export `function humanLabel(patch: GTFSPatch | undefined): string`:
   - `op === 'update'`: `"Updated ${fields} in ${source.table} / ${source.id}"` where `fields` = `source.col ?? Object.keys((forward as {changes:...}).changes).join(', ')`
   - `op === 'insert'`: `"Created ${source.table} / ${source.id}"`
   - `op === 'delete'`: `"Deleted ${source.table} / ${source.id}"`
   - Fallback for undefined patch: `"Unknown change"`
 
 **Update patch event system (`src/modules/patch-manager.ts`)**
-- [ ] Update `PatchEventListener` type: `type PatchEventListener = (record?: PatchRecord) => void`
-- [ ] Update `emit()` private method to accept and forward an optional `PatchRecord` payload
-- [ ] In `appendAndPush()`: emit `'change'` with the freshly persisted `PatchRecord`
-- [ ] In `undo()`: emit `'undo'` with the patch record that was just inversed
-- [ ] In `redo()`: emit `'redo'` with the patch record that was just applied forward
-- [ ] In `jumpToVersion()`: emit `'jump'` (no specific record needed — it's a bulk operation)
-- [ ] Update all existing `on()` / `emit()` call sites that pass `PatchEventListener` to match the new signature
+- [x] Update `PatchEventListener` type: `type PatchEventListener = (record?: PatchRecord) => void`
+- [x] Update `emit()` private method to accept and forward an optional `PatchRecord` payload
+- [x] In `appendAndPush()`: emit `'change'` with the freshly persisted `PatchRecord`
+- [x] In `undo()`: emit `'undo'` with the patch record that was just inversed
+- [x] In `redo()`: emit `'redo'` with the patch record that was just applied forward
+- [x] In `jumpToVersion()`: emit `'jump'` (no specific record needed — it's a bulk operation)
+- [x] Existing `on()` call sites (index.ts, history-controller.ts) are compatible — `() => void` is assignable to `(record?: PatchRecord) => void` in TypeScript
 
 **Wire notifications in `src/index.ts`**
-- [ ] Import `humanLabel` from `src/utils/patch-label.ts`
-- [ ] Add listener: `patchManager.on('change', (r) => { console.log('[patch:change]', r); notifications.showInfo(humanLabel(r?.patch), { duration: 3000 }); })`
-- [ ] Add listener: `patchManager.on('undo', (r) => { console.log('[patch:undo]', r); notifications.showInfo(\`Undone: ${humanLabel(r?.patch)}\`, { duration: 3000 }); })`
-- [ ] Add listener: `patchManager.on('redo', (r) => { console.log('[patch:redo]', r); notifications.showInfo(\`Redone: ${humanLabel(r?.patch)}\`, { duration: 3000 }); })`
+- [x] Import `humanLabel` from `src/utils/patch-label.ts`
+- [x] Add listener: `patchManager.on('change', (r) => { console.log('[patch:change]', r); notifications.showInfo(humanLabel(r?.patch), { duration: 3000 }); })`
+- [x] Add listener: `patchManager.on('undo', (r) => { console.log('[patch:undo]', r); notifications.showInfo(\`Undone: ${humanLabel(r?.patch)}\`, { duration: 3000 }); })`
+- [x] Add listener: `patchManager.on('redo', (r) => { console.log('[patch:redo]', r); notifications.showInfo(\`Redone: ${humanLabel(r?.patch)}\`, { duration: 3000 }); })`
 
 **Update HistoryController to use new listener signature**
-- [ ] `src/modules/history-controller.ts` — update the `on('undo', rerender)` etc. lambdas to accept the optional record param (even if ignored): `patchManager.on('undo', () => rerender())`
+- [x] No code change needed — `() => void` lambdas are structurally compatible with `(record?: PatchRecord) => void`
 
 **Verify Phase 2**
-- [ ] `npm run typecheck` — zero errors
-- [ ] `npm run lint` — zero warnings
-- [ ] `npm run build` — clean build
+- [x] `npm run typecheck` — zero new errors (pre-existing errors in `index.ts` and `gtfs-database.ts` unchanged)
+- [x] `npm run lint` — zero errors in changed files (pre-existing `no-console` warnings only)
+- [x] `npm run build` — clean build (✓ 149 modules, 3.30s)
 - [ ] Edit any field → toast appears, browser console logs `[patch:change]` with full record
 - [ ] Ctrl+Z → toast "Undone: …", console logs `[patch:undo]`
 - [ ] Ctrl+Shift+Z → toast "Redone: …", console logs `[patch:redo]`
