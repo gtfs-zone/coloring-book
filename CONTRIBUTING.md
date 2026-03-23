@@ -1,4 +1,4 @@
-# Contributing to gtfs.zone
+# Contributing to edit.gtfs.zone
 
 ## Commit Message Guidelines
 
@@ -55,40 +55,20 @@ refactor(utils): simplify field component logic
 
 ## Versioning
 
-This project uses **git tags** as the source of truth for versioning, with automatic version injection at build time.
-
-### How It Works
-
-- **package.json version**: Always stays at `0.0.0-development` (never conflicts!)
-- **Actual version**: Determined from git tags and commits using `git-describe`
-- **Version format**:
-  - On a tag: `0.0.18`
-  - Between tags: `0.0.18-12-ga1b2c3d` (12 commits since tag, hash a1b2c3d)
-  - No tags: `0.0.0-dev.a1b2c3d` (development with hash)
+This project uses [Commitizen](https://commitizen-tools.github.io/commitizen/) (`cz`) for versioning and changelog generation.
 
 ### Creating Releases
 
-When you're ready to release, create a git tag:
+When you're ready to release, run on `main`:
 
 ```bash
-# For the next version
-git tag v0.0.19
-git push origin v0.0.19
+cz bump
 ```
 
-This approach means:
-- ✅ Every build has a unique, identifiable version
-- ✅ No package.json merge conflicts ever
-- ✅ No manual version bumping in code
-- ✅ Easy to identify exactly which commit produced a build
-
-### Checking Version
-
-```bash
-npm run version
-```
-
-This will output the current version based on git history.
+This will:
+- Bump the version in `package.json` based on commit history
+- Update `CHANGELOG.md`
+- Create a git tag
 
 ## Development Workflow
 
@@ -96,7 +76,7 @@ This will output the current version based on git history.
 2. Make your changes
 3. Commit using `npm run commit` (this ensures proper commit format)
 4. Push your branch and create a pull request
-5. After merge to `main`, create a git tag for releases when ready
+5. After merge to `main`, run `cz bump` for releases when ready
 
 ## Git Hooks
 
