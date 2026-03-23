@@ -1,0 +1,34 @@
+name: Build and Deploy
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    runs-on: alpine-3.23
+
+    steps:
+      - name: Install dependencies
+        run: |
+          apk add --no-cache nodejs npm git
+
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          github-server-url: https://git.kcfam.us
+
+      - name: Install node modules
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Deploy
+        run: |
+          echo "Copying build to /sites/edit.gtfs.zone"
+          mkdir -p /sites/edit.gtfs.zone
+          rm -rf /sites/edit.gtfs.zone/*
+          cp -vr dist/. /sites/edit.gtfs.zone/
