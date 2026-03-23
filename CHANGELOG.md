@@ -1,3 +1,9 @@
+## v0.6.1 (2026-03-24)
+
+### Fix
+
+- make gtfsDatabase required in ContentRendererDependencies, remove null-guards
+
 ## v0.6.0 (2026-03-23)
 
 ### Feat
