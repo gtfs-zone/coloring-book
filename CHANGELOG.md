@@ -1,3 +1,23 @@
+## v0.6.0 (2026-03-23)
+
+### Feat
+
+- phase 6 complete of #3
+- phase 4 complete of #3
+- phase 3 of patches
+
+### Fix
+
+- fix compress stack overflow, revert refresh, snapshot perf, and stale docs
+- fix snapshot load
+- fix insert and duplicate issue
+- phase 2 #3
+- phase 1 of the follow on
+
+### Refactor
+
+- add config
+
 ## v0.5.2 (2026-03-19)
 
 ### Refactor
