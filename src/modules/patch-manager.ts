@@ -12,6 +12,7 @@ import {
   isNaturalKey,
   isCompositeKey,
   parseCompositeKey,
+  getGTFSPrimaryKey,
 } from '../utils/gtfs-primary-keys.js';
 
 type PatchEventType = 'undo' | 'redo' | 'change' | 'jump';
@@ -45,6 +46,9 @@ export class PatchManager {
 
       // Restore each GTFS table to DB and in-memory
       for (const [table, rows] of Object.entries(state)) {
+        if (!getGTFSPrimaryKey(table)) {
+          continue;
+        } // skip internal/unknown stores
         const fileName = `${table}.txt`;
         await this.db.clearTable(table);
         if (rows.length > 0) {
@@ -367,6 +371,9 @@ export class PatchManager {
     const state: GTFSState = {};
     for (const fileName of this.parser.getAllFileNames()) {
       const table = fileName.replace('.txt', '').replace('.geojson', '');
+      if (!getGTFSPrimaryKey(table)) {
+        continue;
+      } // skip internal/unknown stores
       const data = this.parser.getFileDataSync(fileName);
       if (data) {
         state[table] = data as Record<string, unknown>[];
