@@ -1,3 +1,29 @@
+## v0.5.0 (2026-03-23)
+
+### Feat
+
+- rename gtfs.zone to edit.gtfs.zone
+- phase 6 complete of #3
+- phase 4 complete of #3
+- phase 3 of patches
+
+### Fix
+
+- fix compress stack overflow, revert refresh, snapshot perf, and stale docs
+- fix snapshot load
+- fix insert and duplicate issue
+- phase 2 #3
+- phase 1 of the follow on
+
+### Refactor
+
+- add config
+- rm unused files
+
+### Perf
+
+- npm update
+
 ## v0.4.1 (2025-12-24)
 
 ### Fix
