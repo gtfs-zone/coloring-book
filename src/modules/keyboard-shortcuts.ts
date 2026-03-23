@@ -1,3 +1,5 @@
+import { notifications } from './notification-system.js';
+
 export class KeyboardShortcuts {
   private gtfsEditor: {
     uiController: {
@@ -13,12 +15,16 @@ export class KeyboardShortcuts {
     searchController?: {
       clearSearch: () => void;
     };
-    objectsNavigation?: {
+    browseNavigation?: {
       searchQuery: string;
       render: () => void;
     };
     tabManager?: {
       switchToTab: (tabName: string) => void;
+    };
+    patchManager?: {
+      undo: () => Promise<void>;
+      redo: () => Promise<void>;
     };
   };
   private shortcuts: Map<
@@ -41,12 +47,16 @@ export class KeyboardShortcuts {
     searchController?: {
       clearSearch: () => void;
     };
-    objectsNavigation?: {
+    browseNavigation?: {
       searchQuery: string;
       render: () => void;
     };
     tabManager?: {
       switchToTab: (tabName: string) => void;
+    };
+    patchManager?: {
+      undo: () => Promise<void>;
+      redo: () => Promise<void>;
     };
   }) {
     this.gtfsEditor = gtfsEditor;
@@ -138,9 +148,9 @@ export class KeyboardShortcuts {
     this.addShortcut(
       'ctrl+2',
       () => {
-        this.switchToTab('objects');
+        this.switchToTab('browse');
       },
-      'Switch to Objects tab'
+      'Switch to Browse tab'
     );
 
     this.addShortcut(
@@ -166,6 +176,37 @@ export class KeyboardShortcuts {
       },
       'Switch to Help tab'
     );
+
+    // Undo / redo
+    this.addShortcut(
+      'ctrl+z',
+      (e) => {
+        e.preventDefault();
+        this.gtfsEditor.patchManager
+          ?.undo()
+          .catch((e: unknown) =>
+            notifications.showError(
+              `Undo failed: ${e instanceof Error ? e.message : String(e)}`
+            )
+          );
+      },
+      'Undo last edit'
+    );
+
+    this.addShortcut(
+      'ctrl+shift+z',
+      (e) => {
+        e.preventDefault();
+        this.gtfsEditor.patchManager
+          ?.redo()
+          .catch((e: unknown) =>
+            notifications.showError(
+              `Redo failed: ${e instanceof Error ? e.message : String(e)}`
+            )
+          );
+      },
+      'Redo last undone edit'
+    );
   }
 
   addShortcut(keys: string, handler: (e?: Event) => void, description: string) {
@@ -188,7 +229,13 @@ export class KeyboardShortcuts {
             activeElement.classList.contains('cm-content')); // CodeMirror editor
 
         // Allow some shortcuts even in input fields
-        const allowInInputFields = ['escape', 'f1', 'ctrl+s'];
+        const allowInInputFields = [
+          'escape',
+          'f1',
+          'ctrl+s',
+          'ctrl+z',
+          'ctrl+shift+z',
+        ];
 
         if (!isInputField || allowInInputFields.includes(key)) {
           shortcut.handler(e);
@@ -256,7 +303,7 @@ export class KeyboardShortcuts {
     }
 
     // Clear objects search
-    const objectsSearch = document.getElementById('objects-search');
+    const objectsSearch = document.getElementById('browse-search');
     if (objectsSearch) {
       (objectsSearch as HTMLInputElement).value = '';
     }
@@ -272,9 +319,9 @@ export class KeyboardShortcuts {
     }
 
     // Clear objects navigation search
-    if (this.gtfsEditor.objectsNavigation) {
-      this.gtfsEditor.objectsNavigation.searchQuery = '';
-      this.gtfsEditor.objectsNavigation.render();
+    if (this.gtfsEditor.browseNavigation) {
+      this.gtfsEditor.browseNavigation.searchQuery = '';
+      this.gtfsEditor.browseNavigation.render();
     }
   }
 

@@ -4,7 +4,7 @@ import { Editor } from './modules/editor';
 import { UIController } from './modules/ui';
 import { TabManager } from './modules/tab-manager';
 import { GTFSRelationships } from './modules/gtfs-relationships';
-import { ObjectsNavigation } from './modules/objects-navigation';
+import { BrowseNavigation } from './modules/browse-navigation';
 import { InfoDisplay } from './modules/info-display';
 import { SearchController } from './modules/search-controller';
 import { GTFSValidator } from './modules/gtfs-validator';
@@ -20,6 +20,9 @@ import {
 } from './modules/page-state-integration';
 import { PageStateManager } from './modules/page-state-manager';
 import { navigateToTimetable } from './modules/navigation-actions';
+import { PatchManager } from './modules/patch-manager';
+import { HistoryController } from './modules/history-controller';
+import { humanLabel } from './utils/patch-label';
 import './styles/main.css';
 
 declare global {
@@ -37,7 +40,7 @@ export class GTFSEditor {
   public tabManager: TabManager;
   public relationships: GTFSRelationships;
   public infoDisplay: InfoDisplay;
-  public objectsNavigation: ObjectsNavigation;
+  public browseNavigation: BrowseNavigation;
   public searchController: SearchController;
   public validator: GTFSValidator;
   public keyboardShortcuts: KeyboardShortcuts;
@@ -46,6 +49,8 @@ export class GTFSEditor {
   public serviceDaysController: ServiceDaysController;
   public themeController: ThemeController;
   public pageStateManager: PageStateManager;
+  public patchManager: PatchManager;
+  public historyController: HistoryController;
 
   constructor() {
     this.gtfsParser = new GTFSParser();
@@ -60,7 +65,7 @@ export class GTFSEditor {
       this.gtfsParser
     );
     this.serviceDaysController = new ServiceDaysController(this.gtfsParser);
-    this.objectsNavigation = new ObjectsNavigation(
+    this.browseNavigation = new BrowseNavigation(
       this.relationships,
       this.mapController,
       this.scheduleController,
@@ -77,6 +82,18 @@ export class GTFSEditor {
 
     // Initialize PageStateManager (will be fully set up after GTFS parser initialization)
     this.pageStateManager = initializePageStateWithGTFS(this.gtfsParser);
+
+    // PatchManager wires the append-only patch log to the parser's database
+    this.patchManager = new PatchManager(
+      this.gtfsParser.gtfsDatabase,
+      this.gtfsParser
+    );
+    this.historyController = new HistoryController();
+
+    // Inject patchManager so edit operations are recorded
+    this.gtfsParser.setPatchManager(this.patchManager);
+    this.editor.setPatchManager(this.patchManager);
+    this.browseNavigation.setPatchManager(this.patchManager);
 
     this.init().catch((error) => {
       console.error('Failed to initialize GTFSEditor:', error);
@@ -96,6 +113,10 @@ export class GTFSEditor {
 
       // Initialize GTFSParser database
       await this.gtfsParser.initialize();
+
+      // Restore state from patch history (snapshot + subsequent patches)
+      await this.patchManager.initialize();
+      this.historyController.initialize(this.patchManager);
 
       // Check if there's existing data in IndexedDB, only create empty feed if none exists
       const existingMetadata =
@@ -119,20 +140,57 @@ export class GTFSEditor {
         this.gtfsParser,
         this.editor,
         this.mapController,
-        this.objectsNavigation,
+        this.browseNavigation,
         this.scheduleController,
         this.validateAndUpdateInfo.bind(this)
       );
 
-      // Initialize Objects navigation
-      this.objectsNavigation.initialize('objects-navigation');
+      // Initialize Browse navigation
+      this.browseNavigation.initialize('browse-navigation');
 
       // Set up circular references
-      this.objectsNavigation.uiController = this.uiController;
-      this.objectsNavigation.scheduleController = this.scheduleController;
+      this.browseNavigation.uiController = this.uiController;
+      this.browseNavigation.scheduleController = this.scheduleController;
 
       // Initialize search controller
       this.searchController.initialize();
+
+      // Wire undo/redo events to refresh editor and map
+      const refreshAfterUndoRedo = async () => {
+        const openFile = this.editor.getCurrentFile();
+        if (openFile) {
+          await this.editor.buildTableEditor();
+        }
+        await this.mapController.updateMap();
+      };
+      const onUndoRedoJump = () => {
+        refreshAfterUndoRedo().catch((e: unknown) =>
+          notifications.showError(
+            `Failed to refresh after undo/redo: ${e instanceof Error ? e.message : String(e)}`
+          )
+        );
+      };
+      this.patchManager.on('undo', onUndoRedoJump);
+      this.patchManager.on('redo', onUndoRedoJump);
+      this.patchManager.on('jump', onUndoRedoJump);
+
+      // Patch notifications + console logging
+      this.patchManager.on('change', (r) => {
+        console.log('[patch:change]', r);
+        notifications.showInfo(humanLabel(r?.patch), { duration: 3000 });
+      });
+      this.patchManager.on('undo', (r) => {
+        console.log('[patch:undo]', r);
+        notifications.showInfo(`Undone: ${humanLabel(r?.patch)}`, {
+          duration: 3000,
+        });
+      });
+      this.patchManager.on('redo', (r) => {
+        console.log('[patch:redo]', r);
+        notifications.showInfo(`Redone: ${humanLabel(r?.patch)}`, {
+          duration: 3000,
+        });
+      });
 
       // Initialize keyboard shortcuts
       this.keyboardShortcuts.initialize();
@@ -169,9 +227,9 @@ export class GTFSEditor {
         await this.mapController.updateMap();
         this.mapController.hideMapOverlay();
 
-        // Refresh Objects navigation if available
-        if (this.objectsNavigation) {
-          this.objectsNavigation.refresh();
+        // Refresh Browse navigation if available
+        if (this.browseNavigation) {
+          this.browseNavigation.refresh();
         }
 
         // Enable export button
@@ -213,7 +271,7 @@ export class GTFSEditor {
         to.type === 'stop' ||
         to.type === 'timetable'
       ) {
-        this.tabManager.switchToTab('objects');
+        this.tabManager.switchToTab('browse');
       }
       // Add other tab switching logic here if needed
       // For example:
@@ -236,6 +294,35 @@ export class GTFSEditor {
    */
   public onGTFSDataReloaded(): void {
     updateBreadcrumbLookup(this.gtfsParser);
+  }
+
+  public undoEdit(): void {
+    const stackSize = this.patchManager.canUndo;
+    if (!stackSize) {
+      notifications.showInfo('Nothing to undo');
+      return;
+    }
+    this.patchManager
+      .undo()
+      .catch((e: unknown) =>
+        notifications.showError(
+          `Undo failed: ${e instanceof Error ? e.message : String(e)}`
+        )
+      );
+  }
+
+  public redoEdit(): void {
+    if (!this.patchManager.canRedo) {
+      notifications.showInfo('Nothing to redo');
+      return;
+    }
+    this.patchManager
+      .redo()
+      .catch((e: unknown) =>
+        notifications.showError(
+          `Redo failed: ${e instanceof Error ? e.message : String(e)}`
+        )
+      );
   }
 
   // Navigation helper methods for global access

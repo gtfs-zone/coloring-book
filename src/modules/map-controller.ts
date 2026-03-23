@@ -154,11 +154,16 @@ export class MapController {
     this.interactionHandler = new InteractionHandler(this.map, this.gtfsParser);
     this.basemapControl = new BasemapControl(this.map);
 
+    // Keep InteractionHandler's GeoJSON cache in sync with LayerManager
+    this.layerManager.onStopsDataUpdated = (data) => {
+      this.interactionHandler?.setStopsGeoJSON(data);
+    };
+
     // Setup basemap change handler to re-add layers
     this.setupBasemapChangeHandler();
 
-    // Wait for RouteRenderer to be ready
-    await this.routeRenderer.ensureInitialized();
+    // Start RouteRenderer initialization in the background — don't block UI setup.
+    // ensureInitialized() is called lazily from renderRoutes/updateMap when needed.
   }
 
   /**
