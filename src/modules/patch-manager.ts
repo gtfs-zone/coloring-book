@@ -186,6 +186,7 @@ export class PatchManager {
       forward: { changes: forwardChanges },
       inverse: { changes: inverseChanges },
     };
+    await this.applyPatchForward(patch);
     await this.appendAndPush(patch);
   }
 

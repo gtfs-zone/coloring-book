@@ -162,6 +162,7 @@ export class GTFSEditor {
           await this.editor.buildTableEditor();
         }
         await this.mapController.updateMap();
+        await this.browseNavigation.refresh();
       };
       const onUndoRedoJump = () => {
         refreshAfterUndoRedo().catch((e: unknown) =>
@@ -178,6 +179,13 @@ export class GTFSEditor {
       this.patchManager.on('change', (r) => {
         console.log('[patch:change]', r);
         notifications.showInfo(humanLabel(r?.patch), { duration: 3000 });
+        this.browseNavigation
+          .refresh()
+          .catch((e: unknown) =>
+            notifications.showError(
+              `Failed to refresh after edit: ${e instanceof Error ? e.message : String(e)}`
+            )
+          );
       });
       this.patchManager.on('undo', (r) => {
         console.log('[patch:undo]', r);
