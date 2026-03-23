@@ -217,40 +217,35 @@ export class BrowseNavigation {
           Promise.resolve([]),
       },
       // Provide access to the actual database for StopViewController
-      gtfsDatabase: this.gtfsRelationshipsInstance?.gtfsDatabase
-        ? {
-            queryRows: (tableName: string, filter?: Record<string, unknown>) =>
-              this.gtfsRelationshipsInstance.gtfsDatabase.queryRows(
-                tableName,
-                filter
-              ),
-            updateRow: (
-              tableName: string,
-              key: string,
-              data: Record<string, unknown>
-            ) =>
-              this.gtfsRelationshipsInstance.gtfsDatabase.updateRow(
-                tableName,
-                key,
-                data
-              ),
-            getRow: (tableName: string, key: string) =>
-              this.gtfsRelationshipsInstance.gtfsDatabase.getRow(
-                tableName,
-                key
-              ),
-            getAllRows: (tableName: string) =>
-              this.gtfsRelationshipsInstance.gtfsDatabase.getAllRows(tableName),
-            insertRows: <T extends Record<string, unknown>>(
-              tableName: string,
-              rows: T[]
-            ) =>
-              this.gtfsRelationshipsInstance.gtfsDatabase.insertRows(
-                tableName,
-                rows
-              ),
-          }
-        : undefined,
+      gtfsDatabase: {
+        queryRows: (tableName: string, filter?: Record<string, unknown>) =>
+          this.gtfsRelationshipsInstance.gtfsDatabase.queryRows(
+            tableName,
+            filter
+          ),
+        updateRow: (
+          tableName: string,
+          key: string,
+          data: Record<string, unknown>
+        ) =>
+          this.gtfsRelationshipsInstance.gtfsDatabase.updateRow(
+            tableName,
+            key,
+            data
+          ),
+        getRow: (tableName: string, key: string) =>
+          this.gtfsRelationshipsInstance.gtfsDatabase.getRow(tableName, key),
+        getAllRows: (tableName: string) =>
+          this.gtfsRelationshipsInstance.gtfsDatabase.getAllRows(tableName),
+        insertRows: <T extends Record<string, unknown>>(
+          tableName: string,
+          rows: T[]
+        ) =>
+          this.gtfsRelationshipsInstance.gtfsDatabase.insertRows(
+            tableName,
+            rows
+          ),
+      },
       gtfsRelationships: this.gtfsRelationshipsInstance,
       scheduleController: this.scheduleController || {
         renderSchedule: () =>

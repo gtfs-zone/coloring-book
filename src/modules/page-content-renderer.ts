@@ -22,8 +22,9 @@ import {
 import {
   renderFormFields,
   generateFieldConfigsFromSchema,
+  renderEntityFormFields,
 } from '../utils/field-component.js';
-import { FeedInfoSchema, RoutesSchema, GTFS_TABLES } from '../types/gtfs.js';
+import { FeedInfoSchema, GTFS_TABLES } from '../types/gtfs.js';
 import { InlineEntityCreator } from '../utils/inline-entity-creator.js';
 import {
   attachFormPatchListeners,
@@ -48,8 +49,8 @@ export interface ContentRendererDependencies {
     getRouteAsync: (route_id: string) => Promise<unknown>;
   };
 
-  // GTFS database access for stop controller (optional)
-  gtfsDatabase?: {
+  // GTFS database access for stop controller
+  gtfsDatabase: {
     queryRows: (
       tableName: string,
       filter?: Record<string, unknown>
@@ -382,10 +383,6 @@ export class PageContentRenderer {
    * Get feed_info data
    */
   private async getFeedInfo(): Promise<Record<string, unknown> | null> {
-    if (!this.dependencies.gtfsDatabase) {
-      return null;
-    }
-
     try {
       const feedInfoRows =
         await this.dependencies.gtfsDatabase.queryRows('feed_info');
@@ -402,10 +399,6 @@ export class PageContentRenderer {
    * Get all services from calendar
    */
   private async getServices(): Promise<Record<string, unknown>[]> {
-    if (!this.dependencies.gtfsDatabase) {
-      return [];
-    }
-
     try {
       // Get all services from calendar table
       const services =
@@ -467,12 +460,8 @@ export class PageContentRenderer {
    * Render route page (route properties + services list)
    */
   private async renderRoute(route_id: string): Promise<string> {
-    console.log(`Rendering route ${route_id}`);
-    const route = await this.dependencies.relationships.getRouteAsync(route_id);
     const trips =
       await this.dependencies.relationships.getTripsForRouteAsync(route_id);
-    console.log('Route data:', route);
-    console.log('Trips count:', trips.length);
 
     // Update map to highlight this route
     this.dependencies.mapController.highlightRoute(route_id);
@@ -491,17 +480,12 @@ export class PageContentRenderer {
       {}
     );
 
-    const routeData = route as Record<string, unknown> | null;
-
-    // Generate field configurations from RoutesSchema
-    const fieldConfigs = generateFieldConfigsFromSchema(
-      RoutesSchema,
-      routeData || {},
-      GTFS_TABLES.ROUTES
+    // Fetch raw row data and render form fields
+    const fieldsHtml = await renderEntityFormFields(
+      GTFS_TABLES.ROUTES,
+      route_id,
+      this.dependencies.gtfsDatabase
     );
-
-    // Render all route fields
-    const fieldsHtml = renderFormFields(fieldConfigs);
 
     // Render route properties section
     const routePropertiesHTML = `
@@ -518,9 +502,8 @@ export class PageContentRenderer {
     `;
 
     // Get all available services from calendar
-    const allServices = this.dependencies.gtfsDatabase
-      ? await this.dependencies.gtfsDatabase.getAllRows('calendar')
-      : [];
+    const allServices =
+      await this.dependencies.gtfsDatabase.getAllRows('calendar');
 
     // Render new service selector
     const newServiceSelectorHTML =
@@ -782,10 +765,6 @@ export class PageContentRenderer {
    * Add event listeners for inline entity creation
    */
   private addInlineCreationListeners(container: HTMLElement): void {
-    if (!this.dependencies.gtfsDatabase) {
-      return;
-    }
-
     const inlineCreator = new InlineEntityCreator(
       this.dependencies.gtfsDatabase,
       notifications,
