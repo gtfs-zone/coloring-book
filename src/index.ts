@@ -219,7 +219,7 @@ export class GTFSEditor {
       // Show welcome notification only if no existing data
       if (!hasExistingData) {
         notifications.showInfo(
-          'Welcome to gtfs.zone! Create a new GTFS feed or upload an existing one to get started.'
+          'Welcome to edit.gtfs.zone! Create a new GTFS feed or upload an existing one to get started.'
         );
       } else {
         // If we have existing data, update UI components and hide welcome overlay
