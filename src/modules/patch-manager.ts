@@ -276,6 +276,7 @@ export class PatchManager {
 
     await this.applyPatchForward(inverted);
     await this.appendAndPush(inverted);
+    this.emit('jump');
   }
 
   async jumpToVersion(target: number): Promise<void> {
@@ -407,7 +408,12 @@ async function compress(data: string): Promise<string> {
     chunks.push(value);
   }
   const blob = new Blob(chunks as BlobPart[]);
-  return btoa(String.fromCharCode(...new Uint8Array(await blob.arrayBuffer())));
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += 8192) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + 8192));
+  }
+  return btoa(binary);
 }
 
 async function decompress(data: string): Promise<string> {

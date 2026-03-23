@@ -1,4 +1,4 @@
-import { GTFSPatch, PatchRecord } from '../types/patch.js';
+import { GTFSPatch } from '../types/patch.js';
 
 export function humanLabel(patch: GTFSPatch | undefined): string {
   if (!patch) {
@@ -18,5 +18,3 @@ export function humanLabel(patch: GTFSPatch | undefined): string {
   }
   return `Deleted ${source.table} / ${source.id}`;
 }
-
-export type { PatchRecord };
