@@ -1,5 +1,6 @@
 import JSZip from 'jszip';
 import Papa from 'papaparse';
+import { CONFIG } from '../config.js';
 import { GTFSDatabase, GTFSDatabaseRecord } from './gtfs-database.js';
 import { GTFS_FILES, GTFSFilePresence, GTFS_TABLES } from '../types/gtfs.js';
 import { loadingStateManager } from './loading-state-manager.js';
@@ -14,13 +15,32 @@ interface GTFSFileData<T = GTFSDatabaseRecord> {
 // Type-safe table name to entity type mapping
 type GTFSTableName = keyof GTFSTableMap;
 
+interface PatchManagerRef {
+  recordInsert(
+    table: string,
+    id: string,
+    record: Record<string, unknown>
+  ): Promise<void>;
+  recordUpdate(
+    table: string,
+    id: string,
+    before: Record<string, unknown>,
+    after: Record<string, unknown>
+  ): Promise<void>;
+}
+
 export class GTFSParser {
   private gtfsData: { [fileName: string]: GTFSFileData } = {};
   public gtfsDatabase: GTFSDatabase;
+  private patchManager: PatchManagerRef | null = null;
 
   constructor() {
     this.gtfsData = {};
     this.gtfsDatabase = new GTFSDatabase();
+  }
+
+  setPatchManager(pm: PatchManagerRef): void {
+    this.patchManager = pm;
   }
 
   /**
@@ -404,23 +424,32 @@ export class GTFSParser {
   }
 
   async parseFromURL(url: string): Promise<void> {
+    // eslint-disable-next-line no-console
+    console.log('[GTFSParser] Fetching GTFS from URL:', url);
+    let response: Response;
     try {
+      response = await fetch(url);
+    } catch (networkError) {
+      const msg =
+        networkError instanceof TypeError
+          ? `Network error — could not reach ${url}. Check your connection or whether the server allows cross-origin requests (CORS).`
+          : `Fetch failed: ${networkError instanceof Error ? networkError.message : String(networkError)}`;
       // eslint-disable-next-line no-console
-      console.log('Loading GTFS from URL:', url);
-
-      const response = await fetch(url);
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-
-      const blob = await response.blob();
-      await this.parseFile(blob);
-      return;
-    } catch (error) {
-      // eslint-disable-next-line no-console
-      console.error('Error loading GTFS from URL:', error);
-      throw error;
+      console.error('[GTFSParser]', msg, networkError);
+      throw new Error(msg);
     }
+
+    if (!response.ok) {
+      const msg = `HTTP ${response.status} ${response.statusText} from ${url}`;
+      // eslint-disable-next-line no-console
+      console.error('[GTFSParser]', msg);
+      throw new Error(msg);
+    }
+
+    // eslint-disable-next-line no-console
+    console.log('[GTFSParser] Download complete, parsing ZIP...');
+    const blob = await response.blob();
+    await this.parseFile(blob);
   }
 
   async updateFileContent(fileName: string, content: string): Promise<void> {
@@ -522,6 +551,14 @@ export class GTFSParser {
   // Synchronous version for backward compatibility (will use memory data)
   getFileDataSync(fileName: string): GTFSDatabaseRecord[] | null {
     return this.gtfsData[fileName]?.data || null;
+  }
+
+  // Directly replace the in-memory data array for a file (used by PatchManager)
+  setInMemoryFileData(fileName: string, data: GTFSDatabaseRecord[]): void {
+    if (!this.gtfsData[fileName]) {
+      this.gtfsData[fileName] = { content: '', data: [], errors: [] };
+    }
+    this.gtfsData[fileName].data = data;
   }
 
   // Type-safe synchronous file data retrieval
@@ -715,7 +752,7 @@ export class GTFSParser {
   // Search functionality
   searchStops(query: string) {
     const stops = this.getFileDataSyncTyped(GTFS_TABLES.STOPS) || [];
-    if (!query || query.trim().length < 2) {
+    if (!query || query.trim().length < CONFIG.SEARCH_MIN_QUERY_LENGTH) {
       return [];
     }
 
@@ -732,12 +769,12 @@ export class GTFSParser {
           (stop.stop_desc && stop.stop_desc.toLowerCase().includes(searchTerm))
         );
       })
-      .slice(0, 10); // Limit to 10 results
+      .slice(0, CONFIG.SEARCH_RESULTS_LIMIT);
   }
 
   searchRoutes(query: string) {
     const routes = this.getFileDataSyncTyped(GTFS_TABLES.ROUTES) || [];
-    if (!query || query.trim().length < 2) {
+    if (!query || query.trim().length < CONFIG.SEARCH_MIN_QUERY_LENGTH) {
       return [];
     }
 
@@ -756,11 +793,11 @@ export class GTFSParser {
             route.route_desc.toLowerCase().includes(searchTerm))
         );
       })
-      .slice(0, 10); // Limit to 10 results
+      .slice(0, CONFIG.SEARCH_RESULTS_LIMIT);
   }
 
   searchAll(query: string) {
-    if (!query || query.trim().length < 2) {
+    if (!query || query.trim().length < CONFIG.SEARCH_MIN_QUERY_LENGTH) {
       return { stops: [], routes: [] };
     }
 
@@ -773,7 +810,7 @@ export class GTFSParser {
   // Async versions of search methods that use IndexedDB
   async searchStopsAsync(query: string) {
     const stops = (await this.getFileDataTyped(GTFS_TABLES.STOPS)) || [];
-    if (!query || query.trim().length < 2) {
+    if (!query || query.trim().length < CONFIG.SEARCH_MIN_QUERY_LENGTH) {
       return [];
     }
 
@@ -790,12 +827,12 @@ export class GTFSParser {
           (stop.stop_desc && stop.stop_desc.toLowerCase().includes(searchTerm))
         );
       })
-      .slice(0, 10); // Limit to 10 results
+      .slice(0, CONFIG.SEARCH_RESULTS_LIMIT);
   }
 
   async searchRoutesAsync(query: string) {
     const routes = (await this.getFileDataTyped(GTFS_TABLES.ROUTES)) || [];
-    if (!query || query.trim().length < 2) {
+    if (!query || query.trim().length < CONFIG.SEARCH_MIN_QUERY_LENGTH) {
       return [];
     }
 
@@ -814,11 +851,11 @@ export class GTFSParser {
             route.route_desc.toLowerCase().includes(searchTerm))
         );
       })
-      .slice(0, 10); // Limit to 10 results
+      .slice(0, CONFIG.SEARCH_RESULTS_LIMIT);
   }
 
   async searchAllAsync(query: string) {
-    if (!query || query.trim().length < 2) {
+    if (!query || query.trim().length < CONFIG.SEARCH_MIN_QUERY_LENGTH) {
       return { stops: [], routes: [] };
     }
 
@@ -883,6 +920,14 @@ export class GTFSParser {
     // Insert into database
     await this.gtfsDatabase.insertRows(tableName, [stop]);
 
+    // Record patch
+    const stopId = String(stop.stop_id);
+    await this.patchManager?.recordInsert(
+      tableName,
+      stopId,
+      stop as Record<string, unknown>
+    );
+
     // Update file content (regenerate CSV)
     this.updateStopsFileContent();
 
@@ -923,23 +968,40 @@ export class GTFSParser {
         (stop) => stop.stop_id === stopId
       );
       if (stopIndex !== -1) {
+        // Capture before state for patch
+        const beforeRow = { ...stopsData.data[stopIndex] } as Record<
+          string,
+          unknown
+        >;
+
         // Update coordinates in memory
         stopsData.data[stopIndex].stop_lat = lat.toString();
         stopsData.data[stopIndex].stop_lon = lng.toString();
+
+        // Update in database
+        const updateData = {
+          stop_lat: lat.toString(),
+          stop_lon: lng.toString(),
+        };
+        await this.gtfsDatabase.updateRow(tableName, stopId, updateData);
+
+        // Record patch
+        const afterRow = { ...stopsData.data[stopIndex] } as Record<
+          string,
+          unknown
+        >;
+        await this.patchManager?.recordUpdate(
+          tableName,
+          stopId,
+          beforeRow,
+          afterRow
+        );
       } else {
         throw new Error(`Stop ${stopId} not found in in-memory data`);
       }
     } else {
       throw new Error('Stops data not available in memory');
     }
-
-    // Update in database
-    const updateData = {
-      stop_lat: lat.toString(),
-      stop_lon: lng.toString(),
-    };
-
-    await this.gtfsDatabase.updateRow(tableName, stopId, updateData);
 
     // Update file content (regenerate CSV)
     this.updateStopsFileContent();

@@ -6,7 +6,6 @@
  */
 
 import type { Agency, Routes } from '../types/gtfs.js';
-import { notifications } from './notification-system.js';
 import {
   renderFormFields,
   generateFieldConfigsFromSchema,
@@ -50,7 +49,6 @@ interface EnhancedAgency {
 export class AgencyViewController {
   private dependencies: AgencyViewDependencies;
   private currentAgencyId: string | null = null;
-  private fieldValues: Map<string, string> = new Map();
 
   constructor(dependencies: AgencyViewDependencies) {
     this.dependencies = dependencies;
@@ -105,7 +103,7 @@ export class AgencyViewController {
       AgencySchema,
       agency,
       GTFS_TABLES.AGENCY
-    );
+    ).map((c) => ({ ...c, recordId: this.currentAgencyId ?? '' }));
 
     // Render all fields using the reusable field component
     const fieldsHtml = renderFormFields(fieldConfigs);
@@ -259,95 +257,9 @@ export class AgencyViewController {
   }
 
   /**
-   * Handle property updates with auto-save
-   */
-  async updateAgencyProperty(
-    field: string,
-    newValue: string
-  ): Promise<boolean> {
-    if (!this.currentAgencyId || !this.dependencies.gtfsDatabase) {
-      const error = new Error('Database not available for editing');
-      console.error(error);
-      notifications.show('Database not available for editing', 'error');
-      throw error;
-    }
-
-    try {
-      // Get previous value for comparison
-      const prevValue = this.fieldValues.get(field) || '';
-
-      // Skip update if value hasn't changed
-      if (newValue === prevValue) {
-        return true;
-      }
-
-      // Convert values to appropriate types
-      let processedValue: unknown = newValue;
-      if (newValue === '') {
-        // Convert empty strings to null for optional fields
-        processedValue = null;
-      }
-
-      // Update database
-      await this.dependencies.gtfsDatabase.updateRow(
-        'agency',
-        this.currentAgencyId,
-        { [field]: processedValue }
-      );
-
-      // Store new value for future comparisons
-      this.fieldValues.set(field, newValue);
-
-      // Show descriptive notification
-      const fieldDisplayName = this.getFieldDisplayName(field);
-      const fromDisplay = prevValue || '(empty)';
-      const toDisplay = newValue || '(empty)';
-
-      notifications.showSuccess(
-        `Updated ${fieldDisplayName} from "${fromDisplay}" to "${toDisplay}" for ${this.currentAgencyId}`,
-        { duration: 3000 }
-      );
-
-      return true;
-    } catch (error) {
-      console.error('Error updating agency property:', error);
-      notifications.showError(`Failed to update ${field}`);
-      return false;
-    }
-  }
-
-  /**
    * Add event listeners for interactive elements
    */
   addEventListeners(container: HTMLElement): void {
-    // Property input handlers with auto-save using the field component utility
-    // Only attach to agency fields (data-table="agency.txt")
-    const agencyFields = container.querySelectorAll(
-      '[data-field][data-table="agency.txt"]'
-    );
-    agencyFields.forEach((input) => {
-      const field = input.getAttribute('data-field');
-      if (!field) {
-        return;
-      }
-
-      // Store initial value for comparison
-      const initialValue = (
-        input as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement
-      ).value;
-      this.fieldValues.set(field, initialValue);
-
-      const handleUpdate = async () => {
-        const value = (
-          input as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement
-        ).value;
-        await this.updateAgencyProperty(field, value);
-      };
-
-      // Use 'change' event to fire when value changes and element loses focus
-      input.addEventListener('change', handleUpdate);
-    });
-
     // Route item clicks
     const routeItems = container.querySelectorAll('.route-item');
     routeItems.forEach((item) => {
@@ -358,23 +270,6 @@ export class AgencyViewController {
         }
       });
     });
-  }
-
-  /**
-   * Get human-readable field display name
-   */
-  private getFieldDisplayName(field: string): string {
-    const fieldNames: Record<string, string> = {
-      agency_id: 'Agency ID',
-      agency_name: 'Agency Name',
-      agency_url: 'URL',
-      agency_timezone: 'Timezone',
-      agency_lang: 'Language',
-      agency_phone: 'Phone',
-      agency_fare_url: 'Fare URL',
-      agency_email: 'Email',
-    };
-    return fieldNames[field] || field;
   }
 
   /**

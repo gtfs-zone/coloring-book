@@ -15,7 +15,7 @@ export class UIController {
     this.gtfsParser = null;
     this.editor = null;
     this.mapController = null;
-    this.objectsNavigation = null;
+    this.browseNavigation = null;
     this.scheduleController = null;
     this.validateCallback = null;
   }
@@ -24,14 +24,14 @@ export class UIController {
     gtfsParser,
     editor,
     mapController,
-    objectsNavigation,
+    browseNavigation,
     scheduleController = null,
     validateCallback = null
   ) {
     this.gtfsParser = gtfsParser;
     this.editor = editor;
     this.mapController = mapController;
-    this.objectsNavigation = objectsNavigation;
+    this.browseNavigation = browseNavigation;
     this.scheduleController = scheduleController;
     this.validateCallback = validateCallback;
     this.setupEventListeners();
@@ -71,7 +71,9 @@ export class UIController {
     document
       .getElementById('example-columbia')
       ?.addEventListener('click', (e) => {
-        const url = e.target.dataset.url;
+        // Use currentTarget so clicks on child elements (text/icons) still find the data-url
+        const url = (e.currentTarget as HTMLElement).dataset.url;
+        console.log('[UI] Example feed clicked, url:', url);
         if (url) {
           this.loadGTFSFromURL(url);
         }
@@ -79,7 +81,8 @@ export class UIController {
       });
 
     document.getElementById('example-west')?.addEventListener('click', (e) => {
-      const url = e.target.dataset.url;
+      const url = (e.currentTarget as HTMLElement).dataset.url;
+      console.log('[UI] Example feed clicked, url:', url);
       if (url) {
         this.loadGTFSFromURL(url);
       }
@@ -140,34 +143,6 @@ export class UIController {
       });
     }
 
-    const viewToggle = document.getElementById('view-toggle-checkbox');
-    if (viewToggle) {
-      viewToggle.addEventListener('change', (e) => {
-        if (e.target.checked) {
-          this.editor.switchToTableView();
-        } else {
-          this.editor.switchToTextView();
-        }
-      });
-    }
-
-    // Add click handlers for the toggle text options using event delegation
-    document.addEventListener('click', (e) => {
-      if (e.target.classList.contains('toggle-text')) {
-        const viewToggle = document.getElementById('view-toggle-checkbox');
-        if (viewToggle) {
-          const view = e.target.dataset.view;
-          if (view === 'text') {
-            viewToggle.checked = false;
-            this.editor.switchToTextView();
-          } else if (view === 'table') {
-            viewToggle.checked = true;
-            this.editor.switchToTableView();
-          }
-        }
-      }
-    });
-
     // Drag and drop
     const body = document.body;
     body.addEventListener('dragover', (e) => {
@@ -202,8 +177,8 @@ export class UIController {
 
   handleTabChange(tabName: string) {
     // If switching to Objects tab, refresh the navigation
-    if (tabName === 'objects' && this.objectsNavigation) {
-      this.objectsNavigation.refresh();
+    if (tabName === 'browse' && this.browseNavigation) {
+      this.browseNavigation.refresh();
     }
   }
 
@@ -245,8 +220,8 @@ export class UIController {
       this.showFileList();
 
       // Refresh Objects navigation if available
-      if (this.objectsNavigation) {
-        this.objectsNavigation.refresh();
+      if (this.browseNavigation) {
+        this.browseNavigation.refresh();
       }
 
       // Run validation if callback is available
@@ -317,8 +292,8 @@ export class UIController {
       this.mapController.hideMapOverlay();
 
       // Refresh Objects navigation if available
-      if (this.objectsNavigation) {
-        this.objectsNavigation.refresh();
+      if (this.browseNavigation) {
+        this.browseNavigation.refresh();
       }
 
       // Run validation if callback is available
@@ -535,7 +510,7 @@ export class UIController {
   }
 
   showObjectsList() {
-    const listView = document.getElementById('objects-list-view');
+    const listView = document.getElementById('browse-list-view');
     const detailsView = document.getElementById('object-details-view');
     if (listView && detailsView) {
       listView.classList.remove('hidden');
@@ -550,7 +525,7 @@ export class UIController {
     relatedObjects = [],
     _skipBreadcrumbUpdate = false
   ) {
-    const listView = document.getElementById('objects-list-view');
+    const listView = document.getElementById('browse-list-view');
     const detailsView = document.getElementById('object-details-view');
     if (listView && detailsView) {
       listView.classList.add('hidden');
@@ -637,7 +612,7 @@ export class UIController {
               <div class="breadcrumbs text-sm">
                 <ul id="breadcrumb-list">
                   <li>
-                    <a id="breadcrumb-objects">
+                    <a id="breadcrumb-browse">
                       <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="h-4 w-4 stroke-current">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"></path>
                       </svg>
@@ -664,7 +639,7 @@ export class UIController {
             <!-- Related Objects -->
             <div class="border-t border-base-300 p-4">
               <h3 class="text-sm font-semibold mb-3">Related Objects</h3>
-              <div id="related-objects" class="space-y-2">
+              <div id="related-browse" class="space-y-2">
                 <!-- Related objects will be populated here -->
               </div>
             </div>
@@ -673,8 +648,7 @@ export class UIController {
       `;
 
       // Re-attach the breadcrumb event listener
-      const breadcrumbObjectsBtn =
-        document.getElementById('breadcrumb-objects');
+      const breadcrumbObjectsBtn = document.getElementById('breadcrumb-browse');
       if (breadcrumbObjectsBtn) {
         breadcrumbObjectsBtn.addEventListener('click', (e) => {
           e.preventDefault();
@@ -768,7 +742,7 @@ export class UIController {
   }
 
   populateRelatedObjects(relatedObjects) {
-    const container = document.getElementById('related-objects');
+    const container = document.getElementById('related-browse');
     const headerEl =
       document.querySelector('#related-objects').previousElementSibling;
 
@@ -938,8 +912,8 @@ export class UIController {
           // Route double-click action
           routeHeaderEl.addEventListener('dblclick', (e) => {
             e.stopPropagation();
-            if (route.routeAction && this.objectsNavigation) {
-              this.objectsNavigation.navigateToRoute(
+            if (route.routeAction && this.browseNavigation) {
+              this.browseNavigation.navigateToRoute(
                 route.data.id || route.data.route_id
               );
             }
@@ -965,10 +939,10 @@ export class UIController {
 
         // Agency double-click action
         headerEl.addEventListener('dblclick', () => {
-          if (obj.agencyAction && this.objectsNavigation) {
+          if (obj.agencyAction && this.browseNavigation) {
             const agency_id = obj.data.id || obj.data.agency_id;
             if (agency_id) {
-              this.objectsNavigation.navigateToAgency(agency_id);
+              this.browseNavigation.navigateToAgency(agency_id);
             }
           }
         });
@@ -1024,8 +998,8 @@ export class UIController {
           // Make trip clickable
           tripEl.addEventListener('click', (e) => {
             e.stopPropagation();
-            if (trip.tripAction && this.objectsNavigation) {
-              this.objectsNavigation.navigateToTrip(
+            if (trip.tripAction && this.browseNavigation) {
+              this.browseNavigation.navigateToTrip(
                 trip.data.trip_id || trip.data.id
               );
             }
@@ -1049,8 +1023,8 @@ export class UIController {
 
         // Route click action
         headerEl.addEventListener('dblclick', () => {
-          if (obj.routeAction && this.objectsNavigation) {
-            this.objectsNavigation.navigateToRoute(
+          if (obj.routeAction && this.browseNavigation) {
+            this.browseNavigation.navigateToRoute(
               obj.data.route_id || obj.data.id
             );
           }
@@ -1082,16 +1056,16 @@ export class UIController {
               obj.data.service_id,
               obj.direction_id || obj.data.direction_id
             );
-          } else if (obj.agencyAction && this.objectsNavigation) {
+          } else if (obj.agencyAction && this.browseNavigation) {
             // Navigate to agency view to show routes
             const agency_id = obj.data.id || obj.data.agency_id;
             if (agency_id) {
-              this.objectsNavigation.navigateToAgency(agency_id);
+              this.browseNavigation.navigateToAgency(agency_id);
             }
           } else if (obj.routeAction && obj.route_id) {
             // Navigate to route view to show services
-            if (this.objectsNavigation) {
-              this.objectsNavigation.navigateToRoute(obj.route_id);
+            if (this.browseNavigation) {
+              this.browseNavigation.navigateToRoute(obj.route_id);
             }
           } else {
             this.showObjectDetails(
@@ -1118,8 +1092,8 @@ export class UIController {
       this.editor.clearEditor();
 
       // Refresh Objects navigation if available
-      if (this.objectsNavigation) {
-        this.objectsNavigation.refresh();
+      if (this.browseNavigation) {
+        this.browseNavigation.refresh();
       }
 
       // Run validation if callback is available

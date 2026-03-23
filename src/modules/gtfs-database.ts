@@ -1,6 +1,8 @@
 import { openDB, DBSchema, IDBPDatabase } from 'idb';
 import { GTFS_FILES } from '../types/gtfs.js';
+import { CONFIG } from '../config.js';
 import { databaseFallbackManager } from './database-fallback-manager.js';
+import { PatchRecord, SnapshotRecord } from '../types/patch.js';
 import {
   Agency,
   Routes,
@@ -101,6 +103,20 @@ export interface GTFSDBSchema extends DBSchema {
     key: string; // Fixed key "project" for single project mode
     value: ProjectMetadata;
   };
+  // Patch history stores
+  patches: {
+    key: number; // autoIncrement version
+    value: PatchRecord;
+  };
+  snapshots: {
+    key: number; // last patch version included in this snapshot
+    value: SnapshotRecord;
+  };
+  // Version pointer store
+  meta: {
+    key: string;
+    value: { key: string; currentVersion: number; headVersion: number };
+  };
 }
 
 export class GTFSDatabase {
@@ -117,8 +133,8 @@ export class GTFSDatabase {
     clearDatabase(): Promise<void>;
     compactDatabase(): Promise<void>;
   } | null = null;
-  private readonly dbName = 'GTFSZoneDB';
-  private readonly dbVersion = 3; // Incremented for natural key migration
+  private readonly dbName = CONFIG.DB_NAME;
+  private readonly dbVersion = CONFIG.DB_VERSION;
   private isUsingFallback = false;
 
   constructor() {}
@@ -161,6 +177,25 @@ export class GTFSDatabase {
             existingStores.forEach((storeName) => {
               db.deleteObjectStore(storeName);
             });
+          }
+
+          if (oldVersion < 4) {
+            // Migration to version 4: add patch history stores
+            if (!db.objectStoreNames.contains('patches')) {
+              db.createObjectStore('patches', {
+                keyPath: 'version',
+                autoIncrement: true,
+              });
+            }
+            if (!db.objectStoreNames.contains('snapshots')) {
+              db.createObjectStore('snapshots', { keyPath: 'version' });
+            }
+          }
+
+          if (oldVersion < 5) {
+            if (!db.objectStoreNames.contains('meta')) {
+              db.createObjectStore('meta', { keyPath: 'key' });
+            }
           }
 
           // Create tables for all possible GTFS files with natural key schema
@@ -1483,6 +1518,119 @@ export class GTFSDatabase {
         blockingReferences: ['Error checking references'],
       };
     }
+  }
+
+  // ===== PATCH HISTORY OPERATIONS =====
+
+  /**
+   * Append a patch to the history log. Returns the assigned version number.
+   */
+  async appendPatch(patch: Omit<PatchRecord, 'version'>): Promise<number> {
+    if (!this.db) {
+      throw new Error('Database not initialized');
+    }
+    const version = await this.db.add('patches', patch as PatchRecord);
+    return version as number;
+  }
+
+  /**
+   * Get all patches with a version greater than the given version.
+   */
+  async getPatchesAfter(version: number): Promise<PatchRecord[]> {
+    if (!this.db) {
+      throw new Error('Database not initialized');
+    }
+    const range = IDBKeyRange.lowerBound(version, true); // exclusive
+    return this.db.getAll('patches', range);
+  }
+
+  /**
+   * Get the most recent snapshot, or undefined if none exists.
+   */
+  async getLatestSnapshot(): Promise<SnapshotRecord | undefined> {
+    if (!this.db) {
+      throw new Error('Database not initialized');
+    }
+    const cursor = await this.db
+      .transaction('snapshots')
+      .store.openCursor(null, 'prev');
+    return cursor?.value;
+  }
+
+  /**
+   * Persist a snapshot. version should equal the last patch version included.
+   */
+  async saveSnapshot(record: SnapshotRecord): Promise<void> {
+    if (!this.db) {
+      throw new Error('Database not initialized');
+    }
+    await this.db.put('snapshots', record);
+  }
+
+  /**
+   * Return the total number of patches stored.
+   */
+  async getPatchCount(): Promise<number> {
+    if (!this.db) {
+      throw new Error('Database not initialized');
+    }
+    return this.db.count('patches');
+  }
+
+  /**
+   * Get the current and head version pointers from the meta store.
+   */
+  async getVersions(): Promise<{
+    currentVersion: number;
+    headVersion: number;
+  }> {
+    if (!this.db) {
+      return { currentVersion: 0, headVersion: 0 };
+    }
+    const entry = await this.db.get('meta', 'versions');
+    return entry
+      ? { currentVersion: entry.currentVersion, headVersion: entry.headVersion }
+      : { currentVersion: 0, headVersion: 0 };
+  }
+
+  /**
+   * Persist the current and head version pointers.
+   */
+  async setVersions(
+    currentVersion: number,
+    headVersion: number
+  ): Promise<void> {
+    if (!this.db) {
+      throw new Error('Database not initialized');
+    }
+    await this.db.put('meta', { key: 'versions', currentVersion, headVersion });
+  }
+
+  /**
+   * Delete all patches with a version greater than the given version.
+   */
+  async deletePatchesAfter(version: number): Promise<void> {
+    if (!this.db) {
+      throw new Error('Database not initialized');
+    }
+    const range = IDBKeyRange.lowerBound(version, true); // exclusive
+    const tx = this.db.transaction('patches', 'readwrite');
+    let cursor = await tx.store.openCursor(range);
+    while (cursor) {
+      await cursor.delete();
+      cursor = await cursor.continue();
+    }
+    await tx.done;
+  }
+
+  /**
+   * Get a single patch by its version number.
+   */
+  async getPatch(version: number): Promise<PatchRecord | undefined> {
+    if (!this.db) {
+      throw new Error('Database not initialized');
+    }
+    return this.db.get('patches', version);
   }
 
   /**
