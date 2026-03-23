@@ -19,6 +19,6 @@ export const CONFIG = {
   // Navigation history
   MAX_NAVIGATION_HISTORY: 50,
 
-  // Patch system (used from Phase 3 onward)
+  // Patch system — how often to compress and store a full-state snapshot
   SNAPSHOT_INTERVAL: 50, // take a full snapshot every N patches
 } as const;

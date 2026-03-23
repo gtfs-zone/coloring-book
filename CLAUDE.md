@@ -38,7 +38,7 @@ Playwright requires the app to be served first (`npm run serve`) before tests ru
 
 ### Module System
 
-The app is orchestrated by the `GTFSEditor` class in `src/index.ts`. All 42 modules in `src/modules/` are instantiated there and wired together via constructor injection and callbacks (no DI framework). Circular references between modules are resolved post-construction by passing references explicitly.
+The app is orchestrated by the `GTFSEditor` class in `src/index.ts`. All 44 modules in `src/modules/` are instantiated there and wired together via constructor injection and callbacks (no DI framework). Circular references between modules are resolved post-construction by passing references explicitly.
 
 There is no centralized state management (no Redux/Zustand). State is distributed:
 - **IndexedDB** (`GTFSDatabase`) — persistent GTFS data
@@ -52,10 +52,14 @@ There is no centralized state management (no Redux/Zustand). State is distribute
 |-------|---------|
 | Data | `gtfs-parser.ts`, `gtfs-database.ts`, `gtfs-validator.ts`, `gtfs-relationships.ts` |
 | Map | `map-controller.ts`, `route-renderer.ts`, `layer-manager.ts`, `interaction-handler.ts` |
-| Editor | `editor.ts` (CodeMirror 6), `ui.ts` (file list / editor / preview state machine) |
+| Editor | `editor.ts` (CodeMirror 6), `ui.ts` (file list / editor / preview state machine), `patch-manager.ts` (append-only patch log + undo/redo), `history-controller.ts` (Changes panel UI) |
 | Navigation | `page-state-manager.ts`, `objects-navigation.ts`, `page-content-renderer.ts` |
 | Views | `schedule-controller.ts`, `service-days-controller.ts`, `stop-view-controller.ts`, `timetable-*.ts` |
 | UI | `notification-system.ts`, `tab-manager.ts`, `theme-controller.ts`, `keyboard-shortcuts.ts` |
+
+### Configuration
+
+`src/config.ts` exports a single `CONFIG` constant with app-wide tunables (e.g. `SNAPSHOT_INTERVAL`). Import from here rather than hardcoding magic numbers in modules.
 
 ### Type System
 

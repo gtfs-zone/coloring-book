@@ -1551,11 +1551,10 @@ export class GTFSDatabase {
     if (!this.db) {
       throw new Error('Database not initialized');
     }
-    const all = await this.db.getAll('snapshots');
-    if (all.length === 0) {
-      return undefined;
-    }
-    return all.reduce((a, b) => (a.version > b.version ? a : b));
+    const cursor = await this.db
+      .transaction('snapshots')
+      .store.openCursor(null, 'prev');
+    return cursor?.value;
   }
 
   /**
