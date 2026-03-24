@@ -352,6 +352,12 @@ export class UIController {
 
     // Get categorized files
     const { required, optional, other } = this.gtfsParser.categorizeFiles();
+    // eslint-disable-next-line no-console
+    console.log('[new-feed] updateFileList()', {
+      required: required.length,
+      optional: optional.length,
+      other: other.length,
+    });
 
     // Create DaisyUI menu structure
     const menu = document.createElement('ul');
@@ -443,7 +449,7 @@ export class UIController {
   }
 
   async openFile(fileName, clickedElement = null) {
-    if (!this.gtfsParser.getFileContent(fileName)) {
+    if (!this.gtfsParser.getAllFileNames().includes(fileName)) {
       return;
     }
 
@@ -1082,11 +1088,23 @@ export class UIController {
   }
 
   async createNewFeed() {
+    // eslint-disable-next-line no-console
+    console.log('[new-feed] createNewFeed() start');
     try {
       // Reset to empty GTFS feed
       await this.gtfsParser.initializeEmpty();
+      // eslint-disable-next-line no-console
+      console.log('[new-feed] initializeEmpty() complete');
       this.updateFileList();
       await this.mapController.updateMap();
+      this.mapController.hideMapOverlay();
+      // eslint-disable-next-line no-console
+      console.log('[new-feed] map overlay hidden');
+
+      // Show files tab
+      this.showFileList();
+      // eslint-disable-next-line no-console
+      console.log('[new-feed] files tab shown');
 
       // Clear editor
       this.editor.clearEditor();
@@ -1101,8 +1119,9 @@ export class UIController {
         this.validateCallback();
       }
 
-      notifications.showSuccess('New GTFS feed created with sample data!');
-      console.log('Created new GTFS feed');
+      notifications.showSuccess('New empty GTFS feed created.');
+      // eslint-disable-next-line no-console
+      console.log('[new-feed] createNewFeed() done');
     } catch (error) {
       console.error('Error creating new GTFS feed:', error);
       notifications.showError(

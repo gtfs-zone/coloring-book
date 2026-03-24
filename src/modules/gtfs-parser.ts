@@ -232,30 +232,40 @@ export class GTFSParser {
     await this.gtfsDatabase.clearDatabase();
 
     // Convert to expected format with content and data properties
+    // eslint-disable-next-line no-console
+    console.log('[new-feed] initializeEmpty() start');
     this.gtfsData = {};
     for (const [fileName, data] of Object.entries(emptyData)) {
-      // Generate CSV content for each file
+      // Register file even if empty — presence is what matters for the file list
+      const csvContent =
+        data.length > 0
+          ? [
+              Object.keys(data[0]).join(','),
+              ...data.map((row: GTFSDatabaseRecord) =>
+                Object.keys(data[0])
+                  .map((h) => row[h] || '')
+                  .join(',')
+              ),
+            ].join('\n')
+          : '';
+      // eslint-disable-next-line no-console
+      console.log('[new-feed] registering file', {
+        fileName,
+        rows: data.length,
+      });
+      this.gtfsData[fileName] = { content: csvContent, data, errors: [] };
       if (data.length > 0) {
-        const headers = Object.keys(data[0]);
-        const csvContent = [
-          headers.join(','),
-          ...data.map((row: GTFSDatabaseRecord) =>
-            headers.map((header) => row[header] || '').join(',')
-          ),
-        ].join('\n');
-
-        this.gtfsData[fileName] = {
-          content: csvContent,
-          data: data,
-          errors: [],
-        };
-
-        // Store in IndexedDB
         const tableName = this.getTableName(fileName);
-        const rows = data as GTFSDatabaseRecord[];
-        await this.gtfsDatabase.insertRows(tableName, rows);
+        await this.gtfsDatabase.insertRows(
+          tableName,
+          data as GTFSDatabaseRecord[]
+        );
       }
     }
+    // eslint-disable-next-line no-console
+    console.log('[new-feed] initializeEmpty() done', {
+      keys: Object.keys(this.gtfsData),
+    });
 
     // Update project metadata
     await this.gtfsDatabase.updateProjectMetadata({

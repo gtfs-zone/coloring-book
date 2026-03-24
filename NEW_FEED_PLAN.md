@@ -35,62 +35,40 @@ Secondary issues in `createNewFeed()`:
 
 ---
 
-## Phase 1 — Debug Instrumentation & Minimal Fix
+## Phase 1 — Debug Instrumentation & Minimal Fix ✓ DONE
 
 **Goal:** Make the new-feed flow visible and minimally functional so we can observe the full
 system behavior during subsequent phases.
 
-### 1.1 Add structured console logging
+### What was implemented
 
-Add `[new-feed]` prefixed console logs at every decision point in:
+- `[new-feed]` console logs added to `initializeEmpty()` (entry, per-file, final keys),
+  `createNewFeed()` (entry, each sub-step), and `updateFileList()` (categorized counts).
+- Removed `if (data.length > 0)` guard in `initializeEmpty()` — files are always stored.
+  Empty files get `content: ''` for now (Phase 2 will supply the header row).
+- `createNewFeed()` now calls `hideMapOverlay()` and `showFileList()` after initialization.
+- Notification text changed to `'New empty GTFS feed created.'`
+- `openFile()` guard changed from falsy-content check to `getAllFileNames().includes(fileName)` —
+  this is the correct long-term check and should stay through all phases.
 
-- `GTFSParser.initializeEmpty()` — log entry, each file registered, final `gtfsData` keys
-- `UIController.createNewFeed()` — log entry, result of each sub-step
-- `UIController.updateFileList()` — log categorized file counts
-- `MapController.hideMapOverlay()` — confirm it is being called
+### Findings for Phase 2
 
-Format: `console.log('[new-feed] <step>', { ... relevant data ... })`
-
-### 1.2 Fix the empty-array guard
-
-In `initializeEmpty()`, store every file unconditionally — even if `data = []`. An empty file is
-still a present file. The content stored should be the header row only (see Phase 2 for how
-headers are derived). For now, use an empty CSV string `''` as a placeholder so the flow works
-end-to-end.
-
-```diff
-- if (data.length > 0) {
--   this.gtfsData[fileName] = { content: csvContent, data, errors: [] };
-- }
-+ // Register file even if empty — presence is what matters for the file list
-+ this.gtfsData[fileName] = { content: csvContent, data, errors: [] };
-```
-
-### 1.3 Fix post-creation UI update in `createNewFeed()`
-
-After `initializeEmpty()`, the controller must:
-
-1. Call `this.mapController.hideMapOverlay()`
-2. Switch to the Files tab (same as `loadGTFSFile()` does at line 219)
-3. Change notification text from "with sample data" → "New empty GTFS feed created."
-
-### 1.4 Fix `openFile()` to allow empty files
-
-`openFile()` currently returns early if `getFileContent()` is falsy (empty string). It should
-allow opening files that exist in `gtfsData` even if their content is `''` (header-only files will
-have content after Phase 2, but defensive fix now is good).
+- Empty files are stored with `content: ''` (no header row). Phase 2 should populate the header
+  row from the GTFS schema so the editor opens to a useful empty table rather than a blank screen.
+- Pre-existing TypeScript errors exist in `gtfs-database.ts` and `index.ts` — unrelated to this
+  work, do not fix in this branch.
 
 ### Checklist — Phase 1
 
-- [ ] Add `[new-feed]` console logs to `initializeEmpty()`
-- [ ] Add `[new-feed]` console logs to `createNewFeed()`
-- [ ] Add `[new-feed]` console logs to `updateFileList()`
-- [ ] Remove `if (data.length > 0)` guard in `initializeEmpty()`
-- [ ] Call `hideMapOverlay()` in `createNewFeed()`
-- [ ] Switch to Files tab in `createNewFeed()`
-- [ ] Fix notification text in `createNewFeed()`
-- [ ] Fix `openFile()` empty-content guard
-- [ ] **Test flow:** Load example feed → click New Feed → file list shows 6 files → map overlay gone → files tab active
+- [x] Add `[new-feed]` console logs to `initializeEmpty()`
+- [x] Add `[new-feed]` console logs to `createNewFeed()`
+- [x] Add `[new-feed]` console logs to `updateFileList()`
+- [x] Remove `if (data.length > 0)` guard in `initializeEmpty()`
+- [x] Call `hideMapOverlay()` in `createNewFeed()`
+- [x] Switch to Files tab in `createNewFeed()`
+- [x] Fix notification text in `createNewFeed()`
+- [x] Fix `openFile()` empty-content guard
+- [x] **Test flow:** Load example feed → click New Feed → file list shows 6 files → map overlay gone → files tab active → console shows `[new-feed]` sequence with correct counts
 
 ---
 
@@ -337,4 +315,5 @@ These are the key scenarios to walk through manually after each phase:
 ---
 
 *Plan written 2026-03-24. Phases are intended to be implemented sequentially; each phase is
-independently testable before the next begins.*
+independently testable before the next begins. Update this file after each phase with actual
+changes made, deviations from the plan, and findings to carry into the next phase.*
