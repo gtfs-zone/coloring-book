@@ -60,6 +60,25 @@ export class PatchManager {
 
     // Replay patches only up to currentVersion (handles mid-undo refresh)
     const patches = await this.db.getPatchesAfter(snapshot?.version ?? 0);
+
+    // Without a snapshot, IndexedDB already contains the canonical data (written
+    // by the original operations). Replaying patches on top would double-insert.
+    // Clear affected tables first so the replay rebuilds DB from patches cleanly,
+    // mirroring what the snapshot path does with clearTable().
+    if (!snapshot && patches.length > 0) {
+      const tablesToClear = new Set(
+        patches
+          .filter((r) => (r.version ?? 0) <= this.currentVersion)
+          .map((r) => r.patch.source.table)
+      );
+      for (const table of tablesToClear) {
+        if (getGTFSPrimaryKey(table)) {
+          await this.db.clearTable(table);
+          this.parser.setInMemoryFileData(`${table}.txt`, []);
+        }
+      }
+    }
+
     for (const record of patches) {
       if (record.version! > this.currentVersion) {
         break;

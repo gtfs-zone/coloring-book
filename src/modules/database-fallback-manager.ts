@@ -2,7 +2,7 @@
  * Database Fallback Manager
  * Handles IndexedDB support detection, error recovery, and graceful fallbacks
  */
-import { GTFSDatabaseRecord, ProjectMetadata } from './gtfs-database.js';
+import { GTFSDatabaseRecord } from './gtfs-database.js';
 import { loadingStateManager } from './loading-state-manager.js';
 
 export interface BrowserCapabilities {
@@ -734,20 +734,6 @@ class FallbackDatabase {
 
   close(): void {
     // No-op for memory storage
-  }
-
-  // Additional methods to match GTFSDatabase interface
-  async getProjectMetadata(): Promise<ProjectMetadata | undefined> {
-    const data = this.manager.getFallbackData('project');
-    return data[0] as ProjectMetadata;
-  }
-
-  async updateProjectMetadata(
-    metadata: Omit<ProjectMetadata, 'id'>
-  ): Promise<void> {
-    this.manager.setFallbackData('project', [
-      { ...metadata, id: 1 } as ProjectMetadata,
-    ]);
   }
 
   async getDatabaseStats(): Promise<{

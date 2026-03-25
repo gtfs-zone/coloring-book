@@ -17,7 +17,6 @@ import {
   FeedInfo,
   FareAttributes,
   FareRules,
-  ProjectMetadata,
   GTFSTableMap,
 } from '../types/gtfs-entities.js';
 import {
@@ -35,9 +34,6 @@ export interface GTFSDatabaseRecord {
   id?: number; // Auto-increment primary key
   [key: string]: string | number | boolean | undefined; // Dynamic fields based on CSV columns
 }
-
-// Re-export ProjectMetadata for backwards compatibility
-export type { ProjectMetadata } from '../types/gtfs-entities.js';
 
 // Database schema interface for idb with natural GTFS keys
 export interface GTFSDBSchema extends DBSchema {
@@ -97,11 +93,6 @@ export interface GTFSDBSchema extends DBSchema {
   locations: {
     key: string; // location_id
     value: GTFSDatabaseRecord; // Keep as generic for now since no specific schema exists
-  };
-  // Project metadata table
-  project: {
-    key: string; // Fixed key "project" for single project mode
-    value: ProjectMetadata;
   };
   // Patch history stores
   patches: {
@@ -198,6 +189,16 @@ export class GTFSDatabase {
             }
           }
 
+          if (oldVersion < 6) {
+            // Remove the non-GTFS project metadata store.
+            // All-files-always-registered makes it unnecessary.
+            // Cast to IDBDatabase for the deletion since 'project' is no longer in the schema.
+            const rawDb = db as unknown as IDBDatabase;
+            if (rawDb.objectStoreNames.contains('project')) {
+              rawDb.deleteObjectStore('project');
+            }
+          }
+
           // Create tables for all possible GTFS files with natural key schema
           const allFiles = GTFS_FILES.map((file) => file.filename);
 
@@ -213,14 +214,6 @@ export class GTFSDatabase {
               this.addIndexesForTable(store, tableName);
             }
           });
-
-          // Create project metadata table with fixed key
-          if (!db.objectStoreNames.contains('project')) {
-            db.createObjectStore('project', {
-              keyPath: null, // Out-of-line key for fixed "project" key
-              autoIncrement: false,
-            });
-          }
 
           // eslint-disable-next-line no-console
           console.log('Database schema migration completed');
@@ -874,53 +867,6 @@ export class GTFSDatabase {
     } catch (error) {
       // eslint-disable-next-line no-console
       console.error(`Failed to query rows from ${tableName}:`, error);
-      throw error;
-    }
-  }
-
-  /**
-   * Get project metadata
-   */
-  async getProjectMetadata(): Promise<ProjectMetadata | undefined> {
-    if (!this.db) {
-      throw new Error('Database not initialized');
-    }
-
-    try {
-      return await this.db.get('project', 'project');
-    } catch (error) {
-      // eslint-disable-next-line no-console
-      console.error('Failed to get project metadata:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Update project metadata
-   */
-  async updateProjectMetadata(
-    metadata: Omit<ProjectMetadata, 'id'>
-  ): Promise<void> {
-    if (!this.db) {
-      throw new Error('Database not initialized');
-    }
-
-    try {
-      const existing = await this.getProjectMetadata();
-      const projectData = { ...metadata, id: 'project' };
-
-      if (existing) {
-        await this.db.put(
-          'project',
-          { ...existing, ...projectData },
-          'project'
-        );
-      } else {
-        await this.db.add('project', projectData, 'project');
-      }
-    } catch (error) {
-      // eslint-disable-next-line no-console
-      console.error('Failed to update project metadata:', error);
       throw error;
     }
   }
