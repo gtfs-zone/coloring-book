@@ -25,10 +25,10 @@ interface ValidationResults {
 }
 
 interface GTFSParserInterface {
-  getFileDataSync(fileName: string): GTFSDatabaseRecord[] | null;
+  getFileDataSync(fileName: string): GTFSDatabaseRecord[];
   getFileDataSyncTyped<T extends GTFSTableName>(
     fileName: `${T}.txt`
-  ): GTFSTableMap[T][] | null;
+  ): GTFSTableMap[T][];
   getAllFileNames(): string[];
   gtfsData: {
     [fileName: string]: {
@@ -108,9 +108,9 @@ export class GTFSValidator {
     let hasCalendarFile = false;
 
     requiredFiles.forEach((fileName) => {
-      if (!this.gtfsParser.getFileDataSync(fileName)) {
+      if (this.gtfsParser.getFileDataSync(fileName).length === 0) {
         this.addError(
-          `Required file missing: ${fileName}`,
+          `Required file ${fileName} is empty`,
           'MISSING_REQUIRED_FILE',
           fileName
         );
@@ -119,7 +119,7 @@ export class GTFSValidator {
 
     // Check calendar files - at least one is required
     calendarFiles.forEach((fileName) => {
-      if (this.gtfsParser.getFileDataSync(fileName)) {
+      if (this.gtfsParser.getFileDataSync(fileName).length > 0) {
         hasCalendarFile = true;
       }
     });
@@ -134,10 +134,6 @@ export class GTFSValidator {
 
   validateAgencies() {
     const agencies = this.gtfsParser.getFileDataSyncTyped(GTFS_TABLES.AGENCY);
-    if (!agencies) {
-      return;
-    }
-
     if (agencies.length === 0) {
       this.addError('agency.txt is empty', 'EMPTY_FILE', GTFS_TABLES.AGENCY);
       return;
@@ -210,10 +206,6 @@ export class GTFSValidator {
   validateRoutes() {
     const routes = this.gtfsParser.getFileDataSyncTyped(GTFS_TABLES.ROUTES);
     const agencies = this.gtfsParser.getFileDataSyncTyped(GTFS_TABLES.AGENCY);
-
-    if (!routes) {
-      return;
-    }
 
     if (routes.length === 0) {
       this.addError('routes.txt is empty', 'EMPTY_FILE', GTFS_TABLES.ROUTES);
@@ -301,10 +293,6 @@ export class GTFSValidator {
 
   validateStops() {
     const stops = this.gtfsParser.getFileDataSyncTyped(GTFS_TABLES.STOPS);
-    if (!stops) {
-      return;
-    }
-
     if (stops.length === 0) {
       this.addError('stops.txt is empty', 'EMPTY_FILE', GTFS_TABLES.STOPS);
       return;
@@ -404,10 +392,6 @@ export class GTFSValidator {
     const trips = this.gtfsParser.getFileDataSyncTyped(GTFS_TABLES.TRIPS);
     const routes = this.gtfsParser.getFileDataSyncTyped(GTFS_TABLES.ROUTES);
 
-    if (!trips) {
-      return;
-    }
-
     if (trips.length === 0) {
       this.addError('trips.txt is empty', 'EMPTY_FILE', GTFS_TABLES.TRIPS);
       return;
@@ -474,10 +458,6 @@ export class GTFSValidator {
     );
     const trips = this.gtfsParser.getFileDataSyncTyped(GTFS_TABLES.TRIPS);
     const stops = this.gtfsParser.getFileDataSyncTyped(GTFS_TABLES.STOPS);
-
-    if (!stopTimes) {
-      return;
-    }
 
     if (stopTimes.length === 0) {
       this.addError(
@@ -648,7 +628,7 @@ export class GTFSValidator {
 
   validateShapes() {
     const shapes = this.gtfsParser.getFileDataSyncTyped(GTFS_TABLES.SHAPES);
-    if (!shapes) {
+    if (shapes.length === 0) {
       return;
     }
 

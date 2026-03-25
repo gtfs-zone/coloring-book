@@ -21,8 +21,8 @@ export enum MapMode {
 
 // Dependencies interface for dependency injection
 interface MapControllerDependencies {
-  getFileDataSync: (filename: string) => GTFSDatabaseRecord[] | null;
-  getFileDataSyncTyped: <T>(filename: string) => T[] | null;
+  getFileDataSync: (filename: string) => GTFSDatabaseRecord[];
+  getFileDataSyncTyped: <T>(filename: string) => T[];
   getRoutesForStop: (stop_id: string) => GTFSDatabaseRecord[];
   getWheelchairText: (code: string) => string;
   getRouteTypeText: (typeCode: string) => string;

@@ -7,7 +7,7 @@
 import { GTFSDatabase, GTFSDatabaseRecord } from './gtfs-database.js';
 
 interface GTFSParserInterface {
-  getFileDataSync: (filename: string) => GTFSDatabaseRecord[] | null;
+  getFileDataSync: (filename: string) => GTFSDatabaseRecord[];
   gtfsDatabase: GTFSDatabase;
   searchStops: (query: string) => GTFSDatabaseRecord[];
   searchRoutes: (query: string) => GTFSDatabaseRecord[];
@@ -31,9 +31,6 @@ export class GTFSRelationships {
    */
   getAgencies() {
     const agencyData = this.gtfsParser.getFileDataSync('agency.txt');
-    if (!agencyData || !Array.isArray(agencyData)) {
-      return [];
-    }
     return agencyData.map((agency) => ({
       id: agency.agency_id,
       agency_id: agency.agency_id,
@@ -53,10 +50,6 @@ export class GTFSRelationships {
    */
   getRoutesForAgency(agency_id: string) {
     const routesData = this.gtfsParser.getFileDataSync('routes.txt');
-    if (!routesData || !Array.isArray(routesData)) {
-      return [];
-    }
-
     return routesData
       .filter((route) => route.agency_id === agency_id)
       .map((route) => ({
@@ -87,10 +80,6 @@ export class GTFSRelationships {
    */
   getTripsForRoute(route_id: string) {
     const tripsData = this.gtfsParser.getFileDataSync('trips.txt');
-    if (!tripsData || !Array.isArray(tripsData)) {
-      return [];
-    }
-
     return tripsData
       .filter((trip) => trip.route_id === route_id)
       .map((trip) => ({
@@ -115,10 +104,6 @@ export class GTFSRelationships {
    */
   getStopTimesForTrip(trip_id: string) {
     const stopTimesData = this.gtfsParser.getFileDataSync('stop_times.txt');
-    if (!stopTimesData || !Array.isArray(stopTimesData)) {
-      return [];
-    }
-
     const stopTimes = stopTimesData
       .filter((stopTime) => stopTime.trip_id === trip_id)
       .sort((a, b) => parseInt(a.stop_sequence) - parseInt(b.stop_sequence))
@@ -146,10 +131,6 @@ export class GTFSRelationships {
    */
   getStopById(stop_id: string) {
     const stopsData = this.gtfsParser.getFileDataSync('stops.txt');
-    if (!stopsData || !Array.isArray(stopsData)) {
-      return null;
-    }
-
     const stop = stopsData.find((stop) => stop.stop_id === stop_id);
     if (!stop) {
       return null;
@@ -178,10 +159,6 @@ export class GTFSRelationships {
    */
   getTripsForStop(stop_id: string) {
     const stopTimesData = this.gtfsParser.getFileDataSync('stop_times.txt');
-    if (!stopTimesData || !Array.isArray(stopTimesData)) {
-      return [];
-    }
-
     const trip_ids = [
       ...new Set(
         stopTimesData
@@ -191,10 +168,6 @@ export class GTFSRelationships {
     ];
 
     const tripsData = this.gtfsParser.getFileDataSync('trips.txt');
-    if (!tripsData || !Array.isArray(tripsData)) {
-      return [];
-    }
-
     return tripsData
       .filter((trip) => trip_ids.includes(trip.trip_id))
       .map((trip) => ({
@@ -214,10 +187,6 @@ export class GTFSRelationships {
    */
   getCalendarForService(service_id: string) {
     const calendarData = this.gtfsParser.getFileDataSync('calendar.txt');
-    if (!calendarData || !Array.isArray(calendarData)) {
-      return null;
-    }
-
     const calendar = calendarData.find((cal) => cal.service_id === service_id);
     if (!calendar) {
       return null;
@@ -243,10 +212,6 @@ export class GTFSRelationships {
   getCalendarDatesForService(service_id: string) {
     const calendarDatesData =
       this.gtfsParser.getFileDataSync('calendar_dates.txt');
-    if (!calendarDatesData || !Array.isArray(calendarDatesData)) {
-      return [];
-    }
-
     return calendarDatesData
       .filter((calDate) => calDate.service_id === service_id)
       .map((calDate) => ({
@@ -274,11 +239,10 @@ export class GTFSRelationships {
    */
   getStatistics() {
     const agencies = this.getAgencies();
-    const routesData = this.gtfsParser.getFileDataSync('routes.txt') || [];
-    const tripsData = this.gtfsParser.getFileDataSync('trips.txt') || [];
-    const stopsData = this.gtfsParser.getFileDataSync('stops.txt') || [];
-    const stopTimesData =
-      this.gtfsParser.getFileDataSync('stop_times.txt') || [];
+    const routesData = this.gtfsParser.getFileDataSync('routes.txt');
+    const tripsData = this.gtfsParser.getFileDataSync('trips.txt');
+    const stopsData = this.gtfsParser.getFileDataSync('stops.txt');
+    const stopTimesData = this.gtfsParser.getFileDataSync('stop_times.txt');
 
     return {
       agencies: agencies.length,
