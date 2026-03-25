@@ -298,15 +298,15 @@ export class GTFSParser {
           }
         } else if (fileName.endsWith('.geojson')) {
           // Handle GeoJSON files
+          const geoJsonData = JSON.parse(fileContent);
           this.gtfsData[fileName] = {
             content: fileContent,
-            data: JSON.parse(fileContent),
+            data: geoJsonData,
             errors: [],
           };
 
           // Store GeoJSON in IndexedDB as well
           const tableName = this.getTableName(fileName);
-          const geoJsonData = JSON.parse(fileContent);
           await this.gtfsDatabase.insertRows(tableName, [
             geoJsonData as GTFSDatabaseRecord,
           ]);
@@ -347,32 +347,6 @@ export class GTFSParser {
 
   private getTableName(fileName: string): string {
     return fileName.replace('.txt', '').replace('.geojson', '');
-  }
-
-  // Type-safe helper to get table name as GTFSTableName
-  private getTypedTableName(fileName: string): GTFSTableName | null {
-    const tableName = this.getTableName(fileName);
-    // Check if the table name is a valid GTFS entity type
-    if (tableName in ({} as GTFSTableMap)) {
-      return tableName as GTFSTableName;
-    }
-    return null;
-  }
-
-  // Type-safe parsing method that returns properly typed entities
-  private parseCSVWithType<T extends keyof GTFSTableMap>(
-    content: string,
-    _tableName: T
-  ): { data: GTFSTableMap[T][]; errors: Papa.ParseError[] } {
-    const parsed = Papa.parse(content, {
-      header: true,
-      skipEmptyLines: true,
-    });
-
-    return {
-      data: parsed.data as GTFSTableMap[T][],
-      errors: parsed.errors,
-    };
   }
 
   async parseFromURL(url: string): Promise<void> {
@@ -423,8 +397,10 @@ export class GTFSParser {
         // Clear existing rows for this table
         await this.gtfsDatabase.clearTable(tableName);
 
-        // Insert new rows
-        const rows = parsed.data as GTFSDatabaseRecord[];
+        // Insert new rows with type coercion, matching the import path
+        const rows = this.processParsedData(
+          parsed.data as Record<string, unknown>[]
+        );
         if (rows.length > 0) {
           await this.gtfsDatabase.insertRows(tableName, rows);
         }
