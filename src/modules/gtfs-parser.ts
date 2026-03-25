@@ -214,16 +214,10 @@ export class GTFSParser {
     // Clear existing data from database
     await this.gtfsDatabase.clearDatabase();
 
-    // eslint-disable-next-line no-console
-    console.log('[new-feed] initializeEmpty() start');
     for (const filename of ALL_GTFS_FILES) {
       const content = makeHeaderOnlyCSV(filename);
       this.gtfsData[filename] = { content, data: [], errors: [] };
     }
-    // eslint-disable-next-line no-console
-    console.log('[new-feed] initializeEmpty() done', {
-      keys: Object.keys(this.gtfsData),
-    });
   }
 
   async parseFile(
