@@ -404,9 +404,9 @@ than leaving stale navigation from a prior feed.
 
 ### Remaining Polish Items
 
-- [ ] Reset page state to `{ type: 'home' }` in `createNewFeed()` and on feed load
-- [ ] Call `browseNavigation.refresh()` after new feed and after load to reflect correct state
-- [ ] Remove any remaining `[new-feed]`-specific console logs that are no longer needed
+- [x] Reset page state to `{ type: 'home' }` in `createNewFeed()` and on feed load
+- [x] Call `browseNavigation.refresh()` after new feed and after load to reflect correct state
+- [x] Remove any remaining `[new-feed]`-specific console logs that are no longer needed
 - [ ] Ensure undo/redo works correctly across all 31 files
 - [ ] Verify export round-trip: new feed → add agency + route → export → reimport → same state
 - [ ] Confirm keyboard shortcut for New Feed still works end-to-end
