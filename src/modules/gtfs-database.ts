@@ -276,9 +276,6 @@ export class GTFSDatabase {
   ): string {
     try {
       const key = generateCompositeKeyFromRecord(tableName, record);
-      console.log(
-        `DEBUG: Generated key "${key}" for ${tableName} record using GTFS spec`
-      );
       return key;
     } catch (error) {
       console.error(`ERROR: Failed to generate key for ${tableName}:`, error);
@@ -541,80 +538,36 @@ export class GTFSDatabase {
       throw new Error('Database not initialized');
     }
 
-    const BATCH_SIZE = 1000; // Optimal batch size for IndexedDB
+    if (rows.length === 0) {
+      return;
+    }
 
     try {
-      // Process in batches for better performance and memory usage
-      for (let i = 0; i < rows.length; i += BATCH_SIZE) {
-        const batch = rows.slice(i, i + BATCH_SIZE);
-        await this.insertBatch(tableName, batch);
-      }
+      // Single transaction for all rows — eliminates per-batch transaction overhead.
+      // IDB serializes readwrite transactions on the same store anyway, so multiple
+      // transactions provide no parallelism benefit.
+      const transaction = this.db.transaction(tableName, 'readwrite');
+      const store = transaction.objectStore(tableName);
+      const keyPath = this.getNaturalKeyPath(tableName);
 
-      // eslint-disable-next-line no-console
-      console.log(
-        `Inserted ${rows.length} rows into ${tableName} in ${Math.ceil(rows.length / BATCH_SIZE)} batches`
-      );
-    } catch (error) {
-      this.handleDatabaseError(error, 'insertRows');
-    }
-  }
-
-  /**
-   * Insert a single batch of rows within one transaction
-   * Updated: Better error handling for null errors
-   */
-  private async insertBatch(
-    tableName: string,
-    rows: GTFSDatabaseRecord[]
-  ): Promise<void> {
-    if (!this.db) {
-      throw new Error('Database not initialized');
-    }
-
-    const transaction = this.db.transaction(tableName, 'readwrite');
-    const store = transaction.objectStore(tableName);
-    const keyPath = this.getNaturalKeyPath(tableName);
-
-    // Insert all rows in this batch with appropriate keys
-    const promises = rows.map((row, index) => {
-      try {
+      for (let index = 0; index < rows.length; index++) {
+        const row = rows[index];
         if (keyPath) {
-          // Simple natural key - use the field as key
           const keyValue = row[keyPath];
           if (!keyValue) {
-            console.error(
-              `ERROR: ${tableName} row ${index} missing required key field "${keyPath}":`,
-              row
-            );
             throw new Error(
-              `Missing required key field "${keyPath}" in row ${index}`
+              `Missing required key field "${keyPath}" in ${tableName} row ${index}`
             );
           }
-          return store.add(row);
+          store.add(row);
         } else {
-          // Composite key or special case - generate key
           const key = this.generateCompositeKey(tableName, row);
-          return store.add(row, key);
+          store.add(row, key);
         }
-      } catch (error) {
-        const errorMsg =
-          error instanceof Error
-            ? error.message
-            : String(error || 'Unknown error');
-        console.error(
-          `ERROR: Failed to prepare ${tableName} row ${index} for insertion: ${errorMsg}`,
-          row
-        );
-        const err = error instanceof Error ? error : new Error(errorMsg);
-        throw err;
       }
-    });
 
-    try {
-      await Promise.all(promises);
       await transaction.done;
     } catch (error) {
-      // Convert null/undefined errors to proper Error objects
       const errorMsg =
         error instanceof Error
           ? error.message
@@ -622,11 +575,8 @@ export class GTFSDatabase {
       const err =
         error instanceof Error
           ? error
-          : new Error(`Batch insertion failed for ${tableName}: ${errorMsg}`);
-      console.error(
-        `ERROR: Batch insertion failed for ${tableName}: ${errorMsg}`
-      );
-      console.error('First few rows in failed batch:', rows.slice(0, 3));
+          : new Error(`Insertion failed for ${tableName}: ${errorMsg}`);
+      console.error(`ERROR: Insertion failed for ${tableName}: ${errorMsg}`);
       throw err;
     }
   }
