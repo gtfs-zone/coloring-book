@@ -507,8 +507,8 @@ export class GTFSParser {
   }
 
   // Synchronous version for backward compatibility (will use memory data)
-  getFileDataSync(fileName: string): GTFSDatabaseRecord[] | null {
-    return this.gtfsData[fileName]?.data || null;
+  getFileDataSync(fileName: string): GTFSDatabaseRecord[] {
+    return this.gtfsData[fileName]?.data ?? [];
   }
 
   // Directly replace the in-memory data array for a file (used by PatchManager)
@@ -522,9 +522,8 @@ export class GTFSParser {
   // Type-safe synchronous file data retrieval
   getFileDataSyncTyped<T extends GTFSTableName>(
     fileName: `${T}.txt`
-  ): GTFSTableMap[T][] | null {
-    const data = this.getFileDataSync(fileName);
-    return data as GTFSTableMap[T][] | null;
+  ): GTFSTableMap[T][] {
+    return this.getFileDataSync(fileName) as GTFSTableMap[T][];
   }
 
   getAllFileNames(): string[] {
@@ -667,7 +666,7 @@ export class GTFSParser {
     const trips = this.getFileDataSyncTyped(GTFS_TABLES.TRIPS);
     const stopTimes = this.getFileDataSyncTyped(GTFS_TABLES.STOP_TIMES);
 
-    if (!routes || !trips || !stopTimes) {
+    if (routes.length === 0 || trips.length === 0 || stopTimes.length === 0) {
       return [];
     }
 
