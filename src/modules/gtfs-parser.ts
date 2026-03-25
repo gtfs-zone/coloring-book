@@ -176,16 +176,8 @@ export class GTFSParser {
           const data = await this.gtfsDatabase.getAllRows(tableName);
 
           if (data && data.length > 0) {
-            const headers = Object.keys(data[0]);
-            const csvContent = [
-              headers.join(','),
-              ...data.map((row: GTFSDatabaseRecord) =>
-                headers.map((header) => row[header] || '').join(',')
-              ),
-            ].join('\n');
-
             this.gtfsData[fileName] = {
-              content: csvContent,
+              content: '',
               data: data,
               errors: [],
             };
@@ -279,9 +271,9 @@ export class GTFSParser {
             parsed.data as Record<string, unknown>[]
           );
 
-          // Store in memory for compatibility
+          // Store rows in memory; content is generated on demand by getFileContent.
           this.gtfsData[fileName] = {
-            content: fileContent,
+            content: '',
             data: processedData,
             errors: parsed.errors,
           };
@@ -421,7 +413,29 @@ export class GTFSParser {
   }
 
   getFileContent(fileName: string): string {
-    return this.gtfsData[fileName]?.content || '';
+    const fileData = this.gtfsData[fileName];
+    if (!fileData) {
+      return '';
+    }
+
+    // Return cached content if present
+    if (fileData.content) {
+      return fileData.content;
+    }
+
+    // Generate CSV from in-memory rows and cache it
+    if (fileData.data.length > 0) {
+      const headers = Object.keys(fileData.data[0]);
+      fileData.content = [
+        headers.join(','),
+        ...fileData.data.map((row) =>
+          headers.map((h) => this.formatFieldForExport(h, row[h])).join(',')
+        ),
+      ].join('\n');
+      return fileData.content;
+    }
+
+    return fileData.content; // header-only CSV set by initialize()
   }
 
   // Method expected by Editor interface
@@ -605,21 +619,21 @@ export class GTFSParser {
 
             zip.file(fileName, csvContent);
           } else {
-            // Fallback to memory content if IndexedDB is empty but memory has rows
+            // Fallback: IDB empty but memory has rows — generate CSV from data
             // eslint-disable-next-line no-console
             console.warn(
-              `No data in IndexedDB for ${fileName}, using memory content`
+              `No data in IndexedDB for ${fileName}, generating from memory`
             );
-            zip.file(fileName, this.gtfsData[fileName].content);
+            zip.file(fileName, this.getFileContent(fileName));
           }
         } catch (dbError) {
-          // Fallback to memory content if IndexedDB fails
+          // Fallback to in-memory data if IndexedDB fails
           // eslint-disable-next-line no-console
           console.warn(
-            `IndexedDB error for ${fileName}, using memory content:`,
+            `IndexedDB error for ${fileName}, generating from memory:`,
             dbError
           );
-          zip.file(fileName, this.gtfsData[fileName].content);
+          zip.file(fileName, this.getFileContent(fileName));
         }
       }
 
