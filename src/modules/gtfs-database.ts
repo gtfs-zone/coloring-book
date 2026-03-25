@@ -571,13 +571,9 @@ export class GTFSDatabase {
       throw new Error('Database not initialized');
     }
 
-    console.log(`DEBUG: Inserting batch for ${tableName}, ${rows.length} rows`);
-
     const transaction = this.db.transaction(tableName, 'readwrite');
     const store = transaction.objectStore(tableName);
     const keyPath = this.getNaturalKeyPath(tableName);
-
-    console.log(`DEBUG: Table ${tableName} keyPath:`, keyPath);
 
     // Insert all rows in this batch with appropriate keys
     const promises = rows.map((row, index) => {
@@ -585,9 +581,6 @@ export class GTFSDatabase {
         if (keyPath) {
           // Simple natural key - use the field as key
           const keyValue = row[keyPath];
-          console.log(
-            `DEBUG: ${tableName} row ${index} - using natural key "${keyPath}" = "${keyValue}"`
-          );
           if (!keyValue) {
             console.error(
               `ERROR: ${tableName} row ${index} missing required key field "${keyPath}":`,
@@ -601,9 +594,6 @@ export class GTFSDatabase {
         } else {
           // Composite key or special case - generate key
           const key = this.generateCompositeKey(tableName, row);
-          console.log(
-            `DEBUG: ${tableName} row ${index} - generated composite key: "${key}"`
-          );
           return store.add(row, key);
         }
       } catch (error) {
@@ -623,7 +613,6 @@ export class GTFSDatabase {
     try {
       await Promise.all(promises);
       await transaction.done;
-      console.log(`DEBUG: Successfully inserted batch for ${tableName}`);
     } catch (error) {
       // Convert null/undefined errors to proper Error objects
       const errorMsg =
