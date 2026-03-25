@@ -162,6 +162,27 @@ export class LoadingStateManager {
   }
 
   /**
+   * Show warning state briefly
+   */
+  showWarning(message: string): void {
+    if (this.loadingElement) {
+      this.loadingElement.className =
+        'fixed top-0 left-0 right-0 z-50 bg-warning text-warning-content px-4 py-2 transform translate-y-0 transition-transform duration-300 ease-in-out';
+      if (this.statusElement) {
+        this.statusElement.textContent = message;
+      }
+
+      // Hide warning after 5 seconds
+      setTimeout(() => {
+        this.hideLoadingIndicator();
+        // Reset to normal appearance
+        this.loadingElement!.className =
+          'fixed top-0 left-0 right-0 z-50 bg-primary text-primary-content px-4 py-2 transform -translate-y-full transition-transform duration-300 ease-in-out';
+      }, 5000);
+    }
+  }
+
+  /**
    * Show success state briefly
    */
   showSuccess(message: string): void {

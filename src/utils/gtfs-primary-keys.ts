@@ -288,12 +288,7 @@ export function generateCompositeKeyFromRecord(
   if (config.type === 'composite') {
     const keyParts = config.fields.map((field) => {
       const value = record[field];
-      if (value === undefined || value === null || value === '') {
-        throw new Error(
-          `Missing required primary key field '${field}' for table '${tableName}'`
-        );
-      }
-      return String(value);
+      return value !== undefined && value !== null ? String(value) : '';
     });
     return keyParts.join(':');
   }

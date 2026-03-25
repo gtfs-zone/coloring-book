@@ -4,7 +4,11 @@ import { CONFIG } from '../config.js';
 import { GTFSDatabase, GTFSDatabaseRecord } from './gtfs-database.js';
 import { GTFS_FILES, GTFSFilePresence, GTFS_TABLES } from '../types/gtfs.js';
 import { loadingStateManager } from './loading-state-manager.js';
-import { ALL_GTFS_FILES, makeHeaderOnlyCSV } from './gtfs-file-registry.js';
+import {
+  ALL_GTFS_FILES,
+  makeHeaderOnlyCSV,
+  isSupportedFile,
+} from './gtfs-file-registry.js';
 import { GTFSTableMap } from '../types/gtfs-entities.js';
 
 interface GTFSFileData<T = GTFSDatabaseRecord> {
@@ -246,10 +250,16 @@ export class GTFSParser {
       );
 
       this.gtfsData = {};
+      const unknownFiles: string[] = [];
       const totalFiles = files.length;
 
       for (let i = 0; i < files.length; i++) {
         const fileName = files[i];
+
+        if (!isSupportedFile(fileName)) {
+          unknownFiles.push(fileName);
+          continue;
+        }
         const progress = 20 + 60 * (i / totalFiles); // 20-80% for file processing
 
         loadingStateManager.updateProgress(
@@ -303,6 +313,12 @@ export class GTFSParser {
             geoJsonData as GTFSDatabaseRecord,
           ]);
         }
+      }
+
+      if (unknownFiles.length > 0) {
+        loadingStateManager.showWarning(
+          `Ignoring unknown files: ${unknownFiles.join(', ')}`
+        );
       }
 
       // Ensure all 31 GTFS files are registered — fill in header-only for those not in the ZIP.
