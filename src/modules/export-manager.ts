@@ -69,10 +69,15 @@ export class ExportManager {
     let loadingNotificationId: string | null = null;
 
     try {
-      // Check if data is available
-      if (!this.gtfsParser || this.gtfsParser.getAllFileNames().length === 0) {
+      // Check if there is any actual data to export (skip if only header-only files)
+      if (
+        !this.gtfsParser ||
+        !this.gtfsParser
+          .getAllFileNames()
+          .some((f) => (this.gtfsParser.getFileDataSync(f)?.length ?? 0) > 0)
+      ) {
         notifications.showWarning(
-          'No GTFS data to export. Please load a GTFS feed first.'
+          'No GTFS data to export. Please add some data first.'
         );
         return;
       }
@@ -361,7 +366,12 @@ export class ExportManager {
    * Check if export is available (has data)
    */
   public canExport(): boolean {
-    return this.gtfsParser && this.gtfsParser.getAllFileNames().length > 0;
+    return (
+      !!this.gtfsParser &&
+      this.gtfsParser
+        .getAllFileNames()
+        .some((f) => (this.gtfsParser.getFileDataSync(f)?.length ?? 0) > 0)
+    );
   }
 
   /**

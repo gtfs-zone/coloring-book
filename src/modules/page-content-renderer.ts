@@ -39,7 +39,6 @@ import { notifications } from './notification-system.js';
 export interface ContentRendererDependencies {
   // GTFS data relationships
   relationships: {
-    hasDataAsync: () => Promise<boolean>;
     getAgenciesAsync: () => Promise<unknown[]>;
     getRoutesForAgencyAsync: (agency_id: string) => Promise<unknown[]>;
     getTripsForRouteAsync: (route_id: string) => Promise<unknown[]>;
@@ -179,11 +178,6 @@ export class PageContentRenderer {
    */
   async renderPage(pageState: PageState): Promise<string> {
     try {
-      // Check if GTFS data is available
-      if (!(await this.dependencies.relationships.hasDataAsync())) {
-        return this.renderEmptyState();
-      }
-
       // Render based on page type
       switch (pageState.type) {
         case 'home':
@@ -235,27 +229,6 @@ export class PageContentRenderer {
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
         </svg>
         <span>${message}</span>
-      </div>
-    `;
-  }
-
-  /**
-   * Render empty state when no GTFS data is loaded
-   */
-  private renderEmptyState(): string {
-    return `
-      <div class="hero min-h-96">
-        <div class="hero-content text-center">
-          <div class="max-w-md">
-            <h1 class="text-5xl font-bold">No GTFS Data</h1>
-            <p class="py-6">
-              Please upload a GTFS file or load one from a URL to browse transit data.
-            </p>
-            <p class="text-sm text-base-content/70">
-              Switch to the Upload tab to get started.
-            </p>
-          </div>
-        </div>
       </div>
     `;
   }

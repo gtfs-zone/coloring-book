@@ -4,6 +4,7 @@ import { CONFIG } from '../config.js';
 import { GTFSDatabase, GTFSDatabaseRecord } from './gtfs-database.js';
 import { GTFS_FILES, GTFSFilePresence, GTFS_TABLES } from '../types/gtfs.js';
 import { loadingStateManager } from './loading-state-manager.js';
+import { ALL_GTFS_FILES, makeHeaderOnlyCSV } from './gtfs-file-registry.js';
 import { GTFSTableMap } from '../types/gtfs-entities.js';
 
 interface GTFSFileData<T = GTFSDatabaseRecord> {
@@ -128,7 +129,16 @@ export class GTFSParser {
   async initialize(): Promise<void> {
     await this.gtfsDatabase.initialize();
 
-    // Check if there's existing data in IndexedDB and restore it to memory cache
+    // Invariant: all 31 GTFS files are always in gtfsData from this point forward.
+    for (const filename of ALL_GTFS_FILES) {
+      this.gtfsData[filename] = {
+        content: makeHeaderOnlyCSV(filename),
+        data: [],
+        errors: [],
+      };
+    }
+
+    // Overlay with real rows from IndexedDB (if any exist).
     await this.restoreDataFromDatabase();
   }
 
@@ -140,23 +150,9 @@ export class GTFSParser {
     try {
       const stats = await this.gtfsDatabase.getDatabaseStats();
 
-      // Check if stats is valid and has the expected structure
-      if (!stats || !stats.tables) {
+      if (!stats?.tables) {
         console.log(
-          '[GTFSParser] No valid database stats found, keeping empty cache'
-        );
-        return;
-      }
-
-      const totalRecords = Object.values(stats.tables).reduce(
-        (sum, count) => sum + count,
-        0
-      );
-
-      // Only restore if there's data in the database
-      if (totalRecords === 0) {
-        console.log(
-          '[GTFSParser] No data found in IndexedDB, keeping empty cache'
+          '[GTFSParser] No valid database stats found, keeping header-only baseline'
         );
         return;
       }
@@ -166,41 +162,39 @@ export class GTFSParser {
         stats.tables
       );
 
-      this.gtfsData = {};
-
-      // Restore data for each table that has records
+      // Overlay any tables that have rows on top of the header-only baseline.
       for (const [tableName, count] of Object.entries(stats.tables)) {
-        if (count > 0) {
-          const fileName = tableName.endsWith('.txt')
-            ? tableName
-            : `${tableName}.txt`;
+        if (count === 0) {
+          continue;
+        }
 
-          try {
-            const data = await this.gtfsDatabase.getAllRows(tableName);
+        const fileName = tableName.endsWith('.txt')
+          ? tableName
+          : `${tableName}.txt`;
 
-            if (data && data.length > 0) {
-              // Generate CSV content from the data
-              const headers = Object.keys(data[0]);
-              const csvContent = [
-                headers.join(','),
-                ...data.map((row: GTFSDatabaseRecord) =>
-                  headers.map((header) => row[header] || '').join(',')
-                ),
-              ].join('\n');
+        try {
+          const data = await this.gtfsDatabase.getAllRows(tableName);
 
-              this.gtfsData[fileName] = {
-                content: csvContent,
-                data: data,
-                errors: [],
-              };
-            }
-          } catch (tableError) {
-            console.warn(
-              `[GTFSParser] Failed to restore table ${tableName}:`,
-              tableError
-            );
-            // Continue with other tables
+          if (data && data.length > 0) {
+            const headers = Object.keys(data[0]);
+            const csvContent = [
+              headers.join(','),
+              ...data.map((row: GTFSDatabaseRecord) =>
+                headers.map((header) => row[header] || '').join(',')
+              ),
+            ].join('\n');
+
+            this.gtfsData[fileName] = {
+              content: csvContent,
+              data: data,
+              errors: [],
+            };
           }
+        } catch (tableError) {
+          console.warn(
+            `[GTFSParser] Failed to restore table ${tableName}:`,
+            tableError
+          );
         }
       }
 
@@ -213,72 +207,23 @@ export class GTFSParser {
         '[GTFSParser] Failed to restore data from IndexedDB:',
         error
       );
-      // Don't throw - continue with empty cache and let the user reload data
     }
   }
 
   async initializeEmpty(): Promise<void> {
-    // Initialize with empty GTFS structure - no sample data for production
-    const emptyData = {
-      [GTFS_TABLES.AGENCY]: [],
-      [GTFS_TABLES.ROUTES]: [],
-      [GTFS_TABLES.TRIPS]: [],
-      [GTFS_TABLES.STOPS]: [],
-      [GTFS_TABLES.STOP_TIMES]: [],
-      [GTFS_TABLES.CALENDAR]: [],
-    };
-
     // Clear existing data from database
     await this.gtfsDatabase.clearDatabase();
 
-    // Convert to expected format with content and data properties
     // eslint-disable-next-line no-console
     console.log('[new-feed] initializeEmpty() start');
-    this.gtfsData = {};
-    for (const [fileName, data] of Object.entries(emptyData)) {
-      // Register file even if empty — presence is what matters for the file list
-      const csvContent =
-        data.length > 0
-          ? [
-              Object.keys(data[0]).join(','),
-              ...data.map((row: GTFSDatabaseRecord) =>
-                Object.keys(data[0])
-                  .map((h) => row[h] || '')
-                  .join(',')
-              ),
-            ].join('\n')
-          : '';
-      // eslint-disable-next-line no-console
-      console.log('[new-feed] registering file', {
-        fileName,
-        rows: data.length,
-      });
-      this.gtfsData[fileName] = { content: csvContent, data, errors: [] };
-      if (data.length > 0) {
-        const tableName = this.getTableName(fileName);
-        await this.gtfsDatabase.insertRows(
-          tableName,
-          data as GTFSDatabaseRecord[]
-        );
-      }
+    for (const filename of ALL_GTFS_FILES) {
+      const content = makeHeaderOnlyCSV(filename);
+      this.gtfsData[filename] = { content, data: [], errors: [] };
     }
     // eslint-disable-next-line no-console
     console.log('[new-feed] initializeEmpty() done', {
       keys: Object.keys(this.gtfsData),
     });
-
-    // Update project metadata
-    await this.gtfsDatabase.updateProjectMetadata({
-      name: 'New GTFS Feed',
-      createdAt: new Date().toISOString(),
-      lastModified: new Date().toISOString(),
-      fileCount: Object.keys(emptyData).length,
-    });
-
-    // eslint-disable-next-line no-console
-    console.log('Initialized empty GTFS feed');
-    // eslint-disable-next-line no-console
-    console.log('Final gtfsData structure:', this.gtfsData);
   }
 
   async parseFile(
@@ -374,15 +319,18 @@ export class GTFSParser {
         }
       }
 
-      // Update project metadata
-      loadingStateManager.updateProgress(operation, 90, 'Finalizing...');
-      await this.gtfsDatabase.updateProjectMetadata({
-        name: (file as File).name || 'Uploaded GTFS',
-        createdAt: new Date().toISOString(),
-        lastModified: new Date().toISOString(),
-        fileCount: files.length,
-      });
+      // Ensure all 31 GTFS files are registered — fill in header-only for those not in the ZIP.
+      for (const filename of ALL_GTFS_FILES) {
+        if (!this.gtfsData[filename]) {
+          this.gtfsData[filename] = {
+            content: makeHeaderOnlyCSV(filename),
+            data: [],
+            errors: [],
+          };
+        }
+      }
 
+      loadingStateManager.updateProgress(operation, 90, 'Finalizing...');
       loadingStateManager.updateProgress(operation, 100, 'Complete!');
       loadingStateManager.finishLoading(operation);
       loadingStateManager.showSuccess(
@@ -642,7 +590,10 @@ export class GTFSParser {
       // Get all available files from memory (for file list)
       const fileNames = Object.keys(this.gtfsData);
 
-      if (fileNames.length === 0) {
+      const hasAnyRows = fileNames.some(
+        (f) => (this.gtfsData[f]?.data.length ?? 0) > 0
+      );
+      if (!hasAnyRows) {
         throw new Error('No GTFS data to export');
       }
 
@@ -654,25 +605,30 @@ export class GTFSParser {
           const tableName = this.getTableName(fileName);
           const rows = await this.gtfsDatabase.getAllRows(tableName);
 
+          // Skip header-only files — don't include empty tables in the export.
+          if (
+            rows.length === 0 &&
+            (this.gtfsData[fileName]?.data.length ?? 0) === 0
+          ) {
+            continue;
+          }
+
           if (rows.length > 0) {
             // Generate CSV content from IndexedDB data
             let csvContent = '';
 
             if (fileName.endsWith('.txt')) {
-              // Create CSV content with proper formatting
-              if (rows.length > 0) {
-                const headers = Object.keys(rows[0]);
-                csvContent = [
-                  headers.join(','),
-                  ...rows.map((row) =>
-                    headers
-                      .map((header) =>
-                        this.formatFieldForExport(header, row[header])
-                      )
-                      .join(',')
-                  ),
-                ].join('\n');
-              }
+              const headers = Object.keys(rows[0]);
+              csvContent = [
+                headers.join(','),
+                ...rows.map((row) =>
+                  headers
+                    .map((header) =>
+                      this.formatFieldForExport(header, row[header])
+                    )
+                    .join(',')
+                ),
+              ].join('\n');
             } else if (fileName.endsWith('.geojson')) {
               // For GeoJSON, use the stored data directly
               csvContent = JSON.stringify(rows[0], null, 2);
@@ -680,7 +636,7 @@ export class GTFSParser {
 
             zip.file(fileName, csvContent);
           } else {
-            // Fallback to memory content if IndexedDB is empty
+            // Fallback to memory content if IndexedDB is empty but memory has rows
             // eslint-disable-next-line no-console
             console.warn(
               `No data in IndexedDB for ${fileName}, using memory content`
