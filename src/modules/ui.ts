@@ -6,7 +6,7 @@ import {
   createTooltip,
   getSchemaFieldName,
 } from '../utils/zod-tooltip-helper.js';
-import { navigateToTimetable } from './navigation-actions.js';
+import { navigateToTimetable, navigateToHome } from './navigation-actions.js';
 import { GTFS_TABLES } from '../types/gtfs.js';
 import { MapMode } from './map-controller.js';
 
@@ -221,6 +221,7 @@ export class UIController {
 
       // Refresh Objects navigation if available
       if (this.browseNavigation) {
+        await navigateToHome();
         this.browseNavigation.refresh();
       }
 
@@ -293,6 +294,7 @@ export class UIController {
 
       // Refresh Objects navigation if available
       if (this.browseNavigation) {
+        await navigateToHome();
         this.browseNavigation.refresh();
       }
 
@@ -352,13 +354,6 @@ export class UIController {
 
     // Get categorized files
     const { required, optional, other } = this.gtfsParser.categorizeFiles();
-    // eslint-disable-next-line no-console
-    console.log('[new-feed] updateFileList()', {
-      required: required.length,
-      optional: optional.length,
-      other: other.length,
-    });
-
     // Create DaisyUI menu structure
     const menu = document.createElement('ul');
     menu.className = 'menu w-full';
@@ -1088,29 +1083,22 @@ export class UIController {
   }
 
   async createNewFeed() {
-    // eslint-disable-next-line no-console
-    console.log('[new-feed] createNewFeed() start');
     try {
       // Reset to empty GTFS feed
       await this.gtfsParser.initializeEmpty();
-      // eslint-disable-next-line no-console
-      console.log('[new-feed] initializeEmpty() complete');
       this.updateFileList();
       await this.mapController.updateMap();
       this.mapController.hideMapOverlay();
-      // eslint-disable-next-line no-console
-      console.log('[new-feed] map overlay hidden');
 
       // Show files tab
       this.showFileList();
-      // eslint-disable-next-line no-console
-      console.log('[new-feed] files tab shown');
 
       // Clear editor
       this.editor.clearEditor();
 
       // Refresh Objects navigation if available
       if (this.browseNavigation) {
+        await navigateToHome();
         this.browseNavigation.refresh();
       }
 
@@ -1120,8 +1108,6 @@ export class UIController {
       }
 
       notifications.showSuccess('New empty GTFS feed created.');
-      // eslint-disable-next-line no-console
-      console.log('[new-feed] createNewFeed() done');
     } catch (error) {
       console.error('Error creating new GTFS feed:', error);
       notifications.showError(
