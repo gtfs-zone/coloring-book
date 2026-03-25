@@ -172,7 +172,7 @@ export class RouteRenderer {
       this.gtfsParser.getFileDataSyncTyped<GTFS.StopTime>('stop_times.txt');
     const stops = this.gtfsParser.getFileDataSyncTyped<GTFS.Stop>('stops.txt');
 
-    if (!routes || !trips) {
+    if (routes.length === 0 || trips.length === 0) {
       return [];
     }
 
@@ -189,12 +189,12 @@ export class RouteRenderer {
         let geometry = null;
 
         // Try to use shape data first
-        if (trip.shape_id && shapes) {
+        if (trip.shape_id && shapes.length > 0) {
           geometry = this.createRouteGeometryFromShape(trip.shape_id, shapes);
         }
 
         // Fall back to stop connections if no shape
-        if (!geometry && stopTimes && stops) {
+        if (!geometry && stopTimes.length > 0 && stops.length > 0) {
           console.warn(
             `No shape data for trip ${trip.trip_id}, falling back to stop connections (will be jagged)`
           );

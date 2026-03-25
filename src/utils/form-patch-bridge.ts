@@ -20,7 +20,7 @@ export interface FormPatchDeps {
     ) => Promise<void>;
   };
   parser: {
-    getFileDataSync: (fileName: string) => GTFSDatabaseRecord[] | null;
+    getFileDataSync: (fileName: string) => GTFSDatabaseRecord[];
   };
 }
 

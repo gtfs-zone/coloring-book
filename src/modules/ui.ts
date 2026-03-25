@@ -6,7 +6,7 @@ import {
   createTooltip,
   getSchemaFieldName,
 } from '../utils/zod-tooltip-helper.js';
-import { navigateToTimetable } from './navigation-actions.js';
+import { navigateToTimetable, navigateToHome } from './navigation-actions.js';
 import { GTFS_TABLES } from '../types/gtfs.js';
 import { MapMode } from './map-controller.js';
 
@@ -221,6 +221,7 @@ export class UIController {
 
       // Refresh Objects navigation if available
       if (this.browseNavigation) {
+        await navigateToHome();
         this.browseNavigation.refresh();
       }
 
@@ -293,6 +294,7 @@ export class UIController {
 
       // Refresh Objects navigation if available
       if (this.browseNavigation) {
+        await navigateToHome();
         this.browseNavigation.refresh();
       }
 
@@ -352,7 +354,6 @@ export class UIController {
 
     // Get categorized files
     const { required, optional, other } = this.gtfsParser.categorizeFiles();
-
     // Create DaisyUI menu structure
     const menu = document.createElement('ul');
     menu.className = 'menu w-full';
@@ -443,7 +444,7 @@ export class UIController {
   }
 
   async openFile(fileName, clickedElement = null) {
-    if (!this.gtfsParser.getFileContent(fileName)) {
+    if (!this.gtfsParser.getAllFileNames().includes(fileName)) {
       return;
     }
 
@@ -1087,12 +1088,17 @@ export class UIController {
       await this.gtfsParser.initializeEmpty();
       this.updateFileList();
       await this.mapController.updateMap();
+      this.mapController.hideMapOverlay();
+
+      // Show files tab
+      this.showFileList();
 
       // Clear editor
       this.editor.clearEditor();
 
       // Refresh Objects navigation if available
       if (this.browseNavigation) {
+        await navigateToHome();
         this.browseNavigation.refresh();
       }
 
@@ -1101,8 +1107,7 @@ export class UIController {
         this.validateCallback();
       }
 
-      notifications.showSuccess('New GTFS feed created with sample data!');
-      console.log('Created new GTFS feed');
+      notifications.showSuccess('New empty GTFS feed created.');
     } catch (error) {
       console.error('Error creating new GTFS feed:', error);
       notifications.showError(
@@ -1115,9 +1120,14 @@ export class UIController {
     let loadingNotificationId = null;
 
     try {
-      if (!this.gtfsParser || this.gtfsParser.getAllFileNames().length === 0) {
+      if (
+        !this.gtfsParser ||
+        !this.gtfsParser
+          .getAllFileNames()
+          .some((f) => (this.gtfsParser.getFileDataSync(f)?.length ?? 0) > 0)
+      ) {
         notifications.showWarning(
-          'No GTFS data to export. Please load a GTFS feed first.'
+          'No GTFS data to export. Please add some data first.'
         );
         return;
       }

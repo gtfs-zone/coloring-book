@@ -22,7 +22,6 @@ import {
 
 export class BrowseNavigation {
   private relationships: {
-    hasDataAsync: () => Promise<boolean>;
     getAgenciesAsync: () => Promise<Record<string, unknown>[]>;
     getRoutesForAgencyAsync: (
       agency_id: string
@@ -109,7 +108,6 @@ export class BrowseNavigation {
 
   constructor(
     gtfsRelationships: {
-      hasDataAsync: () => Promise<boolean>;
       getAgenciesAsync: () => Promise<Record<string, unknown>[]>;
       getRoutesForAgencyAsync: (
         agency_id: string
@@ -194,7 +192,6 @@ export class BrowseNavigation {
   private initializeContentRenderer(): void {
     const dependencies: ContentRendererDependencies = {
       relationships: {
-        hasDataAsync: () => this.relationships.hasDataAsync(),
         getAgenciesAsync: () => this.relationships.getAgenciesAsync(),
         getRoutesForAgencyAsync: (agency_id: string) =>
           this.relationships.getRoutesForAgencyAsync(agency_id),
