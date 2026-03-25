@@ -373,10 +373,10 @@ messaging — no "Add file" button needed, since the file is already there.
 
 ### Checklist — Phase 4
 
-- [ ] Audit content views in `page-content-renderer.ts` for `getFileDataSync()` null checks —
+- [x] Audit content views in `page-content-renderer.ts` for `getFileDataSync()` null checks —
       replace `=== null` guards with `length === 0` empty-list rendering
-- [ ] Audit content views for any "file not in feed" messaging — replace with empty-list copy
-- [ ] **Test flow:** New feed → navigate to route detail → see "No shapes defined" (not "shapes.txt not in feed")
+- [x] Audit content views for any "file not in feed" messaging — replace with empty-list copy
+- [x] **Test flow:** New feed → navigate to route detail → see "No shapes defined" (not "shapes.txt not in feed")
 
 ---
 

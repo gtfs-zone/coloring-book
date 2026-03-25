@@ -123,7 +123,7 @@ export interface ContentRendererDependencies {
 
   // Parser for reading in-memory GTFS data (used by patch bridge)
   parser?: {
-    getFileDataSync: (fileName: string) => GTFSDatabaseRecord[] | null;
+    getFileDataSync: (fileName: string) => GTFSDatabaseRecord[];
   };
 }
 
