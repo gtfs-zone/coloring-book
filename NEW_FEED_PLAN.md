@@ -7,10 +7,10 @@ a notification fires but the file list stays empty, the map overlay persists, an
 edited. The root cause is a single off-by-one guard in `initializeEmpty()`, but fixing just that
 one line without a stronger abstraction would leave us with fragile file management long-term.
 
-This plan repairs the immediate bug, then layers in a proper GTFS file management idiom that will
-make adding optional files, handling missing files, and future feed operations essentially
-bug-free by construction. Debug console logs are left in place intentionally — this is a
-development-phase project and rich logging is a feature, not clutter.
+This plan repairs the immediate bug, then establishes a clean invariant: **all 31 GTFS files are
+always registered in memory**, regardless of feed state. No code ever needs to special-case
+"this file might not exist." The `project` metadata store (a non-GTFS artifact used only as a
+"feed loaded?" signal) is removed entirely. Debug console logs are left in place intentionally.
 
 ---
 
@@ -35,6 +35,23 @@ Secondary issues in `createNewFeed()`:
 
 ---
 
+## The Core Invariant
+
+After Phase 2 is complete, the following is always true from the moment `initialize()` returns:
+
+> `gtfsParser.getAllFileNames()` returns all 31 GTFS filenames. Every file has at least a
+> header row. `getFileDataSync(filename)` returns `[]` (never `null`) for any supported file.
+
+This means:
+- No code ever needs to check "does this file exist?" — it always does.
+- No "No GTFS Data" empty state is needed in Browse — the home page just shows 0 agencies/routes.
+- No `hasData()` / `hasDataAsync()` concept is needed anywhere.
+- No "Add file" affordance is needed — files are always present, users just add rows to them.
+- The `project` metadata store (non-GTFS, used only to gate restore logic) is eliminated.
+- Export skips files with 0 rows (correct GTFS behaviour; validators reject empty required files).
+
+---
+
 ## Phase 1 — Debug Instrumentation & Minimal Fix ✓ DONE
 
 **Goal:** Make the new-feed flow visible and minimally functional so we can observe the full
@@ -51,13 +68,6 @@ system behavior during subsequent phases.
 - `openFile()` guard changed from falsy-content check to `getAllFileNames().includes(fileName)` —
   this is the correct long-term check and should stay through all phases.
 
-### Findings for Phase 2
-
-- Empty files are stored with `content: ''` (no header row). Phase 2 should populate the header
-  row from the GTFS schema so the editor opens to a useful empty table rather than a blank screen.
-- Pre-existing TypeScript errors exist in `gtfs-database.ts` and `index.ts` — unrelated to this
-  work, do not fix in this branch.
-
 ### Checklist — Phase 1
 
 - [x] Add `[new-feed]` console logs to `initializeEmpty()`
@@ -68,237 +78,352 @@ system behavior during subsequent phases.
 - [x] Switch to Files tab in `createNewFeed()`
 - [x] Fix notification text in `createNewFeed()`
 - [x] Fix `openFile()` empty-content guard
-- [x] **Test flow:** Load example feed → click New Feed → file list shows 6 files → map overlay gone → files tab active → console shows `[new-feed]` sequence with correct counts
 
 ---
 
-## Phase 2 — GTFS File Registry Abstraction
+## Phase 2 — Always-Files Invariant & Project Store Removal
 
-**Goal:** Establish a single source of truth for file metadata (headers, presence, supported
-status) that all other code consults. This prevents the scattered assumptions that caused the
-Phase 1 bug and makes "add file" / "missing file" handling trivial.
+**Goal:** All 31 GTFS files are always registered in `gtfsData` from startup. The `project`
+IndexedDB store (non-GTFS, used only as a "feed loaded?" gate) is removed. The "No GTFS Data"
+empty state in Browse is eliminated.
 
-### 2.1 Design
+Phase 2 has two sub-phases that must be done together (they are tightly coupled):
+- **2A** — File registry + always-register in memory (pure in-memory, no DB changes)
+- **2B** — Drop `project` store from IndexedDB (requires DB version bump + migration)
 
-Add a module `src/modules/gtfs-file-registry.ts` (or extend `src/types/gtfs.ts`) that exports:
+---
+
+### Phase 2A — File Registry & Always-Register in Memory
+
+#### 2A.1 — `gtfs-file-registry.ts` (partially done)
+
+Add `ALL_GTFS_FILES` — the canonical list of all 31 filenames, derived directly from
+`GTFS_FILES` so it can never go out of sync:
 
 ```typescript
-// The 6 files to initialize on a new feed (required + conditionally-required starters)
+// All 31 supported GTFS filenames, derived from the Zod schema registry.
+// This is the authoritative list — never hardcode filenames elsewhere.
+export const ALL_GTFS_FILES: readonly string[] =
+  GTFS_FILES.map((f) => f.filename);
+
+// The 6 minimum-viable starter files (kept for documentation / reference only)
 export const NEW_FEED_FILES: readonly string[] = [
-  'agency.txt',
-  'routes.txt',
-  'trips.txt',
-  'stops.txt',        // Conditionally Required — included by default
-  'stop_times.txt',
-  'calendar.txt',     // Conditionally Required — included by default (vs calendar_dates.txt)
+  'agency.txt', 'routes.txt', 'trips.txt',
+  'stops.txt', 'stop_times.txt', 'calendar.txt',
 ];
-
-// Derive canonical column headers for a file from its Zod schema
-export function getFileHeaders(filename: string): string[]
-
-// Whether a filename is supported (appears in GTFS_FILES)
-export function isSupportedFile(filename: string): boolean
-
-// All optional/conditionally-required files that can be added
-export function getAddableFiles(presentFiles: string[]): GTFSFileInfo[]
-
-// Generate a headers-only CSV string for a given file
-export function makeHeaderOnlyCSV(filename: string): string
 ```
 
-**Header derivation strategy:** The Zod schemas in `GTFS_FILES[n].schema` are `z.object({...})`
-shapes. The canonical header list is `Object.keys(schema.shape)`. This is already the ground
-truth for the application — no duplication needed.
+Keep `getFileHeaders()`, `makeHeaderOnlyCSV()`, `isSupportedFile()`, `getAddableFiles()` as-is.
 
-### 2.2 `makeHeaderOnlyCSV(filename)`
+#### 2A.2 — `GTFSParser.initialize()` — always pre-register all files
 
-Returns a single-line CSV: just the comma-joined field names from the schema. Example:
-
-```
-agency_id,agency_name,agency_url,agency_timezone
-```
-
-This is what gets stored as `content` in `gtfsData` for a new or added file with no rows.
-
-### 2.3 Integrate with `GTFSParser.initializeEmpty()`
-
-Replace the hardcoded `emptyData` object with a loop over `NEW_FEED_FILES`:
+Before calling `restoreDataFromDatabase()`, unconditionally register every file in
+`ALL_GTFS_FILES` with header-only content:
 
 ```typescript
-for (const filename of NEW_FEED_FILES) {
-  const content = makeHeaderOnlyCSV(filename);
-  this.gtfsData[filename] = { content, data: [], errors: [] };
-  console.log('[new-feed] registered file', filename, 'with headers');
+async initialize(): Promise<void> {
+  await this.gtfsDatabase.initialize();
+  // Invariant: all 31 GTFS files are always in gtfsData from this point forward.
+  for (const filename of ALL_GTFS_FILES) {
+    this.gtfsData[filename] = {
+      content: makeHeaderOnlyCSV(filename),
+      data: [],
+      errors: [],
+    };
+  }
+  // Overlay with real rows from IndexedDB (if any exist).
+  await this.restoreDataFromDatabase();
 }
 ```
 
-No IndexedDB insert needed for empty tables (nothing to store). The table is "present" by virtue
-of being in `gtfsData`.
+This replaces the `NEW_FEED_FILES` baseline loop that was inside `restoreDataFromDatabase()`.
 
-### 2.4 Integrate with `categorizeFiles()`
+#### 2A.3 — `GTFSParser.restoreDataFromDatabase()` — remove project metadata gate
 
-No change needed — `categorizeFiles()` already consults `getAllFileNames()` which reads
-`gtfsData` keys. Once Phase 1 fix lands, this works correctly.
+The current implementation gates on `getProjectMetadata()` returning a value, which is the sole
+reason the `project` store exists. Remove the gate entirely. The method now simply iterates all
+tables in the DB and overlays any rows it finds:
 
-### 2.5 Parser restoration on app reload
+```typescript
+async restoreDataFromDatabase(): Promise<void> {
+  // No project-metadata gate. All 31 files already registered by initialize().
+  // Just overlay with real rows where they exist.
+  const stats = await this.gtfsDatabase.getDatabaseStats();
+  if (!stats?.tables) return;
 
-When the app reloads with existing IndexedDB data, `gtfsData` is currently populated only for
-files that had rows. Files that were present but empty (e.g., a user created `shapes.txt` but
-hasn't added shapes yet) will disappear from the file list on reload.
+  for (const [tableName, count] of Object.entries(stats.tables)) {
+    if (count === 0) continue;
+    const fileName = tableName.endsWith('.txt') ? tableName : `${tableName}.txt`;
+    const data = await this.gtfsDatabase.getAllRows(tableName);
+    if (data.length > 0) {
+      const headers = Object.keys(data[0]);
+      this.gtfsData[fileName] = {
+        content: [headers.join(','), ...data.map(row => headers.map(h => row[h] ?? '').join(','))].join('\n'),
+        data,
+        errors: [],
+      };
+    }
+  }
+}
+```
 
-Fix: during `restoreFromPatches()` / `initialize()`, for any file that was ever inserted into the
-DB (even with 0 rows), ensure it is registered in `gtfsData` with at least a header-only entry.
-This requires checking `getDatabaseStats()` or querying each known table.
+#### 2A.4 — `GTFSParser.initializeEmpty()` — register all 31 files, remove metadata call
 
-### Checklist — Phase 2
+```typescript
+async initializeEmpty(): Promise<void> {
+  await this.gtfsDatabase.clearDatabase();
+  console.log('[new-feed] initializeEmpty() start');
+  for (const filename of ALL_GTFS_FILES) {
+    const content = makeHeaderOnlyCSV(filename);
+    console.log('[new-feed] registering file', filename);
+    this.gtfsData[filename] = { content, data: [], errors: [] };
+  }
+  console.log('[new-feed] initializeEmpty() done', { keys: Object.keys(this.gtfsData) });
+  // No updateProjectMetadata() call — project store is being removed.
+}
+```
 
-- [ ] Create `src/modules/gtfs-file-registry.ts` with `NEW_FEED_FILES`, `getFileHeaders()`,
+#### 2A.5 — `GTFSParser.parseFile()` — fill in missing files, remove metadata call
+
+After processing the ZIP, register any GTFS file that was not in the archive with header-only
+content (so all 31 are present regardless of what the feed contained):
+
+```typescript
+// After the existing ZIP-processing loop:
+for (const filename of ALL_GTFS_FILES) {
+  if (!this.gtfsData[filename]) {
+    this.gtfsData[filename] = {
+      content: makeHeaderOnlyCSV(filename),
+      data: [],
+      errors: [],
+    };
+  }
+}
+// Remove: await this.gtfsDatabase.updateProjectMetadata(...)
+```
+
+#### 2A.6 — `GTFSParser.exportAsZip()` — skip header-only (empty) files
+
+The invariant means `gtfsData` always has 31 entries, but most of them may be empty. Only export
+files that have actual data rows. Also update the "nothing to export" guard.
+
+```typescript
+// Replace: if (fileNames.length === 0) throw ...
+// With:
+const hasAnyData = fileNames.some(f => this.gtfsData[f].data.length > 0);
+if (!hasAnyData) throw new Error('No GTFS data to export');
+
+// In the per-file loop, skip empty files:
+if (rows.length === 0 && this.gtfsData[fileName].data.length === 0) {
+  continue; // Don't include header-only files in the export
+}
+```
+
+#### 2A.7 — Remove `renderEmptyState()` and `hasDataAsync()` guard
+
+**`src/modules/page-content-renderer.ts`:**
+- Delete the `if (!(await this.dependencies.relationships.hasDataAsync()))` early-return in `renderPage()`.
+- Delete the `renderEmptyState()` method.
+- Remove `hasDataAsync` from the `ContentRendererDependencies` interface.
+
+**`src/modules/browse-navigation.ts`:**
+- Remove `hasDataAsync` from the `relationships` dependency type declaration.
+
+**`src/modules/gtfs-relationships.ts`:**
+- Delete `hasData()` and `hasDataAsync()` methods.
+- Remove any helper method used only by those two (e.g. `getStatisticsAsync()` if it has no
+  other callers — check first).
+
+**`src/modules/export-manager.ts` (line 73) and `src/modules/ui.ts` (line 1137):**
+- Replace the `getAllFileNames().length === 0` guard with the "any rows?" check:
+  ```typescript
+  if (!this.gtfsParser.getAllFileNames().some(f => (this.gtfsParser.getFileDataSync(f)?.length ?? 0) > 0)) {
+    notifications.showError('No GTFS data to export. Please add some data first.');
+    return;
+  }
+  ```
+
+### Checklist — Phase 2A
+
+- [x] Create `src/modules/gtfs-file-registry.ts` with `NEW_FEED_FILES`, `getFileHeaders()`,
       `makeHeaderOnlyCSV()`, `getAddableFiles()`
-- [ ] Write unit-level tests (or at least manual verification) of header derivation for all 6
-      starter files
-- [ ] Replace hardcoded `emptyData` in `initializeEmpty()` with registry-based loop
-- [ ] Verify `categorizeFiles()` correctly lists all 6 files after new-feed creation
-- [ ] Fix reload persistence for empty files
-- [ ] **Test flow:** New feed → reload page → still shows 6 files in sidebar
+- [x] Fix reload persistence (pre-register `NEW_FEED_FILES` baseline — superseded by 2A.2)
+- [x] Fix patch replay double-insert in `PatchManager.initialize()`
+- [x] Add `ALL_GTFS_FILES` to `gtfs-file-registry.ts`
+- [x] `GTFSParser.initialize()`: pre-register all 31 files unconditionally before `restoreDataFromDatabase()`
+- [x] `GTFSParser.restoreDataFromDatabase()`: remove `getProjectMetadata()` gate; remove `NEW_FEED_FILES` baseline loop (moved to `initialize()`)
+- [x] `GTFSParser.initializeEmpty()`: register all 31 files; remove `updateProjectMetadata()` call
+- [x] `GTFSParser.parseFile()`: fill in missing files after ZIP loop; remove `updateProjectMetadata()` call
+- [x] `GTFSParser.exportAsZip()`: skip files with 0 rows; update "nothing to export" guard
+- [x] Remove `renderEmptyState()` and `hasDataAsync()` guard from `page-content-renderer.ts`
+- [x] Remove `hasDataAsync` from `ContentRendererDependencies` interface
+- [x] Remove `hasDataAsync` from `BrowseNavigation.relationships` type
+- [x] Remove `hasData()` and `hasDataAsync()` from `gtfs-relationships.ts`
+- [x] Update export guards in `export-manager.ts` and `ui.ts` to use "any rows?" check
+- [x] Remove `getProjectMetadata()` gate + `initializeEmpty()` call from `index.ts init()`
+- [x] **Test flow:** Cold start → all 31 files in sidebar → Browse shows empty home (no "No GTFS Data")
+- [x] **Test flow:** New feed → all 31 files in sidebar → map overlay gone → open any file → see header row
+- [x] **Test flow:** Load example feed → real data in populated files + headers only in unpopulated files
 
 ---
 
-## Phase 3 — "Add Optional File" Affordance
+### Phase 2B — Remove `project` Store from IndexedDB
 
-**Goal:** Users can add any supported optional file to an existing feed (new or loaded). Adding a
-file creates it header-only; the first row can be added via the normal table editor.
+The `project` store in IndexedDB is a non-GTFS concept. Its only purpose was to signal
+"a feed has been loaded" to `restoreDataFromDatabase()`. With Phase 2A removing that gate,
+the store serves no purpose and should be dropped.
 
-### 3.1 UI placement
+This requires a DB schema version bump from 5 → 6 with an upgrade migration.
 
-Below the Optional Files section in the sidebar (or at the bottom of the file list), add an
-"+ Add file" button. This is always visible when a feed is loaded.
-
-Clicking opens a small dropdown/select (DaisyUI dropdown) listing all supported files not
-currently present, grouped by presence category (Optional / Conditionally Required /
-Recommended). Greyed-out entries for unsupported or already-present files.
-
-### 3.2 Implementation
-
-In `UIController`:
+#### 2B.1 — Bump DB version in `src/config.ts`
 
 ```typescript
-async addOptionalFile(filename: string): Promise<void> {
-  const content = makeHeaderOnlyCSV(filename);
-  this.gtfsParser.registerFile(filename, content, []);
-  this.updateFileList();
-  await this.openFile(filename);   // immediately open it in the editor
-  console.log('[file-mgmt] added optional file', filename);
-  notifications.showSuccess(`Added ${filename} to feed.`);
+DB_VERSION: 6,   // was 5
+```
+
+#### 2B.2 — Add version 6 migration in `GTFSDatabase.initialize()`
+
+In the `upgrade` callback in `openDB(...)`:
+
+```typescript
+if (oldVersion < 6) {
+  // Remove the non-GTFS project metadata store.
+  // All-files-always-registered makes it unnecessary.
+  if (db.objectStoreNames.contains('project')) {
+    db.deleteObjectStore('project');
+  }
 }
 ```
 
-`GTFSParser.registerFile(filename, content, data)` is a new public method that adds/replaces
-an entry in `gtfsData`. This is also what the "add row to a file that doesn't exist" path uses.
+Remove the `project` store creation block that follows the patch/meta store creation.
 
-### 3.3 Auto-create on first row
+#### 2B.3 — Remove `project` from `GTFSDBSchema`
 
-When the table editor inserts a row into a file that isn't present yet:
-- Call `registerFile()` with the header-only content first
-- Then proceed with the insert
+In `gtfs-database.ts`, delete:
 
-This means a user can navigate to a route and add a shape without first manually adding
-`shapes.txt` — the file is auto-created on demand.
+```typescript
+project: {
+  key: string;
+  value: ProjectMetadata;
+};
+```
 
-### Checklist — Phase 3
+#### 2B.4 — Remove `getProjectMetadata()` and `updateProjectMetadata()` from `GTFSDatabase`
 
-- [ ] Add `GTFSParser.registerFile(filename, content, data)` method
-- [ ] Add "+ Add file" button to file list sidebar
-- [ ] Build dropdown listing addable files from `getAddableFiles()`
-- [ ] Wire dropdown to `UIController.addOptionalFile()`
-- [ ] Implement auto-create-on-first-row in table editor insert path
-- [ ] **Test flow:** New feed → click "+ Add file" → select `shapes.txt` → file appears in
-      sidebar → can be opened → editor shows header row → can add a row
+Delete both methods (~lines 884–926).
+
+#### 2B.5 — Remove `ProjectMetadata` type
+
+In `src/types/gtfs-entities.ts`:
+- Delete the `ProjectMetadata` interface (~line 289).
+- Remove `project: ProjectMetadata` from `GTFSTableMap`.
+
+In `src/modules/gtfs-database.ts`:
+- Remove `ProjectMetadata` from the import and re-export.
+
+#### 2B.6 — Remove from `database-fallback-manager.ts`
+
+Delete `getProjectMetadata()` and `updateProjectMetadata()` methods (~lines 740–749).
+Remove `ProjectMetadata` from its import.
+
+#### 2B.7 — Remove all call sites
+
+Search for `getProjectMetadata` and `updateProjectMetadata` across the codebase and delete
+every call. Expected locations:
+- `src/modules/gtfs-parser.ts` — `initializeEmpty()`, `parseFile()`, `restoreDataFromDatabase()`
+  (all handled in 2A above)
+
+### Checklist — Phase 2B
+
+- [x] Bump `CONFIG.DB_VERSION` to 6 in `src/config.ts`
+- [x] Add `oldVersion < 6` migration in `GTFSDatabase.initialize()` to drop `project` store
+- [x] Remove `project` store from `GTFSDBSchema` interface
+- [x] Remove `project` store creation from the upgrade handler
+- [x] Delete `GTFSDatabase.getProjectMetadata()` and `updateProjectMetadata()`
+- [x] Delete `ProjectMetadata` interface from `src/types/gtfs-entities.ts`
+- [x] Remove `project: ProjectMetadata` from `GTFSTableMap`
+- [x] Remove `ProjectMetadata` import/re-export from `gtfs-database.ts`
+- [x] Delete `getProjectMetadata()` / `updateProjectMetadata()` from `database-fallback-manager.ts`
+- [x] Verify no remaining references to `getProjectMetadata`, `updateProjectMetadata`, or
+      `ProjectMetadata` anywhere in the codebase (`grep` to confirm)
+- [x] **Test flow:** Open app with old DB (version 5) → migration runs cleanly → no errors
+- [x] **Test flow:** Open app fresh (no prior DB) → version 6 schema created → no `project` store
 
 ---
 
-## Phase 4 — Missing File Handling in Content Views
+## Phase 3 — "Add File" Affordance (ELIMINATED)
 
-**Goal:** When a content view (e.g., a route detail panel) references a file that doesn't exist
-in the current feed, show a clear "this file is not present" affordance rather than silently
-failing or rendering nothing.
+With all 31 files always registered in Phase 2, there is nothing to "add." Users interact with
+files by adding rows to them. The `getAddableFiles()` export from `gtfs-file-registry.ts` can
+be removed if it has no other callers.
 
-### 4.1 Detection
+No implementation needed.
 
-Any view that reads from `gtfsParser.getFileDataSync(filename)` and receives `null` should treat
-this as "file not present" — distinct from "file present but empty" (which returns `[]`).
+---
 
-Update `getFileDataSync()` to return `null` only when the file is not registered in `gtfsData`,
-and `[]` when it is registered but has no rows. This distinction already exists — Phase 1 fix
-ensures `gtfsData` has entries for present-but-empty files.
+## Phase 4 — Optional File Awareness in Content Views (SIMPLIFIED)
 
-### 4.2 "Add this file" inline CTA
+With all files always present (`getFileDataSync()` always returns `[]`, never `null`), content
+views that formerly needed null checks for optional files (e.g. shapes, feed_info) can instead
+simply check `data.length === 0` and render an "empty" state vs. a "not present" state.
 
-In `PageContentRenderer` views, when a dependency file is missing, render something like:
-
-```html
-<div class="alert alert-info">
-  <span>shapes.txt is not in this feed.</span>
-  <button class="btn btn-sm btn-primary">Add shapes.txt</button>
-</div>
-```
-
-The button calls `uiController.addOptionalFile('shapes.txt')`.
-
-### 4.3 File list: show missing required files
-
-In `updateFileList()`, show the 6 starter files even if they're absent, with a visual indicator
-(warning badge, greyed out, "missing" label). This gives the user a clear picture of what the
-feed needs.
-
-Strategy: iterate `NEW_FEED_FILES` for the required section, checking presence in `getAllFileNames()`.
-Present → normal item. Absent → dimmed item with "missing" badge and "Add" button.
+The distinction between "file absent" and "file empty" no longer exists. Views that previously
+showed "shapes.txt not in feed" should instead show "No shapes defined yet" or similar empty-list
+messaging — no "Add file" button needed, since the file is already there.
 
 ### Checklist — Phase 4
 
-- [ ] Confirm `getFileDataSync()` semantics: `null` = absent, `[]` = present-empty
-- [ ] Add missing-file CTA component in `PageContentRenderer`
-- [ ] Identify all views that silently fail on missing files and add CTA to each
-- [ ] Update `updateFileList()` to show absent required files with "missing" indicator
-- [ ] **Test flow:** New feed (no shapes.txt) → navigate to route detail that shows shape info →
-      see "shapes.txt not in feed" message with Add button → click Add → shapes.txt appears in
-      sidebar
+- [ ] Audit content views in `page-content-renderer.ts` for `getFileDataSync()` null checks —
+      replace `=== null` guards with `length === 0` empty-list rendering
+- [ ] Audit content views for any "file not in feed" messaging — replace with empty-list copy
+- [ ] **Test flow:** New feed → navigate to route detail → see "No shapes defined" (not "shapes.txt not in feed")
 
 ---
 
 ## Phase 5 — Polish & Consistency Pass
 
-**Goal:** Clean up remaining rough edges now that the abstraction is solid.
+### View State Reset on Feed Change
 
-- [ ] Remove "with sample data" from any remaining notification text
-- [ ] Ensure export button state is always correct (enabled ↔ feed has files)
-- [ ] Ensure undo/redo works correctly after adding a file
-- [ ] Ensure patch log records file creation (so undo removes the file)
-- [ ] Verify reload persistence covers all Phase 3 flows (added optional file survives reload)
-- [ ] Add a `[file-mgmt]` console log namespace for all file operations
+When a new feed is created or a feed is loaded, the UI should land in a known-good state rather
+than leaving stale navigation from a prior feed.
+
+**On `createNewFeed()` (new empty feed):**
+- Reset `PageStateManager` to `{ type: 'home' }` so Browse opens on the home view.
+- Switch to the Files tab (already done in Phase 1).
+- Hide the map overlay (already done in Phase 1).
+- Call `updateFileList()` to render all 31 files.
+- Call `browseNavigation.refresh()` so the Browse panel reflects the empty state.
+
+**On `parseFile()` / `parseFromURL()` (loading a feed):**
+- Same page-state reset to `{ type: 'home' }` so Browse doesn't land mid-tree on stale route/stop.
+- `browseNavigation.refresh()` after load completes.
+
+**Implementation:** In `UIController.createNewFeed()` and in the post-load callback in
+`UIController` (or wherever `parseFile` results are handled), call
+`this.pageStateManager.navigate({ type: 'home' })` before triggering the Browse render.
+
+### Remaining Polish Items
+
+- [ ] Reset page state to `{ type: 'home' }` in `createNewFeed()` and on feed load
+- [ ] Call `browseNavigation.refresh()` after new feed and after load to reflect correct state
+- [ ] Remove any remaining `[new-feed]`-specific console logs that are no longer needed
+- [ ] Ensure undo/redo works correctly across all 31 files
+- [ ] Verify export round-trip: new feed → add agency + route → export → reimport → same state
 - [ ] Confirm keyboard shortcut for New Feed still works end-to-end
-- [ ] **Test flow:** New feed → add agency row → add route row → undo → redo → export → reimport
-      → same state
+- [ ] Confirm `categorizeFiles()` returns the correct buckets for all 31 files
+- [ ] **Test flow:** New feed → add agency row → add route row → undo → redo → export → reimport → same state
+- [ ] **Test flow:** Load feed while on a route detail page → Browse resets to home
 
 ---
 
-## UI Flows to Test (Suggested)
+## UI Flows to Test (After Phase 2)
 
-These are the key scenarios to walk through manually after each phase:
-
-1. **Cold start (no IndexedDB data):** Open app → see welcome overlay → nothing in file list.
-2. **New feed (Phase 1+):** Click "New" → overlay hides → Files tab activates → 6 files in
-   sidebar → click `agency.txt` → opens in editor with header row only.
-3. **Load then new:** Load an example feed → verify it shows correctly → click "New" → feed
-   resets to 6 empty files (old data gone).
-4. **Reload persistence (Phase 2+):** New feed → add a row to agency.txt → reload page → still
-   shows 6 files → agency.txt has 1 row.
-5. **Add optional file (Phase 3+):** New feed → click "+ Add file" → choose `shapes.txt` →
-   file appears → click it → empty table editor → add a row → row appears.
-6. **Auto-create (Phase 3+):** Navigate to a route → click "Add shape" (or equivalent) →
-   `shapes.txt` is auto-created and the row lands in it.
-7. **Missing file CTA (Phase 4+):** New feed → navigate to agency → look for shapes indicator →
-   see "not in feed" message → click Add → file created.
-8. **Export round-trip:** New feed → populate minimally → export ZIP → reimport → same state.
+1. **Cold start:** Open app → 31 files in sidebar → map overlay visible → Browse shows empty home.
+2. **New feed:** Click "New" → overlay hides → Files tab active → still 31 files → open any file → see header row only.
+3. **Load feed:** Load example ZIP → populated files show data → unpopulated files show header row only.
+4. **Reload after new feed + data:** Add a row → reload → data persists → all 31 files still listed.
+5. **Export:** New feed (no rows) → export button shows "No data" message. Add an agency row → export → ZIP contains only agency.txt (with that one row).
+6. **DB migration (existing user):** Open app that had version 5 DB → upgrade to version 6 runs → `project` store dropped → no errors → data intact.
 
 ---
 
@@ -306,14 +431,22 @@ These are the key scenarios to walk through manually after each phase:
 
 | File | Change |
 |------|--------|
-| `src/modules/gtfs-parser.ts` | Fix `initializeEmpty()`, add `registerFile()`, fix reload persistence |
-| `src/modules/ui.ts` | Fix `createNewFeed()`, `openFile()`, `updateFileList()`, add `addOptionalFile()`, add file dropdown |
-| `src/modules/gtfs-file-registry.ts` | **New file** — `NEW_FEED_FILES`, `getFileHeaders()`, `makeHeaderOnlyCSV()`, `getAddableFiles()` |
-| `src/modules/page-content-renderer.ts` | Add missing-file CTA in relevant views |
-| `src/index.ts` | Minor — wire `addOptionalFile` dependency if needed |
+| `src/config.ts` | `DB_VERSION: 5 → 6` |
+| `src/modules/gtfs-file-registry.ts` | Add `ALL_GTFS_FILES` |
+| `src/modules/gtfs-parser.ts` | `initialize()` pre-registers all 31; `restoreDataFromDatabase()` removes project gate; `initializeEmpty()` uses `ALL_GTFS_FILES`; `parseFile()` fills missing files; `exportAsZip()` skips empty files; remove all `ProjectMetadata` usage |
+| `src/modules/gtfs-database.ts` | Version 6 migration; remove `project` store from schema; remove `getProjectMetadata()` / `updateProjectMetadata()`; remove `ProjectMetadata` import/re-export |
+| `src/modules/database-fallback-manager.ts` | Remove `getProjectMetadata()` / `updateProjectMetadata()` |
+| `src/types/gtfs-entities.ts` | Remove `ProjectMetadata` interface and `project` from `GTFSTableMap` |
+| `src/modules/page-content-renderer.ts` | Remove `renderEmptyState()` + `hasDataAsync()` guard; update null→empty-list checks in views |
+| `src/modules/gtfs-relationships.ts` | Remove `hasData()` and `hasDataAsync()` |
+| `src/modules/browse-navigation.ts` | Remove `hasDataAsync` from dependency interface |
+| `src/modules/export-manager.ts` | Update export guard to "any rows?" check |
+| `src/modules/ui.ts` | Update export guard to "any rows?" check |
 
 ---
 
-*Plan written 2026-03-24. Phases are intended to be implemented sequentially; each phase is
-independently testable before the next begins. Update this file after each phase with actual
-changes made, deviations from the plan, and findings to carry into the next phase.*
+*Plan written 2026-03-24. Revised 2026-03-25: adopted "all 31 GTFS files always registered"
+invariant; removed `project` metadata store (non-GTFS); eliminated Phase 3 "Add file" entirely;
+simplified Phase 4 to empty-list handling only. Phases are intended to be implemented
+sequentially; each phase is independently testable. Update this file after each phase with actual
+changes made, deviations, and findings.*

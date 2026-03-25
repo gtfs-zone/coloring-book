@@ -1134,9 +1134,14 @@ export class UIController {
     let loadingNotificationId = null;
 
     try {
-      if (!this.gtfsParser || this.gtfsParser.getAllFileNames().length === 0) {
+      if (
+        !this.gtfsParser ||
+        !this.gtfsParser
+          .getAllFileNames()
+          .some((f) => (this.gtfsParser.getFileDataSync(f)?.length ?? 0) > 0)
+      ) {
         notifications.showWarning(
-          'No GTFS data to export. Please load a GTFS feed first.'
+          'No GTFS data to export. Please add some data first.'
         );
         return;
       }
