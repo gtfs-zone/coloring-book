@@ -118,18 +118,6 @@ export class GTFSEditor {
       await this.patchManager.initialize();
       this.historyController.initialize(this.patchManager);
 
-      // Check if there's existing data in IndexedDB, only create empty feed if none exists
-      const existingMetadata =
-        await this.gtfsParser.gtfsDatabase.getProjectMetadata();
-      const hasExistingData =
-        existingMetadata && this.gtfsParser.getAllFileNames().length > 0;
-
-      if (!hasExistingData) {
-        // Only initialize empty feed if no existing data found
-        await this.gtfsParser.initializeEmpty();
-      }
-      // If existing data exists, the parser will automatically work with it
-
       // Initialize all modules
       await this.mapController.initialize(this.gtfsParser);
       this.mapController.setPageStateManager(this.pageStateManager);
@@ -224,29 +212,30 @@ export class GTFSEditor {
       // Check for URL parameters (legacy support)
       await this.uiController.checkURLParams();
 
-      // Show welcome notification only if no existing data
-      if (!hasExistingData) {
-        notifications.showInfo(
-          'Welcome to edit.gtfs.zone! Create a new GTFS feed or upload an existing one to get started.'
-        );
-      } else {
-        // If we have existing data, update UI components and hide welcome overlay
+      // If any file has rows, this is a reload with existing data — update UI and hide overlay.
+      const hasExistingRows = this.gtfsParser
+        .getAllFileNames()
+        .some((f) => (this.gtfsParser.getFileDataSync(f)?.length ?? 0) > 0);
+
+      if (hasExistingRows) {
         this.uiController.updateFileList();
         await this.mapController.updateMap();
         this.mapController.hideMapOverlay();
 
-        // Refresh Browse navigation if available
         if (this.browseNavigation) {
           this.browseNavigation.refresh();
         }
 
-        // Enable export button
         const exportBtn = document.getElementById(
           'export-btn'
         ) as HTMLButtonElement;
         if (exportBtn) {
           exportBtn.disabled = false;
         }
+      } else {
+        notifications.showInfo(
+          'Welcome to edit.gtfs.zone! Create a new GTFS feed or upload an existing one to get started.'
+        );
       }
     } catch (error) {
       console.error('Failed to initialize application:', error);

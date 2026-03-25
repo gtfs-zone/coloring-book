@@ -285,15 +285,6 @@ export type GTFSEntity =
   | FeedInfo
   | Attributions;
 
-// Project metadata for GTFS.zone application
-export interface ProjectMetadata {
-  id?: number;
-  name: string;
-  createdAt: string;
-  lastModified: string;
-  fileCount: number;
-}
-
 // Table name to entity type mapping for type safety
 export type GTFSTableMap = {
   agencies: Agency;
@@ -327,5 +318,4 @@ export type GTFSTableMap = {
   translations: Translations;
   feed_info: FeedInfo;
   attributions: Attributions;
-  project: ProjectMetadata;
 };

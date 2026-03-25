@@ -429,19 +429,6 @@ export class GTFSRelationships {
     };
   }
 
-  /**
-   * Check if GTFS data is available
-   */
-  hasData() {
-    const stats = this.getStatistics();
-    return (
-      stats.agencies > 0 ||
-      stats.routes > 0 ||
-      stats.trips > 0 ||
-      stats.stops > 0
-    );
-  }
-
   // ========== ASYNC INDEXEDDB METHODS ==========
 
   /**
@@ -761,35 +748,6 @@ export class GTFSRelationships {
   }
 
   /**
-   * Get statistics for the GTFS feed (async)
-   */
-  async getStatisticsAsync() {
-    try {
-      const [agencies, routesData, tripsData, stopsData, stopTimesData] =
-        await Promise.all([
-          this.getAgenciesAsync(),
-          this.gtfsDatabase.getAllRows('routes'),
-          this.gtfsDatabase.getAllRows('trips'),
-          this.gtfsDatabase.getAllRows('stops'),
-          this.gtfsDatabase.getAllRows('stop_times'),
-        ]);
-
-      return {
-        agencies: agencies.length,
-        routes: routesData.length,
-        trips: tripsData.length,
-        stops: stopsData.length,
-        stopTimes: stopTimesData.length,
-      };
-    } catch (error) {
-      // eslint-disable-next-line no-console
-      console.error('Error getting statistics from IndexedDB:', error);
-      // Fallback to sync method
-      return this.getStatistics();
-    }
-  }
-
-  /**
    * Get unique service IDs for a specific route (async)
    */
   async getServicesForRouteAsync(route_id: string) {
@@ -941,26 +899,6 @@ export class GTFSRelationships {
       console.error('Error getting trip by ID from IndexedDB:', error);
       // Fallback to sync method
       return this.getTripById(trip_id);
-    }
-  }
-
-  /**
-   * Check if GTFS data is available (async)
-   */
-  async hasDataAsync() {
-    try {
-      const stats = await this.getStatisticsAsync();
-      return (
-        stats.agencies > 0 ||
-        stats.routes > 0 ||
-        stats.trips > 0 ||
-        stats.stops > 0
-      );
-    } catch (error) {
-      // eslint-disable-next-line no-console
-      console.error('Error checking data availability from IndexedDB:', error);
-      // Fallback to sync method
-      return this.hasData();
     }
   }
 
