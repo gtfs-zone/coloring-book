@@ -108,6 +108,27 @@ export interface GTFSDBSchema extends DBSchema {
     key: string;
     value: { key: string; currentVersion: number; headVersion: number };
   };
+  // Raw CSV blobs for large tables (stop_times, shapes) — avoids per-row IDB overhead
+  file_blobs: {
+    key: string;
+    value: { tableName: string; csv: string };
+  };
+}
+
+/**
+ * In-memory handlers for virtual tables (large tables that bypass per-row IDB storage).
+ * All methods are synchronous since they operate on in-memory data structures.
+ */
+export interface VirtualTableHandlers {
+  query(
+    filter?: Record<string, string | number | boolean>
+  ): GTFSDatabaseRecord[];
+  getAll(): GTFSDatabaseRecord[];
+  insert(rows: GTFSDatabaseRecord[]): void;
+  update(key: string, delta: Partial<GTFSDatabaseRecord>): void;
+  delete(key: string): void;
+  replace(oldKeys: string[], newRows: GTFSDatabaseRecord[]): void;
+  clear(): void;
 }
 
 export class GTFSDatabase {
@@ -127,6 +148,15 @@ export class GTFSDatabase {
   private readonly dbName = CONFIG.DB_NAME;
   private readonly dbVersion = CONFIG.DB_VERSION;
   private isUsingFallback = false;
+  /** Virtual table registry — large tables that bypass per-row IDB storage. */
+  private virtualTables = new Map<string, VirtualTableHandlers>();
+
+  registerVirtualTable(
+    tableName: string,
+    handlers: VirtualTableHandlers
+  ): void {
+    this.virtualTables.set(tableName, handlers);
+  }
 
   constructor() {}
 
@@ -196,6 +226,14 @@ export class GTFSDatabase {
             const rawDb = db as unknown as IDBDatabase;
             if (rawDb.objectStoreNames.contains('project')) {
               rawDb.deleteObjectStore('project');
+            }
+          }
+
+          if (oldVersion < 7) {
+            // Add file_blobs store for large-table CSV persistence.
+            // Old stop_times / shapes IDB rows are orphaned — users must re-upload their feed.
+            if (!db.objectStoreNames.contains('file_blobs')) {
+              db.createObjectStore('file_blobs', { keyPath: 'tableName' });
             }
           }
 
@@ -530,6 +568,11 @@ export class GTFSDatabase {
     tableName: string,
     rows: GTFSDatabaseRecord[]
   ): Promise<void> {
+    const vt = this.virtualTables.get(tableName);
+    if (vt) {
+      vt.insert(rows);
+      return;
+    }
     if (this.isUsingFallback) {
       return await this.fallbackDB.insertRows(tableName, rows);
     }
@@ -600,6 +643,11 @@ export class GTFSDatabase {
     oldKeys: string[],
     newRows: GTFSDatabaseRecord[]
   ): Promise<void> {
+    const vt = this.virtualTables.get(tableName);
+    if (vt) {
+      vt.replace(oldKeys, newRows);
+      return;
+    }
     if (this.isUsingFallback) {
       // Fallback: delete and insert separately
       for (const key of oldKeys) {
@@ -688,6 +736,12 @@ export class GTFSDatabase {
     key: string,
     data: Partial<GTFSDatabaseRecord>
   ): Promise<void> {
+    const vt = this.virtualTables.get(tableName);
+    if (vt) {
+      vt.update(key, data);
+      return;
+    }
+
     if (!this.db) {
       throw new Error('Database not initialized');
     }
@@ -727,6 +781,10 @@ export class GTFSDatabase {
    */
   async getAllRows(tableName: string): Promise<GTFSDatabaseRecord[]>;
   async getAllRows(tableName: string): Promise<GTFSDatabaseRecord[]> {
+    const vt = this.virtualTables.get(tableName);
+    if (vt) {
+      return vt.getAll();
+    }
     if (this.isUsingFallback) {
       return await this.fallbackDB.getAllRows(tableName);
     }
@@ -762,6 +820,11 @@ export class GTFSDatabase {
     tableName: string,
     filter?: { [key: string]: string | number | boolean }
   ): Promise<GTFSDatabaseRecord[]> {
+    const vt = this.virtualTables.get(tableName);
+    if (vt) {
+      return vt.query(filter);
+    }
+
     if (!this.db) {
       throw new Error('Database not initialized');
     }
@@ -814,6 +877,12 @@ export class GTFSDatabase {
    * Delete single record by natural key
    */
   async deleteRow(tableName: string, key: string): Promise<void> {
+    const vt = this.virtualTables.get(tableName);
+    if (vt) {
+      vt.delete(key);
+      return;
+    }
+
     if (!this.db) {
       throw new Error('Database not initialized');
     }
@@ -878,6 +947,12 @@ export class GTFSDatabase {
    * Clear specific table
    */
   async clearTable(tableName: string): Promise<void> {
+    const vt = this.virtualTables.get(tableName);
+    if (vt) {
+      vt.clear();
+      return;
+    }
+
     if (!this.db) {
       throw new Error('Database not initialized');
     }
@@ -893,6 +968,28 @@ export class GTFSDatabase {
       console.error(`Failed to clear table ${tableName}:`, error);
       throw error;
     }
+  }
+
+  /**
+   * Persist raw CSV for a large table into the file_blobs store.
+   */
+  async saveLargeTableBlob(tableName: string, csv: string): Promise<void> {
+    if (!this.db) {
+      return;
+    }
+    await this.db.put('file_blobs', { tableName, csv });
+  }
+
+  /**
+   * Retrieve raw CSV for a large table from the file_blobs store.
+   * Returns null if no blob has been saved yet.
+   */
+  async getLargeTableBlob(tableName: string): Promise<string | null> {
+    if (!this.db) {
+      return null;
+    }
+    const record = await this.db.get('file_blobs', tableName);
+    return record?.csv ?? null;
   }
 
   /**
@@ -1149,25 +1246,40 @@ export class GTFSDatabase {
     }
 
     try {
-      const transaction = this.db.transaction(
-        ['trips', 'stop_times'],
-        'readwrite'
-      );
+      const vtStopTimes = this.virtualTables.get('stop_times');
 
-      // Delete trip record
-      await transaction.objectStore('trips').delete(trip_id);
+      if (vtStopTimes) {
+        // stop_times is virtual — handle trip and stop_times separately
+        const stopTimesForTrip = vtStopTimes.query({ trip_id });
+        const keysToDelete = stopTimesForTrip.map((st) =>
+          this.generateCompositeKey('stop_times', st)
+        );
+        for (const key of keysToDelete) {
+          vtStopTimes.delete(key);
+        }
+        const tripsTx = this.db.transaction('trips', 'readwrite');
+        await tripsTx.objectStore('trips').delete(trip_id);
+        await tripsTx.done;
+      } else {
+        const transaction = this.db.transaction(
+          ['trips', 'stop_times'],
+          'readwrite'
+        );
 
-      // Delete all stop_times for this trip
-      const stopTimesStore = transaction.objectStore('stop_times');
-      const stopTimesIndex = stopTimesStore.index('trip_id');
-      const stopTimesCursor = await stopTimesIndex.openCursor(trip_id);
+        await transaction.objectStore('trips').delete(trip_id);
 
-      while (stopTimesCursor) {
-        await stopTimesCursor.delete();
-        await stopTimesCursor.continue();
+        const stopTimesStore = transaction.objectStore('stop_times');
+        const stopTimesIndex = stopTimesStore.index('trip_id');
+        const stopTimesCursor = await stopTimesIndex.openCursor(trip_id);
+
+        while (stopTimesCursor) {
+          await stopTimesCursor.delete();
+          await stopTimesCursor.continue();
+        }
+
+        await transaction.done;
       }
 
-      await transaction.done;
       console.log(`Deleted trip ${trip_id} and its stop_times`);
     } catch (error) {
       console.error(`Failed to delete trip ${trip_id}:`, error);
@@ -1188,59 +1300,91 @@ export class GTFSDatabase {
     }
 
     try {
-      const transaction = this.db.transaction(
-        ['trips', 'stop_times'],
-        'readwrite'
-      );
+      const vtStopTimes = this.virtualTables.get('stop_times');
 
-      // Get original trip
-      const tripsStore = transaction.objectStore('trips');
-      const tripsIndex = tripsStore.index('trip_id');
-      const originalTrip = await tripsIndex.get(originalTripId);
+      if (vtStopTimes) {
+        // stop_times is virtual — handle trip and stop_times separately
+        const originalTrip = await this.getRow('trips', originalTripId);
+        if (!originalTrip) {
+          throw new Error(`Trip ${originalTripId} not found`);
+        }
+        const newTrip = { ...originalTrip, trip_id: newTripId };
+        await this.insertRows('trips', [newTrip]);
 
-      if (!originalTrip) {
-        throw new Error(`Trip ${originalTripId} not found`);
-      }
-
-      // Create new trip record
-      const newTrip = { ...originalTrip, trip_id: newTripId };
-      await tripsStore.add(newTrip);
-
-      // Get and duplicate stop_times
-      const stopTimesStore = transaction.objectStore('stop_times');
-      const stopTimesIndex = stopTimesStore.index('trip_id');
-      const stopTimesCursor = await stopTimesIndex.openCursor(originalTripId);
-
-      while (stopTimesCursor) {
-        const originalStopTime = stopTimesCursor.value;
-        const newStopTime = { ...originalStopTime, trip_id: newTripId };
-
-        // Apply time offset if specified
-        if (timeOffset !== 0) {
-          if (newStopTime.arrival_time) {
-            newStopTime.arrival_time = TimeFormatter.addMinutesToTime(
-              newStopTime.arrival_time as string,
-              timeOffset
-            );
+        const originalStopTimes = vtStopTimes.query({
+          trip_id: originalTripId,
+        });
+        const newStopTimes = originalStopTimes.map((st) => {
+          const newSt = { ...st, trip_id: newTripId } as GTFSDatabaseRecord;
+          if (timeOffset !== 0) {
+            if (newSt.arrival_time) {
+              newSt.arrival_time = TimeFormatter.addMinutesToTime(
+                newSt.arrival_time as string,
+                timeOffset
+              );
+            }
+            if (newSt.departure_time) {
+              newSt.departure_time = TimeFormatter.addMinutesToTime(
+                newSt.departure_time as string,
+                timeOffset
+              );
+            }
           }
-          if (newStopTime.departure_time) {
-            newStopTime.departure_time = TimeFormatter.addMinutesToTime(
-              newStopTime.departure_time as string,
-              timeOffset
-            );
-          }
+          return newSt;
+        });
+        vtStopTimes.insert(newStopTimes);
+      } else {
+        const transaction = this.db.transaction(
+          ['trips', 'stop_times'],
+          'readwrite'
+        );
+
+        // Get original trip via primary key (trip_id is the keyPath for trips)
+        const originalTrip = await transaction
+          .objectStore('trips')
+          .get(originalTripId);
+
+        if (!originalTrip) {
+          throw new Error(`Trip ${originalTripId} not found`);
         }
 
-        // Generate composite key for stop_times
-        const compositeKey = this.generateCompositeKey(
-          'stop_times',
-          newStopTime
-        );
-        await stopTimesStore.add(newStopTime, compositeKey);
-        await stopTimesCursor.continue();
+        const newTrip = { ...originalTrip, trip_id: newTripId };
+        await transaction.objectStore('trips').add(newTrip);
+
+        const stopTimesStore = transaction.objectStore('stop_times');
+        const stopTimesIndex = stopTimesStore.index('trip_id');
+        const stopTimesCursor = await stopTimesIndex.openCursor(originalTripId);
+
+        while (stopTimesCursor) {
+          const originalStopTime = stopTimesCursor.value;
+          const newStopTime = { ...originalStopTime, trip_id: newTripId };
+
+          if (timeOffset !== 0) {
+            if (newStopTime.arrival_time) {
+              newStopTime.arrival_time = TimeFormatter.addMinutesToTime(
+                newStopTime.arrival_time as string,
+                timeOffset
+              );
+            }
+            if (newStopTime.departure_time) {
+              newStopTime.departure_time = TimeFormatter.addMinutesToTime(
+                newStopTime.departure_time as string,
+                timeOffset
+              );
+            }
+          }
+
+          const compositeKey = this.generateCompositeKey(
+            'stop_times',
+            newStopTime
+          );
+          await stopTimesStore.add(newStopTime, compositeKey);
+          await stopTimesCursor.continue();
+        }
+
+        await transaction.done;
       }
 
-      await transaction.done;
       console.log(`Duplicated trip ${originalTripId} as ${newTripId}`);
     } catch (error) {
       console.error(`Failed to duplicate trip ${originalTripId}:`, error);
@@ -1266,57 +1410,104 @@ export class GTFSDatabase {
     }
 
     try {
-      const transaction = this.db.transaction('stop_times', 'readwrite');
-      const store = transaction.objectStore('stop_times');
-      const index = store.index('trip_id');
+      const vtStopTimes = this.virtualTables.get('stop_times');
 
-      // Get all existing stop_times for this trip
-      const existingStopTimes = await index.getAll(trip_id);
+      if (vtStopTimes) {
+        const existingStopTimes = vtStopTimes.query({ trip_id });
+        const existingMap = new Map(
+          existingStopTimes.map((st) => [
+            `${st.stop_id}_${st.stop_sequence}`,
+            st,
+          ])
+        );
 
-      // Create a map for quick lookup
-      const existingMap = new Map(
-        existingStopTimes.map((st) => [`${st.stop_id}_${st.stop_sequence}`, st])
-      );
+        for (const update of stopTimeUpdates) {
+          const mapKey = `${update.stop_id}_${update.stop_sequence}`;
+          const existing = existingMap.get(mapKey);
 
-      for (const update of stopTimeUpdates) {
-        const key = `${update.stop_id}_${update.stop_sequence}`;
-        const existing = existingMap.get(key);
-
-        if (existing) {
-          // Update existing record
-          const updated = { ...existing };
-          if (update.arrival_time !== undefined) {
-            updated.arrival_time = update.arrival_time;
+          if (existing) {
+            const compositeKey = this.generateCompositeKey(
+              'stop_times',
+              existing
+            );
+            const delta: Partial<GTFSDatabaseRecord> = {};
+            if (update.arrival_time !== undefined) {
+              delta.arrival_time = update.arrival_time;
+            }
+            if (update.departure_time !== undefined) {
+              delta.departure_time = update.departure_time;
+            }
+            if (update.isSkipped) {
+              delta.arrival_time = '';
+              delta.departure_time = '';
+            }
+            vtStopTimes.update(compositeKey, delta);
+          } else if (!update.isSkipped) {
+            const newStopTime: GTFSDatabaseRecord = {
+              trip_id,
+              stop_id: update.stop_id,
+              stop_sequence: update.stop_sequence,
+              arrival_time: update.arrival_time || '',
+              departure_time:
+                update.departure_time || update.arrival_time || '',
+              pickup_type: 0,
+              drop_off_type: 0,
+            };
+            vtStopTimes.insert([newStopTime]);
           }
-          if (update.departure_time !== undefined) {
-            updated.departure_time = update.departure_time;
-          }
-          if (update.isSkipped) {
-            // Mark as skipped by removing times
-            updated.arrival_time = '';
-            updated.departure_time = '';
-          }
-          await store.put(updated);
-        } else if (!update.isSkipped) {
-          // Insert new stop_time if not skipped
-          const newStopTime: GTFSDatabaseRecord = {
-            trip_id: trip_id,
-            stop_id: update.stop_id,
-            stop_sequence: update.stop_sequence,
-            arrival_time: update.arrival_time || '',
-            departure_time: update.departure_time || update.arrival_time || '',
-            pickup_type: 0,
-            drop_off_type: 0,
-          };
-          const compositeKey = this.generateCompositeKey(
-            'stop_times',
-            newStopTime
-          );
-          await store.add(newStopTime, compositeKey);
         }
+      } else {
+        const transaction = this.db.transaction('stop_times', 'readwrite');
+        const store = transaction.objectStore('stop_times');
+        const index = store.index('trip_id');
+
+        const existingStopTimes = await index.getAll(trip_id);
+        const existingMap = new Map(
+          existingStopTimes.map((st) => [
+            `${st.stop_id}_${st.stop_sequence}`,
+            st,
+          ])
+        );
+
+        for (const update of stopTimeUpdates) {
+          const key = `${update.stop_id}_${update.stop_sequence}`;
+          const existing = existingMap.get(key);
+
+          if (existing) {
+            const updated = { ...existing };
+            if (update.arrival_time !== undefined) {
+              updated.arrival_time = update.arrival_time;
+            }
+            if (update.departure_time !== undefined) {
+              updated.departure_time = update.departure_time;
+            }
+            if (update.isSkipped) {
+              updated.arrival_time = '';
+              updated.departure_time = '';
+            }
+            await store.put(updated);
+          } else if (!update.isSkipped) {
+            const newStopTime: GTFSDatabaseRecord = {
+              trip_id: trip_id,
+              stop_id: update.stop_id,
+              stop_sequence: update.stop_sequence,
+              arrival_time: update.arrival_time || '',
+              departure_time:
+                update.departure_time || update.arrival_time || '',
+              pickup_type: 0,
+              drop_off_type: 0,
+            };
+            const compositeKey = this.generateCompositeKey(
+              'stop_times',
+              newStopTime
+            );
+            await store.add(newStopTime, compositeKey);
+          }
+        }
+
+        await transaction.done;
       }
 
-      await transaction.done;
       console.log(`Bulk updated stop_times for trip ${trip_id}`);
     } catch (error) {
       console.error(
