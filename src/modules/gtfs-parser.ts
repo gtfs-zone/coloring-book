@@ -224,6 +224,8 @@ export class GTFSParser {
     try {
       // eslint-disable-next-line no-console
       console.log('Loading GTFS file:', (file as File).name || 'blob');
+      // eslint-disable-next-line no-console
+      console.time('[GTFS] parseFile total');
 
       // Start loading indicator
       loadingStateManager.startLoading(operation, 'Loading GTFS file...');
@@ -234,15 +236,23 @@ export class GTFSParser {
         10,
         'Clearing existing data...'
       );
+      // eslint-disable-next-line no-console
+      console.time('[GTFS] clearDatabase');
       await this.gtfsDatabase.clearDatabase();
+      // eslint-disable-next-line no-console
+      console.timeEnd('[GTFS] clearDatabase');
 
       loadingStateManager.updateProgress(
         operation,
         20,
         'Extracting ZIP file...'
       );
+      // eslint-disable-next-line no-console
+      console.time('[GTFS] zip extraction');
       const zip = new JSZip();
       const zipContent = await zip.loadAsync(file);
+      // eslint-disable-next-line no-console
+      console.timeEnd('[GTFS] zip extraction');
 
       // Parse all text files in the ZIP
       const files = Object.keys(zipContent.files).filter(
@@ -267,6 +277,8 @@ export class GTFSParser {
           progress,
           `Processing ${fileName}...`
         );
+        // eslint-disable-next-line no-console
+        console.time(`[GTFS] file: ${fileName}`);
         const fileContent = await zipContent.files[fileName].async('text');
 
         if (fileName.endsWith('.txt')) {
@@ -296,7 +308,11 @@ export class GTFSParser {
               progress + 5,
               `Storing ${fileName} (${processedData.length} records)...`
             );
+            // eslint-disable-next-line no-console
+            console.time(`[GTFS] insertRows: ${fileName}`);
             await this.gtfsDatabase.insertRows(tableName, processedData);
+            // eslint-disable-next-line no-console
+            console.timeEnd(`[GTFS] insertRows: ${fileName}`);
           }
         } else if (fileName.endsWith('.geojson')) {
           // Handle GeoJSON files
@@ -313,6 +329,8 @@ export class GTFSParser {
             geoJsonData as GTFSDatabaseRecord,
           ]);
         }
+        // eslint-disable-next-line no-console
+        console.timeEnd(`[GTFS] file: ${fileName}`);
       }
 
       if (unknownFiles.length > 0) {
@@ -341,6 +359,8 @@ export class GTFSParser {
 
       // eslint-disable-next-line no-console
       console.log('Loaded GTFS data to IndexedDB and memory:', this.gtfsData);
+      // eslint-disable-next-line no-console
+      console.timeEnd('[GTFS] parseFile total');
       return this.gtfsData;
     } catch (error) {
       // eslint-disable-next-line no-console
