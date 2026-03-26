@@ -9,7 +9,8 @@ import {
   makeHeaderOnlyCSV,
   isSupportedFile,
 } from './gtfs-file-registry.js';
-import { GTFSTableMap } from '../types/gtfs-entities.js';
+import { GTFSTableMap, StopTimes } from '../types/gtfs-entities.js';
+import { parseCompositeKey } from '../utils/gtfs-primary-keys.js';
 
 interface GTFSFileData<T = GTFSDatabaseRecord> {
   content: string;
@@ -38,6 +39,13 @@ export class GTFSParser {
   private gtfsData: { [fileName: string]: GTFSFileData } = {};
   public gtfsDatabase: GTFSDatabase;
   private patchManager: PatchManagerRef | null = null;
+
+  // In-memory indexes for large tables (stop_times)
+  private stopTimesByTripId = new Map<string, StopTimes[]>();
+  private stopTimesByStopId = new Map<string, StopTimes[]>();
+  // Dirty-blob tracking for deferred persistence
+  private blobDirty = new Set<string>();
+  private blobPersistTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor() {
     this.gtfsData = {};
@@ -130,6 +138,291 @@ export class GTFSParser {
     });
   }
 
+  // ===== Large-table (blob-backed) infrastructure =====
+
+  /** Build trip_id and stop_id indexes over the stop_times flat array. */
+  private buildStopTimeIndexes(rows: StopTimes[]): void {
+    this.stopTimesByTripId.clear();
+    this.stopTimesByStopId.clear();
+    for (const st of rows) {
+      const tripId = String(st.trip_id);
+      let byT = this.stopTimesByTripId.get(tripId);
+      if (!byT) {
+        byT = [];
+        this.stopTimesByTripId.set(tripId, byT);
+      }
+      byT.push(st);
+
+      const stopId = String(st.stop_id);
+      let byS = this.stopTimesByStopId.get(stopId);
+      if (!byS) {
+        byS = [];
+        this.stopTimesByStopId.set(stopId, byS);
+      }
+      byS.push(st);
+    }
+  }
+
+  /**
+   * Register stop_times as a virtual table in GTFSDatabase.
+   * Must be called AFTER gtfsData['stop_times.txt'].data is set and indexes are built.
+   * Re-registration is idempotent — updates the active closure to the current array.
+   */
+  private registerStopTimesAsVirtual(): void {
+    const flat = this.gtfsData['stop_times.txt']!.data as StopTimes[];
+    const byTrip = this.stopTimesByTripId;
+    const byStop = this.stopTimesByStopId;
+
+    this.gtfsDatabase.registerVirtualTable('stop_times', {
+      getAll: () => flat,
+
+      query: (filter) => {
+        if (!filter) {
+          return flat;
+        }
+        if (filter.trip_id !== undefined) {
+          const results = byTrip.get(String(filter.trip_id)) ?? [];
+          if (filter.stop_id !== undefined) {
+            const sid = String(filter.stop_id);
+            return results.filter((r) => String(r.stop_id) === sid);
+          }
+          return results;
+        }
+        if (filter.stop_id !== undefined) {
+          return byStop.get(String(filter.stop_id)) ?? [];
+        }
+        // Fallback: linear scan for any other filter
+        return flat.filter((r) =>
+          Object.entries(filter).every(
+            ([k, v]) => (r as Record<string, unknown>)[k] === v
+          )
+        );
+      },
+
+      insert: (rows) => {
+        for (const row of rows) {
+          const st = row as StopTimes;
+          // Guard against double-insert (PatchManager may have already pushed)
+          if (!flat.includes(st)) {
+            flat.push(st);
+          }
+
+          const tripId = String(st.trip_id);
+          let byT = byTrip.get(tripId);
+          if (!byT) {
+            byT = [];
+            byTrip.set(tripId, byT);
+          }
+          if (!byT.includes(st)) {
+            byT.push(st);
+          }
+
+          const stopId = String(st.stop_id);
+          let byS = byStop.get(stopId);
+          if (!byS) {
+            byS = [];
+            byStop.set(stopId, byS);
+          }
+          if (!byS.includes(st)) {
+            byS.push(st);
+          }
+        }
+        this.invalidateBlobForTable('stop_times');
+      },
+
+      update: (key, delta) => {
+        const parsed = parseCompositeKey('stop_times', key);
+        const tripId = String(parsed.trip_id);
+        const seq = String(parsed.stop_sequence);
+        // Find via byTrip (reliable even after PatchManager's in-place update)
+        const byTripArr = byTrip.get(tripId);
+        if (byTripArr) {
+          const idx = byTripArr.findIndex(
+            (r) => String(r.stop_sequence) === seq
+          );
+          if (idx !== -1) {
+            Object.assign(byTripArr[idx], delta); // idempotent if already applied
+            // Rebuild stop index if stop_id changed
+            if (delta.stop_id !== undefined) {
+              this.stopTimesByStopId.clear();
+              for (const r of flat) {
+                const sid = String(r.stop_id);
+                let byS = this.stopTimesByStopId.get(sid);
+                if (!byS) {
+                  byS = [];
+                  this.stopTimesByStopId.set(sid, byS);
+                }
+                byS.push(r);
+              }
+            }
+          }
+        }
+        this.invalidateBlobForTable('stop_times');
+      },
+
+      delete: (key) => {
+        const parsed = parseCompositeKey('stop_times', key);
+        const tripId = String(parsed.trip_id);
+        const seq = String(parsed.stop_sequence);
+
+        // Remove from byTrip and byStop (may still be there even after PatchManager splice)
+        const byTripArr = byTrip.get(tripId);
+        if (byTripArr) {
+          const idx = byTripArr.findIndex(
+            (r) => String(r.stop_sequence) === seq
+          );
+          if (idx !== -1) {
+            const removed = byTripArr.splice(idx, 1)[0];
+            const byStopArr = byStop.get(String(removed.stop_id));
+            if (byStopArr) {
+              const i = byStopArr.indexOf(removed);
+              if (i !== -1) {
+                byStopArr.splice(i, 1);
+              }
+            }
+          }
+        }
+        // Also remove from flat if still present (PatchManager may have already removed it)
+        const flatIdx = flat.findIndex(
+          (r) => String(r.trip_id) === tripId && String(r.stop_sequence) === seq
+        );
+        if (flatIdx !== -1) {
+          flat.splice(flatIdx, 1);
+        }
+        this.invalidateBlobForTable('stop_times');
+      },
+
+      replace: (oldKeys, newRows) => {
+        // Delete old records
+        for (const key of oldKeys) {
+          const parsed = parseCompositeKey('stop_times', key);
+          const tripId = String(parsed.trip_id);
+          const seq = String(parsed.stop_sequence);
+          const byTripArr = byTrip.get(tripId);
+          if (byTripArr) {
+            const idx = byTripArr.findIndex(
+              (r) => String(r.stop_sequence) === seq
+            );
+            if (idx !== -1) {
+              const removed = byTripArr.splice(idx, 1)[0];
+              const byStopArr = byStop.get(String(removed.stop_id));
+              if (byStopArr) {
+                const i = byStopArr.indexOf(removed);
+                if (i !== -1) {
+                  byStopArr.splice(i, 1);
+                }
+              }
+              const fi = flat.indexOf(removed);
+              if (fi !== -1) {
+                flat.splice(fi, 1);
+              }
+            }
+          }
+        }
+        // Insert new records
+        for (const row of newRows) {
+          const st = row as StopTimes;
+          if (!flat.includes(st)) {
+            flat.push(st);
+          }
+          const tripId = String(st.trip_id);
+          let byT = byTrip.get(tripId);
+          if (!byT) {
+            byT = [];
+            byTrip.set(tripId, byT);
+          }
+          if (!byT.includes(st)) {
+            byT.push(st);
+          }
+          const stopId = String(st.stop_id);
+          let byS = byStop.get(stopId);
+          if (!byS) {
+            byS = [];
+            byStop.set(stopId, byS);
+          }
+          if (!byS.includes(st)) {
+            byS.push(st);
+          }
+        }
+        this.invalidateBlobForTable('stop_times');
+      },
+
+      clear: () => {
+        flat.splice(0, flat.length);
+        byTrip.clear();
+        byStop.clear();
+        this.invalidateBlobForTable('stop_times');
+      },
+    });
+  }
+
+  /** Mark a large table's blob as needing re-persistence and schedule a debounced flush. */
+  invalidateBlobForTable(tableName: string): void {
+    this.blobDirty.add(tableName);
+    if (this.blobPersistTimer) {
+      clearTimeout(this.blobPersistTimer);
+    }
+    this.blobPersistTimer = setTimeout(() => {
+      this.blobPersistTimer = null;
+      void this.persistDirtyBlobs();
+    }, 3000);
+  }
+
+  /** Flush all dirty blobs to IDB immediately. Called before export and on demand. */
+  async persistDirtyBlobs(): Promise<void> {
+    if (this.blobPersistTimer) {
+      clearTimeout(this.blobPersistTimer);
+      this.blobPersistTimer = null;
+    }
+    for (const tableName of this.blobDirty) {
+      const fileName = `${tableName}.txt`;
+      const rows = this.gtfsData[fileName]?.data ?? [];
+      if (rows.length === 0) {
+        continue;
+      }
+      const csv = this.generateCSVFromRows(fileName, rows);
+      await this.gtfsDatabase.saveLargeTableBlob(tableName, csv);
+    }
+    this.blobDirty.clear();
+  }
+
+  /** Generate CSV text from an in-memory row array. */
+  private generateCSVFromRows(
+    fileName: string,
+    rows: GTFSDatabaseRecord[]
+  ): string {
+    if (rows.length === 0) {
+      return makeHeaderOnlyCSV(fileName);
+    }
+    const headers = Object.keys(rows[0]);
+    return [
+      headers.join(','),
+      ...rows.map((row) =>
+        headers.map((h) => this.formatFieldForExport(h, row[h])).join(',')
+      ),
+    ].join('\n');
+  }
+
+  /** Fast stop_times lookup by trip_id (uses in-memory index when available). */
+  getStopTimesByTripId(trip_id: string): StopTimes[] {
+    if (this.stopTimesByTripId.size > 0) {
+      return this.stopTimesByTripId.get(trip_id) ?? [];
+    }
+    return this.getFileDataSyncTyped(GTFS_TABLES.STOP_TIMES).filter(
+      (st) => st.trip_id === trip_id
+    );
+  }
+
+  /** Fast stop_times lookup by stop_id (uses in-memory index when available). */
+  getStopTimesByStopId(stop_id: string): StopTimes[] {
+    if (this.stopTimesByStopId.size > 0) {
+      return this.stopTimesByStopId.get(stop_id) ?? [];
+    }
+    return this.getFileDataSyncTyped(GTFS_TABLES.STOP_TIMES).filter(
+      (st) => st.stop_id === stop_id
+    );
+  }
+
   async initialize(): Promise<void> {
     await this.gtfsDatabase.initialize();
 
@@ -152,6 +445,42 @@ export class GTFSParser {
    */
   async restoreDataFromDatabase(): Promise<void> {
     try {
+      // Restore large tables from raw CSV blobs (fast re-parse instead of getAllRows)
+      for (const tableName of CONFIG.LARGE_TABLES) {
+        try {
+          const csv = await this.gtfsDatabase.getLargeTableBlob(tableName);
+          if (!csv) {
+            continue;
+          }
+          const fileName = `${tableName}.txt`;
+          const parsed = Papa.parse(csv, {
+            header: true,
+            skipEmptyLines: true,
+          });
+          const data = this.processParsedData(
+            parsed.data as Record<string, unknown>[]
+          );
+          this.gtfsData[fileName] = {
+            content: '',
+            data,
+            errors: parsed.errors,
+          };
+          if (tableName === 'stop_times') {
+            this.buildStopTimeIndexes(data as StopTimes[]);
+            this.registerStopTimesAsVirtual();
+          }
+          // eslint-disable-next-line no-console
+          console.log(
+            `[GTFSParser] Restored ${tableName} from blob: ${data.length} rows`
+          );
+        } catch (blobError) {
+          console.warn(
+            `[GTFSParser] Failed to restore ${tableName} from blob:`,
+            blobError
+          );
+        }
+      }
+
       const stats = await this.gtfsDatabase.getDatabaseStats();
 
       if (!stats?.tables) {
@@ -168,6 +497,11 @@ export class GTFSParser {
 
       // Overlay any tables that have rows on top of the header-only baseline.
       for (const [tableName, count] of Object.entries(stats.tables)) {
+        // Large tables are handled via blobs above
+        if (CONFIG.LARGE_TABLES.has(tableName)) {
+          continue;
+        }
+
         if (count === 0) {
           continue;
         }
@@ -300,19 +634,36 @@ export class GTFSParser {
             errors: parsed.errors,
           };
 
-          // Store in IndexedDB
           const tableName = this.getTableName(fileName);
+
           if (processedData.length > 0) {
-            loadingStateManager.updateProgress(
-              operation,
-              progress + 5,
-              `Storing ${fileName} (${processedData.length} records)...`
-            );
-            // eslint-disable-next-line no-console
-            console.time(`[GTFS] insertRows: ${fileName}`);
-            await this.gtfsDatabase.insertRows(tableName, processedData);
-            // eslint-disable-next-line no-console
-            console.timeEnd(`[GTFS] insertRows: ${fileName}`);
+            if (CONFIG.LARGE_TABLES.has(tableName)) {
+              // Large table: store raw CSV blob instead of per-row IDB insert
+              loadingStateManager.updateProgress(
+                operation,
+                progress + 5,
+                `Saving ${fileName} blob (${processedData.length} records)...`
+              );
+              await this.gtfsDatabase.saveLargeTableBlob(
+                tableName,
+                fileContent
+              );
+              if (tableName === 'stop_times') {
+                this.buildStopTimeIndexes(processedData as StopTimes[]);
+                this.registerStopTimesAsVirtual();
+              }
+            } else {
+              loadingStateManager.updateProgress(
+                operation,
+                progress + 5,
+                `Storing ${fileName} (${processedData.length} records)...`
+              );
+              // eslint-disable-next-line no-console
+              console.time(`[GTFS] insertRows: ${fileName}`);
+              await this.gtfsDatabase.insertRows(tableName, processedData);
+              // eslint-disable-next-line no-console
+              console.timeEnd(`[GTFS] insertRows: ${fileName}`);
+            }
           }
         } else if (fileName.endsWith('.geojson')) {
           // Handle GeoJSON files
@@ -416,21 +767,28 @@ export class GTFSParser {
           header: true,
           skipEmptyLines: true,
         });
-        this.gtfsData[fileName].data = parsed.data;
-        this.gtfsData[fileName].errors = parsed.errors;
-
-        // Update IndexedDB with new data
-        const tableName = this.getTableName(fileName);
-
-        // Clear existing rows for this table
-        await this.gtfsDatabase.clearTable(tableName);
-
-        // Insert new rows with type coercion, matching the import path
         const rows = this.processParsedData(
           parsed.data as Record<string, unknown>[]
         );
-        if (rows.length > 0) {
-          await this.gtfsDatabase.insertRows(tableName, rows);
+        this.gtfsData[fileName].data = rows;
+        this.gtfsData[fileName].errors = parsed.errors;
+
+        const tableName = this.getTableName(fileName);
+
+        if (CONFIG.LARGE_TABLES.has(tableName)) {
+          // Large table: update memory + schedule blob persist, skip IDB rows
+          if (tableName === 'stop_times') {
+            this.buildStopTimeIndexes(rows as StopTimes[]);
+            this.registerStopTimesAsVirtual();
+          }
+          this.invalidateBlobForTable(tableName);
+        } else {
+          // Clear existing rows for this table
+          await this.gtfsDatabase.clearTable(tableName);
+          // Insert new rows with type coercion, matching the import path
+          if (rows.length > 0) {
+            await this.gtfsDatabase.insertRows(tableName, rows);
+          }
         }
       } else if (fileName.endsWith('.geojson')) {
         // Handle GeoJSON updates
@@ -537,6 +895,16 @@ export class GTFSParser {
       this.gtfsData[fileName] = { content: '', data: [], errors: [] };
     }
     this.gtfsData[fileName].data = data;
+    this.gtfsData[fileName].content = '';
+    // Rebuild indexes and re-register virtual table so closures point at the new array
+    const tableName = this.getTableName(fileName);
+    if (tableName === 'stop_times') {
+      this.buildStopTimeIndexes(data as StopTimes[]);
+      this.registerStopTimesAsVirtual();
+      this.invalidateBlobForTable('stop_times');
+    } else if (CONFIG.LARGE_TABLES.has(tableName)) {
+      this.invalidateBlobForTable(tableName);
+    }
   }
 
   // Type-safe synchronous file data retrieval
@@ -606,6 +974,9 @@ export class GTFSParser {
 
   async exportAsZip() {
     try {
+      // Ensure any pending blob edits are written before export
+      await this.persistDirtyBlobs();
+
       // Get all available files from memory (for file list)
       const fileNames = Object.keys(this.gtfsData);
 
@@ -684,16 +1055,18 @@ export class GTFSParser {
   getRoutesForStop(stop_id: string) {
     const routes = this.getFileDataSyncTyped(GTFS_TABLES.ROUTES);
     const trips = this.getFileDataSyncTyped(GTFS_TABLES.TRIPS);
-    const stopTimes = this.getFileDataSyncTyped(GTFS_TABLES.STOP_TIMES);
 
-    if (routes.length === 0 || trips.length === 0 || stopTimes.length === 0) {
+    if (routes.length === 0 || trips.length === 0) {
       return [];
     }
 
-    // Find trips that serve this stop
-    const tripsAtStop = stopTimes
-      .filter((st) => st.stop_id === stop_id)
-      .map((st) => st.trip_id);
+    // Find trips that serve this stop (use in-memory index when available)
+    const tripsAtStop = this.getStopTimesByStopId(stop_id).map(
+      (st) => st.trip_id
+    );
+    if (tripsAtStop.length === 0) {
+      return [];
+    }
 
     // Find routes for those trips
     const route_ids = [
