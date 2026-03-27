@@ -11,7 +11,6 @@ import {
 } from './gtfs-file-registry.js';
 import { GTFSTableMap, StopTimes } from '../types/gtfs-entities.js';
 import { generateCompositeKeyFromRecord } from '../utils/gtfs-primary-keys.js';
-
 interface GTFSFileData<T = GTFSDatabaseRecord> {
   content: string;
   data: T[];

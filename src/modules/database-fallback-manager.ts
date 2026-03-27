@@ -4,6 +4,7 @@
  */
 import { GTFSDatabaseRecord } from './gtfs-database.js';
 import { loadingStateManager } from './loading-state-manager.js';
+import { showModal } from './modal-utils.js';
 
 export interface BrowserCapabilities {
   indexedDB: boolean;
@@ -400,57 +401,14 @@ export class DatabaseFallbackManager {
       ];
     }
 
-    this.showErrorModal(errorMessage, recoveryOptions);
-  }
-
-  /**
-   * Show error modal with recovery options
-   */
-  private showErrorModal(
-    message: string,
-    options: Array<{ label: string; action: () => void }>
-  ): void {
-    const modal = document.createElement('div');
-    modal.className = 'modal modal-open';
-
-    const optionsHtml = options
-      .map(
-        (option, index) =>
-          `<button class="btn btn-outline" data-action="${index}">${option.label}</button>`
-      )
-      .join('');
-
-    modal.innerHTML = `
-      <div class="modal-box">
-        <h3 class="font-bold text-lg text-error">🚨 Database Error</h3>
-        <div class="py-4">
-          <p class="mb-4">${message}</p>
-          <div class="alert alert-error">
-            <div class="text-sm">
-              <strong>What you can do:</strong>
-              <ul class="list-disc list-inside mt-2">
-                <li>Try the recovery options below</li>
-                <li>Close other tabs with GTFS.zone open</li>
-                <li>Clear browser cache and reload</li>
-                <li>Use a smaller GTFS file</li>
-              </ul>
-            </div>
-          </div>
-        </div>
-        <div class="modal-action">
-          ${optionsHtml}
-        </div>
-      </div>
-    `;
-
-    document.body.appendChild(modal);
-
-    // Add event listeners for action buttons
-    modal.querySelectorAll('[data-action]').forEach((button, index) => {
-      button.addEventListener('click', () => {
-        document.body.removeChild(modal);
-        options[index].action();
-      });
+    void showModal({
+      title: 'Database Error',
+      body: errorMessage,
+      actions: recoveryOptions.map((opt) => ({
+        label: opt.label,
+        className: 'btn-outline',
+        onClick: async () => opt.action(),
+      })),
     });
   }
 
@@ -469,41 +427,23 @@ export class DatabaseFallbackManager {
    * Show database reset dialog
    */
   private showDatabaseResetDialog(): void {
-    const modal = document.createElement('div');
-    modal.className = 'modal modal-open';
-    modal.innerHTML = `
-      <div class="modal-box">
-        <h3 class="font-bold text-lg text-warning">⚠️ Reset Database</h3>
-        <div class="py-4">
-          <p class="mb-4">This will permanently delete all stored GTFS data and reset the database.</p>
-          <div class="alert alert-warning">
-            <div>
-              <strong>This action cannot be undone!</strong>
-              <p class="text-sm mt-1">Make sure to export any important data before proceeding.</p>
-            </div>
-          </div>
-        </div>
-        <div class="modal-action">
-          <button class="btn btn-error" id="confirm-reset">Reset Database</button>
-          <button class="btn btn-outline" id="cancel-reset">Cancel</button>
-        </div>
-      </div>
-    `;
-
-    document.body.appendChild(modal);
-
-    const confirmBtn = modal.querySelector(
-      '#confirm-reset'
-    ) as HTMLButtonElement;
-    const cancelBtn = modal.querySelector('#cancel-reset') as HTMLButtonElement;
-
-    confirmBtn.addEventListener('click', async () => {
-      document.body.removeChild(modal);
-      await this.resetDatabase();
-    });
-
-    cancelBtn.addEventListener('click', () => {
-      document.body.removeChild(modal);
+    void showModal({
+      title: 'Reset Database',
+      body: 'This will permanently delete all stored GTFS data. Make sure to export any important data before proceeding.',
+      actions: [
+        {
+          label: 'Reset Database',
+          className: 'btn-error',
+          onClick: async () => {
+            await this.resetDatabase();
+          },
+        },
+        {
+          label: 'Cancel',
+          className: 'btn-outline',
+          onClick: async () => {},
+        },
+      ],
     });
   }
 
