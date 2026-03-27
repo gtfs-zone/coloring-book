@@ -176,21 +176,57 @@ export class RouteRenderer {
       return [];
     }
 
+    // Build shape index: shape_id -> sorted coordinates (one pass, O(S))
+    const shapeIndex = new Map<string, [number, number][]>();
+    if (shapes.length > 0) {
+      // Group points by shape_id
+      const buckets = new Map<string, GTFS.Shape[]>();
+      for (const pt of shapes) {
+        const arr = buckets.get(pt.shape_id);
+        if (arr) {
+          arr.push(pt);
+        } else {
+          buckets.set(pt.shape_id, [pt]);
+        }
+      }
+      // Sort each bucket once and convert to coordinates
+      for (const [id, pts] of buckets) {
+        pts.sort((a, b) => a.shape_pt_sequence - b.shape_pt_sequence);
+        shapeIndex.set(
+          id,
+          pts.map((p) => [p.shape_pt_lon, p.shape_pt_lat])
+        );
+      }
+    }
+
+    // Build trips index: route_id -> trips (one pass, O(T))
+    const tripsByRoute = new Map<string, GTFS.Trip[]>();
+    for (const trip of trips) {
+      const arr = tripsByRoute.get(trip.route_id);
+      if (arr) {
+        arr.push(trip);
+      } else {
+        tripsByRoute.set(trip.route_id, [trip]);
+      }
+    }
+
     const routeFeatures: RouteFeature[] = [];
 
     routes.forEach((route) => {
       const route_id = route.route_id;
       const routeColor = this.getRouteColor(route_id, route.route_color);
 
-      // Find trips for this route
-      const routeTrips = trips.filter((trip) => trip.route_id === route_id);
+      const routeTrips = tripsByRoute.get(route_id) ?? [];
 
       routeTrips.forEach((trip) => {
         let geometry = null;
 
         // Try to use shape data first
-        if (trip.shape_id && shapes.length > 0) {
-          geometry = this.createRouteGeometryFromShape(trip.shape_id, shapes);
+        if (trip.shape_id && shapeIndex.size > 0) {
+          geometry = this.createRouteGeometryFromShape(
+            trip.shape_id,
+            shapeIndex
+          );
         }
 
         // Fall back to stop connections if no shape
@@ -226,38 +262,21 @@ export class RouteRenderer {
   }
 
   /**
-   * Create route geometry from shapes.txt
+   * Create route geometry from pre-indexed shapes
    */
   private createRouteGeometryFromShape(
     shape_id: string,
-    shapes: GTFS.Shape[]
+    shapeIndex: Map<string, [number, number][]>
   ): GeoJSON.LineString | null {
-    const shapePoints = shapes
-      .filter((point) => point.shape_id === shape_id)
-      .map((point) => ({
-        lat: parseFloat(point.shape_pt_lat),
-        lon: parseFloat(point.shape_pt_lon),
-        sequence: parseInt(point.shape_pt_sequence) || 0,
-      }))
-      .filter((p) => !isNaN(p.lat) && !isNaN(p.lon))
-      .sort((a, b) => a.sequence - b.sequence);
+    const coordinates = shapeIndex.get(shape_id);
 
-    if (shapePoints.length < 2) {
+    if (!coordinates || coordinates.length < 2) {
       return null;
-    }
-
-    console.log(`Shape ${shape_id}: ${shapePoints.length} points`);
-
-    // If we have very few points, the lines will be jagged
-    if (shapePoints.length < 5) {
-      console.warn(
-        `Shape ${shape_id} has only ${shapePoints.length} points - may appear jagged`
-      );
     }
 
     return {
       type: 'LineString',
-      coordinates: shapePoints.map((p) => [p.lon, p.lat]),
+      coordinates,
     };
   }
 
