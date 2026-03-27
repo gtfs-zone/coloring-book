@@ -124,6 +124,7 @@ export interface VirtualTableHandlers {
     filter?: Record<string, string | number | boolean>
   ): GTFSDatabaseRecord[];
   getAll(): GTFSDatabaseRecord[];
+  getById(key: string): GTFSDatabaseRecord | undefined;
   insert(rows: GTFSDatabaseRecord[]): void;
   update(key: string, delta: Partial<GTFSDatabaseRecord>): void;
   delete(key: string): void;
@@ -150,6 +151,10 @@ export class GTFSDatabase {
   private isUsingFallback = false;
   /** Virtual table registry — large tables that bypass per-row IDB storage. */
   private virtualTables = new Map<string, VirtualTableHandlers>();
+
+  clearVirtualTables(): void {
+    this.virtualTables.clear();
+  }
 
   registerVirtualTable(
     tableName: string,
@@ -715,6 +720,11 @@ export class GTFSDatabase {
     tableName: string,
     key: string
   ): Promise<GTFSDatabaseRecord | undefined> {
+    const vt = this.virtualTables.get(tableName);
+    if (vt) {
+      return vt.getById(key);
+    }
+
     if (!this.db) {
       throw new Error('Database not initialized');
     }
@@ -1246,20 +1256,19 @@ export class GTFSDatabase {
     }
 
     try {
+      const vtTrips = this.virtualTables.get('trips');
       const vtStopTimes = this.virtualTables.get('stop_times');
 
-      if (vtStopTimes) {
-        // stop_times is virtual — handle trip and stop_times separately
-        const stopTimesForTrip = vtStopTimes.query({ trip_id });
+      if (vtTrips || vtStopTimes) {
+        // Handle virtual tables
+        vtTrips?.delete(trip_id);
+        const stopTimesForTrip = vtStopTimes?.query({ trip_id }) ?? [];
         const keysToDelete = stopTimesForTrip.map((st) =>
           this.generateCompositeKey('stop_times', st)
         );
         for (const key of keysToDelete) {
-          vtStopTimes.delete(key);
+          vtStopTimes!.delete(key);
         }
-        const tripsTx = this.db.transaction('trips', 'readwrite');
-        await tripsTx.objectStore('trips').delete(trip_id);
-        await tripsTx.done;
       } else {
         const transaction = this.db.transaction(
           ['trips', 'stop_times'],
@@ -1280,6 +1289,7 @@ export class GTFSDatabase {
         await transaction.done;
       }
 
+      // eslint-disable-next-line no-console
       console.log(`Deleted trip ${trip_id} and its stop_times`);
     } catch (error) {
       console.error(`Failed to delete trip ${trip_id}:`, error);
