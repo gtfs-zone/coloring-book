@@ -155,8 +155,8 @@ Agency already sets `recordId`. Confirm `AgencyViewController.addEventListeners(
 - [x] Field change listeners removed from `StopViewController.addEventListeners()`
 - [x] `updateRow` removed from `StopViewDependencies`
 - [x] Agency fields verified working (no code changes needed)
-- [ ] TypeScript compiles clean (`npm run typecheck`) — pre-existing errors exist on branch; no new errors introduced by Phase 2
-- [ ] Manual test: edit a stop name → confirm patch appears in Changes panel → confirm undo works
+- [x] TypeScript compiles clean (`npm run typecheck`) — pre-existing errors exist on branch; no new errors introduced by Phase 2
+- [x] Manual test: edit a stop name → confirm patch appears in Changes panel → confirm undo works
 
 ---
 
@@ -198,15 +198,19 @@ Need to capture the before-value before writing (read from parser in-memory data
 Option A is simpler and consistent with the other fixes. Inject `patchManager` into `TimetableDatabase` and record patches in `updateTime()` and `updateBothTimes()`.
 
 ### Phase 3 Checklist
-- [ ] `patchManager` injected into `ServiceDaysController`
-- [ ] `toggleDay()` records patch (before/after both fields)
-- [ ] `updateDateRange()` records patch
-- [ ] `patchManager` injected into `ScheduleController`
-- [ ] Trip property update handler records patch with correct before/after
-- [ ] `patchManager` injected into `TimetableDatabase`
-- [ ] `updateTime()` records patch
-- [ ] `updateBothTimes()` records patch
-- [ ] TypeScript compiles clean
+- [x] `patchManager` injected into `ServiceDaysController` (via `setPatchManager`)
+- [x] `toggleDay()` records patch (insert or update depending on whether calendar row existed)
+- [x] `updateDateRange()` records patch (insert or update)
+- [x] `addException()` records insert patch for `calendar_dates`
+- [x] `removeException()` queries record first, records delete patch
+- [x] `patchManager` injected into `ScheduleController` (via `setPatchManager`; forwarded to `TimetableDatabase`)
+- [x] `updateTripProperty()` captures before value from in-memory data, records update patch
+- [x] `createTrip()` records insert patch
+- [x] `patchManager` injected into `TimetableDatabase` (via `setPatchManager` forwarded from `ScheduleController`)
+- [x] `updateStopTimeInDatabase()` records update patch (update case only; `replaceRows` insert case out of scope)
+- [x] `updateLinkedTimes()` records update patch (update case only)
+- [x] `insertRows` added to `GTFSParserInterface` in `schedule-controller.ts` (was missing)
+- [x] TypeScript compiles clean — no new errors; pre-existing errors unchanged
 - [ ] Manual test: toggle a service day → undo → confirm calendar reverts
 - [ ] Manual test: edit a trip property → undo → confirm trip reverts
 - [ ] Manual test: edit a timetable time cell → undo → confirm time reverts
@@ -325,6 +329,7 @@ Running notes on modifications made and problems encountered during implementati
 ### Changes Made
 
 - **Phase 2** — `stop-view-controller.ts`: added `recordId` to field configs in `renderStopProperties()`; deleted `updateStopProperty()`, `getFieldDisplayName()`, `fieldValues` map, and the field-change listener block from `addEventListeners()`; removed `updateRow` from `StopViewDependencies`; removed unused `notifications` import.
+- **Phase 3** — `service-days-controller.ts`: added `PatchManagerInterface`, `patchManager` field, `setPatchManager()`, and patch recording in `toggleDay()` (both insert and update paths), `updateDateRange()` (both paths), `addException()`, and `removeException()` (queries existing record before delete). `schedule-controller.ts`: added `PatchManagerInterface`, `insertRows` to db interface, `patchManager` field, `setPatchManager()` (forwarded to `TimetableDatabase`), patch recording in `updateTripProperty()` and `createTrip()`. `timetable-database.ts`: added `PatchManagerInterface`, `patchManager` field, `setPatchManager()`, and patch recording in `updateStopTimeInDatabase()` and `updateLinkedTimes()` (update cases only). `index.ts`: wired `setPatchManager` calls for both `scheduleController` and `serviceDaysController` after `patchManager` is constructed.
 
 ### Problems & Surprises
 
