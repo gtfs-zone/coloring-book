@@ -69,6 +69,16 @@ GTFS types are defined in `src/types/` with Zod schemas for runtime validation. 
 
 Vite is the primary build tool. The app version is injected at build time via `git describe` (accessible as `__APP_VERSION__`). Output goes to `dist/`.
 
+## Development Philosophy
+
+- **Reliability over performance**: Correctness and predictability come first. Optimize only when a measured bottleneck warrants it.
+- **Simplicity over abstraction**: Three similar lines of code are better than a premature abstraction. Don't extract helpers for one-off cases.
+- **No backwards-compatibility hacks**: We can ask users to reset the database (Settings → Reset) rather than shipping migration shims. Breaking changes are fine.
+- **Logging for debuggability**: Add `console.log` / `console.warn` at key state transitions (patch recording, DB writes, navigation events). The app is complex enough that logs are worth the noise. Use a `[ModuleName]` prefix so logs are filterable.
+- **Fail loudly**: Prefer throwing or logging errors over silent fallbacks. If something unexpected happens, we want to know.
+- **Virtual table copy-on-read invariant**: All query methods on virtual tables (`getAll`, `getById`, `query`) return shallow copies of the stored rows, not live references. This prevents silent aliasing bugs where a "before" snapshot is mutated by a later in-place write. Do not hold a long-lived reference to a query result and assume it will remain unchanged.
+- **All user edits go through the patch system**: Every user-initiated `updateRow`, `insertRows`, or `deleteRow` must be accompanied by a corresponding `patchManager.record*()` call. Direct DB writes are only for: internal initialization, patch replay, feed import, and backup restore.
+
 ## Conventions
 
 ### Commits

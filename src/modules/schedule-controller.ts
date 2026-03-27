@@ -17,6 +17,8 @@ import { TimetableDataProcessor } from './timetable-data-processor.js';
 import { TimetableRenderer } from './timetable-renderer.js';
 import { TimetableCellRenderer } from './timetable-cell-renderer.js';
 import { TimetableDatabase } from './timetable-database.js';
+import { generateCompositeKeyFromRecord } from '../utils/gtfs-primary-keys.js';
+import { patchUpdate } from '../utils/patch-utils.js';
 
 // Enhanced GTFS interfaces using standard GTFS property names
 
@@ -49,7 +51,25 @@ interface GTFSParserInterface {
       key: string,
       data: Partial<GTFSTableMap[T]>
     ): Promise<void>;
+    insertRows<T extends keyof GTFSTableMap>(
+      tableName: T,
+      rows: GTFSTableMap[T][]
+    ): Promise<void>;
   };
+}
+
+interface PatchManagerInterface {
+  recordInsert(
+    table: string,
+    id: string,
+    record: Record<string, unknown>
+  ): Promise<void>;
+  recordUpdate(
+    table: string,
+    id: string,
+    before: Record<string, unknown>,
+    after: Record<string, unknown>
+  ): Promise<void>;
 }
 
 interface GTFSRelationships {
@@ -75,6 +95,7 @@ interface GTFSRelationships {
 export class ScheduleController {
   private relationships: GTFSRelationships;
   private gtfsParser: GTFSParserInterface;
+  private patchManager: PatchManagerInterface | null = null;
   private dataProcessor: TimetableDataProcessor;
   private renderer: TimetableRenderer;
   private cellRenderer: TimetableCellRenderer;
@@ -106,6 +127,10 @@ export class ScheduleController {
     this.database = new TimetableDatabase(gtfsParser);
   }
 
+  setPatchManager(pm: PatchManagerInterface): void {
+    this.patchManager = pm;
+  }
+
   // ===== PUBLIC EDITING METHODS =====
 
   /**
@@ -128,6 +153,11 @@ export class ScheduleController {
       // Cast time to HH:MM:SS format
       const castedTime = TimeFormatter.castTimeToHHMMSS(newTime);
 
+      // Capture before-state (virtual table returns copies, so beforeRow is a stable snapshot).
+      const beforeRow = await this.database.getStopTime(trip_id, stop_id);
+      const beforeArrivalTime = beforeRow?.arrival_time;
+      const beforeDepartureTime = beforeRow?.departure_time;
+
       // Update database directly - validation handled by TimetableDatabase
       await this.database.updateStopTimeInDatabase(
         trip_id,
@@ -138,6 +168,27 @@ export class ScheduleController {
       console.log(
         `Updated time for ${trip_id}/${stop_id} from ${newTime} to ${castedTime}`
       );
+
+      // Record patch using the stable key (no rebuild, stop_sequence unchanged)
+      const afterStopTime = await this.database.getStopTime(trip_id, stop_id);
+      if (beforeRow && afterStopTime && this.patchManager) {
+        const afterKey = generateCompositeKeyFromRecord(
+          'stop_times',
+          afterStopTime as unknown as Record<string, unknown>
+        );
+        await this.patchManager.recordUpdate(
+          'stop_times',
+          afterKey,
+          {
+            arrival_time: beforeArrivalTime,
+            departure_time: beforeDepartureTime,
+          },
+          {
+            arrival_time: afterStopTime.arrival_time,
+            departure_time: afterStopTime.departure_time,
+          }
+        );
+      }
     } catch (error) {
       console.error('Failed to update time:', error);
       this.showTimeError(trip_id, stop_id, 'Failed to save time change');
@@ -185,6 +236,11 @@ export class ScheduleController {
       // Cast time to HH:MM:SS format
       const castedTime = TimeFormatter.castTimeToHHMMSS(newTime);
 
+      // Capture before-state (virtual table returns copies, so beforeRow is a stable snapshot).
+      const beforeRow = await this.database.getStopTime(trip_id, stop_id);
+      const beforeArrivalTime = beforeRow?.arrival_time;
+      const beforeDepartureTime = beforeRow?.departure_time;
+
       // Update both arrival and departure times to the same value
       await this.database.updateLinkedTimes(trip_id, stop_id, castedTime);
 
@@ -206,6 +262,27 @@ export class ScheduleController {
       // Rebuild stop_times from table and refresh timetable
       await this.database.rebuildStopTimesFromTable(trip_id);
       await this.refreshCurrentTimetable();
+
+      // Record patch using post-rebuild key so undo finds the correct row
+      const afterStopTime = await this.database.getStopTime(trip_id, stop_id);
+      if (beforeRow && afterStopTime && this.patchManager) {
+        const afterKey = generateCompositeKeyFromRecord(
+          'stop_times',
+          afterStopTime as unknown as Record<string, unknown>
+        );
+        await this.patchManager.recordUpdate(
+          'stop_times',
+          afterKey,
+          {
+            arrival_time: beforeArrivalTime,
+            departure_time: beforeDepartureTime,
+          },
+          {
+            arrival_time: afterStopTime.arrival_time,
+            departure_time: afterStopTime.departure_time,
+          }
+        );
+      }
     } catch (error) {
       console.error('Failed to update linked time:', error);
       this.showTimeError(trip_id, stop_id, 'Failed to save time change');
@@ -269,6 +346,13 @@ export class ScheduleController {
         return;
       }
 
+      // Capture before-state (virtual table returns copies, so beforeRow is a stable snapshot).
+      const beforeRow = await this.database.getStopTime(trip_id, stop_id);
+      const field = timeType === 'arrival' ? 'arrival_time' : 'departure_time';
+      const beforeFieldValue = (beforeRow as Record<string, unknown> | null)?.[
+        field
+      ];
+
       // Update database directly
       await this.database.updateStopTimeInDatabase(
         trip_id,
@@ -297,6 +381,21 @@ export class ScheduleController {
       // Rebuild stop_times from table and refresh timetable
       await this.database.rebuildStopTimesFromTable(trip_id);
       await this.refreshCurrentTimetable();
+
+      // Record patch using post-rebuild key so undo finds the correct row
+      const afterStopTime = await this.database.getStopTime(trip_id, stop_id);
+      if (beforeRow && afterStopTime && this.patchManager) {
+        const afterKey = generateCompositeKeyFromRecord(
+          'stop_times',
+          afterStopTime as unknown as Record<string, unknown>
+        );
+        await this.patchManager.recordUpdate(
+          'stop_times',
+          afterKey,
+          { [field]: beforeFieldValue },
+          { [field]: (afterStopTime as Record<string, unknown>)[field] }
+        );
+      }
     } catch (error) {
       console.error('Failed to update arrival/departure time:', error);
       this.showTimeError(trip_id, stop_id, 'Failed to save time change');
@@ -335,10 +434,22 @@ export class ScheduleController {
         processedValue = null;
       }
 
+      // Capture before value from in-memory data
+      const allTrips = this.gtfsParser.getFileDataSync('trips');
+      const currentTrip = allTrips.find((t) => t.trip_id === trip_id) as
+        | Record<string, unknown>
+        | undefined;
+      const before = { [field]: currentTrip?.[field] ?? null };
+
       // Update database
-      await this.gtfsParser.gtfsDatabase.updateRow('trips', trip_id, {
-        [field]: processedValue,
-      });
+      await patchUpdate(
+        this.gtfsParser.gtfsDatabase,
+        this.patchManager,
+        'trips',
+        trip_id,
+        before,
+        { [field]: processedValue }
+      );
 
       console.log(
         `Updated trip property ${field} for ${trip_id} to:`,
@@ -1021,6 +1132,11 @@ export class ScheduleController {
       };
 
       await this.gtfsParser.gtfsDatabase.insertRows('trips', [tripData]);
+      await this.patchManager?.recordInsert(
+        'trips',
+        trimmedId,
+        tripData as Record<string, unknown>
+      );
       console.log('Trip saved to database:', tripData);
 
       notifications.showSuccess(`Trip "${trimmedId}" created successfully`);

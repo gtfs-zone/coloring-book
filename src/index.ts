@@ -94,6 +94,8 @@ export class GTFSEditor {
     this.gtfsParser.setPatchManager(this.patchManager);
     this.editor.setPatchManager(this.patchManager);
     this.browseNavigation.setPatchManager(this.patchManager);
+    this.scheduleController.setPatchManager(this.patchManager);
+    this.serviceDaysController.setPatchManager(this.patchManager);
 
     this.init().catch((error) => {
       console.error('Failed to initialize GTFSEditor:', error);
