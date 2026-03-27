@@ -1,3 +1,0 @@
-route_id,service_id,trip_id,trip_headsign,shape_id
-ROUTE_1,SERVICE_1,TRIP_1,Downtown,SHAPE_1
-ROUTE_2,SERVICE_1,TRIP_2,Uptown,SHAPE_2

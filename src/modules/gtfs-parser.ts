@@ -433,7 +433,7 @@ export class GTFSParser {
     if (indexed) {
       return indexed.map((r) => ({ ...r }));
     }
-    // eslint-disable-next-line no-console
+
     console.warn(
       '[GTFSParser] getStopTimesByStopId: index miss, falling back to linear scan'
     );
@@ -489,7 +489,7 @@ export class GTFSParser {
               errors: parsed.errors,
             };
             this.setupVirtual(tableName, data);
-            // eslint-disable-next-line no-console
+
             console.log(
               `[GTFSParser] Restored ${tableName} from blob: ${data.length} rows`
             );
@@ -500,12 +500,10 @@ export class GTFSParser {
             }
           }
         } catch (err) {
-          // eslint-disable-next-line no-console
           console.warn(`[GTFSParser] Failed to restore ${tableName}:`, err);
         }
       }
     } catch (error) {
-      // eslint-disable-next-line no-console
       console.error('[GTFSParser] Failed to restore data:', error);
     }
   }
@@ -529,9 +527,8 @@ export class GTFSParser {
     const operation = 'parseFile';
 
     try {
-      // eslint-disable-next-line no-console
       console.log('Loading GTFS file:', (file as File).name || 'blob');
-      // eslint-disable-next-line no-console
+
       console.time('[GTFS] parseFile total');
 
       // Start loading indicator
@@ -543,11 +540,11 @@ export class GTFSParser {
         10,
         'Clearing existing data...'
       );
-      // eslint-disable-next-line no-console
+
       console.time('[GTFS] clearDatabase');
       await this.gtfsDatabase.clearDatabase();
       this.gtfsDatabase.clearVirtualTables();
-      // eslint-disable-next-line no-console
+
       console.timeEnd('[GTFS] clearDatabase');
 
       loadingStateManager.updateProgress(
@@ -555,11 +552,11 @@ export class GTFSParser {
         20,
         'Extracting ZIP file...'
       );
-      // eslint-disable-next-line no-console
+
       console.time('[GTFS] zip extraction');
       const zip = new JSZip();
       const zipContent = await zip.loadAsync(file);
-      // eslint-disable-next-line no-console
+
       console.timeEnd('[GTFS] zip extraction');
 
       // Parse all text files in the ZIP
@@ -585,7 +582,7 @@ export class GTFSParser {
           progress,
           `Processing ${fileName}...`
         );
-        // eslint-disable-next-line no-console
+
         console.time(`[GTFS] file: ${fileName}`);
         const fileContent = await zipContent.files[fileName].async('text');
 
@@ -635,7 +632,7 @@ export class GTFSParser {
             geoJsonData as GTFSDatabaseRecord,
           ]);
         }
-        // eslint-disable-next-line no-console
+
         console.timeEnd(`[GTFS] file: ${fileName}`);
       }
 
@@ -663,13 +660,11 @@ export class GTFSParser {
         `Successfully loaded ${files.length} GTFS files`
       );
 
-      // eslint-disable-next-line no-console
       console.log('Loaded GTFS data to IndexedDB and memory:', this.gtfsData);
-      // eslint-disable-next-line no-console
+
       console.timeEnd('[GTFS] parseFile total');
       return this.gtfsData;
     } catch (error) {
-      // eslint-disable-next-line no-console
       console.error('Error loading GTFS file:', error);
       loadingStateManager.finishLoading(operation);
       loadingStateManager.showError(
@@ -684,7 +679,6 @@ export class GTFSParser {
   }
 
   async parseFromURL(url: string): Promise<void> {
-    // eslint-disable-next-line no-console
     console.log('[GTFSParser] Fetching GTFS from URL:', url);
     let response: Response;
     try {
@@ -694,19 +688,18 @@ export class GTFSParser {
         networkError instanceof TypeError
           ? `Network error — could not reach ${url}. Check your connection or whether the server allows cross-origin requests (CORS).`
           : `Fetch failed: ${networkError instanceof Error ? networkError.message : String(networkError)}`;
-      // eslint-disable-next-line no-console
+
       console.error('[GTFSParser]', msg, networkError);
       throw new Error(msg);
     }
 
     if (!response.ok) {
       const msg = `HTTP ${response.status} ${response.statusText} from ${url}`;
-      // eslint-disable-next-line no-console
+
       console.error('[GTFSParser]', msg);
       throw new Error(msg);
     }
 
-    // eslint-disable-next-line no-console
     console.log('[GTFSParser] Download complete, parsing ZIP...');
     const blob = await response.blob();
     await this.parseFile(blob);
@@ -806,7 +799,6 @@ export class GTFSParser {
         return rows;
       }
     } catch (error) {
-      // eslint-disable-next-line no-console
       console.warn(
         `Failed to get data from IndexedDB for ${fileName}, falling back to memory:`,
         error
@@ -954,7 +946,7 @@ export class GTFSParser {
             zip.file(fileName, csvContent);
           } else {
             // Fallback: IDB empty but memory has rows — generate CSV from data
-            // eslint-disable-next-line no-console
+
             console.warn(
               `No data in IndexedDB for ${fileName}, generating from memory`
             );
@@ -962,7 +954,7 @@ export class GTFSParser {
           }
         } catch (dbError) {
           // Fallback to in-memory data if IndexedDB fails
-          // eslint-disable-next-line no-console
+
           console.warn(
             `IndexedDB error for ${fileName}, generating from memory:`,
             dbError
@@ -973,7 +965,6 @@ export class GTFSParser {
 
       return await zip.generateAsync({ type: 'blob' });
     } catch (error) {
-      // eslint-disable-next-line no-console
       console.error('Error exporting GTFS data:', error);
       throw error;
     }

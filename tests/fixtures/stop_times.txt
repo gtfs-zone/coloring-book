@@ -1,7 +1,0 @@
-trip_id,arrival_time,departure_time,stop_id,stop_sequence
-TRIP_1,08:00:00,08:00:00,STOP_1,1
-TRIP_1,08:05:00,08:05:00,STOP_2,2
-TRIP_1,08:10:00,08:10:00,STOP_3,3
-TRIP_2,09:00:00,09:00:00,STOP_3,1
-TRIP_2,09:05:00,09:05:00,STOP_2,2
-TRIP_2,09:10:00,09:10:00,STOP_1,3
