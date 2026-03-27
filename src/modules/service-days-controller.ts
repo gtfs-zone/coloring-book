@@ -10,6 +10,7 @@ import {
   GTFSTableMap,
 } from '../types/gtfs-entities.js';
 import { notifications } from './notification-system';
+import { patchUpdate } from '../utils/patch-utils.js';
 
 // Days of the week in US format (Sunday first)
 const DAYS_OF_WEEK = [
@@ -181,10 +182,9 @@ export class ServiceDaysController {
         );
         const newValue = currentValue === 1 ? 0 : 1;
 
-        await this.gtfsParser.gtfsDatabase.updateRow('calendar', service_id, {
-          [dayKey]: newValue,
-        });
-        await this.patchManager?.recordUpdate(
+        await patchUpdate(
+          this.gtfsParser.gtfsDatabase,
+          this.patchManager,
           'calendar',
           service_id,
           { [dayKey]: currentValue },
@@ -253,13 +253,14 @@ export class ServiceDaysController {
           calendar as Record<string, unknown>
         );
       } else {
-        const before = { [dateType]: calendar[dateType] };
-        await this.gtfsParser.gtfsDatabase.updateRow('calendar', service_id, {
-          [dateType]: gtfsDate,
-        });
-        await this.patchManager?.recordUpdate('calendar', service_id, before, {
-          [dateType]: gtfsDate,
-        });
+        await patchUpdate(
+          this.gtfsParser.gtfsDatabase,
+          this.patchManager,
+          'calendar',
+          service_id,
+          { [dateType]: calendar[dateType] },
+          { [dateType]: gtfsDate }
+        );
       }
 
       this.showSaveSuccess(`date-${dateType}`);

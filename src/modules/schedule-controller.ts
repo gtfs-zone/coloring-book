@@ -18,6 +18,7 @@ import { TimetableRenderer } from './timetable-renderer.js';
 import { TimetableCellRenderer } from './timetable-cell-renderer.js';
 import { TimetableDatabase } from './timetable-database.js';
 import { generateCompositeKeyFromRecord } from '../utils/gtfs-primary-keys.js';
+import { patchUpdate } from '../utils/patch-utils.js';
 
 // Enhanced GTFS interfaces using standard GTFS property names
 
@@ -441,12 +442,14 @@ export class ScheduleController {
       const before = { [field]: currentTrip?.[field] ?? null };
 
       // Update database
-      await this.gtfsParser.gtfsDatabase.updateRow('trips', trip_id, {
-        [field]: processedValue,
-      });
-      await this.patchManager?.recordUpdate('trips', trip_id, before, {
-        [field]: processedValue,
-      });
+      await patchUpdate(
+        this.gtfsParser.gtfsDatabase,
+        this.patchManager,
+        'trips',
+        trip_id,
+        before,
+        { [field]: processedValue }
+      );
 
       console.log(
         `Updated trip property ${field} for ${trip_id} to:`,

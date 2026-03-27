@@ -1,3 +1,11 @@
+/**
+ * GTFS Database — IndexedDB persistence layer.
+ *
+ * INVARIANT: All user-initiated writes MUST go through patchManager.recordUpdate()
+ * (or recordInsert / recordDelete). Direct updateRow() / insertRows() / deleteRow()
+ * calls are only for: internal DB initialization, patch replay, and feed import.
+ * Use patchUpdate() from utils/patch-utils.ts for interactive edit handlers.
+ */
 import { openDB, DBSchema, IDBPDatabase } from 'idb';
 import JSZip from 'jszip';
 import { GTFS_FILES } from '../types/gtfs.js';
