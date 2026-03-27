@@ -152,7 +152,7 @@ export class ScheduleController {
       // Cast time to HH:MM:SS format
       const castedTime = TimeFormatter.castTimeToHHMMSS(newTime);
 
-      // Capture before-state: extract primitive values immediately to avoid aliasing.
+      // Capture before-state (virtual table returns copies, so beforeRow is a stable snapshot).
       const beforeRow = await this.database.getStopTime(trip_id, stop_id);
       const beforeArrivalTime = beforeRow?.arrival_time;
       const beforeDepartureTime = beforeRow?.departure_time;
@@ -235,9 +235,7 @@ export class ScheduleController {
       // Cast time to HH:MM:SS format
       const castedTime = TimeFormatter.castTimeToHHMMSS(newTime);
 
-      // Capture before-state: extract primitive values immediately to avoid aliasing.
-      // The virtual table returns a direct reference to the row object; vt.update()
-      // mutates it in-place, so we must snapshot the values before any mutation.
+      // Capture before-state (virtual table returns copies, so beforeRow is a stable snapshot).
       const beforeRow = await this.database.getStopTime(trip_id, stop_id);
       const beforeArrivalTime = beforeRow?.arrival_time;
       const beforeDepartureTime = beforeRow?.departure_time;
@@ -347,7 +345,7 @@ export class ScheduleController {
         return;
       }
 
-      // Capture before-state: extract primitive value immediately to avoid aliasing.
+      // Capture before-state (virtual table returns copies, so beforeRow is a stable snapshot).
       const beforeRow = await this.database.getStopTime(trip_id, stop_id);
       const field = timeType === 'arrival' ? 'arrival_time' : 'departure_time';
       const beforeFieldValue = (beforeRow as Record<string, unknown> | null)?.[

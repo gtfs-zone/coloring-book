@@ -7,18 +7,13 @@
 
 import type { Agency, Routes, Stops, Trips, StopTimes } from '../types/gtfs.js';
 import {
-  renderFormFields,
-  generateFieldConfigsFromSchema,
+  renderEntityFields,
+  type QueryOnlyDatabase,
 } from '../utils/field-component.js';
 import { GTFS_TABLES, StopsSchema } from '../types/gtfs.js';
 
 export interface StopViewDependencies {
-  gtfsDatabase?: {
-    queryRows: (
-      tableName: string,
-      filter?: Record<string, unknown>
-    ) => Promise<unknown[]>;
-  };
+  gtfsDatabase?: QueryOnlyDatabase;
   gtfsRelationships?: {
     getAgenciesServingStop?: (stop_id: string) => Promise<unknown[]>;
     getRoutesServingStop?: (stop_id: string) => Promise<unknown[]>;
@@ -27,40 +22,11 @@ export interface StopViewDependencies {
   onRouteClick: (route_id: string) => void;
 }
 
-/**
- * Enhanced stop object with dual property access
- */
-interface EnhancedStop {
-  // Convenience shorthand properties
-  id: string;
-  name: string;
-
-  // GTFS standard properties
-  stop_id: string;
-  stop_name: string;
-  stop_lat?: number;
-  stop_lon?: number;
-  stop_code?: string;
-  stop_desc?: string;
-  location_type?: number;
-  parent_station?: string;
-  wheelchair_boarding?: number;
-  platform_code?: string;
-  zone_id?: string;
-}
-
 export class StopViewController {
   private dependencies: StopViewDependencies;
   private currentStopId: string | null = null;
 
   constructor(dependencies: StopViewDependencies) {
-    this.dependencies = dependencies;
-  }
-
-  /**
-   * Update dependencies (used when database becomes available)
-   */
-  updateDependencies(dependencies: StopViewDependencies): void {
     this.dependencies = dependencies;
   }
 
@@ -102,17 +68,13 @@ export class StopViewController {
   /**
    * Render editable stop properties section
    */
-  private renderStopProperties(stop: EnhancedStop): string {
-    // Generate field configurations from StopsSchema
-    // This automatically includes all GTFS stop fields with proper types and validation
-    const fieldConfigs = generateFieldConfigsFromSchema(
+  private renderStopProperties(stop: Stops): string {
+    const fieldsHtml = renderEntityFields(
       StopsSchema,
-      stop,
-      GTFS_TABLES.STOPS
-    ).map((c) => ({ ...c, recordId: this.currentStopId ?? '' }));
-
-    // Render all fields using the reusable field component
-    const fieldsHtml = renderFormFields(fieldConfigs);
+      stop as Record<string, string | number | undefined>,
+      GTFS_TABLES.STOPS,
+      this.currentStopId ?? ''
+    );
 
     return `
       <div class="space-y-4">
@@ -215,17 +177,11 @@ export class StopViewController {
   }
 
   /**
-   * Get enhanced stop data
+   * Get stop data from database
    */
-  private async getStopData(stop_id: string): Promise<EnhancedStop | null> {
+  private async getStopData(stop_id: string): Promise<Stops | null> {
     if (!this.dependencies.gtfsDatabase) {
-      // Fallback to a basic stop object
-      return {
-        id: stop_id,
-        name: stop_id,
-        stop_id: stop_id,
-        stop_name: stop_id,
-      };
+      return { stop_id, stop_name: stop_id, parent_station: '' } as Stops;
     }
 
     try {
@@ -235,27 +191,7 @@ export class StopViewController {
       if (stops.length === 0) {
         return null;
       }
-
-      const stop = stops[0] as Stops;
-      return {
-        // Convenience properties
-        id: stop.stop_id,
-        name: stop.stop_name || stop.stop_id,
-
-        // GTFS standard properties
-        stop_id: stop.stop_id,
-        stop_name: stop.stop_name,
-        stop_lat: parseFloat(stop.stop_lat as string) || undefined,
-        stop_lon: parseFloat(stop.stop_lon as string) || undefined,
-        stop_code: stop.stop_code,
-        stop_desc: stop.stop_desc,
-        location_type: parseInt(stop.location_type as string) || undefined,
-        parent_station: stop.parent_station,
-        wheelchair_boarding:
-          parseInt(stop.wheelchair_boarding as string) || undefined,
-        platform_code: stop.platform_code,
-        zone_id: stop.zone_id,
-      };
+      return stops[0] as Stops;
     } catch (error) {
       console.error('Error getting stop data:', error);
       return null;

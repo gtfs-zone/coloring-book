@@ -143,6 +143,12 @@ export class GTFSParser {
    * All mutations maintain the byId Map and any provided field-level Maps.
    * For stop_times: pass this.stopTimesByStopId as the 'stop_id' fieldMap so it
    * stays accessible for the synchronous getRoutesForStop path.
+   *
+   * COPY-ON-READ INVARIANT: All query methods (getAll, getById, query) return
+   * shallow copies of the stored rows, never live references. This prevents
+   * silent aliasing bugs where a caller's "before" snapshot is mutated by a
+   * later vt.update() call. Mutations (insert, update, delete, replace) still
+   * operate on the internal objects directly — the copies are only for callers.
    */
   private buildAndRegisterVirtual(
     tableName: string,
@@ -197,13 +203,16 @@ export class GTFSParser {
     }
 
     this.gtfsDatabase.registerVirtualTable(tableName, {
-      getAll: () => [...flat],
+      getAll: () => flat.map((r) => ({ ...r })),
 
-      getById: (key) => byId.get(key),
+      getById: (key) => {
+        const row = byId.get(key);
+        return row ? { ...row } : undefined;
+      },
 
       query: (filter) => {
         if (!filter || Object.keys(filter).length === 0) {
-          return [...flat];
+          return flat.map((r) => ({ ...r }));
         }
         // Use a fieldMap if available for the first filter key
         for (const [k, v] of Object.entries(filter)) {
@@ -212,21 +221,25 @@ export class GTFSParser {
             const results = map.get(String(v)) ?? [];
             const rest = Object.entries(filter).filter(([kk]) => kk !== k);
             if (rest.length === 0) {
-              return results;
+              return results.map((r) => ({ ...r }));
             }
-            return results.filter((r) =>
-              rest.every(
-                ([rk, rv]) => (r as Record<string, unknown>)[rk] === rv
+            return results
+              .filter((r) =>
+                rest.every(
+                  ([rk, rv]) => (r as Record<string, unknown>)[rk] === rv
+                )
               )
-            );
+              .map((r) => ({ ...r }));
           }
         }
         // Linear scan fallback (fine for small tables)
-        return flat.filter((r) =>
-          Object.entries(filter).every(
-            ([k, v]) => (r as Record<string, unknown>)[k] === v
+        return flat
+          .filter((r) =>
+            Object.entries(filter).every(
+              ([k, v]) => (r as Record<string, unknown>)[k] === v
+            )
           )
-        );
+          .map((r) => ({ ...r }));
       },
 
       insert: (rows) => {
@@ -411,11 +424,14 @@ export class GTFSParser {
     ].join('\n');
   }
 
-  /** Fast stop_times lookup by stop_id via in-memory index (used by synchronous getRoutesForStop). */
+  /**
+   * Fast stop_times lookup by stop_id via in-memory index (used by synchronous getRoutesForStop).
+   * Returns shallow copies of the stored rows (copy-on-read invariant).
+   */
   getStopTimesByStopId(stop_id: string): StopTimes[] {
     const indexed = this.stopTimesByStopId.get(stop_id);
     if (indexed) {
-      return indexed;
+      return indexed.map((r) => ({ ...r }));
     }
     // eslint-disable-next-line no-console
     console.warn(
