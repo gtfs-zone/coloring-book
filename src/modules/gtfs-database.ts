@@ -1,7 +1,9 @@
 import { openDB, DBSchema, IDBPDatabase } from 'idb';
+import JSZip from 'jszip';
 import { GTFS_FILES } from '../types/gtfs.js';
 import { CONFIG } from '../config.js';
 import { databaseFallbackManager } from './database-fallback-manager.js';
+import { showModal } from './modal-utils.js';
 import { PatchRecord, SnapshotRecord } from '../types/patch.js';
 import {
   Agency,
@@ -144,7 +146,8 @@ export class GTFSDatabase {
     compactDatabase(): Promise<void>;
   } | null = null;
   private readonly dbName = CONFIG.DB_NAME;
-  private readonly dbVersion = CONFIG.DB_VERSION;
+  // Fixed schema version — never increment. App-version modal handles data continuity.
+  private readonly dbVersion = 8;
   private isUsingFallback = false;
   /** Virtual table registry — large tables that bypass per-row IDB storage. */
   private virtualTables = new Map<string, VirtualTableHandlers>();
@@ -179,6 +182,37 @@ export class GTFSDatabase {
         return;
       }
 
+      // If the stored schema version is older than ours, offer an export before wiping.
+      const currentVersion = await this.peekVersion();
+      if (currentVersion > 0 && currentVersion < this.dbVersion) {
+        await showModal({
+          title: 'Database update required',
+          body: 'GTFS.zone needs to update its local database schema. Export your saved feed first, or clear and continue.',
+          actions: [
+            {
+              label: 'Export & Continue',
+              className: 'btn-primary',
+              onClick: async () => {
+                const blob = await this.exportCurrentBlobsAsZip();
+                if (blob) {
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = 'gtfs-export.zip';
+                  a.click();
+                  URL.revokeObjectURL(url);
+                }
+              },
+            },
+            {
+              label: 'Clear & Continue',
+              className: 'btn-error',
+              onClick: async () => {},
+            },
+          ],
+        });
+      }
+
       // Try to initialize IndexedDB
       this.db = await openDB<GTFSDBSchema>(this.dbName, this.dbVersion, {
         upgrade: (db, oldVersion, newVersion, _transaction) => {
@@ -187,76 +221,31 @@ export class GTFSDatabase {
             `Upgrading database from version ${oldVersion} to ${newVersion}`
           );
 
-          if (oldVersion < 3) {
-            // Migration to version 3: Switch to natural GTFS primary keys
-            // Clear existing data as we're changing the key structure
-            // eslint-disable-next-line no-console
-            console.log(
-              'Migrating to natural GTFS primary keys - clearing existing data'
-            );
+          // Clean-slate: wipe all stores and recreate from scratch.
+          Array.from(db.objectStoreNames).forEach((s) =>
+            db.deleteObjectStore(s)
+          );
 
-            // Delete all existing object stores
-            const existingStores = Array.from(db.objectStoreNames);
-            existingStores.forEach((storeName) => {
-              db.deleteObjectStore(storeName);
-            });
-          }
+          db.createObjectStore('patches', {
+            keyPath: 'version',
+            autoIncrement: true,
+          });
+          db.createObjectStore('snapshots', { keyPath: 'version' });
+          db.createObjectStore('meta', { keyPath: 'key' });
+          db.createObjectStore('file_blobs', { keyPath: 'tableName' });
 
-          if (oldVersion < 4) {
-            // Migration to version 4: add patch history stores
-            if (!db.objectStoreNames.contains('patches')) {
-              db.createObjectStore('patches', {
-                keyPath: 'version',
-                autoIncrement: true,
-              });
-            }
-            if (!db.objectStoreNames.contains('snapshots')) {
-              db.createObjectStore('snapshots', { keyPath: 'version' });
-            }
-          }
-
-          if (oldVersion < 5) {
-            if (!db.objectStoreNames.contains('meta')) {
-              db.createObjectStore('meta', { keyPath: 'key' });
-            }
-          }
-
-          if (oldVersion < 6) {
-            // Remove the non-GTFS project metadata store.
-            // All-files-always-registered makes it unnecessary.
-            // Cast to IDBDatabase for the deletion since 'project' is no longer in the schema.
-            const rawDb = db as unknown as IDBDatabase;
-            if (rawDb.objectStoreNames.contains('project')) {
-              rawDb.deleteObjectStore('project');
-            }
-          }
-
-          if (oldVersion < 7) {
-            // Add file_blobs store for all-table CSV persistence.
-            // All existing GTFS table IDB rows are orphaned — users must re-upload their feed.
-            if (!db.objectStoreNames.contains('file_blobs')) {
-              db.createObjectStore('file_blobs', { keyPath: 'tableName' });
-            }
-          }
-
-          // Create tables for all possible GTFS files with natural key schema
-          const allFiles = GTFS_FILES.map((file) => file.filename);
-
-          allFiles.forEach((fileName) => {
+          GTFS_FILES.map((f) => f.filename).forEach((fileName) => {
             const tableName = this.getTableName(fileName);
-            if (!db.objectStoreNames.contains(tableName)) {
-              const keyPath = this.getNaturalKeyPath(tableName);
-              const store = db.createObjectStore(tableName, {
-                keyPath: keyPath,
-                autoIncrement: false, // No auto-increment for natural keys
-              });
-              // Add indexes for commonly queried fields
-              this.addIndexesForTable(store, tableName);
-            }
+            const keyPath = this.getNaturalKeyPath(tableName);
+            const store = db.createObjectStore(tableName, {
+              keyPath,
+              autoIncrement: false,
+            });
+            this.addIndexesForTable(store, tableName);
           });
 
           // eslint-disable-next-line no-console
-          console.log('Database schema migration completed');
+          console.log('Database schema created');
         },
         blocked: () => {
           databaseFallbackManager.showDatabaseError(
@@ -329,6 +318,74 @@ export class GTFSDatabase {
    */
   isInFallbackMode(): boolean {
     return this.isUsingFallback;
+  }
+
+  /**
+   * Peek at the current IDB version without triggering an upgrade.
+   * Returns 0 if the database does not yet exist (fresh install).
+   */
+  private peekVersion(): Promise<number> {
+    return new Promise((resolve) => {
+      const req = indexedDB.open(this.dbName);
+      req.onsuccess = () => {
+        const v = req.result.version;
+        req.result.close();
+        resolve(v);
+      };
+      req.onupgradeneeded = (e) => {
+        // Fresh install — abort to avoid creating an empty DB at version 1
+        (e.target as IDBOpenDBRequest).transaction?.abort();
+      };
+      req.onerror = () => resolve(0);
+    });
+  }
+
+  /**
+   * Open the DB at its current version (no upgrade), read all file_blobs,
+   * and return them as a ZIP blob. Returns null if no blob data exists.
+   */
+  private exportCurrentBlobsAsZip(): Promise<Blob | null> {
+    return new Promise((resolve) => {
+      const req = indexedDB.open(this.dbName);
+      req.onsuccess = () => {
+        const db = req.result;
+        if (!db.objectStoreNames.contains('file_blobs')) {
+          db.close();
+          resolve(null);
+          return;
+        }
+        const storeReq = db
+          .transaction('file_blobs', 'readonly')
+          .objectStore('file_blobs')
+          .getAll();
+        storeReq.onsuccess = async () => {
+          db.close();
+          const entries = storeReq.result as {
+            tableName: string;
+            csv: string;
+          }[];
+          if (!entries?.length) {
+            resolve(null);
+            return;
+          }
+          const zip = new JSZip();
+          for (const { tableName, csv } of entries) {
+            if (csv) {
+              zip.file(`${tableName}.txt`, csv);
+            }
+          }
+          resolve(await zip.generateAsync({ type: 'blob' }));
+        };
+        storeReq.onerror = () => {
+          db.close();
+          resolve(null);
+        };
+      };
+      req.onupgradeneeded = (e) => {
+        (e.target as IDBOpenDBRequest).transaction?.abort();
+      };
+      req.onerror = () => resolve(null);
+    });
   }
 
   /**
