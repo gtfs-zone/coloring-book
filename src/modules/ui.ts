@@ -187,7 +187,7 @@ export class UIController {
 
     try {
       console.log('Loading GTFS file:', file.name);
-      // eslint-disable-next-line no-console
+
       console.time('[GTFS] loadGTFSFile total');
 
       // Show loading notification
@@ -214,15 +214,15 @@ export class UIController {
       await this.gtfsParser.parseFile(file);
 
       // Update UI
-      // eslint-disable-next-line no-console
+
       console.time('[GTFS] updateFileList');
       this.updateFileList();
-      // eslint-disable-next-line no-console
+
       console.timeEnd('[GTFS] updateFileList');
-      // eslint-disable-next-line no-console
+
       console.time('[GTFS] updateMap');
       await this.mapController.updateMap();
-      // eslint-disable-next-line no-console
+
       console.timeEnd('[GTFS] updateMap');
       this.mapController.hideMapOverlay();
 
@@ -231,20 +231,18 @@ export class UIController {
 
       // Refresh Objects navigation if available
       if (this.browseNavigation) {
-        // eslint-disable-next-line no-console
         console.time('[GTFS] navigateToHome + refresh');
         await navigateToHome();
         this.browseNavigation.refresh();
-        // eslint-disable-next-line no-console
+
         console.timeEnd('[GTFS] navigateToHome + refresh');
       }
 
       // Run validation if callback is available
       if (this.validateCallback) {
-        // eslint-disable-next-line no-console
         console.time('[GTFS] validate');
         this.validateCallback();
-        // eslint-disable-next-line no-console
+
         console.timeEnd('[GTFS] validate');
       }
 
@@ -259,7 +257,7 @@ export class UIController {
         notifications.removeNotification(loadingNotificationId);
       }
       notifications.showSuccess(`Successfully loaded GTFS file: ${file.name}`);
-      // eslint-disable-next-line no-console
+
       console.timeEnd('[GTFS] loadGTFSFile total');
     } catch (error) {
       console.error('Error loading GTFS file:', error);
