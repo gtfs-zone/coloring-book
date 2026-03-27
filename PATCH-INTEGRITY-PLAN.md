@@ -207,13 +207,14 @@ Option A is simpler and consistent with the other fixes. Inject `patchManager` i
 - [x] `updateTripProperty()` captures before value from in-memory data, records update patch
 - [x] `createTrip()` records insert patch
 - [x] `patchManager` injected into `TimetableDatabase` (via `setPatchManager` forwarded from `ScheduleController`)
-- [x] `updateStopTimeInDatabase()` records update patch (update case only; `replaceRows` insert case out of scope)
-- [x] `updateLinkedTimes()` records update patch (update case only)
+- [x] `updateStopTimeInDatabase()` patch recording moved to `ScheduleController` (post-rebuild, post-refactor)
+- [x] `updateLinkedTimes()` patch recording moved to `ScheduleController` (post-rebuild, post-refactor)
 - [x] `insertRows` added to `GTFSParserInterface` in `schedule-controller.ts` (was missing)
+- [x] `generateCompositeKeyFromRecord` imported in `schedule-controller.ts` for post-rebuild key generation
 - [x] TypeScript compiles clean — no new errors; pre-existing errors unchanged
-- [ ] Manual test: toggle a service day → undo → confirm calendar reverts
-- [ ] Manual test: edit a trip property → undo → confirm trip reverts
-- [ ] Manual test: edit a timetable time cell → undo → confirm time reverts
+- [x] Manual test: toggle a service day → undo → confirm calendar reverts
+- [x] Manual test: edit a trip property → undo → confirm trip reverts
+- [x] Manual test: edit a timetable time cell → undo → confirm time reverts
 
 ---
 
@@ -270,11 +271,57 @@ These types duplicate the GTFS types with convenience aliases (`id`, `name`). Th
 
 ---
 
-## Phase 5: Regression Prevention
+## Phase 5: Virtual Table Safety (New — from stop_times bug)
+
+**Goal:** Eliminate the class of bugs where a captured row reference is silently mutated by a later in-place write.
+
+### Background
+
+The virtual table system (`GTFSParser.buildAndRegisterVirtual`) stores rows as plain objects in a `flat` array. The `vt.update(key, delta)` handler calls `Object.assign(row, delta)` — mutating the object **in-place**. Any code that holds a reference to the same object (e.g., from a prior `getStopTime` call) silently sees the new values without warning. TypeScript cannot catch this because the type is correct — it's a semantic aliasing problem, not a type error.
+
+### 5a: Make virtual-table row getters return shallow copies
+
+In `GTFSParser`, the `vt.find(key)` and `vt.getAll()` (or equivalents used by `getStopTime`, `queryRows`, etc.) should return `{ ...row }` — a shallow copy — rather than the raw row reference:
+
+```ts
+// In buildAndRegisterVirtual (or in the query handler)
+find: (key: string) => {
+  const row = byId.get(key);
+  return row ? { ...row } : undefined;  // copy, not reference
+},
+getAll: () => flat.map(r => ({ ...r })),  // copies
+```
+
+This means callers always get a **snapshot** of the row at query time. Subsequent in-place mutations to `flat` entries do not affect the returned snapshot.
+
+**Trade-off:** Slightly higher allocation cost per query. Given the size of GTFS data in this app (thousands of rows, not millions), this is negligible. The correctness benefit outweighs the cost.
+
+### 5b: Update `vt.replace` to produce copies
+
+`vt.replace` (used by `replaceRows`) already creates new objects from `finalStopTimes`. Confirm no other path reuses row references from the old array.
+
+### 5c: Coding convention documented in CLAUDE.md / codebase
+
+Add a comment in `gtfs-parser.ts` near `buildAndRegisterVirtual`:
+> Callers of virtual table query methods receive shallow copies of the stored rows.
+> Do NOT hold a long-lived reference to a row and assume it will not change — the
+> copy returned is a snapshot; the store may evolve independently.
+
+### Phase 5 Checklist
+- [ ] `vt.find` / `vt.getAll` (or equivalent query paths used by `getStopTime`, `queryRows`) return `{ ...row }` copies
+- [ ] Existing code that relied on mutation-through-reference is audited (no callers should depend on in-place mutation of a previously returned row reference)
+- [ ] CLAUDE.md or `gtfs-parser.ts` comment documents the copy-on-read invariant
+- [ ] TypeScript compiles clean
+- [ ] Manual test: edit a timetable time cell → undo → still works after copy-on-read change
+- [ ] All Playwright tests pass
+
+---
+
+## Phase 6: Patch-Bypass Regression Prevention
 
 **Goal:** Make it structurally hard to add a new `updateRow` that bypasses patches.
 
-### 5a: Wrap `updateRow` in a patch-enforcing helper
+### 6a: Wrap `updateRow` in a patch-enforcing helper
 
 Create a thin wrapper used by all interactive update sites:
 
@@ -295,13 +342,13 @@ async function patchUpdate(
 
 All interactive update handlers use this instead of calling `db.updateRow` directly.
 
-### 5b: Document the invariant
+### 6b: Document the invariant
 
 Add a comment block at the top of `gtfs-database.ts` and `patch-manager.ts` stating:
 > All user-initiated writes MUST go through `patchManager.recordUpdate()`.
 > Direct `updateRow()` calls are only for: internal DB initialization, patch replay, and feed import.
 
-### Phase 5 Checklist
+### Phase 6 Checklist
 - [ ] `patchUpdate` helper created in a shared utility file
 - [ ] All Phase 2/3 fix sites converted to use `patchUpdate`
 - [ ] Invariant documented in relevant files
@@ -318,7 +365,8 @@ Add a comment block at the top of `gtfs-database.ts` and `patch-manager.ts` stat
 | 2 | Fix stop/agency forms | Low — deleting code, adding `recordId` | Small |
 | 3 | Fix calendar/trip/timetable | Medium — injecting deps, capturing before-values | Medium |
 | 4 | Abstraction cleanup | Medium — refactoring across 3 controllers | Medium |
-| 5 | Prevention wrapper | Low | Small |
+| 5 | Virtual table copy-on-read safety | Low–Medium — touching `gtfs-parser.ts` internals | Small |
+| 6 | Patch-bypass prevention wrapper | Low | Small |
 
 ---
 
@@ -329,7 +377,8 @@ Running notes on modifications made and problems encountered during implementati
 ### Changes Made
 
 - **Phase 2** — `stop-view-controller.ts`: added `recordId` to field configs in `renderStopProperties()`; deleted `updateStopProperty()`, `getFieldDisplayName()`, `fieldValues` map, and the field-change listener block from `addEventListeners()`; removed `updateRow` from `StopViewDependencies`; removed unused `notifications` import.
-- **Phase 3** — `service-days-controller.ts`: added `PatchManagerInterface`, `patchManager` field, `setPatchManager()`, and patch recording in `toggleDay()` (both insert and update paths), `updateDateRange()` (both paths), `addException()`, and `removeException()` (queries existing record before delete). `schedule-controller.ts`: added `PatchManagerInterface`, `insertRows` to db interface, `patchManager` field, `setPatchManager()` (forwarded to `TimetableDatabase`), patch recording in `updateTripProperty()` and `createTrip()`. `timetable-database.ts`: added `PatchManagerInterface`, `patchManager` field, `setPatchManager()`, and patch recording in `updateStopTimeInDatabase()` and `updateLinkedTimes()` (update cases only). `index.ts`: wired `setPatchManager` calls for both `scheduleController` and `serviceDaysController` after `patchManager` is constructed.
+- **Phase 3 (initial)** — `service-days-controller.ts`: added `PatchManagerInterface`, `patchManager` field, `setPatchManager()`, and patch recording in `toggleDay()` (both insert and update paths), `updateDateRange()` (both paths), `addException()`, and `removeException()` (queries existing record before delete). `schedule-controller.ts`: added `PatchManagerInterface`, `insertRows` to db interface, `patchManager` field, `setPatchManager()` (forwarded to `TimetableDatabase`), patch recording in `updateTripProperty()` and `createTrip()`. `timetable-database.ts`: added `PatchManagerInterface`, `patchManager` field, `setPatchManager()`, and patch recording in `updateStopTimeInDatabase()` and `updateLinkedTimes()` (update cases only). `index.ts`: wired `setPatchManager` calls for both `scheduleController` and `serviceDaysController` after `patchManager` is constructed.
+- **Phase 3 (stop_times undo bug fix)** — The initial approach of recording patches inside `TimetableDatabase` was wrong for two compounding reasons: (1) stale composite key — all three `ScheduleController` time-edit methods call `rebuildStopTimesFromTable` after the DB write, which deletes and re-inserts all `stop_times` for the trip with renumbered `stop_sequence` values; the composite key `trip_id:stop_sequence` in the patch was stale, so `applyPatchInverse` silently found nothing; (2) object aliasing — `getStopTime` returns a **live reference** into the virtual table's `flat` array; when `updateLinkedTimes → vt.update → Object.assign(row, delta)` ran, it mutated the exact object that `beforeStopTime` pointed to, so by the time `recordUpdate` compared `before` vs `after`, they were identical and no patch was recorded. Fix: moved patch recording into `ScheduleController` after the full rebuild cycle; extracted **primitive values** immediately after `getStopTime()` (`const beforeArrivalTime = beforeRow?.arrival_time`) to escape the mutable reference; queried `getStopTime` again after rebuild to get the post-rebuild row and its freshly-assigned composite key. Using post-rebuild key ensures `applyPatchInverse` finds the current row. The null/clear-time case is intentionally not patched (stop may be removed by rebuild). Also added `generateCompositeKeyFromRecord` import to `schedule-controller.ts`.
 
 ### Problems & Surprises
 
@@ -339,3 +388,4 @@ Running notes on modifications made and problems encountered during implementati
 
 - **Phase 1** — Audit found 11 broken sites vs. 6 predicted; `insertRows`/`deleteRow` were not in scope of original search. `service-days-controller` alone has 6 broken call sites (2 inserts + 2 updates + 1 insert + 1 delete across `toggleDay`, `updateDateRange`, `addException`, `removeException`). `schedule-controller` has an additional broken `insertRows` in `createTrip`.
 - **Phase 2 bug** — After connecting stops to `form-patch-bridge`, a refresh after any stop edit caused all stops to vanish from the map ("No valid stops with coordinates found"). Root cause: `patchManager.initialize()` no-snapshot path was clearing ALL tables with patches (including update-only tables). Blob-backed tables are restored from CSV blobs by `GTFSParser.initialize()`; `clearTable` + `setInMemoryFileData('stops.txt', [])` destroyed those rows, and the update patch replay had an empty array to work with so in-memory data stayed `[]`. Fix: only clear tables that have `insert` or `delete` patches (not `update`-only), since updates are idempotent on blob-loaded data. Change in `patch-manager.ts:initialize()`.
+- **Phase 3 object aliasing (root cause of stop_times undo bug)** — Virtual table row getters (`getStopTime`, and by extension any virtual-table backed `queryRows`) return **live references** into the virtual table's `flat` array. Mutating a row via `vt.update → Object.assign(row, delta)` silently updates every variable that holds a reference to that object. This is not visible as a type error — both the "before" reference and the in-memory row are the same `object`, so they always compare equal. The only safe pattern across an async mutation boundary is to extract primitive values immediately: `const before = row.field` (string/number, immutable by value) rather than `const before = row` (object, mutable by reference). This class of bug is: **captured reference invalidated by in-place mutation before it is consumed**.
