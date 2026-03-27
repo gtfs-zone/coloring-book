@@ -99,13 +99,3 @@ export class GTFSMetadata {
       .filter(Boolean);
   }
 }
-
-// Export convenience functions
-export const getDescription = GTFSMetadata.getFieldDescription;
-export const getAllDescriptions = GTFSMetadata.getAllFieldDescriptions;
-export const getFileSchema = GTFSMetadata.getFileSchema;
-export const getFileInfo = GTFSMetadata.getFileInfo;
-export const getAllFileNames = GTFSMetadata.getAllFileNames;
-export const getFilePresence = GTFSMetadata.getFilePresence;
-export const getFieldInfo = GTFSMetadata.getFieldInfo;
-export const getAllFieldInfo = GTFSMetadata.getAllFieldInfo;

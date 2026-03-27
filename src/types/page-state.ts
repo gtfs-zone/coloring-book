@@ -111,31 +111,6 @@ export function isPageState(value: unknown): value is PageState {
 }
 
 /**
- * Type guard to check if a value is a valid BreadcrumbItem
- */
-export function isBreadcrumbItem(value: unknown): value is BreadcrumbItem {
-  if (!value || typeof value !== 'object') {
-    return false;
-  }
-
-  const item = value as { label?: string; pageState?: unknown };
-  return typeof item.label === 'string' && isPageState(item.pageState);
-}
-
-/**
- * Utility type for extracting page state type
- */
-export type PageStateType = PageState['type'];
-
-/**
- * Utility type for extracting specific page state by type
- */
-export type ExtractPageState<T extends PageStateType> = Extract<
-  PageState,
-  { type: T }
->;
-
-/**
  * Navigation event types for the page state manager
  */
 export type NavigationEvent = {

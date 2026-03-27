@@ -534,35 +534,3 @@ export function getEnumOptions(
 export function isEnumField(fieldName: string): boolean {
   return fieldName in GTFS_ENUMS;
 }
-
-/**
- * Get the label for a specific enum value
- */
-export function getEnumLabel(
-  fieldName: string,
-  value: number | string
-): string | undefined {
-  const options = GTFS_ENUMS[fieldName];
-  if (!options) {
-    return undefined;
-  }
-
-  const option = options.find((opt) => opt.value === value);
-  return option?.label;
-}
-
-/**
- * Get the description for a specific enum value
- */
-export function getEnumDescription(
-  fieldName: string,
-  value: number | string
-): string | undefined {
-  const options = GTFS_ENUMS[fieldName];
-  if (!options) {
-    return undefined;
-  }
-
-  const option = options.find((opt) => opt.value === value);
-  return option?.description;
-}

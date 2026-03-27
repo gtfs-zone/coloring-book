@@ -10,489 +10,6 @@
 
 import { z } from 'zod';
 
-// Foreign key relationships extracted from GTFS specification
-export const GTFS_RELATIONSHIPS = [
-  {
-    sourceFile: 'stops.txt',
-    sourceField: 'parent_station',
-    targetFile: 'stops.txt',
-    targetField: 'stop_id',
-    description: 'parent_station references stops.stop_id',
-    optional: true,
-  },
-  {
-    sourceFile: 'stops.txt',
-    sourceField: 'level_id',
-    targetFile: 'levels.txt',
-    targetField: 'level_id',
-    description: 'level_id references levels.level_id',
-    optional: true,
-  },
-  {
-    sourceFile: 'routes.txt',
-    sourceField: 'agency_id',
-    targetFile: 'agency.txt',
-    targetField: 'agency_id',
-    description: 'agency_id references agency.agency_id',
-    optional: true,
-  },
-  {
-    sourceFile: 'trips.txt',
-    sourceField: 'route_id',
-    targetFile: 'routes.txt',
-    targetField: 'route_id',
-    description: 'route_id references routes.route_id',
-    optional: false,
-  },
-  {
-    sourceFile: 'trips.txt',
-    sourceField: 'service_id',
-    targetFile: 'calendar.txt',
-    targetField: 'service_id',
-    description: 'service_id references calendar.service_id',
-    optional: false,
-  },
-  {
-    sourceFile: 'trips.txt',
-    sourceField: 'service_id',
-    targetFile: 'calendar_dates.txt',
-    targetField: 'service_id',
-    description: 'service_id references calendar_dates.service_id',
-    optional: false,
-  },
-  {
-    sourceFile: 'trips.txt',
-    sourceField: 'shape_id',
-    targetFile: 'shapes.txt',
-    targetField: 'shape_id',
-    description: 'shape_id references shapes.shape_id',
-    optional: true,
-  },
-  {
-    sourceFile: 'stop_times.txt',
-    sourceField: 'trip_id',
-    targetFile: 'trips.txt',
-    targetField: 'trip_id',
-    description: 'trip_id references trips.trip_id',
-    optional: false,
-  },
-  {
-    sourceFile: 'stop_times.txt',
-    sourceField: 'stop_id',
-    targetFile: 'stops.txt',
-    targetField: 'stop_id',
-    description: 'stop_id references stops.stop_id',
-    optional: true,
-  },
-  {
-    sourceFile: 'stop_times.txt',
-    sourceField: 'location_group_id',
-    targetFile: 'location_groups.txt',
-    targetField: 'location_group_id',
-    description:
-      'location_group_id references location_groups.location_group_id',
-    optional: true,
-  },
-  {
-    sourceFile: 'stop_times.txt',
-    sourceField: 'location_id',
-    targetFile: 'id from locations.txt',
-    targetField: 'geojson',
-    description: 'location_id references id from locations.geojson',
-    optional: true,
-  },
-  {
-    sourceFile: 'stop_times.txt',
-    sourceField: 'pickup_booking_rule_id',
-    targetFile: 'booking_rules.txt',
-    targetField: 'booking_rule_id',
-    description:
-      'pickup_booking_rule_id references booking_rules.booking_rule_id',
-    optional: true,
-  },
-  {
-    sourceFile: 'stop_times.txt',
-    sourceField: 'drop_off_booking_rule_id',
-    targetFile: 'booking_rules.txt',
-    targetField: 'booking_rule_id',
-    description:
-      'drop_off_booking_rule_id references booking_rules.booking_rule_id',
-    optional: true,
-  },
-  {
-    sourceFile: 'calendar_dates.txt',
-    sourceField: 'service_id',
-    targetFile: 'calendar.txt',
-    targetField: 'service_id',
-    description: 'service_id references calendar.service_id',
-    optional: false,
-  },
-  {
-    sourceFile: 'fare_attributes.txt',
-    sourceField: 'agency_id',
-    targetFile: 'agency.txt',
-    targetField: 'agency_id',
-    description: 'agency_id references agency.agency_id',
-    optional: true,
-  },
-  {
-    sourceFile: 'fare_rules.txt',
-    sourceField: 'fare_id',
-    targetFile: 'fare_attributes.txt',
-    targetField: 'fare_id',
-    description: 'fare_id references fare_attributes.fare_id',
-    optional: false,
-  },
-  {
-    sourceFile: 'fare_rules.txt',
-    sourceField: 'route_id',
-    targetFile: 'routes.txt',
-    targetField: 'route_id',
-    description: 'route_id references routes.route_id',
-    optional: true,
-  },
-  {
-    sourceFile: 'fare_rules.txt',
-    sourceField: 'origin_id',
-    targetFile: 'stops.txt',
-    targetField: 'zone_id',
-    description: 'origin_id references stops.zone_id',
-    optional: true,
-  },
-  {
-    sourceFile: 'fare_rules.txt',
-    sourceField: 'destination_id',
-    targetFile: 'stops.txt',
-    targetField: 'zone_id',
-    description: 'destination_id references stops.zone_id',
-    optional: true,
-  },
-  {
-    sourceFile: 'fare_rules.txt',
-    sourceField: 'contains_id',
-    targetFile: 'stops.txt',
-    targetField: 'zone_id',
-    description: 'contains_id references stops.zone_id',
-    optional: true,
-  },
-  {
-    sourceFile: 'timeframes.txt',
-    sourceField: 'service_id',
-    targetFile: 'calendar.txt',
-    targetField: 'service_id',
-    description: 'service_id references calendar.service_id',
-    optional: false,
-  },
-  {
-    sourceFile: 'timeframes.txt',
-    sourceField: 'service_id',
-    targetFile: 'calendar_dates.txt',
-    targetField: 'service_id',
-    description: 'service_id references calendar_dates.service_id',
-    optional: false,
-  },
-  {
-    sourceFile: 'fare_products.txt',
-    sourceField: 'rider_category_id',
-    targetFile: 'rider_categories.txt',
-    targetField: 'rider_category_id',
-    description:
-      'rider_category_id references rider_categories.rider_category_id',
-    optional: true,
-  },
-  {
-    sourceFile: 'fare_products.txt',
-    sourceField: 'fare_media_id',
-    targetFile: 'fare_media.txt',
-    targetField: 'fare_media_id',
-    description: 'fare_media_id references fare_media.fare_media_id',
-    optional: true,
-  },
-  {
-    sourceFile: 'fare_leg_rules.txt',
-    sourceField: 'network_id',
-    targetFile: 'routes.txt',
-    targetField: 'network_id',
-    description: 'network_id references routes.network_id',
-    optional: true,
-  },
-  {
-    sourceFile: 'fare_leg_rules.txt',
-    sourceField: 'network_id',
-    targetFile: 'networks.txt',
-    targetField: 'network_id',
-    description: 'network_id references networks.network_id',
-    optional: true,
-  },
-  {
-    sourceFile: 'fare_leg_rules.txt',
-    sourceField: 'from_area_id',
-    targetFile: 'areas.txt',
-    targetField: 'area_id',
-    description: 'from_area_id references areas.area_id',
-    optional: true,
-  },
-  {
-    sourceFile: 'fare_leg_rules.txt',
-    sourceField: 'to_area_id',
-    targetFile: 'areas.txt',
-    targetField: 'area_id',
-    description: 'to_area_id references areas.area_id',
-    optional: true,
-  },
-  {
-    sourceFile: 'fare_leg_rules.txt',
-    sourceField: 'from_timeframe_group_id',
-    targetFile: 'timeframes.txt',
-    targetField: 'timeframe_group_id',
-    description:
-      'from_timeframe_group_id references timeframes.timeframe_group_id',
-    optional: true,
-  },
-  {
-    sourceFile: 'fare_leg_rules.txt',
-    sourceField: 'to_timeframe_group_id',
-    targetFile: 'timeframes.txt',
-    targetField: 'timeframe_group_id',
-    description:
-      'to_timeframe_group_id references timeframes.timeframe_group_id',
-    optional: true,
-  },
-  {
-    sourceFile: 'fare_leg_rules.txt',
-    sourceField: 'fare_product_id',
-    targetFile: 'fare_products.txt',
-    targetField: 'fare_product_id',
-    description: 'fare_product_id references fare_products.fare_product_id',
-    optional: false,
-  },
-  {
-    sourceFile: 'fare_leg_join_rules.txt',
-    sourceField: 'from_network_id',
-    targetFile: 'routes.txt',
-    targetField: 'network_id',
-    description: 'from_network_id references routes.network_id',
-    optional: false,
-  },
-  {
-    sourceFile: 'fare_leg_join_rules.txt',
-    sourceField: 'from_network_id',
-    targetFile: 'networks.txt',
-    targetField: 'network_id',
-    description: 'from_network_id references networks.network_id',
-    optional: false,
-  },
-  {
-    sourceFile: 'fare_leg_join_rules.txt',
-    sourceField: 'to_network_id',
-    targetFile: 'routes.txt',
-    targetField: 'network_id',
-    description: 'to_network_id references routes.network_id',
-    optional: false,
-  },
-  {
-    sourceFile: 'fare_leg_join_rules.txt',
-    sourceField: 'to_network_id',
-    targetFile: 'networks.txt',
-    targetField: 'network_id',
-    description: 'to_network_id references networks.network_id',
-    optional: false,
-  },
-  {
-    sourceFile: 'fare_leg_join_rules.txt',
-    sourceField: 'from_stop_id',
-    targetFile: 'stops.txt',
-    targetField: 'stop_id',
-    description: 'from_stop_id references stops.stop_id',
-    optional: true,
-  },
-  {
-    sourceFile: 'fare_leg_join_rules.txt',
-    sourceField: 'to_stop_id',
-    targetFile: 'stops.txt',
-    targetField: 'stop_id',
-    description: 'to_stop_id references stops.stop_id',
-    optional: true,
-  },
-  {
-    sourceFile: 'fare_transfer_rules.txt',
-    sourceField: 'from_leg_group_id',
-    targetFile: 'fare_leg_rules.txt',
-    targetField: 'leg_group_id',
-    description: 'from_leg_group_id references fare_leg_rules.leg_group_id',
-    optional: true,
-  },
-  {
-    sourceFile: 'fare_transfer_rules.txt',
-    sourceField: 'to_leg_group_id',
-    targetFile: 'fare_leg_rules.txt',
-    targetField: 'leg_group_id',
-    description: 'to_leg_group_id references fare_leg_rules.leg_group_id',
-    optional: true,
-  },
-  {
-    sourceFile: 'fare_transfer_rules.txt',
-    sourceField: 'fare_product_id',
-    targetFile: 'fare_products.txt',
-    targetField: 'fare_product_id',
-    description: 'fare_product_id references fare_products.fare_product_id',
-    optional: true,
-  },
-  {
-    sourceFile: 'stop_areas.txt',
-    sourceField: 'area_id',
-    targetFile: 'areas.txt',
-    targetField: 'area_id',
-    description: 'area_id references areas.area_id',
-    optional: false,
-  },
-  {
-    sourceFile: 'stop_areas.txt',
-    sourceField: 'stop_id',
-    targetFile: 'stops.txt',
-    targetField: 'stop_id',
-    description: 'stop_id references stops.stop_id',
-    optional: false,
-  },
-  {
-    sourceFile: 'route_networks.txt',
-    sourceField: 'network_id',
-    targetFile: 'networks.txt',
-    targetField: 'network_id',
-    description: 'network_id references networks.network_id',
-    optional: false,
-  },
-  {
-    sourceFile: 'route_networks.txt',
-    sourceField: 'route_id',
-    targetFile: 'routes.txt',
-    targetField: 'route_id',
-    description: 'route_id references routes.route_id',
-    optional: false,
-  },
-  {
-    sourceFile: 'frequencies.txt',
-    sourceField: 'trip_id',
-    targetFile: 'trips.txt',
-    targetField: 'trip_id',
-    description: 'trip_id references trips.trip_id',
-    optional: false,
-  },
-  {
-    sourceFile: 'transfers.txt',
-    sourceField: 'from_stop_id',
-    targetFile: 'stops.txt',
-    targetField: 'stop_id',
-    description: 'from_stop_id references stops.stop_id',
-    optional: true,
-  },
-  {
-    sourceFile: 'transfers.txt',
-    sourceField: 'to_stop_id',
-    targetFile: 'stops.txt',
-    targetField: 'stop_id',
-    description: 'to_stop_id references stops.stop_id',
-    optional: true,
-  },
-  {
-    sourceFile: 'transfers.txt',
-    sourceField: 'from_route_id',
-    targetFile: 'routes.txt',
-    targetField: 'route_id',
-    description: 'from_route_id references routes.route_id',
-    optional: true,
-  },
-  {
-    sourceFile: 'transfers.txt',
-    sourceField: 'to_route_id',
-    targetFile: 'routes.txt',
-    targetField: 'route_id',
-    description: 'to_route_id references routes.route_id',
-    optional: true,
-  },
-  {
-    sourceFile: 'transfers.txt',
-    sourceField: 'from_trip_id',
-    targetFile: 'trips.txt',
-    targetField: 'trip_id',
-    description: 'from_trip_id references trips.trip_id',
-    optional: true,
-  },
-  {
-    sourceFile: 'transfers.txt',
-    sourceField: 'to_trip_id',
-    targetFile: 'trips.txt',
-    targetField: 'trip_id',
-    description: 'to_trip_id references trips.trip_id',
-    optional: true,
-  },
-  {
-    sourceFile: 'pathways.txt',
-    sourceField: 'from_stop_id',
-    targetFile: 'stops.txt',
-    targetField: 'stop_id',
-    description: 'from_stop_id references stops.stop_id',
-    optional: false,
-  },
-  {
-    sourceFile: 'pathways.txt',
-    sourceField: 'to_stop_id',
-    targetFile: 'stops.txt',
-    targetField: 'stop_id',
-    description: 'to_stop_id references stops.stop_id',
-    optional: false,
-  },
-  {
-    sourceFile: 'location_group_stops.txt',
-    sourceField: 'location_group_id',
-    targetFile: 'location_groups.txt',
-    targetField: 'location_group_id',
-    description:
-      'location_group_id references location_groups.location_group_id',
-    optional: false,
-  },
-  {
-    sourceFile: 'location_group_stops.txt',
-    sourceField: 'stop_id',
-    targetFile: 'stops.txt',
-    targetField: 'stop_id',
-    description: 'stop_id references stops.stop_id',
-    optional: false,
-  },
-  {
-    sourceFile: 'booking_rules.txt',
-    sourceField: 'prior_notice_service_id',
-    targetFile: 'calendar.txt',
-    targetField: 'service_id',
-    description: 'prior_notice_service_id references calendar.service_id',
-    optional: true,
-  },
-  {
-    sourceFile: 'attributions.txt',
-    sourceField: 'agency_id',
-    targetFile: 'agency.txt',
-    targetField: 'agency_id',
-    description: 'agency_id references agency.agency_id',
-    optional: true,
-  },
-  {
-    sourceFile: 'attributions.txt',
-    sourceField: 'route_id',
-    targetFile: 'routes.txt',
-    targetField: 'route_id',
-    description: 'route_id references routes.route_id',
-    optional: true,
-  },
-  {
-    sourceFile: 'attributions.txt',
-    sourceField: 'trip_id',
-    targetFile: 'trips.txt',
-    targetField: 'trip_id',
-    description: 'trip_id references trips.trip_id',
-    optional: true,
-  },
-] as const;
-
 // Primary key mappings for GTFS files
 export const GTFS_PRIMARY_KEYS = {
   'agency.txt': 'agency_id',
@@ -807,42 +324,6 @@ export const GTFS_FIELD_TYPES = {
     attribution_phone: 'Phone number',
   },
 } as const;
-
-// Validation context interface for foreign key checking
-export interface GTFSValidationContext {
-  [filename: string]: Map<string, unknown>;
-}
-
-// Foreign key validation utilities
-export function validateForeignKey(
-  value: string,
-  targetFile: string,
-  targetField: string,
-  context: GTFSValidationContext,
-  optional: boolean = false
-): { valid: boolean; message?: string } {
-  // Allow empty values for optional fields
-  if (optional && (!value || value.trim() === '')) {
-    return { valid: true };
-  }
-
-  const targetData = context[targetFile];
-  if (!targetData) {
-    return {
-      valid: false,
-      message: `Target file ${targetFile} not found in validation context`,
-    };
-  }
-
-  if (!targetData.has(value)) {
-    return {
-      valid: false,
-      message: `Referenced ${targetField} '${value}' not found in ${targetFile}`,
-    };
-  }
-
-  return { valid: true };
-}
 
 export const AgencySchema = z.object({
   agency_id: z
@@ -1321,9 +802,6 @@ export const CalendarDatesSchema = z
     // This allows for context-aware validation with access to all GTFS data
   });
 
-// TypeScript interface inferred from Zod schema
-export type CalendarDates = z.infer<typeof CalendarDatesSchema>;
-
 export const FareAttributesSchema = z
   .object({
     fare_id: z.string().describe('Identifies a fare class.'),
@@ -1364,9 +842,6 @@ export const FareAttributesSchema = z
     // This allows for context-aware validation with access to all GTFS data
   });
 
-// TypeScript interface inferred from Zod schema
-export type FareAttributes = z.infer<typeof FareAttributesSchema>;
-
 export const FareRulesSchema = z
   .object({
     fare_id: z.string().describe('Identifies a fare class.'),
@@ -1400,9 +875,6 @@ export const FareRulesSchema = z
     // This allows for context-aware validation with access to all GTFS data
   });
 
-// TypeScript interface inferred from Zod schema
-export type FareRules = z.infer<typeof FareRulesSchema>;
-
 export const TimeframesSchema = z
   .object({
     timeframe_group_id: z
@@ -1429,9 +901,6 @@ export const TimeframesSchema = z
     // This allows for context-aware validation with access to all GTFS data
   });
 
-// TypeScript interface inferred from Zod schema
-export type Timeframes = z.infer<typeof TimeframesSchema>;
-
 export const RiderCategoriesSchema = z.object({
   rider_category_id: z.string().describe('Identifies a rider category.'),
   rider_category_name: z
@@ -1451,9 +920,6 @@ export const RiderCategoriesSchema = z.object({
     .optional(),
 });
 
-// TypeScript interface inferred from Zod schema
-export type RiderCategories = z.infer<typeof RiderCategoriesSchema>;
-
 export const FareMediaSchema = z.object({
   fare_media_id: z.string().describe('Identifies a fare media.'),
   fare_media_name: z
@@ -1468,9 +934,6 @@ export const FareMediaSchema = z.object({
       'The type of fare media. Valid options are:\n\n0 - None. Used when there is no fare media involved in purchasing or validating a fare product, such as paying cash to a driver or conductor with no physical ticket provided.\n1 - Physical paper ticket that allows a passenger to take either a certain number of pre-purchased trips or unlimited trips within a fixed period of time.\n2 - Physical transit card that has stored tickets, passes or monetary value.\n3 - cEMV (contactless Europay, Mastercard and Visa) as an open-loop token container for account-based ticketing.\n4 - Mobile app that have stored virtual transit cards, tickets, passes, or monetary value.'
     ),
 });
-
-// TypeScript interface inferred from Zod schema
-export type FareMedia = z.infer<typeof FareMediaSchema>;
 
 export const FareProductsSchema = z
   .object({
@@ -1510,9 +973,6 @@ export const FareProductsSchema = z
     // Foreign key validation will be added by GTFSValidator
     // This allows for context-aware validation with access to all GTFS data
   });
-
-// TypeScript interface inferred from Zod schema
-export type FareProducts = z.infer<typeof FareProductsSchema>;
 
 export const FareLegRulesSchema = z
   .object({
@@ -1569,9 +1029,6 @@ export const FareLegRulesSchema = z
     // This allows for context-aware validation with access to all GTFS data
   });
 
-// TypeScript interface inferred from Zod schema
-export type FareLegRules = z.infer<typeof FareLegRulesSchema>;
-
 export const FareLegJoinRulesSchema = z
   .object({
     from_network_id: z
@@ -1599,9 +1056,6 @@ export const FareLegJoinRulesSchema = z
     // Foreign key validation will be added by GTFSValidator
     // This allows for context-aware validation with access to all GTFS data
   });
-
-// TypeScript interface inferred from Zod schema
-export type FareLegJoinRules = z.infer<typeof FareLegJoinRulesSchema>;
 
 export const FareTransferRulesSchema = z
   .object({
@@ -1654,9 +1108,6 @@ export const FareTransferRulesSchema = z
     // This allows for context-aware validation with access to all GTFS data
   });
 
-// TypeScript interface inferred from Zod schema
-export type FareTransferRules = z.infer<typeof FareTransferRulesSchema>;
-
 export const AreasSchema = z.object({
   area_id: z
     .string()
@@ -1666,9 +1117,6 @@ export const AreasSchema = z.object({
     .describe('The name of the area as displayed to the rider.')
     .optional(),
 });
-
-// TypeScript interface inferred from Zod schema
-export type Areas = z.infer<typeof AreasSchema>;
 
 export const StopAreasSchema = z
   .object({
@@ -1688,9 +1136,6 @@ export const StopAreasSchema = z
     // This allows for context-aware validation with access to all GTFS data
   });
 
-// TypeScript interface inferred from Zod schema
-export type StopAreas = z.infer<typeof StopAreasSchema>;
-
 export const NetworksSchema = z.object({
   network_id: z
     .string()
@@ -1702,9 +1147,6 @@ export const NetworksSchema = z.object({
     )
     .optional(),
 });
-
-// TypeScript interface inferred from Zod schema
-export type Networks = z.infer<typeof NetworksSchema>;
 
 export const RouteNetworksSchema = z
   .object({
@@ -1719,9 +1161,6 @@ export const RouteNetworksSchema = z
     // Foreign key validation will be added by GTFSValidator
     // This allows for context-aware validation with access to all GTFS data
   });
-
-// TypeScript interface inferred from Zod schema
-export type RouteNetworks = z.infer<typeof RouteNetworksSchema>;
 
 export const ShapesSchema = z.object({
   shape_id: z.string().describe('Identifies a shape.'),
@@ -1752,9 +1191,6 @@ export const ShapesSchema = z.object({
     )
     .optional(),
 });
-
-// TypeScript interface inferred from Zod schema
-export type Shapes = z.infer<typeof ShapesSchema>;
 
 export const FrequenciesSchema = z
   .object({
@@ -1793,9 +1229,6 @@ export const FrequenciesSchema = z
     // Foreign key validation will be added by GTFSValidator
     // This allows for context-aware validation with access to all GTFS data
   });
-
-// TypeScript interface inferred from Zod schema
-export type Frequencies = z.infer<typeof FrequenciesSchema>;
 
 export const TransfersSchema = z
   .object({
@@ -1849,9 +1282,6 @@ export const TransfersSchema = z
     // Foreign key validation will be added by GTFSValidator
     // This allows for context-aware validation with access to all GTFS data
   });
-
-// TypeScript interface inferred from Zod schema
-export type Transfers = z.infer<typeof TransfersSchema>;
 
 export const PathwaysSchema = z
   .object({
@@ -1933,9 +1363,6 @@ export const PathwaysSchema = z
     // This allows for context-aware validation with access to all GTFS data
   });
 
-// TypeScript interface inferred from Zod schema
-export type Pathways = z.infer<typeof PathwaysSchema>;
-
 export const LevelsSchema = z.object({
   level_id: z.string().describe('Identifies a level in a station.'),
   level_index: z
@@ -1951,9 +1378,6 @@ export const LevelsSchema = z.object({
     .optional(),
 });
 
-// TypeScript interface inferred from Zod schema
-export type Levels = z.infer<typeof LevelsSchema>;
-
 export const LocationGroupsSchema = z.object({
   location_group_id: z
     .string()
@@ -1965,9 +1389,6 @@ export const LocationGroupsSchema = z.object({
     .describe('The name of the location group as displayed to the rider.')
     .optional(),
 });
-
-// TypeScript interface inferred from Zod schema
-export type LocationGroups = z.infer<typeof LocationGroupsSchema>;
 
 export const LocationGroupStopsSchema = z
   .object({
@@ -1984,9 +1405,6 @@ export const LocationGroupStopsSchema = z
     // Foreign key validation will be added by GTFSValidator
     // This allows for context-aware validation with access to all GTFS data
   });
-
-// TypeScript interface inferred from Zod schema
-export type LocationGroupStops = z.infer<typeof LocationGroupStopsSchema>;
 
 export const BookingRulesSchema = z
   .object({
@@ -2077,9 +1495,6 @@ export const BookingRulesSchema = z
     // This allows for context-aware validation with access to all GTFS data
   });
 
-// TypeScript interface inferred from Zod schema
-export type BookingRules = z.infer<typeof BookingRulesSchema>;
-
 export const TranslationsSchema = z.object({
   table_name: z
     .number()
@@ -2119,9 +1534,6 @@ export const TranslationsSchema = z.object({
       'Instead of defining which record should be translated by using record_id and record_sub_id, this field can be used to define the value which should be translated. When used, the translation will be applied when the fields identified by table_name and field_name contains the exact same value defined in field_value.\n\nThe field must have exactly the value defined in field_value. If only a subset of the value matches field_value, the translation won’t be applied.\n\nIf two translation rules match the same record (one with field_value, and the other one with record_id), the rule with record_id takes precedence.\n\nConditionally Required:\n- Forbidden if table_name is feed_info.\n- Forbidden if record_id is defined.\n- Required if record_id is empty.'
     ),
 });
-
-// TypeScript interface inferred from Zod schema
-export type Translations = z.infer<typeof TranslationsSchema>;
 
 export const FeedInfoSchema = z.object({
   feed_publisher_name: z
@@ -2184,9 +1596,6 @@ export const FeedInfoSchema = z.object({
     )
     .optional(),
 });
-
-// TypeScript interface inferred from Zod schema
-export type FeedInfo = z.infer<typeof FeedInfoSchema>;
 
 export const AttributionsSchema = z
   .object({
@@ -2255,9 +1664,6 @@ export const AttributionsSchema = z
     // This allows for context-aware validation with access to all GTFS data
   });
 
-// TypeScript interface inferred from Zod schema
-export type Attributions = z.infer<typeof AttributionsSchema>;
-
 // Union type for all GTFS record schemas
 export const GTFSSchemas = {
   'agency.txt': AgencySchema,
@@ -2293,47 +1699,12 @@ export const GTFSSchemas = {
   'attributions.txt': AttributionsSchema,
 } as const;
 
-// Union type for all GTFS record types
-export type GTFSRecord =
-  | Agency
-  | Stops
-  | Routes
-  | Trips
-  | StopTimes
-  | Calendar
-  | CalendarDates
-  | FareAttributes
-  | FareRules
-  | Timeframes
-  | RiderCategories
-  | FareMedia
-  | FareProducts
-  | FareLegRules
-  | FareLegJoinRules
-  | FareTransferRules
-  | Areas
-  | StopAreas
-  | Networks
-  | RouteNetworks
-  | Shapes
-  | Frequencies
-  | Transfers
-  | Pathways
-  | Levels
-  | LocationGroups
-  | LocationGroupStops
-  | BookingRules
-  | Translations
-  | FeedInfo
-  | Attributions;
-
 // File presence requirements
 export enum GTFSFilePresence {
   Required = 'Required',
   Optional = 'Optional',
   ConditionallyRequired = 'Conditionally Required',
   ConditionallyForbidden = 'Conditionally Forbidden',
-  Recommended = 'Recommended',
 }
 
 // GTFS file metadata
@@ -2560,41 +1931,6 @@ export const GTFS_FILES: GTFSFileInfo[] = [
     schema: GTFSSchemas['attributions.txt'],
   },
 ];
-
-// Map of filename to TypeScript interface
-export const GTFS_FILE_TYPES = {
-  'agency.txt': 'Agency' as const,
-  'stops.txt': 'Stops' as const,
-  'routes.txt': 'Routes' as const,
-  'trips.txt': 'Trips' as const,
-  'stop_times.txt': 'StopTimes' as const,
-  'calendar.txt': 'Calendar' as const,
-  'calendar_dates.txt': 'CalendarDates' as const,
-  'fare_attributes.txt': 'FareAttributes' as const,
-  'fare_rules.txt': 'FareRules' as const,
-  'timeframes.txt': 'Timeframes' as const,
-  'rider_categories.txt': 'RiderCategories' as const,
-  'fare_media.txt': 'FareMedia' as const,
-  'fare_products.txt': 'FareProducts' as const,
-  'fare_leg_rules.txt': 'FareLegRules' as const,
-  'fare_leg_join_rules.txt': 'FareLegJoinRules' as const,
-  'fare_transfer_rules.txt': 'FareTransferRules' as const,
-  'areas.txt': 'Areas' as const,
-  'stop_areas.txt': 'StopAreas' as const,
-  'networks.txt': 'Networks' as const,
-  'route_networks.txt': 'RouteNetworks' as const,
-  'shapes.txt': 'Shapes' as const,
-  'frequencies.txt': 'Frequencies' as const,
-  'transfers.txt': 'Transfers' as const,
-  'pathways.txt': 'Pathways' as const,
-  'levels.txt': 'Levels' as const,
-  'location_groups.txt': 'LocationGroups' as const,
-  'location_group_stops.txt': 'LocationGroupStops' as const,
-  'booking_rules.txt': 'BookingRules' as const,
-  'translations.txt': 'Translations' as const,
-  'feed_info.txt': 'FeedInfo' as const,
-  'attributions.txt': 'Attributions' as const,
-} as const;
 
 // GTFS table name constants for type-safe table references
 export const GTFS_TABLES = {

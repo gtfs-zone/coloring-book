@@ -359,22 +359,6 @@ export function getInputAttributesForFieldType(
 }
 
 /**
- * Check if a field type is numeric
- */
-export function isNumericFieldType(fieldType: GTFSFieldType): boolean {
-  return [
-    GTFSFieldType.Integer,
-    GTFSFieldType.NonNegativeInteger,
-    GTFSFieldType.PositiveInteger,
-    GTFSFieldType.Float,
-    GTFSFieldType.NonNegativeFloat,
-    GTFSFieldType.PositiveFloat,
-    GTFSFieldType.Latitude,
-    GTFSFieldType.Longitude,
-  ].includes(fieldType);
-}
-
-/**
  * Map GTFS type string to GTFSFieldType enum
  * Used when parsing scraped GTFS specification
  */
