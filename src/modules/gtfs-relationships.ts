@@ -417,7 +417,6 @@ export class GTFSRelationships {
         email: agency.agency_email,
       }));
     } catch (error) {
-      // eslint-disable-next-line no-console
       console.error('Error getting agencies from IndexedDB:', error);
       // Fallback to sync method
       return this.getAgencies();
@@ -458,7 +457,6 @@ export class GTFSRelationships {
         route_sort_order: route.route_sort_order,
       }));
     } catch (error) {
-      // eslint-disable-next-line no-console
       console.error('Error getting routes for agency from IndexedDB:', error);
       // Fallback to sync method
       return this.getRoutesForAgency(agency_id);
@@ -493,7 +491,6 @@ export class GTFSRelationships {
         bikesAllowed: trip.bikes_allowed,
       }));
     } catch (error) {
-      // eslint-disable-next-line no-console
       console.error('Error getting trips for route from IndexedDB:', error);
       // Fallback to sync method
       return this.getTripsForRoute(route_id);
@@ -532,7 +529,6 @@ export class GTFSRelationships {
       // Enrich with stop information
       return await this.enrichStopTimesWithStopsAsync(stopTimes);
     } catch (error) {
-      // eslint-disable-next-line no-console
       console.error('Error getting stop times for trip from IndexedDB:', error);
       // Fallback to sync method
       return this.getStopTimesForTrip(trip_id);
@@ -569,7 +565,6 @@ export class GTFSRelationships {
         platform_code: stop.platform_code,
       };
     } catch (error) {
-      // eslint-disable-next-line no-console
       console.error('Error getting stop by ID from IndexedDB:', error);
       throw new Error(`Failed to get stop ${stop_id} from database: ${error}`);
     }
@@ -609,7 +604,6 @@ export class GTFSRelationships {
           shape_id: trip.shape_id,
         }));
     } catch (error) {
-      // eslint-disable-next-line no-console
       console.error('Error getting trips for stop from IndexedDB:', error);
       // Fallback to sync method
       return this.getTripsForStop(stop_id);
@@ -646,7 +640,6 @@ export class GTFSRelationships {
         end_date: calendar.end_date,
       };
     } catch (error) {
-      // eslint-disable-next-line no-console
       console.error(
         'Error getting calendar for service from IndexedDB:',
         error
@@ -675,7 +668,6 @@ export class GTFSRelationships {
         exceptionType: parseInt(calDate.exception_type),
       }));
     } catch (error) {
-      // eslint-disable-next-line no-console
       console.error(
         'Error getting calendar dates for service from IndexedDB:',
         error
@@ -701,7 +693,6 @@ export class GTFSRelationships {
       );
       return enrichedStopTimes;
     } catch (error) {
-      // eslint-disable-next-line no-console
       console.error(
         'Error enriching stop times with stops from IndexedDB:',
         error
@@ -733,7 +724,6 @@ export class GTFSRelationships {
 
       return services;
     } catch (error) {
-      // eslint-disable-next-line no-console
       console.error('Error getting services for route from IndexedDB:', error);
       // Fallback to sync method
       return this.getServicesForRoute(route_id);
@@ -786,7 +776,6 @@ export class GTFSRelationships {
 
       return services;
     } catch (error) {
-      // eslint-disable-next-line no-console
       console.error(
         'Error getting services for route by direction from IndexedDB:',
         error
@@ -826,7 +815,6 @@ export class GTFSRelationships {
         sortOrder: route.route_sort_order,
       };
     } catch (error) {
-      // eslint-disable-next-line no-console
       console.error('Error getting route by ID from IndexedDB:', error);
       // Fallback to sync method
       return this.getRouteById(route_id);
@@ -859,7 +847,6 @@ export class GTFSRelationships {
         bikesAllowed: trip.bikes_allowed,
       };
     } catch (error) {
-      // eslint-disable-next-line no-console
       console.error('Error getting trip by ID from IndexedDB:', error);
       // Fallback to sync method
       return this.getTripById(trip_id);
@@ -900,7 +887,6 @@ export class GTFSRelationships {
         }))
         .slice(0, 10); // Limit to 10 results
     } catch (error) {
-      // eslint-disable-next-line no-console
       console.error('Error searching stops from IndexedDB:', error);
       // Fallback to sync method from gtfsParser
       return this.gtfsParser.searchStops(query);
@@ -942,7 +928,6 @@ export class GTFSRelationships {
         }))
         .slice(0, 10); // Limit to 10 results
     } catch (error) {
-      // eslint-disable-next-line no-console
       console.error('Error searching routes from IndexedDB:', error);
       // Fallback to sync method from gtfsParser
       return this.gtfsParser.searchRoutes(query);
@@ -965,7 +950,6 @@ export class GTFSRelationships {
 
       return { stops, routes };
     } catch (error) {
-      // eslint-disable-next-line no-console
       console.error('Error performing combined search from IndexedDB:', error);
       // Fallback to sync method from gtfsParser
       return this.gtfsParser.searchAll(query);
@@ -1000,7 +984,6 @@ export class GTFSRelationships {
         email: agency.agency_email,
       };
     } catch (error) {
-      // eslint-disable-next-line no-console
       console.error('Error getting agency by ID from IndexedDB:', error);
       // Fallback to sync method
       const agencies = this.getAgencies();
@@ -1027,7 +1010,6 @@ export class GTFSRelationships {
       // Filter out null routes and return
       return routes.filter((route) => route !== null);
     } catch (error) {
-      // eslint-disable-next-line no-console
       console.error('Error getting routes for stop from IndexedDB:', error);
       // Fallback implementation using sync methods
       const trips = this.getTripsForStop(stop_id);
@@ -1057,7 +1039,6 @@ export class GTFSRelationships {
       // Filter out null routes and return
       return routes.filter((route) => route !== null);
     } catch (error) {
-      // eslint-disable-next-line no-console
       console.error('Error getting routes for service from IndexedDB:', error);
       return [];
     }
@@ -1091,7 +1072,6 @@ export class GTFSRelationships {
         bikesAllowed: trip.bikes_allowed,
       }));
     } catch (error) {
-      // eslint-disable-next-line no-console
       console.error('Error getting trips for service from IndexedDB:', error);
       return [];
     }
