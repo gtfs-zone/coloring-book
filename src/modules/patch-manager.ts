@@ -61,14 +61,19 @@ export class PatchManager {
     // Replay patches only up to currentVersion (handles mid-undo refresh)
     const patches = await this.db.getPatchesAfter(snapshot?.version ?? 0);
 
-    // Without a snapshot, IndexedDB already contains the canonical data (written
-    // by the original operations). Replaying patches on top would double-insert.
-    // Clear affected tables first so the replay rebuilds DB from patches cleanly,
-    // mirroring what the snapshot path does with clearTable().
+    // Without a snapshot, blob-backed tables (stops, trips, routes, etc.) are
+    // already restored from their CSV blobs by GTFSParser.initialize(). Replaying
+    // insert patches on top of that data would double-insert, so we clear those
+    // tables first. Update and delete patches are idempotent on blob-loaded data
+    // and must NOT trigger a clear — clearing would destroy the blob-loaded rows
+    // and leave the table empty after replay (update has nothing to match against).
     if (!snapshot && patches.length > 0) {
       const tablesToClear = new Set(
         patches
-          .filter((r) => (r.version ?? 0) <= this.currentVersion)
+          .filter(
+            (r) =>
+              (r.version ?? 0) <= this.currentVersion && r.patch.op !== 'update'
+          )
           .map((r) => r.patch.source.table)
       );
       for (const table of tablesToClear) {
