@@ -1,3 +1,26 @@
+## v0.7.0 (2026-03-27)
+
+### Feat
+
+- simplify db upgrades with export and clear
+
+### Fix
+
+- doesn't completely crash loading mbta
+
+### Refactor
+
+- remove the fallback database
+- cleaning
+
+### Perf
+
+- loads MBTA!
+- treat all files as the same (big)
+- special case large files
+- faster feed loading
+- remove debug logs and dead code
+
 ## v0.6.2 (2026-03-25)
 
 ### Fix
