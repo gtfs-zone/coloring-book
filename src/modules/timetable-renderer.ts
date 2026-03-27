@@ -104,31 +104,18 @@ export class TimetableRenderer {
   public renderDirectionTabs(data: TimetableData): string {
     const directions = data.availableDirections || [];
 
-    // If no directions available (empty timetable), show default Inbound/Outbound tabs
-    const defaultDirections: DirectionInfo[] = [
-      { id: '0', name: 'Outbound', tripCount: 0 },
-      { id: '1', name: 'Inbound', tripCount: 0 },
-    ];
-
-    const directionsToShow =
-      directions.length > 0 ? directions : defaultDirections;
-
-    // Don't show tabs if there's only one direction AND trips exist
-    if (directions.length === 1) {
-      return '';
-    }
-
     const selectedDirectionId =
       data.selectedDirectionId ||
-      (directionsToShow.length > 0 ? directionsToShow[0].id : '0');
+      (directions.length > 0 ? directions[0].id : '0');
 
-    const tabsHTML = directionsToShow
+    const tabsHTML = directions
       .map((direction: DirectionInfo) => {
         const isActive = direction.id === selectedDirectionId;
         const activeClass = isActive ? 'tab-active' : '';
+        const dimClass = direction.tripCount === 0 ? 'opacity-40' : '';
 
         return `
-          <a class="tab ${activeClass}"
+          <a class="tab ${activeClass} ${dimClass}"
              onclick="gtfsEditor.navigateToTimetable('${data.route.route_id}', '${data.service.service_id}', '${direction.id}')">
             ${this.getDirectionDisplayName(direction)}
           </a>
@@ -571,8 +558,7 @@ export class TimetableRenderer {
    * @returns Human-readable direction name for display
    */
   private getDirectionDisplayName(direction: DirectionInfo): string {
-    // Use the name property from DirectionInfo, which comes from getDirectionName()
-    return direction.name;
+    return `${direction.name} (${direction.tripCount})`;
   }
 
   /**
