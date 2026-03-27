@@ -54,11 +54,6 @@ export interface ContentRendererDependencies {
       tableName: string,
       filter?: Record<string, unknown>
     ) => Promise<unknown[]>;
-    updateRow: (
-      tableName: string,
-      key: string,
-      data: Record<string, unknown>
-    ) => Promise<void>;
     getRow: (tableName: string, key: string) => Promise<unknown | undefined>;
     getAllRows: (tableName: string) => Promise<unknown[]>;
     insertRows: (tableName: string, rows: unknown[]) => Promise<void>;
@@ -418,13 +413,6 @@ export class PageContentRenderer {
     // Update map to focus on this agency
     this.dependencies.mapController.focusOnAgency(agency_id);
 
-    // Update AgencyViewController dependencies in case database became available
-    const agencyViewDependencies: AgencyViewDependencies = {
-      gtfsDatabase: this.dependencies.gtfsDatabase,
-      onRouteClick: this.dependencies.onRouteClick,
-    };
-    this.agencyViewController.updateDependencies(agencyViewDependencies);
-
     // Use the new AgencyViewController for comprehensive agency view
     return await this.agencyViewController.renderAgencyView(agency_id);
   }
@@ -598,15 +586,6 @@ export class PageContentRenderer {
     // Update map to highlight this stop
     this.dependencies.mapController.highlightStop(stop_id);
 
-    // Update StopViewController dependencies in case database became available
-    const stopViewDependencies: StopViewDependencies = {
-      gtfsDatabase: this.dependencies.gtfsDatabase,
-      gtfsRelationships: this.dependencies.gtfsRelationships || {},
-      onAgencyClick: this.dependencies.onAgencyClick,
-      onRouteClick: this.dependencies.onRouteClick,
-    };
-    this.stopViewController.updateDependencies(stopViewDependencies);
-
     // Use the new StopViewController for comprehensive stop view
     return await this.stopViewController.renderStopView(stop_id);
   }
@@ -615,17 +594,6 @@ export class PageContentRenderer {
    * Render service page
    */
   private async renderService(service_id: string): Promise<string> {
-    // Update ServiceViewController dependencies in case database became available
-    const serviceViewDependencies: ServiceViewDependencies = {
-      gtfsDatabase: this.dependencies.gtfsDatabase,
-      gtfsRelationships: this.dependencies.gtfsRelationships || {},
-      serviceDaysController: this.dependencies.serviceDaysController,
-      onAgencyClick: this.dependencies.onAgencyClick,
-      onRouteClick: this.dependencies.onRouteClick,
-      onTimetableClick: this.dependencies.onTimetableClick,
-    };
-    this.serviceViewController.updateDependencies(serviceViewDependencies);
-
     // Use the new ServiceViewController for comprehensive service view
     return await this.serviceViewController.renderServiceView(service_id);
   }
