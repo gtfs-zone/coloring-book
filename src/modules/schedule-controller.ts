@@ -587,17 +587,24 @@ export class ScheduleController {
       this.currentDirectionId = direction_id;
 
       // Get all available directions for this route and service
-      const availableDirections = this.dataProcessor.getAvailableDirections(
-        route_id,
-        service_id
+      const fetchedDirections =
+        await this.dataProcessor.getAvailableDirectionsAsync(
+          route_id,
+          service_id
+        );
+
+      // Always show exactly Direction 0 and Direction 1, padding missing ones with 0 trips
+      const availableDirections = ['0', '1'].map(
+        (id) =>
+          fetchedDirections.find((d) => d.id === id) ?? {
+            id,
+            name: `Direction ${id}`,
+            tripCount: 0,
+          }
       );
 
-      // Use provided direction_id or first available direction if any exist
-      const selectedDirection =
-        direction_id ||
-        (availableDirections.length > 0
-          ? availableDirections[0].id
-          : undefined);
+      // Use provided direction_id or Direction 0 as default
+      const selectedDirection = direction_id ?? availableDirections[0].id;
 
       const timetableData = await this.dataProcessor.generateTimetableData(
         route_id,

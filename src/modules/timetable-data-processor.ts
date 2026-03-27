@@ -97,6 +97,7 @@ interface EnhancedTrip {
 interface GTFSRelationships {
   getCalendarForService(service_id: string): Calendar | CalendarDates | null;
   getTripsForRoute(route_id: string): EnhancedTrip[];
+  getTripsForRouteAsync(route_id: string): Promise<EnhancedTrip[]>;
   getStopTimesForTrip(trip_id: string): StopTimes[];
   getStopById(stop_id: string): Stops | null;
   getStopByIdAsync(stop_id: string): Promise<Stops | null>;
@@ -227,7 +228,8 @@ export class TimetableDataProcessor {
     // Filter by direction if specified
     if (direction_id !== undefined) {
       trips = trips.filter(
-        (trip: EnhancedTrip) => (trip.direction_id || '0') === direction_id
+        (trip: EnhancedTrip) =>
+          String(trip.direction_id ?? '0') === direction_id
       );
     }
 
@@ -563,12 +565,12 @@ export class TimetableDataProcessor {
    * @param service_id - GTFS service identifier
    * @returns Array of direction info objects with ID, name, and trip count
    */
-  getAvailableDirections(
+  async getAvailableDirectionsAsync(
     route_id: string,
     service_id: string
-  ): DirectionInfo[] {
+  ): Promise<DirectionInfo[]> {
     // Get all trips for this route and service
-    const allTrips = this.relationships.getTripsForRoute(route_id);
+    const allTrips = await this.relationships.getTripsForRouteAsync(route_id);
     const trips = allTrips.filter(
       (trip: EnhancedTrip) => trip.service_id === service_id
     );
@@ -576,7 +578,7 @@ export class TimetableDataProcessor {
     // Group trips by direction ID
     const directionMap = new Map<string, number>();
     trips.forEach((trip: EnhancedTrip) => {
-      const dirId = (trip.direction_id || '0').toString();
+      const dirId = String(trip.direction_id ?? '0');
       directionMap.set(dirId, (directionMap.get(dirId) || 0) + 1);
     });
 
@@ -602,14 +604,6 @@ export class TimetableDataProcessor {
    * @returns Human-readable direction name
    */
   private getDirectionName(direction_id: string): string {
-    // Use standard direction names
-    switch (direction_id) {
-      case '0':
-        return 'Outbound';
-      case '1':
-        return 'Inbound';
-      default:
-        return `Direction ${direction_id}`;
-    }
+    return `Direction ${direction_id}`;
   }
 }
