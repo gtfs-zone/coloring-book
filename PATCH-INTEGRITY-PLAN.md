@@ -261,13 +261,15 @@ This ensures `recordId` is always set and can't be forgotten.
 These types duplicate the GTFS types with convenience aliases (`id`, `name`). The convenience aliases are only used internally to build headings. Consider removing the `EnhancedStop` interface and using the raw `Stops` type directly, adding `stop_id` as the label inline where needed.
 
 ### Phase 4 Checklist
-- [ ] Shared base dependency interface (or at minimum `patchManager` in all view deps)
-- [ ] `renderEntityFields()` utility extracted and used by all three controllers
-- [ ] `EnhancedStop` / `EnhancedAgency` simplified or eliminated
-- [ ] `updateDependencies()` pattern reviewed — consider whether it's still needed or can be simplified
-- [ ] TypeScript compiles clean
-- [ ] `npm run lint` passes
-- [ ] All existing Playwright tests pass
+- [x] Shared base dependency interface (`QueryOnlyDatabase` exported from `field-component.ts`; `updateRow` removed from `AgencyViewDependencies`, `ServiceViewDependencies`, and `ContentRendererDependencies`)
+- [x] `renderEntityFields()` utility extracted (added to `field-component.ts`) and used by `StopViewController` and `AgencyViewController` (`ServiceViewController` has no form fields — delegates to `serviceDaysController`)
+- [x] `EnhancedStop` / `EnhancedAgency` / `EnhancedService` eliminated; controllers now use `Stops` / `Agency` directly; `getStopData` / `getAgencyData` simplified; `getServiceData` removed (was only an existence check)
+- [x] `updateDependencies()` removed from all three view controllers (was redundant — controllers always had valid DB reference from construction; all three `updateDependencies` calls removed from `page-content-renderer.ts`)
+- [x] Dead code removed: `getTripsForService` (never called), `currentServiceId` (never read)
+- [x] Missing `Agency` import in `service-view-controller.ts` fixed
+- [x] TypeScript: no new errors introduced; fixed pre-existing errors (EnhancedStop/Agency/Service assignability, `Agency` not found, unused `currentServiceId`/`getTripsForService`)
+- [x] `npm run lint` passes (only pre-existing `no-console` warnings, no new errors)
+- [x] All existing Playwright tests pass
 
 ---
 
@@ -308,12 +310,15 @@ Add a comment in `gtfs-parser.ts` near `buildAndRegisterVirtual`:
 > copy returned is a snapshot; the store may evolve independently.
 
 ### Phase 5 Checklist
-- [ ] `vt.find` / `vt.getAll` (or equivalent query paths used by `getStopTime`, `queryRows`) return `{ ...row }` copies
-- [ ] Existing code that relied on mutation-through-reference is audited (no callers should depend on in-place mutation of a previously returned row reference)
-- [ ] CLAUDE.md or `gtfs-parser.ts` comment documents the copy-on-read invariant
-- [ ] TypeScript compiles clean
-- [ ] Manual test: edit a timetable time cell → undo → still works after copy-on-read change
-- [ ] All Playwright tests pass
+- [x] `vt.getAll`, `vt.getById`, `vt.query` (all three query paths used by `getStopTime`, `queryRows`, `getAllRows`) return `{ ...row }` copies
+- [x] `getStopTimesByStopId` (synchronous index path, used by `getRoutesForStop`) also returns copies
+- [x] Existing code audited: no callers depend on mutation-through-reference; the Phase 3 workarounds (extracting primitive values before mutation) are now belt-and-suspenders safe
+- [x] Comments in `schedule-controller.ts` updated to reflect that copies are returned (no longer need "extract primitive immediately" warning)
+- [x] `gtfs-parser.ts` comment block at `buildAndRegisterVirtual` documents the copy-on-read invariant
+- [x] CLAUDE.md "Development Philosophy" section documents the invariant and the patch-system rule
+- [x] TypeScript compiles clean — no new errors; pre-existing errors unchanged
+- [x] Manual test: edit a timetable time cell → undo → still works after copy-on-read change
+- [x] All Playwright tests pass
 
 ---
 
@@ -378,7 +383,11 @@ Running notes on modifications made and problems encountered during implementati
 
 - **Phase 2** — `stop-view-controller.ts`: added `recordId` to field configs in `renderStopProperties()`; deleted `updateStopProperty()`, `getFieldDisplayName()`, `fieldValues` map, and the field-change listener block from `addEventListeners()`; removed `updateRow` from `StopViewDependencies`; removed unused `notifications` import.
 - **Phase 3 (initial)** — `service-days-controller.ts`: added `PatchManagerInterface`, `patchManager` field, `setPatchManager()`, and patch recording in `toggleDay()` (both insert and update paths), `updateDateRange()` (both paths), `addException()`, and `removeException()` (queries existing record before delete). `schedule-controller.ts`: added `PatchManagerInterface`, `insertRows` to db interface, `patchManager` field, `setPatchManager()` (forwarded to `TimetableDatabase`), patch recording in `updateTripProperty()` and `createTrip()`. `timetable-database.ts`: added `PatchManagerInterface`, `patchManager` field, `setPatchManager()`, and patch recording in `updateStopTimeInDatabase()` and `updateLinkedTimes()` (update cases only). `index.ts`: wired `setPatchManager` calls for both `scheduleController` and `serviceDaysController` after `patchManager` is constructed.
+- **Phase 4** — `field-component.ts`: exported `QueryOnlyDatabase` interface and `renderEntityFields(schema, entity, table, recordId)` synchronous helper. `stop-view-controller.ts`: removed `EnhancedStop`, `updateDependencies()`; `getStopData()` now returns `Stops | null` directly; `renderStopProperties()` uses `renderEntityFields`. `agency-view-controller.ts`: removed `EnhancedAgency`, `updateDependencies()`, `updateRow` from deps; `getAgencyData()` returns `Agency | null` directly; `renderAgencyProperties()` uses `renderEntityFields`. `service-view-controller.ts`: removed `EnhancedService`, `getServiceData()`, `getTripsForService()` (dead code), `currentServiceId` (never read), `updateDependencies()`; added missing `Agency` import; `gtfsDatabase` now uses `QueryOnlyDatabase`. `page-content-renderer.ts`: removed `updateRow` from `ContentRendererDependencies.gtfsDatabase`; removed three redundant `updateDependencies()` call sites and the temporary local dep objects they constructed.
+
 - **Phase 3 (stop_times undo bug fix)** — The initial approach of recording patches inside `TimetableDatabase` was wrong for two compounding reasons: (1) stale composite key — all three `ScheduleController` time-edit methods call `rebuildStopTimesFromTable` after the DB write, which deletes and re-inserts all `stop_times` for the trip with renumbered `stop_sequence` values; the composite key `trip_id:stop_sequence` in the patch was stale, so `applyPatchInverse` silently found nothing; (2) object aliasing — `getStopTime` returns a **live reference** into the virtual table's `flat` array; when `updateLinkedTimes → vt.update → Object.assign(row, delta)` ran, it mutated the exact object that `beforeStopTime` pointed to, so by the time `recordUpdate` compared `before` vs `after`, they were identical and no patch was recorded. Fix: moved patch recording into `ScheduleController` after the full rebuild cycle; extracted **primitive values** immediately after `getStopTime()` (`const beforeArrivalTime = beforeRow?.arrival_time`) to escape the mutable reference; queried `getStopTime` again after rebuild to get the post-rebuild row and its freshly-assigned composite key. Using post-rebuild key ensures `applyPatchInverse` finds the current row. The null/clear-time case is intentionally not patched (stop may be removed by rebuild). Also added `generateCompositeKeyFromRecord` import to `schedule-controller.ts`.
+
+- **Phase 5** — `gtfs-parser.ts`: changed `getAll`, `getById`, and `query` in `buildAndRegisterVirtual` to return `{ ...row }` shallow copies instead of live references; updated `getStopTimesByStopId` to map over the bucket with copies. Added copy-on-read invariant comment block to `buildAndRegisterVirtual`. Updated stale comments in `schedule-controller.ts` that warned callers to extract primitive values immediately (that warning was the workaround for the aliasing bug; now the fix is structural). CLAUDE.md updated with "Development Philosophy" section documenting the copy-on-read invariant, patch system rule, and general coding strategy.
 
 ### Problems & Surprises
 
