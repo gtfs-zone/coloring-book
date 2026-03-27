@@ -7,7 +7,6 @@
 
 import {
   PageStateManager,
-  getPageStateManager,
   initPageStateManager,
 } from './page-state-manager.js';
 import {
@@ -42,23 +41,9 @@ export function initializePageStateWithGTFS(
 }
 
 /**
- * Get the global breadcrumb lookup instance
- */
-export function getBreadcrumbLookup(): GTFSBreadcrumbLookup | null {
-  return globalBreadcrumbLookup;
-}
-
-/**
  * Update breadcrumb lookup when GTFS data is reloaded
  */
 export function updateBreadcrumbLookup(_gtfsParser: GTFSParser): void {
   // No caching, so no need to clear cache or preload
   // Data is always loaded fresh from the database
-}
-
-/**
- * Get the configured PageStateManager with GTFS integration
- */
-export function getConfiguredPageStateManager(): PageStateManager {
-  return getPageStateManager();
 }

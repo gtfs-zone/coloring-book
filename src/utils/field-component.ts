@@ -21,10 +21,7 @@ import {
   getInputAttributesForFieldType,
   mapGTFSTypeString,
 } from '../types/gtfs-field-types.js';
-import {
-  formatValueForDisplay,
-  convertValueToGTFS,
-} from './field-formatters.js';
+import { formatValueForDisplay } from './field-formatters.js';
 import { getEnumOptions, isEnumField } from '../types/gtfs-enums.js';
 
 export interface FieldConfig {
@@ -337,52 +334,6 @@ export function renderFormFields(configs: FieldConfig[]): string {
       ${fieldsHtml}
     </div>
   `;
-}
-
-/**
- * Attach event listeners to form fields for auto-save functionality
- *
- * @param container - HTML element containing the form fields
- * @param onUpdate - Callback function called when a field value changes
- *
- * @example
- * ```typescript
- * attachFieldEventListeners(container, async (field, value) => {
- *   await updateDatabase(field, value);
- *   notifications.showSuccess(`Updated ${field}`);
- * });
- * ```
- */
-export function attachFieldEventListeners(
-  container: HTMLElement,
-  onUpdate: (field: string, value: string) => void | Promise<void>
-): void {
-  const inputs = container.querySelectorAll('[data-field]');
-
-  inputs.forEach((input) => {
-    const field = input.getAttribute('data-field');
-    if (!field) {
-      return;
-    }
-
-    const handleUpdate = async () => {
-      let value = (
-        input as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement
-      ).value;
-
-      // Convert value to GTFS format if a GTFS field type is specified
-      const gtfsType = input.getAttribute('data-gtfs-type');
-      if (gtfsType) {
-        value = convertValueToGTFS(value, gtfsType as GTFSFieldType);
-      }
-
-      await onUpdate(field, value);
-    };
-
-    // Use 'change' event to fire when value changes and element loses focus
-    // This prevents duplicate notifications on every keystroke
-    input.addEventListener('change', handleUpdate);
-  });
 }
 
 /**
