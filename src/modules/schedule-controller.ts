@@ -49,7 +49,25 @@ interface GTFSParserInterface {
       key: string,
       data: Partial<GTFSTableMap[T]>
     ): Promise<void>;
+    insertRows<T extends keyof GTFSTableMap>(
+      tableName: T,
+      rows: GTFSTableMap[T][]
+    ): Promise<void>;
   };
+}
+
+interface PatchManagerInterface {
+  recordInsert(
+    table: string,
+    id: string,
+    record: Record<string, unknown>
+  ): Promise<void>;
+  recordUpdate(
+    table: string,
+    id: string,
+    before: Record<string, unknown>,
+    after: Record<string, unknown>
+  ): Promise<void>;
 }
 
 interface GTFSRelationships {
@@ -75,6 +93,7 @@ interface GTFSRelationships {
 export class ScheduleController {
   private relationships: GTFSRelationships;
   private gtfsParser: GTFSParserInterface;
+  private patchManager: PatchManagerInterface | null = null;
   private dataProcessor: TimetableDataProcessor;
   private renderer: TimetableRenderer;
   private cellRenderer: TimetableCellRenderer;
@@ -104,6 +123,11 @@ export class ScheduleController {
     this.renderer = new TimetableRenderer();
     this.cellRenderer = new TimetableCellRenderer();
     this.database = new TimetableDatabase(gtfsParser);
+  }
+
+  setPatchManager(pm: PatchManagerInterface): void {
+    this.patchManager = pm;
+    this.database.setPatchManager(pm);
   }
 
   // ===== PUBLIC EDITING METHODS =====
@@ -335,8 +359,18 @@ export class ScheduleController {
         processedValue = null;
       }
 
+      // Capture before value from in-memory data
+      const allTrips = this.gtfsParser.getFileDataSync('trips');
+      const currentTrip = allTrips.find((t) => t.trip_id === trip_id) as
+        | Record<string, unknown>
+        | undefined;
+      const before = { [field]: currentTrip?.[field] ?? null };
+
       // Update database
       await this.gtfsParser.gtfsDatabase.updateRow('trips', trip_id, {
+        [field]: processedValue,
+      });
+      await this.patchManager?.recordUpdate('trips', trip_id, before, {
         [field]: processedValue,
       });
 
@@ -1021,6 +1055,11 @@ export class ScheduleController {
       };
 
       await this.gtfsParser.gtfsDatabase.insertRows('trips', [tripData]);
+      await this.patchManager?.recordInsert(
+        'trips',
+        trimmedId,
+        tripData as Record<string, unknown>
+      );
       console.log('Trip saved to database:', tripData);
 
       notifications.showSuccess(`Trip "${trimmedId}" created successfully`);
