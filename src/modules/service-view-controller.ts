@@ -6,20 +6,11 @@
  * and related transit routes/trips.
  */
 
-import type { Routes, Trips } from '../types/gtfs.js';
+import type { Agency, Routes, Trips } from '../types/gtfs.js';
+import type { QueryOnlyDatabase } from '../utils/field-component.js';
 
 export interface ServiceViewDependencies {
-  gtfsDatabase?: {
-    queryRows: (
-      tableName: string,
-      filter?: Record<string, unknown>
-    ) => Promise<unknown[]>;
-    updateRow: (
-      tableName: string,
-      key: string,
-      data: Record<string, unknown>
-    ) => Promise<void>;
-  };
+  gtfsDatabase?: QueryOnlyDatabase;
   gtfsRelationships?: {
     getRoutesForService?: (service_id: string) => Promise<unknown[]>;
     getTripsForService?: (service_id: string) => Promise<unknown[]>;
@@ -36,38 +27,10 @@ export interface ServiceViewDependencies {
   ) => void;
 }
 
-/**
- * Enhanced service object with dual property access
- */
-interface EnhancedService {
-  // Convenience shorthand properties
-  id: string;
-
-  // GTFS standard properties
-  service_id: string;
-  monday?: number;
-  tuesday?: number;
-  wednesday?: number;
-  thursday?: number;
-  friday?: number;
-  saturday?: number;
-  sunday?: number;
-  start_date?: string;
-  end_date?: string;
-}
-
 export class ServiceViewController {
   private dependencies: ServiceViewDependencies;
-  private currentServiceId: string | null = null;
 
   constructor(dependencies: ServiceViewDependencies) {
-    this.dependencies = dependencies;
-  }
-
-  /**
-   * Update dependencies (used when database becomes available)
-   */
-  updateDependencies(dependencies: ServiceViewDependencies): void {
     this.dependencies = dependencies;
   }
 
@@ -75,26 +38,15 @@ export class ServiceViewController {
    * Render comprehensive service view
    */
   async renderServiceView(service_id: string): Promise<string> {
-    this.currentServiceId = service_id;
     console.log(
       'ServiceViewController: Rendering service view for:',
       service_id
     );
 
     try {
-      // Get service data
-      const service = await this.getServiceData(service_id);
-      if (!service) {
-        return this.renderError('Service not found.');
-      }
-
-      // Get related transit data
       const routes = await this.getRoutesForService(service_id);
-
-      // Get agencies for routes
       const agencies = await this.getAgenciesForRoutes(routes);
 
-      // Render complete view
       const html = `
         <div class="p-4 space-y-4">
           ${await this.renderServiceProperties(service_id)}
@@ -106,49 +58,6 @@ export class ServiceViewController {
     } catch (error) {
       console.error('Error rendering service view:', error);
       return this.renderError('Failed to load service information.');
-    }
-  }
-
-  /**
-   * Get service data from database
-   */
-  private async getServiceData(
-    service_id: string
-  ): Promise<EnhancedService | null> {
-    if (!this.dependencies.gtfsDatabase) {
-      console.warn('Database not available for service data');
-      return { service_id, id: service_id };
-    }
-
-    try {
-      const calendarRows = await this.dependencies.gtfsDatabase.queryRows(
-        'calendar',
-        { service_id }
-      );
-
-      if (calendarRows.length === 0) {
-        // Service might only have calendar_dates entries
-        return { service_id, id: service_id };
-      }
-
-      const calendar = calendarRows[0] as Record<string, unknown>;
-
-      return {
-        id: service_id,
-        service_id,
-        monday: calendar.monday as number,
-        tuesday: calendar.tuesday as number,
-        wednesday: calendar.wednesday as number,
-        thursday: calendar.thursday as number,
-        friday: calendar.friday as number,
-        saturday: calendar.saturday as number,
-        sunday: calendar.sunday as number,
-        start_date: calendar.start_date as string,
-        end_date: calendar.end_date as string,
-      };
-    } catch (error) {
-      console.error('Error getting service data:', error);
-      return { service_id, id: service_id };
     }
   }
 
@@ -195,42 +104,6 @@ export class ServiceViewController {
         return routes as Routes[];
       } catch (error) {
         console.error('Error getting routes for service (fallback):', error);
-        return [];
-      }
-    }
-
-    return [];
-  }
-
-  /**
-   * Get trips using this service
-   */
-  private async getTripsForService(service_id: string): Promise<Trips[]> {
-    if (
-      this.dependencies.gtfsRelationships?.getTripsForService &&
-      this.dependencies.gtfsDatabase
-    ) {
-      try {
-        const trips =
-          await this.dependencies.gtfsRelationships.getTripsForService(
-            service_id
-          );
-        return trips as Trips[];
-      } catch (error) {
-        console.error('Error getting trips for service:', error);
-        return [];
-      }
-    }
-
-    // Fallback: query database directly
-    if (this.dependencies.gtfsDatabase) {
-      try {
-        const trips = await this.dependencies.gtfsDatabase.queryRows('trips', {
-          service_id,
-        });
-        return trips as Trips[];
-      } catch (error) {
-        console.error('Error getting trips for service (fallback):', error);
         return [];
       }
     }

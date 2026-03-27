@@ -25,6 +25,8 @@ interface GTFSParserInterface {
       data: GTFSTableMap[T]
     ): string;
   };
+  getFileDataSync(fileName: string): Record<string, unknown>[];
+  setInMemoryFileData(fileName: string, data: Record<string, unknown>[]): void;
 }
 
 /**
@@ -571,6 +573,16 @@ export class TimetableDatabase {
 
     // Atomic replace: delete all old, insert all new from table
     await database.replaceRows('stop_times', oldKeys, finalStopTimes);
+
+    // Sync in-memory data so getFileDataSync reflects the rebuilt state
+    const inMemory = this.gtfsParser.getFileDataSync('stop_times.txt');
+    const otherTrips = inMemory.filter(
+      (st) => (st as { trip_id: string }).trip_id !== trip_id
+    );
+    this.gtfsParser.setInMemoryFileData('stop_times.txt', [
+      ...otherTrips,
+      ...(finalStopTimes as unknown as Record<string, unknown>[]),
+    ]);
 
     console.log(
       `Rebuilt ${finalStopTimes.length} stop_times for trip ${trip_id} from table`

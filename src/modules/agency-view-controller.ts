@@ -7,43 +7,14 @@
 
 import type { Agency, Routes } from '../types/gtfs.js';
 import {
-  renderFormFields,
-  generateFieldConfigsFromSchema,
+  renderEntityFields,
+  type QueryOnlyDatabase,
 } from '../utils/field-component.js';
 import { GTFS_TABLES, AgencySchema } from '../types/gtfs.js';
 
 export interface AgencyViewDependencies {
-  gtfsDatabase?: {
-    queryRows: (
-      tableName: string,
-      filter?: Record<string, unknown>
-    ) => Promise<unknown[]>;
-    updateRow: (
-      tableName: string,
-      key: string,
-      data: Record<string, unknown>
-    ) => Promise<void>;
-  };
+  gtfsDatabase?: QueryOnlyDatabase;
   onRouteClick: (route_id: string) => void;
-}
-
-/**
- * Enhanced agency object with dual property access
- */
-interface EnhancedAgency {
-  // Convenience shorthand properties
-  id: string;
-  name: string;
-
-  // GTFS standard properties
-  agency_id: string;
-  agency_name: string;
-  agency_url: string;
-  agency_timezone: string;
-  agency_lang?: string;
-  agency_phone?: string;
-  agency_fare_url?: string;
-  agency_email?: string;
 }
 
 export class AgencyViewController {
@@ -51,13 +22,6 @@ export class AgencyViewController {
   private currentAgencyId: string | null = null;
 
   constructor(dependencies: AgencyViewDependencies) {
-    this.dependencies = dependencies;
-  }
-
-  /**
-   * Update dependencies (used when database becomes available)
-   */
-  updateDependencies(dependencies: AgencyViewDependencies): void {
     this.dependencies = dependencies;
   }
 
@@ -96,17 +60,13 @@ export class AgencyViewController {
   /**
    * Render editable agency properties section
    */
-  private renderAgencyProperties(agency: EnhancedAgency): string {
-    // Generate field configurations from AgencySchema
-    // This automatically includes all GTFS agency fields with proper types and validation
-    const fieldConfigs = generateFieldConfigsFromSchema(
+  private renderAgencyProperties(agency: Agency): string {
+    const fieldsHtml = renderEntityFields(
       AgencySchema,
-      agency,
-      GTFS_TABLES.AGENCY
-    ).map((c) => ({ ...c, recordId: this.currentAgencyId ?? '' }));
-
-    // Render all fields using the reusable field component
-    const fieldsHtml = renderFormFields(fieldConfigs);
+      agency as Record<string, string | number | undefined>,
+      GTFS_TABLES.AGENCY,
+      this.currentAgencyId ?? ''
+    );
 
     return `
       <div class="space-y-4">
@@ -187,50 +147,27 @@ export class AgencyViewController {
   }
 
   /**
-   * Get enhanced agency data
+   * Get agency data from database
    */
-  private async getAgencyData(
-    agency_id: string
-  ): Promise<EnhancedAgency | null> {
+  private async getAgencyData(agency_id: string): Promise<Agency | null> {
     if (!this.dependencies.gtfsDatabase) {
-      // Fallback to a basic agency object
       return {
-        id: agency_id,
-        name: agency_id,
-        agency_id: agency_id,
+        agency_id,
         agency_name: agency_id,
         agency_url: '',
         agency_timezone: '',
-      };
+      } as Agency;
     }
 
     try {
       const agencies = await this.dependencies.gtfsDatabase.queryRows(
         'agency',
-        {
-          agency_id,
-        }
+        { agency_id }
       );
       if (agencies.length === 0) {
         return null;
       }
-
-      const agency = agencies[0] as Agency;
-      return {
-        // Convenience properties
-        id: agency.agency_id,
-        name: agency.agency_name || agency.agency_id,
-
-        // GTFS standard properties
-        agency_id: agency.agency_id,
-        agency_name: agency.agency_name,
-        agency_url: agency.agency_url,
-        agency_timezone: agency.agency_timezone,
-        agency_lang: agency.agency_lang,
-        agency_phone: agency.agency_phone,
-        agency_fare_url: agency.agency_fare_url,
-        agency_email: agency.agency_email,
-      };
+      return agencies[0] as Agency;
     } catch (error) {
       console.error('Error getting agency data:', error);
       return null;
