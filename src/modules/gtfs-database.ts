@@ -23,9 +23,6 @@ import {
   getNaturalKeyField,
   isNaturalKey,
   generateCompositeKeyFromRecord,
-  parseCompositeKey,
-  getPrimaryKeyFields,
-  isCompositeKey,
 } from '../utils/gtfs-primary-keys.js';
 import { TimeFormatter } from '../utils/time-formatter.js';
 
@@ -108,7 +105,7 @@ export interface GTFSDBSchema extends DBSchema {
     key: string;
     value: { key: string; currentVersion: number; headVersion: number };
   };
-  // Raw CSV blobs for large tables (stop_times, shapes) — avoids per-row IDB overhead
+  // Raw CSV blobs for all GTFS tables — avoids per-row IDB overhead
   file_blobs: {
     key: string;
     value: { tableName: string; csv: string };
@@ -235,8 +232,8 @@ export class GTFSDatabase {
           }
 
           if (oldVersion < 7) {
-            // Add file_blobs store for large-table CSV persistence.
-            // Old stop_times / shapes IDB rows are orphaned — users must re-upload their feed.
+            // Add file_blobs store for all-table CSV persistence.
+            // All existing GTFS table IDB rows are orphaned — users must re-upload their feed.
             if (!db.objectStoreNames.contains('file_blobs')) {
               db.createObjectStore('file_blobs', { keyPath: 'tableName' });
             }
@@ -325,37 +322,6 @@ export class GTFSDatabase {
       console.error('Record:', record);
       throw error;
     }
-  }
-
-  /**
-   * Parse composite key back into components using GTFS specification
-   */
-  private parseCompositeKeyFromString(
-    tableName: string,
-    key: string
-  ): Record<string, string> {
-    return parseCompositeKey(tableName, key);
-  }
-
-  /**
-   * Check if a table uses composite keys
-   */
-  private hasCompositeKey(tableName: string): boolean {
-    return isCompositeKey(tableName);
-  }
-
-  /**
-   * Get composite key fields for a table using GTFS specification
-   */
-  private getCompositeKeyFields(tableName: string): string[] {
-    return getPrimaryKeyFields(tableName);
-  }
-
-  /**
-   * Get the active database instance (IndexedDB or fallback)
-   */
-  private getActiveDB(): GTFSDatabase | typeof this.fallbackDB {
-    return this.isUsingFallback ? this.fallbackDB : this;
   }
 
   /**
@@ -914,6 +880,14 @@ export class GTFSDatabase {
    * Delete multiple records by natural keys
    */
   async deleteRows(tableName: string, keys: string[]): Promise<void> {
+    const vt = this.virtualTables.get(tableName);
+    if (vt) {
+      for (const key of keys) {
+        vt.delete(key);
+      }
+      return;
+    }
+
     if (!this.db) {
       throw new Error('Database not initialized');
     }
@@ -981,9 +955,9 @@ export class GTFSDatabase {
   }
 
   /**
-   * Persist raw CSV for a large table into the file_blobs store.
+   * Persist raw CSV for a table into the file_blobs store.
    */
-  async saveLargeTableBlob(tableName: string, csv: string): Promise<void> {
+  async saveTableBlob(tableName: string, csv: string): Promise<void> {
     if (!this.db) {
       return;
     }
@@ -991,10 +965,10 @@ export class GTFSDatabase {
   }
 
   /**
-   * Retrieve raw CSV for a large table from the file_blobs store.
+   * Retrieve raw CSV for a table from the file_blobs store.
    * Returns null if no blob has been saved yet.
    */
-  async getLargeTableBlob(tableName: string): Promise<string | null> {
+  async getTableBlob(tableName: string): Promise<string | null> {
     if (!this.db) {
       return null;
     }
@@ -1009,6 +983,14 @@ export class GTFSDatabase {
     tableName: string,
     updates: Array<{ key: string; data: Partial<GTFSDatabaseRecord> }>
   ): Promise<void> {
+    const vt = this.virtualTables.get(tableName);
+    if (vt) {
+      for (const { key, data } of updates) {
+        vt.update(key, data);
+      }
+      return;
+    }
+
     if (!this.db) {
       throw new Error('Database not initialized');
     }
@@ -1219,19 +1201,14 @@ export class GTFSDatabase {
    * Insert a new trip record
    */
   async insertTrip(tripData: GTFSDatabaseRecord): Promise<string> {
-    if (!this.db) {
-      throw new Error('Database not initialized');
-    }
-
     try {
-      const transaction = this.db.transaction('trips', 'readwrite');
-      const store = transaction.objectStore('trips');
       const trip_id = tripData.trip_id as string;
-      await store.add(tripData);
-      await transaction.done;
+      await this.insertRows('trips', [tripData]);
+      // eslint-disable-next-line no-console
       console.log(`Inserted new trip with ID ${trip_id}`);
       return trip_id;
     } catch (error) {
+      // eslint-disable-next-line no-console
       console.error('Failed to insert trip:', error);
       throw error;
     }
@@ -1259,15 +1236,15 @@ export class GTFSDatabase {
       const vtTrips = this.virtualTables.get('trips');
       const vtStopTimes = this.virtualTables.get('stop_times');
 
-      if (vtTrips || vtStopTimes) {
+      if (vtTrips && vtStopTimes) {
         // Handle virtual tables
-        vtTrips?.delete(trip_id);
-        const stopTimesForTrip = vtStopTimes?.query({ trip_id }) ?? [];
+        vtTrips.delete(trip_id);
+        const stopTimesForTrip = vtStopTimes.query({ trip_id });
         const keysToDelete = stopTimesForTrip.map((st) =>
           this.generateCompositeKey('stop_times', st)
         );
         for (const key of keysToDelete) {
-          vtStopTimes!.delete(key);
+          vtStopTimes.delete(key);
         }
       } else {
         const transaction = this.db.transaction(
