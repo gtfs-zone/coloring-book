@@ -1,2 +1,0 @@
-service_id,monday,tuesday,wednesday,thursday,friday,saturday,sunday,start_date,end_date
-SERVICE_1,1,1,1,1,1,0,0,20241001,20241231

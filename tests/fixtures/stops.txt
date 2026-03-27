@@ -1,4 +1,0 @@
-stop_id,stop_name,stop_lat,stop_lon
-STOP_1,Main & 1st,40.7589,-73.9851
-STOP_2,Main & 2nd,40.7614,-73.9776
-STOP_3,Downtown Terminal,40.7505,-73.9934
