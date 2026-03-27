@@ -196,7 +196,6 @@ export class PageContentRenderer {
           return await this.renderHome();
       }
     } catch (error) {
-      // eslint-disable-next-line no-console
       console.error('Error rendering page:', error);
       return this.renderError('Failed to load content. Please try again.');
     }
@@ -573,7 +572,6 @@ export class PageContentRenderer {
         direction_id
       );
     } catch (error) {
-      // eslint-disable-next-line no-console
       console.error('Error rendering timetable:', error);
       return this.renderError('Failed to load timetable. Please try again.');
     }

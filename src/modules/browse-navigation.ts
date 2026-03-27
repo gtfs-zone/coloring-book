@@ -170,7 +170,6 @@ export class BrowseNavigation {
   initialize(containerId: string): void {
     this.container = document.getElementById(containerId);
     if (!this.container) {
-      // eslint-disable-next-line no-console
       console.error(`Browse navigation container ${containerId} not found`);
       return;
     }
@@ -328,7 +327,6 @@ export class BrowseNavigation {
 
       this.attachEventListeners();
     } catch (error) {
-      // eslint-disable-next-line no-console
       console.error('Error rendering browse navigation:', error);
       this.renderErrorState();
     }

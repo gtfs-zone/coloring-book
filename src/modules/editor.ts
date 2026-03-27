@@ -219,7 +219,6 @@ export class Editor {
         }
       }
     } catch (error) {
-      // eslint-disable-next-line no-console
       console.error('Error building table editor:', error);
       if (tableContainer) {
         tableContainer.innerHTML =
@@ -346,10 +345,8 @@ export class Editor {
       this.pendingUpdates.clear();
       this.pendingBeforeRows.clear();
 
-      // eslint-disable-next-line no-console
       console.log(`Saved ${updates.length} table cell updates to IndexedDB`);
     } catch (error) {
-      // eslint-disable-next-line no-console
       console.error('Error saving table updates to IndexedDB:', error);
 
       // Mark all pending inputs as having errors
