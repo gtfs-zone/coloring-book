@@ -1,3 +1,12 @@
+/**
+ * Patch Manager — append-only patch log with undo/redo support.
+ *
+ * INVARIANT: All user-initiated writes MUST go through this module
+ * (recordUpdate / recordInsert / recordDelete). Direct database writes that
+ * bypass patch recording are only permitted for: internal DB initialization,
+ * patch replay (inside this file), and feed import.
+ * Use patchUpdate() from utils/patch-utils.ts for interactive edit handlers.
+ */
 import { GTFSDatabase, GTFSDatabaseRecord } from './gtfs-database.js';
 import { GTFSParser } from './gtfs-parser.js';
 import {
