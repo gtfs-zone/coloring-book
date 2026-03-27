@@ -231,60 +231,6 @@ export type FeedInfo = z.infer<typeof FeedInfoSchema>;
  */
 export type Attributions = z.infer<typeof AttributionsSchema>;
 
-// Primary key type aliases for GTFS entities
-export type AgencyId = string;
-export type StopId = string;
-export type RouteId = string;
-export type TripId = string;
-export type ServiceId = string;
-export type FareId = string;
-export type ShapeId = string;
-export type PathwayId = string;
-export type LevelId = string;
-export type AttributionId = string;
-export type RiderCategoryId = string;
-export type FareMediaId = string;
-export type FareProductId = string;
-
-// Composite key type aliases (using compound string format: "key1:key2")
-export type StopTimesKey = string; // Format: "trip_id:stop_sequence"
-export type CalendarDatesKey = string; // Format: "service_id:date"
-export type TranslationsKey = string; // Format: "tableName:fieldName:language:recordId"
-
-// Union type for all GTFS entities
-export type GTFSEntity =
-  | Agency
-  | Stops
-  | Routes
-  | Trips
-  | StopTimes
-  | Calendar
-  | CalendarDates
-  | FareAttributes
-  | FareRules
-  | Timeframes
-  | RiderCategories
-  | FareMedia
-  | FareProducts
-  | FareLegRules
-  | FareLegJoinRules
-  | FareTransferRules
-  | Areas
-  | StopAreas
-  | Networks
-  | RouteNetworks
-  | Shapes
-  | Frequencies
-  | Transfers
-  | Pathways
-  | Levels
-  | LocationGroups
-  | LocationGroupStops
-  | BookingRules
-  | Translations
-  | FeedInfo
-  | Attributions;
-
 // Table name to entity type mapping for type safety
 export type GTFSTableMap = {
   agencies: Agency;

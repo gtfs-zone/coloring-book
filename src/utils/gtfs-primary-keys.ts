@@ -227,22 +227,6 @@ export function isCompositeKey(tableName: string): boolean {
 }
 
 /**
- * Check if a table uses all provided fields as primary key
- */
-export function isAllFieldsKey(tableName: string): boolean {
-  const config = getGTFSPrimaryKey(tableName);
-  return config?.type === 'all_fields';
-}
-
-/**
- * Check if a table allows only one row
- */
-export function isSingleRowTable(tableName: string): boolean {
-  const config = getGTFSPrimaryKey(tableName);
-  return config?.singleRow === true;
-}
-
-/**
  * Get the natural key field name for tables with single-field primary keys
  */
 export function getNaturalKeyField(tableName: string): string | null {
@@ -251,14 +235,6 @@ export function getNaturalKeyField(tableName: string): string | null {
     return config.fields[0];
   }
   return null;
-}
-
-/**
- * Get all primary key fields for a table
- */
-export function getPrimaryKeyFields(tableName: string): string[] {
-  const config = getGTFSPrimaryKey(tableName);
-  return config?.fields || [];
 }
 
 /**

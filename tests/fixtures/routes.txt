@@ -1,3 +1,0 @@
-route_id,agency_id,route_short_name,route_long_name,route_type
-ROUTE_1,TEST_AGENCY,1,Main Street Line,3
-ROUTE_2,TEST_AGENCY,2,Downtown Express,3

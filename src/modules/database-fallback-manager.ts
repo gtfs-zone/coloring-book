@@ -170,7 +170,6 @@ export class DatabaseFallbackManager {
         ? error
         : new Error(String(error || 'Unknown error'));
 
-    // eslint-disable-next-line no-console
     console.error(`Database error in ${context}:`, err);
 
     const stack = err.stack ?? 'No stack trace available';
@@ -273,7 +272,7 @@ export class DatabaseFallbackManager {
       loadingStateManager.showError(
         'Failed to reset database. Please clear browser data manually.'
       );
-      // eslint-disable-next-line no-console
+
       console.error('Database reset failed:', error);
     }
   }

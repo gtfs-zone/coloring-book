@@ -38,7 +38,7 @@ export default tseslint.config(
     rules: {
       'no-unused-vars': 'off', // Turn off base rule
       '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
-      'no-console': 'warn',
+      'no-console': 'off', // TODO: re-enable and strip debug logs before 1.0 release
       'prefer-const': 'error',
       'no-var': 'error',
       'eqeqeq': ['error', 'always'],

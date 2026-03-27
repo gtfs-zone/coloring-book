@@ -212,7 +212,6 @@ export class GTFSDatabase {
       // Try to initialize IndexedDB
       this.db = await openDB<GTFSDBSchema>(this.dbName, this.dbVersion, {
         upgrade: (db, oldVersion, newVersion, _transaction) => {
-          // eslint-disable-next-line no-console
           console.log(
             `Upgrading database from version ${oldVersion} to ${newVersion}`
           );
@@ -240,7 +239,6 @@ export class GTFSDatabase {
             this.addIndexesForTable(store, tableName);
           });
 
-          // eslint-disable-next-line no-console
           console.log('Database schema created');
         },
         blocked: () => {
@@ -252,10 +250,8 @@ export class GTFSDatabase {
         },
       });
 
-      // eslint-disable-next-line no-console
       console.log('GTFSDatabase initialized successfully');
     } catch (error) {
-      // eslint-disable-next-line no-console
       console.error('Failed to initialize GTFSDatabase:', error);
 
       databaseFallbackManager.showDatabaseError(error, 'initialization', () =>
@@ -377,7 +373,6 @@ export class GTFSDatabase {
     // Convert unknown error to Error object
     const err = error instanceof Error ? error : new Error(String(error));
 
-    // eslint-disable-next-line no-console
     console.error(`CRITICAL DATABASE ERROR in ${operation}:`, err);
     console.error('Stack trace:', err.stack);
 
@@ -541,10 +536,9 @@ export class GTFSDatabase {
       }
 
       await transaction.done;
-      // eslint-disable-next-line no-console
+
       console.log('Database cleared successfully');
     } catch (error) {
-      // eslint-disable-next-line no-console
       console.error('Failed to clear database:', error);
       throw error;
     }
@@ -556,7 +550,7 @@ export class GTFSDatabase {
   async createTablesFromGTFS(fileNames: string[]): Promise<void> {
     // Tables are created during database initialization
     // This method is for future extensibility if we need dynamic table creation
-    // eslint-disable-next-line no-console
+
     console.log('Tables available for files:', fileNames);
   }
 
@@ -725,7 +719,6 @@ export class GTFSDatabase {
     try {
       return await this.db.get(tableName, key);
     } catch (error) {
-      // eslint-disable-next-line no-console
       console.error(`Failed to get row ${key} from ${tableName}:`, error);
       throw error;
     }
@@ -764,10 +757,8 @@ export class GTFSDatabase {
         await this.db.put(tableName, updated, key);
       }
 
-      // eslint-disable-next-line no-console
       console.log(`Updated row ${key} in ${tableName}`);
     } catch (error) {
-      // eslint-disable-next-line no-console
       console.error(`Failed to update row ${key} in ${tableName}:`, error);
       throw error;
     }
@@ -795,7 +786,6 @@ export class GTFSDatabase {
     try {
       return await this.db.getAll(tableName);
     } catch (error) {
-      // eslint-disable-next-line no-console
       console.error(`Failed to get all rows from ${tableName}:`, error);
       throw error;
     }
@@ -866,7 +856,6 @@ export class GTFSDatabase {
         });
       });
     } catch (error) {
-      // eslint-disable-next-line no-console
       console.error(`Failed to query rows from ${tableName}:`, error);
       throw error;
     }
@@ -890,10 +879,9 @@ export class GTFSDatabase {
       const transaction = this.db.transaction(tableName, 'readwrite');
       await transaction.objectStore(tableName).delete(key);
       await transaction.done;
-      // eslint-disable-next-line no-console
+
       console.log(`Deleted row ${key} from ${tableName}`);
     } catch (error) {
-      // eslint-disable-next-line no-console
       console.error(`Failed to delete row ${key} from ${tableName}:`, error);
       throw error;
     }
@@ -923,12 +911,10 @@ export class GTFSDatabase {
         await this.deleteBatch(tableName, batch);
       }
 
-      // eslint-disable-next-line no-console
       console.log(
         `Deleted ${keys.length} rows from ${tableName} in ${Math.ceil(keys.length / BATCH_SIZE)} batches`
       );
     } catch (error) {
-      // eslint-disable-next-line no-console
       console.error(`Failed to delete rows from ${tableName}:`, error);
       throw error;
     }
@@ -968,10 +954,9 @@ export class GTFSDatabase {
       const transaction = this.db.transaction(tableName, 'readwrite');
       await transaction.objectStore(tableName).clear();
       await transaction.done;
-      // eslint-disable-next-line no-console
+
       console.log(`Cleared table ${tableName}`);
     } catch (error) {
-      // eslint-disable-next-line no-console
       console.error(`Failed to clear table ${tableName}:`, error);
       throw error;
     }
@@ -1026,12 +1011,10 @@ export class GTFSDatabase {
         await this.updateBatch(tableName, batch);
       }
 
-      // eslint-disable-next-line no-console
       console.log(
         `Updated ${updates.length} rows in ${tableName} in ${Math.ceil(updates.length / BATCH_SIZE)} batches`
       );
     } catch (error) {
-      // eslint-disable-next-line no-console
       console.error(`Failed to bulk update rows in ${tableName}:`, error);
       throw error;
     }
@@ -1098,7 +1081,6 @@ export class GTFSDatabase {
         tables,
       };
     } catch (error) {
-      // eslint-disable-next-line no-console
       console.error('Failed to get database stats:', error);
       throw error;
     }
@@ -1113,7 +1095,6 @@ export class GTFSDatabase {
     }
 
     try {
-      // eslint-disable-next-line no-console
       console.log('Starting database compaction...');
 
       // Get all data from current database
@@ -1143,10 +1124,8 @@ export class GTFSDatabase {
         }
       }
 
-      // eslint-disable-next-line no-console
       console.log('Database compaction completed');
     } catch (error) {
-      // eslint-disable-next-line no-console
       console.error('Database compaction failed:', error);
       throw error;
     }
@@ -1194,7 +1173,6 @@ export class GTFSDatabase {
 
       return results;
     } catch (error) {
-      // eslint-disable-next-line no-console
       console.error('Search failed:', error);
       throw error;
     }
@@ -1227,11 +1205,10 @@ export class GTFSDatabase {
     try {
       const trip_id = tripData.trip_id as string;
       await this.insertRows('trips', [tripData]);
-      // eslint-disable-next-line no-console
+
       console.log(`Inserted new trip with ID ${trip_id}`);
       return trip_id;
     } catch (error) {
-      // eslint-disable-next-line no-console
       console.error('Failed to insert trip:', error);
       throw error;
     }
@@ -1289,7 +1266,6 @@ export class GTFSDatabase {
         await transaction.done;
       }
 
-      // eslint-disable-next-line no-console
       console.log(`Deleted trip ${trip_id} and its stop_times`);
     } catch (error) {
       console.error(`Failed to delete trip ${trip_id}:`, error);

@@ -44,7 +44,6 @@ export class InfoDisplay {
   initialize(containerId = 'info-tab') {
     this.container = document.getElementById(containerId);
     if (!this.container) {
-      // eslint-disable-next-line no-console
       console.error(`Info display container ${containerId} not found`);
       return;
     }
