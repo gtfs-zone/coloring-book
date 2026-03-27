@@ -25,15 +25,8 @@ interface GTFSParserInterface {
       data: GTFSTableMap[T]
     ): string;
   };
-}
-
-interface PatchManagerInterface {
-  recordUpdate(
-    table: string,
-    id: string,
-    before: Record<string, unknown>,
-    after: Record<string, unknown>
-  ): Promise<void>;
+  getFileDataSync(fileName: string): Record<string, unknown>[];
+  setInMemoryFileData(fileName: string, data: Record<string, unknown>[]): void;
 }
 
 /**
@@ -51,7 +44,6 @@ interface PatchManagerInterface {
  */
 export class TimetableDatabase {
   private gtfsParser: GTFSParserInterface;
-  private patchManager: PatchManagerInterface | null = null;
 
   /**
    * Initialize TimetableDatabase with GTFS parser dependency
@@ -60,10 +52,6 @@ export class TimetableDatabase {
    */
   constructor(gtfsParser: GTFSParserInterface) {
     this.gtfsParser = gtfsParser;
-  }
-
-  setPatchManager(pm: PatchManagerInterface): void {
-    this.patchManager = pm;
   }
 
   /**
@@ -295,11 +283,7 @@ export class TimetableDatabase {
 
     // Generate composite key for the stop_time record and update
     const naturalKey = generateCompositeKeyFromRecord('stop_times', stopTime);
-    const before = { [field]: (stopTime as Record<string, unknown>)[field] };
     await database.updateRow('stop_times', naturalKey, {
-      [field]: newTime,
-    });
-    await this.patchManager?.recordUpdate('stop_times', naturalKey, before, {
       [field]: newTime,
     });
 
@@ -400,22 +384,12 @@ export class TimetableDatabase {
 
     const stopTime = stopTimes[0];
     const naturalKey = generateCompositeKeyFromRecord('stop_times', stopTime);
-    const before = {
-      arrival_time: stopTime.arrival_time,
-      departure_time: stopTime.departure_time,
-    };
 
     // Update both times to the same value
     await database.updateRow('stop_times', naturalKey, {
       arrival_time: newTime,
       departure_time: newTime,
     });
-    await this.patchManager?.recordUpdate(
-      'stop_times',
-      naturalKey,
-      before as Record<string, unknown>,
-      { arrival_time: newTime, departure_time: newTime }
-    );
 
     const message = newTime
       ? `Linked time updated to ${newTime}`
@@ -599,6 +573,16 @@ export class TimetableDatabase {
 
     // Atomic replace: delete all old, insert all new from table
     await database.replaceRows('stop_times', oldKeys, finalStopTimes);
+
+    // Sync in-memory data so getFileDataSync reflects the rebuilt state
+    const inMemory = this.gtfsParser.getFileDataSync('stop_times.txt');
+    const otherTrips = inMemory.filter(
+      (st) => (st as { trip_id: string }).trip_id !== trip_id
+    );
+    this.gtfsParser.setInMemoryFileData('stop_times.txt', [
+      ...otherTrips,
+      ...(finalStopTimes as unknown as Record<string, unknown>[]),
+    ]);
 
     console.log(
       `Rebuilt ${finalStopTimes.length} stop_times for trip ${trip_id} from table`
