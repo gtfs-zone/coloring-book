@@ -10,6 +10,7 @@ import {
   GTFSTableMap,
 } from '../types/gtfs-entities.js';
 import { notifications } from './notification-system';
+import { patchUpdate } from '../utils/patch-utils.js';
 
 // Days of the week in US format (Sunday first)
 const DAYS_OF_WEEK = [
@@ -48,6 +49,25 @@ interface GTFSParserInterface {
   };
 }
 
+interface PatchManagerInterface {
+  recordInsert(
+    table: string,
+    id: string,
+    record: Record<string, unknown>
+  ): Promise<void>;
+  recordUpdate(
+    table: string,
+    id: string,
+    before: Record<string, unknown>,
+    after: Record<string, unknown>
+  ): Promise<void>;
+  recordDelete(
+    table: string,
+    id: string,
+    record: Record<string, unknown>
+  ): Promise<void>;
+}
+
 /**
  * ServiceDaysController - Manages GTFS calendar and calendar_dates editing
  *
@@ -60,6 +80,7 @@ interface GTFSParserInterface {
  */
 export class ServiceDaysController {
   private gtfsParser: GTFSParserInterface;
+  private patchManager: PatchManagerInterface | null = null;
   private currentServiceId: string | null = null;
   private savingIndicators: Set<string> = new Set();
 
@@ -70,6 +91,10 @@ export class ServiceDaysController {
    */
   constructor(gtfsParser: GTFSParserInterface) {
     this.gtfsParser = gtfsParser;
+  }
+
+  setPatchManager(pm: PatchManagerInterface): void {
+    this.patchManager = pm;
   }
 
   // ===== PUBLIC RENDERING METHODS =====
@@ -145,6 +170,11 @@ export class ServiceDaysController {
 
         (calendar as Record<string, unknown>)[dayKey] = 1;
         await this.gtfsParser.gtfsDatabase.insertRows('calendar', [calendar]);
+        await this.patchManager?.recordInsert(
+          'calendar',
+          service_id,
+          calendar as Record<string, unknown>
+        );
       } else {
         // Toggle the day - handle both string and number values from database
         const currentValue = Number(
@@ -152,9 +182,14 @@ export class ServiceDaysController {
         );
         const newValue = currentValue === 1 ? 0 : 1;
 
-        await this.gtfsParser.gtfsDatabase.updateRow('calendar', service_id, {
-          [dayKey]: newValue,
-        });
+        await patchUpdate(
+          this.gtfsParser.gtfsDatabase,
+          this.patchManager,
+          'calendar',
+          service_id,
+          { [dayKey]: currentValue },
+          { [dayKey]: newValue }
+        );
       }
 
       this.showSaveSuccess(`day-${dayKey}-${service_id}`);
@@ -212,10 +247,20 @@ export class ServiceDaysController {
 
         calendar[dateType] = gtfsDate;
         await this.gtfsParser.gtfsDatabase.insertRows('calendar', [calendar]);
+        await this.patchManager?.recordInsert(
+          'calendar',
+          service_id,
+          calendar as Record<string, unknown>
+        );
       } else {
-        await this.gtfsParser.gtfsDatabase.updateRow('calendar', service_id, {
-          [dateType]: gtfsDate,
-        });
+        await patchUpdate(
+          this.gtfsParser.gtfsDatabase,
+          this.patchManager,
+          'calendar',
+          service_id,
+          { [dateType]: calendar[dateType] },
+          { [dateType]: gtfsDate }
+        );
       }
 
       this.showSaveSuccess(`date-${dateType}`);
@@ -254,6 +299,11 @@ export class ServiceDaysController {
       await this.gtfsParser.gtfsDatabase.insertRows('calendar_dates', [
         exceptionData,
       ]);
+      await this.patchManager?.recordInsert(
+        'calendar_dates',
+        `${service_id}:${gtfsDate}`,
+        exceptionData as Record<string, unknown>
+      );
 
       this.showSaveSuccess('exceptions');
       console.log(
@@ -276,7 +326,19 @@ export class ServiceDaysController {
       this.showSavingIndicator('exceptions');
 
       const key = `${service_id}:${date}`;
+      const existingExceptions = await this.gtfsParser.gtfsDatabase.queryRows(
+        'calendar_dates',
+        { service_id, date }
+      );
+      const existingRecord = existingExceptions[0];
       await this.gtfsParser.gtfsDatabase.deleteRow('calendar_dates', key);
+      if (existingRecord) {
+        await this.patchManager?.recordDelete(
+          'calendar_dates',
+          key,
+          existingRecord as Record<string, unknown>
+        );
+      }
 
       this.showSaveSuccess('exceptions');
       console.log(`Removed exception for service ${service_id} on ${date}`);

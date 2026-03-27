@@ -6,25 +6,14 @@
  */
 
 import type { Agency, Routes, Stops, Trips, StopTimes } from '../types/gtfs.js';
-import { notifications } from './notification-system.js';
 import {
-  renderFormFields,
-  generateFieldConfigsFromSchema,
+  renderEntityFields,
+  type QueryOnlyDatabase,
 } from '../utils/field-component.js';
 import { GTFS_TABLES, StopsSchema } from '../types/gtfs.js';
 
 export interface StopViewDependencies {
-  gtfsDatabase?: {
-    queryRows: (
-      tableName: string,
-      filter?: Record<string, unknown>
-    ) => Promise<unknown[]>;
-    updateRow: (
-      tableName: string,
-      key: string,
-      data: Record<string, unknown>
-    ) => Promise<void>;
-  };
+  gtfsDatabase?: QueryOnlyDatabase;
   gtfsRelationships?: {
     getAgenciesServingStop?: (stop_id: string) => Promise<unknown[]>;
     getRoutesServingStop?: (stop_id: string) => Promise<unknown[]>;
@@ -33,41 +22,11 @@ export interface StopViewDependencies {
   onRouteClick: (route_id: string) => void;
 }
 
-/**
- * Enhanced stop object with dual property access
- */
-interface EnhancedStop {
-  // Convenience shorthand properties
-  id: string;
-  name: string;
-
-  // GTFS standard properties
-  stop_id: string;
-  stop_name: string;
-  stop_lat?: number;
-  stop_lon?: number;
-  stop_code?: string;
-  stop_desc?: string;
-  location_type?: number;
-  parent_station?: string;
-  wheelchair_boarding?: number;
-  platform_code?: string;
-  zone_id?: string;
-}
-
 export class StopViewController {
   private dependencies: StopViewDependencies;
   private currentStopId: string | null = null;
-  private fieldValues: Map<string, string> = new Map();
 
   constructor(dependencies: StopViewDependencies) {
-    this.dependencies = dependencies;
-  }
-
-  /**
-   * Update dependencies (used when database becomes available)
-   */
-  updateDependencies(dependencies: StopViewDependencies): void {
     this.dependencies = dependencies;
   }
 
@@ -109,17 +68,13 @@ export class StopViewController {
   /**
    * Render editable stop properties section
    */
-  private renderStopProperties(stop: EnhancedStop): string {
-    // Generate field configurations from StopsSchema
-    // This automatically includes all GTFS stop fields with proper types and validation
-    const fieldConfigs = generateFieldConfigsFromSchema(
+  private renderStopProperties(stop: Stops): string {
+    const fieldsHtml = renderEntityFields(
       StopsSchema,
-      stop,
-      GTFS_TABLES.STOPS
+      stop as Record<string, string | number | undefined>,
+      GTFS_TABLES.STOPS,
+      this.currentStopId ?? ''
     );
-
-    // Render all fields using the reusable field component
-    const fieldsHtml = renderFormFields(fieldConfigs);
 
     return `
       <div class="space-y-4">
@@ -222,17 +177,11 @@ export class StopViewController {
   }
 
   /**
-   * Get enhanced stop data
+   * Get stop data from database
    */
-  private async getStopData(stop_id: string): Promise<EnhancedStop | null> {
+  private async getStopData(stop_id: string): Promise<Stops | null> {
     if (!this.dependencies.gtfsDatabase) {
-      // Fallback to a basic stop object
-      return {
-        id: stop_id,
-        name: stop_id,
-        stop_id: stop_id,
-        stop_name: stop_id,
-      };
+      return { stop_id, stop_name: stop_id, parent_station: '' } as Stops;
     }
 
     try {
@@ -242,27 +191,7 @@ export class StopViewController {
       if (stops.length === 0) {
         return null;
       }
-
-      const stop = stops[0] as Stops;
-      return {
-        // Convenience properties
-        id: stop.stop_id,
-        name: stop.stop_name || stop.stop_id,
-
-        // GTFS standard properties
-        stop_id: stop.stop_id,
-        stop_name: stop.stop_name,
-        stop_lat: parseFloat(stop.stop_lat as string) || undefined,
-        stop_lon: parseFloat(stop.stop_lon as string) || undefined,
-        stop_code: stop.stop_code,
-        stop_desc: stop.stop_desc,
-        location_type: parseInt(stop.location_type as string) || undefined,
-        parent_station: stop.parent_station,
-        wheelchair_boarding:
-          parseInt(stop.wheelchair_boarding as string) || undefined,
-        platform_code: stop.platform_code,
-        zone_id: stop.zone_id,
-      };
+      return stops[0] as Stops;
     } catch (error) {
       console.error('Error getting stop data:', error);
       return null;
@@ -368,96 +297,9 @@ export class StopViewController {
   }
 
   /**
-   * Handle property updates with auto-save
-   */
-  async updateStopProperty(field: string, newValue: string): Promise<boolean> {
-    if (!this.currentStopId || !this.dependencies.gtfsDatabase) {
-      const error = new Error('Database not available for editing');
-      console.error(error);
-      notifications.show('Database not available for editing', 'error');
-      throw error;
-    }
-
-    try {
-      // Get previous value for comparison
-      const prevValue = this.fieldValues.get(field) || '';
-
-      // Skip update if value hasn't changed
-      if (newValue === prevValue) {
-        return true;
-      }
-
-      // Convert values to appropriate types
-      let processedValue: unknown = newValue;
-      if (field === 'stop_lat' || field === 'stop_lon') {
-        processedValue = newValue ? parseFloat(newValue) : null;
-      } else if (field === 'location_type' || field === 'wheelchair_boarding') {
-        processedValue = newValue ? parseInt(newValue) : null;
-      } else if (newValue === '') {
-        // Convert empty strings to null for optional fields
-        processedValue = null;
-      }
-
-      // Update database
-      await this.dependencies.gtfsDatabase.updateRow(
-        'stops',
-        this.currentStopId,
-        { [field]: processedValue }
-      );
-
-      // Store new value for future comparisons
-      this.fieldValues.set(field, newValue);
-
-      // Show descriptive notification
-      const fieldDisplayName = this.getFieldDisplayName(field);
-      const fromDisplay = prevValue || '(empty)';
-      const toDisplay = newValue || '(empty)';
-
-      notifications.showSuccess(
-        `Updated ${fieldDisplayName} from "${fromDisplay}" to "${toDisplay}" for ${this.currentStopId}`,
-        { duration: 3000 }
-      );
-
-      return true;
-    } catch (error) {
-      console.error('Error updating stop property:', error);
-      notifications.showError(`Failed to update ${field}`);
-      return false;
-    }
-  }
-
-  /**
    * Add event listeners for interactive elements
    */
   addEventListeners(container: HTMLElement): void {
-    // Property input handlers with auto-save using the field component utility
-    // Only attach to stop fields (data-table="stops.txt")
-    const stopFields = container.querySelectorAll(
-      '[data-field][data-table="stops.txt"]'
-    );
-    stopFields.forEach((input) => {
-      const field = input.getAttribute('data-field');
-      if (!field) {
-        return;
-      }
-
-      // Store initial value for comparison
-      const initialValue = (
-        input as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement
-      ).value;
-      this.fieldValues.set(field, initialValue);
-
-      const handleUpdate = async () => {
-        const value = (
-          input as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement
-        ).value;
-        await this.updateStopProperty(field, value);
-      };
-
-      // Use 'change' event to fire when value changes and element loses focus
-      input.addEventListener('change', handleUpdate);
-    });
-
     // Agency view button clicks
     const agencyButtons = container.querySelectorAll('.agency-view-btn');
     agencyButtons.forEach((button) => {
@@ -479,25 +321,6 @@ export class StopViewController {
         }
       });
     });
-  }
-
-  /**
-   * Get human-readable field display name
-   */
-  private getFieldDisplayName(field: string): string {
-    const fieldNames: Record<string, string> = {
-      stop_name: 'Stop Name',
-      stop_code: 'Stop Code',
-      stop_lat: 'Latitude',
-      stop_lon: 'Longitude',
-      stop_desc: 'Description',
-      location_type: 'Location Type',
-      parent_station: 'Parent Station',
-      wheelchair_boarding: 'Wheelchair Accessibility',
-      platform_code: 'Platform Code',
-      zone_id: 'Zone ID',
-    };
-    return fieldNames[field] || field;
   }
 
   /**
