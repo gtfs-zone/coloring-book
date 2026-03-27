@@ -156,20 +156,6 @@ export class LayerManager {
         const lon = parseFloat(stop.stop_lon);
         const stopType = stop.location_type || '0';
 
-        // Get routes serving this stop
-        const routesAtStop =
-          this.gtfsParser.getRoutesForStop?.(stop.stop_id) || [];
-
-        // Determine primary route color for stroke (use first route's color)
-        let primaryRouteColor = '#2563eb'; // Default blue
-        if (routesAtStop.length > 0) {
-          const primaryRoute = routesAtStop[0];
-          primaryRouteColor = this.getRouteColor(
-            primaryRoute.route_id as string,
-            primaryRoute.route_color as string
-          );
-        }
-
         return {
           type: 'Feature',
           geometry: {
@@ -183,11 +169,6 @@ export class LayerManager {
             stop_desc: stop.stop_desc || '',
             location_type: stopType,
             wheelchair_boarding: stop.wheelchair_boarding || '',
-            routes_count: routesAtStop.length,
-            routes_list: routesAtStop
-              .map((r) => r.route_short_name || r.route_id)
-              .join(', '),
-            primary_route_color: primaryRouteColor,
           },
         };
       }),
@@ -508,30 +489,6 @@ export class LayerManager {
     } catch (error) {
       console.debug('Could not set feature state for stop:', stop_id, error);
     }
-  }
-
-  /**
-   * Get route color (helper method)
-   */
-  private getRouteColor(route_id: string, gtfsRouteColor?: string): string {
-    // Use GTFS route_color if available and valid
-    if (
-      gtfsRouteColor &&
-      gtfsRouteColor.length === 6 &&
-      /^[0-9A-Fa-f]+$/.test(gtfsRouteColor)
-    ) {
-      return `#${gtfsRouteColor}`;
-    }
-
-    // Generate deterministic color from route ID
-    let hash = 0;
-    for (let i = 0; i < route_id.length; i++) {
-      const char = route_id.charCodeAt(i);
-      hash = (hash << 5) - hash + char;
-      hash = hash & hash; // Convert to 32bit integer
-    }
-    const hue = Math.abs(hash) % 360;
-    return `hsl(${hue}, 70%, 50%)`;
   }
 
   /**

@@ -4,9 +4,13 @@ import { CONFIG } from '../config.js';
 import { GTFSDatabase, GTFSDatabaseRecord } from './gtfs-database.js';
 import { GTFS_FILES, GTFSFilePresence, GTFS_TABLES } from '../types/gtfs.js';
 import { loadingStateManager } from './loading-state-manager.js';
-import { ALL_GTFS_FILES, makeHeaderOnlyCSV } from './gtfs-file-registry.js';
-import { GTFSTableMap } from '../types/gtfs-entities.js';
-
+import {
+  ALL_GTFS_FILES,
+  makeHeaderOnlyCSV,
+  isSupportedFile,
+} from './gtfs-file-registry.js';
+import { GTFSTableMap, StopTimes } from '../types/gtfs-entities.js';
+import { generateCompositeKeyFromRecord } from '../utils/gtfs-primary-keys.js';
 interface GTFSFileData<T = GTFSDatabaseRecord> {
   content: string;
   data: T[];
@@ -34,6 +38,12 @@ export class GTFSParser {
   private gtfsData: { [fileName: string]: GTFSFileData } = {};
   public gtfsDatabase: GTFSDatabase;
   private patchManager: PatchManagerRef | null = null;
+
+  // In-memory index for stop_times stop_id lookups (used by synchronous getRoutesForStop)
+  private stopTimesByStopId = new Map<string, StopTimes[]>();
+  // Dirty-blob tracking for deferred persistence
+  private blobDirty = new Set<string>();
+  private blobPersistTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor() {
     this.gtfsData = {};
@@ -126,97 +136,374 @@ export class GTFSParser {
     });
   }
 
+  // ===== Blob-backed virtual table infrastructure =====
+
+  /**
+   * Build and register a virtual table handler for any GTFS table.
+   * All mutations maintain the byId Map and any provided field-level Maps.
+   * For stop_times: pass this.stopTimesByStopId as the 'stop_id' fieldMap so it
+   * stays accessible for the synchronous getRoutesForStop path.
+   */
+  private buildAndRegisterVirtual(
+    tableName: string,
+    flat: GTFSDatabaseRecord[],
+    fieldMaps: Map<string, Map<string, GTFSDatabaseRecord[]>> = new Map()
+  ): void {
+    const byId = new Map<string, GTFSDatabaseRecord>();
+
+    const addToBucket = (
+      map: Map<string, GTFSDatabaseRecord[]>,
+      val: string,
+      row: GTFSDatabaseRecord
+    ): void => {
+      let bucket = map.get(val);
+      if (!bucket) {
+        bucket = [];
+        map.set(val, bucket);
+      }
+      if (!bucket.includes(row)) {
+        bucket.push(row);
+      }
+    };
+
+    const removeFromBucket = (
+      map: Map<string, GTFSDatabaseRecord[]>,
+      val: string,
+      row: GTFSDatabaseRecord
+    ): void => {
+      const bucket = map.get(val);
+      if (bucket) {
+        const i = bucket.indexOf(row);
+        if (i !== -1) {
+          bucket.splice(i, 1);
+        }
+        if (bucket.length === 0) {
+          map.delete(val);
+        }
+      }
+    };
+
+    // Single-pass: populate byId and all fieldMaps
+    for (const row of flat) {
+      const key = generateCompositeKeyFromRecord(
+        tableName,
+        row as Record<string, unknown>
+      );
+      byId.set(key, row);
+      for (const [field, map] of fieldMaps) {
+        const val = String((row as Record<string, unknown>)[field] ?? '');
+        addToBucket(map, val, row);
+      }
+    }
+
+    this.gtfsDatabase.registerVirtualTable(tableName, {
+      getAll: () => [...flat],
+
+      getById: (key) => byId.get(key),
+
+      query: (filter) => {
+        if (!filter || Object.keys(filter).length === 0) {
+          return [...flat];
+        }
+        // Use a fieldMap if available for the first filter key
+        for (const [k, v] of Object.entries(filter)) {
+          const map = fieldMaps.get(k);
+          if (map) {
+            const results = map.get(String(v)) ?? [];
+            const rest = Object.entries(filter).filter(([kk]) => kk !== k);
+            if (rest.length === 0) {
+              return results;
+            }
+            return results.filter((r) =>
+              rest.every(
+                ([rk, rv]) => (r as Record<string, unknown>)[rk] === rv
+              )
+            );
+          }
+        }
+        // Linear scan fallback (fine for small tables)
+        return flat.filter((r) =>
+          Object.entries(filter).every(
+            ([k, v]) => (r as Record<string, unknown>)[k] === v
+          )
+        );
+      },
+
+      insert: (rows) => {
+        for (const row of rows) {
+          const key = generateCompositeKeyFromRecord(
+            tableName,
+            row as Record<string, unknown>
+          );
+          if (byId.has(key)) {
+            continue;
+          } // guard for PatchManager double-add
+          flat.push(row);
+          byId.set(key, row);
+          for (const [field, map] of fieldMaps) {
+            const val = String((row as Record<string, unknown>)[field] ?? '');
+            addToBucket(map, val, row);
+          }
+        }
+        this.invalidateBlobForTable(tableName);
+      },
+
+      update: (key, delta) => {
+        const row = byId.get(key);
+        if (!row) {
+          return;
+        }
+        // Remove from old fieldMap buckets for any changed fields
+        for (const [field, map] of fieldMaps) {
+          if ((delta as Record<string, unknown>)[field] !== undefined) {
+            const oldVal = String(
+              (row as Record<string, unknown>)[field] ?? ''
+            );
+            removeFromBucket(map, oldVal, row);
+          }
+        }
+        Object.assign(row, delta);
+        // Re-add to fieldMap buckets and update byId key if it changed
+        for (const [field, map] of fieldMaps) {
+          if ((delta as Record<string, unknown>)[field] !== undefined) {
+            const newVal = String(
+              (row as Record<string, unknown>)[field] ?? ''
+            );
+            addToBucket(map, newVal, row);
+          }
+        }
+        const newKey = generateCompositeKeyFromRecord(
+          tableName,
+          row as Record<string, unknown>
+        );
+        if (newKey !== key) {
+          byId.delete(key);
+          byId.set(newKey, row);
+        }
+        this.invalidateBlobForTable(tableName);
+      },
+
+      delete: (key) => {
+        const row = byId.get(key);
+        if (!row) {
+          return;
+        } // already removed by PatchManager
+        byId.delete(key);
+        const i = flat.indexOf(row);
+        if (i !== -1) {
+          flat.splice(i, 1);
+        }
+        for (const [field, map] of fieldMaps) {
+          const val = String((row as Record<string, unknown>)[field] ?? '');
+          removeFromBucket(map, val, row);
+        }
+        this.invalidateBlobForTable(tableName);
+      },
+
+      replace: (oldKeys, newRows) => {
+        for (const k of oldKeys) {
+          const row = byId.get(k);
+          if (!row) {
+            continue;
+          }
+          byId.delete(k);
+          const i = flat.indexOf(row);
+          if (i !== -1) {
+            flat.splice(i, 1);
+          }
+          for (const [field, map] of fieldMaps) {
+            const val = String((row as Record<string, unknown>)[field] ?? '');
+            removeFromBucket(map, val, row);
+          }
+        }
+        for (const row of newRows) {
+          const key = generateCompositeKeyFromRecord(
+            tableName,
+            row as Record<string, unknown>
+          );
+          if (byId.has(key)) {
+            continue;
+          }
+          flat.push(row);
+          byId.set(key, row);
+          for (const [field, map] of fieldMaps) {
+            const val = String((row as Record<string, unknown>)[field] ?? '');
+            addToBucket(map, val, row);
+          }
+        }
+        this.invalidateBlobForTable(tableName);
+      },
+
+      clear: () => {
+        flat.length = 0;
+        byId.clear();
+        for (const [, map] of fieldMaps) {
+          map.clear();
+        }
+        this.invalidateBlobForTable(tableName);
+      },
+    });
+  }
+
+  /**
+   * Set up fieldMaps for tables that need indexed queries, then call buildAndRegisterVirtual.
+   * For stop_times, the stop_id Map is kept as a class field for synchronous lookups.
+   */
+  private setupVirtual(tableName: string, data: GTFSDatabaseRecord[]): void {
+    const fieldMaps = new Map<string, Map<string, GTFSDatabaseRecord[]>>();
+
+    if (tableName === 'stop_times') {
+      this.stopTimesByStopId.clear();
+      fieldMaps.set('trip_id', new Map());
+      fieldMaps.set('stop_id', this.stopTimesByStopId);
+    } else if (tableName === 'trips') {
+      fieldMaps.set('route_id', new Map());
+      fieldMaps.set('service_id', new Map());
+    }
+
+    this.buildAndRegisterVirtual(tableName, data, fieldMaps);
+  }
+
+  /** Mark a table's blob as needing re-persistence and schedule a debounced flush. */
+  invalidateBlobForTable(tableName: string): void {
+    this.blobDirty.add(tableName);
+    if (this.blobPersistTimer) {
+      clearTimeout(this.blobPersistTimer);
+    }
+    this.blobPersistTimer = setTimeout(() => {
+      this.blobPersistTimer = null;
+      void this.persistDirtyBlobs();
+    }, 3000);
+  }
+
+  /** Flush all dirty blobs to IDB immediately. Called before export and on demand. */
+  async persistDirtyBlobs(): Promise<void> {
+    if (this.blobPersistTimer) {
+      clearTimeout(this.blobPersistTimer);
+      this.blobPersistTimer = null;
+    }
+    for (const tableName of this.blobDirty) {
+      const fileName = `${tableName}.txt`;
+      const rows = this.gtfsData[fileName]?.data ?? [];
+      if (rows.length === 0) {
+        continue;
+      }
+      const csv = this.generateCSVFromRows(fileName, rows);
+      await this.gtfsDatabase.saveTableBlob(tableName, csv);
+    }
+    this.blobDirty.clear();
+  }
+
+  /** Generate CSV text from an in-memory row array. */
+  private generateCSVFromRows(
+    fileName: string,
+    rows: GTFSDatabaseRecord[]
+  ): string {
+    if (rows.length === 0) {
+      return makeHeaderOnlyCSV(fileName);
+    }
+    const headers = Object.keys(rows[0]);
+    return [
+      headers.join(','),
+      ...rows.map((row) =>
+        headers.map((h) => this.formatFieldForExport(h, row[h])).join(',')
+      ),
+    ].join('\n');
+  }
+
+  /** Fast stop_times lookup by stop_id via in-memory index (used by synchronous getRoutesForStop). */
+  getStopTimesByStopId(stop_id: string): StopTimes[] {
+    const indexed = this.stopTimesByStopId.get(stop_id);
+    if (indexed) {
+      return indexed;
+    }
+    // eslint-disable-next-line no-console
+    console.warn(
+      '[GTFSParser] getStopTimesByStopId: index miss, falling back to linear scan'
+    );
+    return this.getFileDataSyncTyped(GTFS_TABLES.STOP_TIMES).filter(
+      (st) => st.stop_id === stop_id
+    );
+  }
+
   async initialize(): Promise<void> {
     await this.gtfsDatabase.initialize();
 
-    // Invariant: all 31 GTFS files are always in gtfsData from this point forward.
+    // Invariant: all GTFS files are always in gtfsData from this point forward.
     for (const filename of ALL_GTFS_FILES) {
       this.gtfsData[filename] = {
         content: makeHeaderOnlyCSV(filename),
         data: [],
         errors: [],
       };
+      if (filename.endsWith('.txt')) {
+        const tableName = this.getTableName(filename);
+        this.setupVirtual(tableName, []);
+      }
     }
 
-    // Overlay with real rows from IndexedDB (if any exist).
+    // Overlay with real rows from blobs (if any exist).
     await this.restoreDataFromDatabase();
   }
 
   /**
-   * Restore GTFS data from IndexedDB into memory cache
-   * This is needed when the page is refreshed and we lose the in-memory data
+   * Restore GTFS data from blobs stored in IndexedDB.
+   * All .txt tables are blob-backed; .geojson files fall back to IDB rows.
    */
   async restoreDataFromDatabase(): Promise<void> {
     try {
-      const stats = await this.gtfsDatabase.getDatabaseStats();
-
-      if (!stats?.tables) {
-        console.log(
-          '[GTFSParser] No valid database stats found, keeping header-only baseline'
-        );
-        return;
-      }
-
-      console.log(
-        '[GTFSParser] Restoring data from IndexedDB...',
-        stats.tables
-      );
-
-      // Overlay any tables that have rows on top of the header-only baseline.
-      for (const [tableName, count] of Object.entries(stats.tables)) {
-        if (count === 0) {
-          continue;
-        }
-
-        const fileName = tableName.endsWith('.txt')
-          ? tableName
-          : `${tableName}.txt`;
-
+      for (const filename of ALL_GTFS_FILES) {
+        const tableName = this.getTableName(filename);
         try {
-          const data = await this.gtfsDatabase.getAllRows(tableName);
-
-          if (data && data.length > 0) {
-            const headers = Object.keys(data[0]);
-            const csvContent = [
-              headers.join(','),
-              ...data.map((row: GTFSDatabaseRecord) =>
-                headers.map((header) => row[header] || '').join(',')
-              ),
-            ].join('\n');
-
-            this.gtfsData[fileName] = {
-              content: csvContent,
-              data: data,
-              errors: [],
+          if (filename.endsWith('.txt')) {
+            const csv = await this.gtfsDatabase.getTableBlob(tableName);
+            if (!csv) {
+              continue;
+            }
+            const parsed = Papa.parse(csv, {
+              header: true,
+              skipEmptyLines: true,
+            });
+            const data = this.processParsedData(
+              parsed.data as Record<string, unknown>[]
+            );
+            this.gtfsData[filename] = {
+              content: '',
+              data,
+              errors: parsed.errors,
             };
+            this.setupVirtual(tableName, data);
+            // eslint-disable-next-line no-console
+            console.log(
+              `[GTFSParser] Restored ${tableName} from blob: ${data.length} rows`
+            );
+          } else if (filename.endsWith('.geojson')) {
+            const rows = await this.gtfsDatabase.getAllRows(tableName);
+            if (rows.length > 0) {
+              this.gtfsData[filename] = { content: '', data: rows, errors: [] };
+            }
           }
-        } catch (tableError) {
-          console.warn(
-            `[GTFSParser] Failed to restore table ${tableName}:`,
-            tableError
-          );
+        } catch (err) {
+          // eslint-disable-next-line no-console
+          console.warn(`[GTFSParser] Failed to restore ${tableName}:`, err);
         }
       }
-
-      console.log(
-        '[GTFSParser] Data restored from IndexedDB:',
-        Object.keys(this.gtfsData)
-      );
     } catch (error) {
-      console.error(
-        '[GTFSParser] Failed to restore data from IndexedDB:',
-        error
-      );
+      // eslint-disable-next-line no-console
+      console.error('[GTFSParser] Failed to restore data:', error);
     }
   }
 
   async initializeEmpty(): Promise<void> {
-    // Clear existing data from database
     await this.gtfsDatabase.clearDatabase();
+    this.gtfsDatabase.clearVirtualTables();
 
     for (const filename of ALL_GTFS_FILES) {
       const content = makeHeaderOnlyCSV(filename);
       this.gtfsData[filename] = { content, data: [], errors: [] };
+      if (filename.endsWith('.txt')) {
+        this.setupVirtual(this.getTableName(filename), []);
+      }
     }
   }
 
@@ -228,6 +515,8 @@ export class GTFSParser {
     try {
       // eslint-disable-next-line no-console
       console.log('Loading GTFS file:', (file as File).name || 'blob');
+      // eslint-disable-next-line no-console
+      console.time('[GTFS] parseFile total');
 
       // Start loading indicator
       loadingStateManager.startLoading(operation, 'Loading GTFS file...');
@@ -238,15 +527,24 @@ export class GTFSParser {
         10,
         'Clearing existing data...'
       );
+      // eslint-disable-next-line no-console
+      console.time('[GTFS] clearDatabase');
       await this.gtfsDatabase.clearDatabase();
+      this.gtfsDatabase.clearVirtualTables();
+      // eslint-disable-next-line no-console
+      console.timeEnd('[GTFS] clearDatabase');
 
       loadingStateManager.updateProgress(
         operation,
         20,
         'Extracting ZIP file...'
       );
+      // eslint-disable-next-line no-console
+      console.time('[GTFS] zip extraction');
       const zip = new JSZip();
       const zipContent = await zip.loadAsync(file);
+      // eslint-disable-next-line no-console
+      console.timeEnd('[GTFS] zip extraction');
 
       // Parse all text files in the ZIP
       const files = Object.keys(zipContent.files).filter(
@@ -254,10 +552,16 @@ export class GTFSParser {
       );
 
       this.gtfsData = {};
+      const unknownFiles: string[] = [];
       const totalFiles = files.length;
 
       for (let i = 0; i < files.length; i++) {
         const fileName = files[i];
+
+        if (!isSupportedFile(fileName)) {
+          unknownFiles.push(fileName);
+          continue;
+        }
         const progress = 20 + 60 * (i / totalFiles); // 20-80% for file processing
 
         loadingStateManager.updateProgress(
@@ -265,6 +569,8 @@ export class GTFSParser {
           progress,
           `Processing ${fileName}...`
         );
+        // eslint-disable-next-line no-console
+        console.time(`[GTFS] file: ${fileName}`);
         const fileContent = await zipContent.files[fileName].async('text');
 
         if (fileName.endsWith('.txt')) {
@@ -279,38 +585,48 @@ export class GTFSParser {
             parsed.data as Record<string, unknown>[]
           );
 
-          // Store in memory for compatibility
+          // Store rows in memory; content is generated on demand by getFileContent.
           this.gtfsData[fileName] = {
-            content: fileContent,
+            content: '',
             data: processedData,
             errors: parsed.errors,
           };
 
-          // Store in IndexedDB
           const tableName = this.getTableName(fileName);
+
+          // All .txt tables: store as CSV blob + register virtual handler
+          loadingStateManager.updateProgress(
+            operation,
+            progress + 5,
+            `Registering ${fileName} (${processedData.length} records)...`
+          );
           if (processedData.length > 0) {
-            loadingStateManager.updateProgress(
-              operation,
-              progress + 5,
-              `Storing ${fileName} (${processedData.length} records)...`
-            );
-            await this.gtfsDatabase.insertRows(tableName, processedData);
+            await this.gtfsDatabase.saveTableBlob(tableName, fileContent);
           }
+          this.setupVirtual(tableName, processedData);
         } else if (fileName.endsWith('.geojson')) {
           // Handle GeoJSON files
+          const geoJsonData = JSON.parse(fileContent);
           this.gtfsData[fileName] = {
             content: fileContent,
-            data: JSON.parse(fileContent),
+            data: geoJsonData,
             errors: [],
           };
 
           // Store GeoJSON in IndexedDB as well
           const tableName = this.getTableName(fileName);
-          const geoJsonData = JSON.parse(fileContent);
           await this.gtfsDatabase.insertRows(tableName, [
             geoJsonData as GTFSDatabaseRecord,
           ]);
         }
+        // eslint-disable-next-line no-console
+        console.timeEnd(`[GTFS] file: ${fileName}`);
+      }
+
+      if (unknownFiles.length > 0) {
+        loadingStateManager.showWarning(
+          `Ignoring unknown files: ${unknownFiles.join(', ')}`
+        );
       }
 
       // Ensure all 31 GTFS files are registered — fill in header-only for those not in the ZIP.
@@ -333,6 +649,8 @@ export class GTFSParser {
 
       // eslint-disable-next-line no-console
       console.log('Loaded GTFS data to IndexedDB and memory:', this.gtfsData);
+      // eslint-disable-next-line no-console
+      console.timeEnd('[GTFS] parseFile total');
       return this.gtfsData;
     } catch (error) {
       // eslint-disable-next-line no-console
@@ -347,32 +665,6 @@ export class GTFSParser {
 
   private getTableName(fileName: string): string {
     return fileName.replace('.txt', '').replace('.geojson', '');
-  }
-
-  // Type-safe helper to get table name as GTFSTableName
-  private getTypedTableName(fileName: string): GTFSTableName | null {
-    const tableName = this.getTableName(fileName);
-    // Check if the table name is a valid GTFS entity type
-    if (tableName in ({} as GTFSTableMap)) {
-      return tableName as GTFSTableName;
-    }
-    return null;
-  }
-
-  // Type-safe parsing method that returns properly typed entities
-  private parseCSVWithType<T extends keyof GTFSTableMap>(
-    content: string,
-    _tableName: T
-  ): { data: GTFSTableMap[T][]; errors: Papa.ParseError[] } {
-    const parsed = Papa.parse(content, {
-      header: true,
-      skipEmptyLines: true,
-    });
-
-    return {
-      data: parsed.data as GTFSTableMap[T][],
-      errors: parsed.errors,
-    };
   }
 
   async parseFromURL(url: string): Promise<void> {
@@ -414,20 +706,15 @@ export class GTFSParser {
           header: true,
           skipEmptyLines: true,
         });
-        this.gtfsData[fileName].data = parsed.data;
+        const rows = this.processParsedData(
+          parsed.data as Record<string, unknown>[]
+        );
+        this.gtfsData[fileName].data = rows;
         this.gtfsData[fileName].errors = parsed.errors;
 
-        // Update IndexedDB with new data
         const tableName = this.getTableName(fileName);
-
-        // Clear existing rows for this table
-        await this.gtfsDatabase.clearTable(tableName);
-
-        // Insert new rows
-        const rows = parsed.data as GTFSDatabaseRecord[];
-        if (rows.length > 0) {
-          await this.gtfsDatabase.insertRows(tableName, rows);
-        }
+        this.setupVirtual(tableName, rows);
+        this.invalidateBlobForTable(tableName);
       } else if (fileName.endsWith('.geojson')) {
         // Handle GeoJSON updates
         this.gtfsData[fileName].data = JSON.parse(content);
@@ -445,7 +732,23 @@ export class GTFSParser {
   }
 
   getFileContent(fileName: string): string {
-    return this.gtfsData[fileName]?.content || '';
+    const fileData = this.gtfsData[fileName];
+    if (!fileData) {
+      return '';
+    }
+
+    // Return cached content if present
+    if (fileData.content) {
+      return fileData.content;
+    }
+
+    // Generate CSV from in-memory rows and cache it
+    if (fileData.data.length > 0) {
+      fileData.content = this.generateCSVFromRows(fileName, fileData.data);
+      return fileData.content;
+    }
+
+    return fileData.content; // header-only CSV set by initialize()
   }
 
   // Method expected by Editor interface
@@ -459,8 +762,14 @@ export class GTFSParser {
           header: true,
           skipEmptyLines: true,
         });
-        this.gtfsData[fileName].data = parsed.data;
+        const data = this.processParsedData(
+          parsed.data as Record<string, unknown>[]
+        );
+        this.gtfsData[fileName].data = data;
         this.gtfsData[fileName].errors = parsed.errors;
+        const tableName = this.getTableName(fileName);
+        this.setupVirtual(tableName, data);
+        this.invalidateBlobForTable(tableName);
       }
     }
   }
@@ -511,6 +820,12 @@ export class GTFSParser {
       this.gtfsData[fileName] = { content: '', data: [], errors: [] };
     }
     this.gtfsData[fileName].data = data;
+    this.gtfsData[fileName].content = '';
+    const tableName = this.getTableName(fileName);
+    if (fileName.endsWith('.txt')) {
+      this.setupVirtual(tableName, data);
+      this.invalidateBlobForTable(tableName);
+    }
   }
 
   // Type-safe synchronous file data retrieval
@@ -580,6 +895,9 @@ export class GTFSParser {
 
   async exportAsZip() {
     try {
+      // Ensure any pending blob edits are written before export
+      await this.persistDirtyBlobs();
+
       // Get all available files from memory (for file list)
       const fileNames = Object.keys(this.gtfsData);
 
@@ -607,21 +925,11 @@ export class GTFSParser {
           }
 
           if (rows.length > 0) {
-            // Generate CSV content from IndexedDB data
+            // Generate CSV content from in-memory/virtual-table data
             let csvContent = '';
 
             if (fileName.endsWith('.txt')) {
-              const headers = Object.keys(rows[0]);
-              csvContent = [
-                headers.join(','),
-                ...rows.map((row) =>
-                  headers
-                    .map((header) =>
-                      this.formatFieldForExport(header, row[header])
-                    )
-                    .join(',')
-                ),
-              ].join('\n');
+              csvContent = this.generateCSVFromRows(fileName, rows);
             } else if (fileName.endsWith('.geojson')) {
               // For GeoJSON, use the stored data directly
               csvContent = JSON.stringify(rows[0], null, 2);
@@ -629,21 +937,21 @@ export class GTFSParser {
 
             zip.file(fileName, csvContent);
           } else {
-            // Fallback to memory content if IndexedDB is empty but memory has rows
+            // Fallback: IDB empty but memory has rows — generate CSV from data
             // eslint-disable-next-line no-console
             console.warn(
-              `No data in IndexedDB for ${fileName}, using memory content`
+              `No data in IndexedDB for ${fileName}, generating from memory`
             );
-            zip.file(fileName, this.gtfsData[fileName].content);
+            zip.file(fileName, this.getFileContent(fileName));
           }
         } catch (dbError) {
-          // Fallback to memory content if IndexedDB fails
+          // Fallback to in-memory data if IndexedDB fails
           // eslint-disable-next-line no-console
           console.warn(
-            `IndexedDB error for ${fileName}, using memory content:`,
+            `IndexedDB error for ${fileName}, generating from memory:`,
             dbError
           );
-          zip.file(fileName, this.gtfsData[fileName].content);
+          zip.file(fileName, this.getFileContent(fileName));
         }
       }
 
@@ -658,16 +966,18 @@ export class GTFSParser {
   getRoutesForStop(stop_id: string) {
     const routes = this.getFileDataSyncTyped(GTFS_TABLES.ROUTES);
     const trips = this.getFileDataSyncTyped(GTFS_TABLES.TRIPS);
-    const stopTimes = this.getFileDataSyncTyped(GTFS_TABLES.STOP_TIMES);
 
-    if (routes.length === 0 || trips.length === 0 || stopTimes.length === 0) {
+    if (routes.length === 0 || trips.length === 0) {
       return [];
     }
 
-    // Find trips that serve this stop
-    const tripsAtStop = stopTimes
-      .filter((st) => st.stop_id === stop_id)
-      .map((st) => st.trip_id);
+    // Find trips that serve this stop (use in-memory index when available)
+    const tripsAtStop = this.getStopTimesByStopId(stop_id).map(
+      (st) => st.trip_id
+    );
+    if (tripsAtStop.length === 0) {
+      return [];
+    }
 
     // Find routes for those trips
     const route_ids = [
@@ -827,16 +1137,15 @@ export class GTFSParser {
   async getRoutesForStopAsync(stop_id: string) {
     const routes = await this.getFileDataTyped(GTFS_TABLES.ROUTES);
     const trips = await this.getFileDataTyped(GTFS_TABLES.TRIPS);
-    const stopTimes = await this.getFileDataTyped(GTFS_TABLES.STOP_TIMES);
 
-    if (!routes || !trips || !stopTimes) {
+    if (!routes || !trips) {
       return [];
     }
 
-    // Find trips that serve this stop
-    const tripsAtStop = stopTimes
-      .filter((st) => st.stop_id === stop_id)
-      .map((st) => st.trip_id);
+    // Find trips that serve this stop (uses in-memory index)
+    const tripsAtStop = this.getStopTimesByStopId(stop_id).map(
+      (st) => st.trip_id
+    );
 
     // Find routes for those trips
     const route_ids = [
@@ -873,10 +1182,7 @@ export class GTFSParser {
       };
     }
 
-    // Add stop to in-memory data
-    this.gtfsData[fileName].data.push(stop);
-
-    // Insert into database
+    // Insert into database (virtual table handler keeps in-memory flat array in sync)
     await this.gtfsDatabase.insertRows(tableName, [stop]);
 
     // Record patch
@@ -933,16 +1239,11 @@ export class GTFSParser {
           unknown
         >;
 
-        // Update coordinates in memory
-        stopsData.data[stopIndex].stop_lat = lat.toString();
-        stopsData.data[stopIndex].stop_lon = lng.toString();
-
-        // Update in database
-        const updateData = {
+        // Update in database (virtual table handler mutates the in-memory row in-place)
+        await this.gtfsDatabase.updateRow(tableName, stopId, {
           stop_lat: lat.toString(),
           stop_lon: lng.toString(),
-        };
-        await this.gtfsDatabase.updateRow(tableName, stopId, updateData);
+        });
 
         // Record patch
         const afterRow = { ...stopsData.data[stopIndex] } as Record<
