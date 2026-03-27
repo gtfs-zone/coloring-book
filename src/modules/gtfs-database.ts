@@ -133,22 +133,9 @@ export interface VirtualTableHandlers {
 
 export class GTFSDatabase {
   private db: IDBPDatabase<GTFSDBSchema> | null = null;
-  private fallbackDB: {
-    initialize(): Promise<void>;
-    insertRows(tableName: string, rows: GTFSDatabaseRecord[]): Promise<void>;
-    getAllRows(tableName: string): Promise<GTFSDatabaseRecord[]>;
-    getDatabaseStats(): Promise<{
-      tables: Record<string, number>;
-      size: number;
-    }>;
-    clearTable(tableName: string): Promise<void>;
-    clearDatabase(): Promise<void>;
-    compactDatabase(): Promise<void>;
-  } | null = null;
   private readonly dbName = CONFIG.DB_NAME;
-  // Fixed schema version — never increment. App-version modal handles data continuity.
+  // Fixed schema version — bump only for schema changes; pre-upgrade modal handles export.
   private readonly dbVersion = 8;
-  private isUsingFallback = false;
   /** Virtual table registry — large tables that bypass per-row IDB storage. */
   private virtualTables = new Map<string, VirtualTableHandlers>();
 
@@ -174,11 +161,12 @@ export class GTFSDatabase {
       const capabilities = await databaseFallbackManager.detectCapabilities();
 
       if (!capabilities.indexedDB) {
-        // eslint-disable-next-line no-console
-        console.warn('IndexedDB not supported, using fallback storage');
-        this.fallbackDB = databaseFallbackManager.createFallbackDatabase();
-        this.isUsingFallback = true;
-        await this.fallbackDB.initialize();
+        databaseFallbackManager.showDatabaseError(
+          new Error(
+            'IndexedDB is not supported in this browser. GTFS.zone requires IndexedDB to function.'
+          ),
+          'initialization'
+        );
         return;
       }
 
@@ -250,7 +238,8 @@ export class GTFSDatabase {
         blocked: () => {
           databaseFallbackManager.showDatabaseError(
             new Error('Database blocked by another tab'),
-            'initialization'
+            'initialization',
+            () => this.exportCurrentBlobsAsZip()
           );
         },
       });
@@ -261,17 +250,9 @@ export class GTFSDatabase {
       // eslint-disable-next-line no-console
       console.error('Failed to initialize GTFSDatabase:', error);
 
-      // Handle different types of errors
-      if (error.name === 'VersionError' || error.name === 'InvalidStateError') {
-        databaseFallbackManager.showDatabaseError(error, 'initialization');
-      } else {
-        // Fall back to memory storage
-        // eslint-disable-next-line no-console
-        console.warn('Falling back to memory storage due to IndexedDB error');
-        this.fallbackDB = databaseFallbackManager.createFallbackDatabase();
-        this.isUsingFallback = true;
-        await this.fallbackDB.initialize();
-      }
+      databaseFallbackManager.showDatabaseError(error, 'initialization', () =>
+        this.exportCurrentBlobsAsZip()
+      );
     }
   }
 
@@ -311,13 +292,6 @@ export class GTFSDatabase {
       console.error('Record:', record);
       throw error;
     }
-  }
-
-  /**
-   * Check if using fallback mode
-   */
-  isInFallbackMode(): boolean {
-    return this.isUsingFallback;
   }
 
   /**
@@ -601,10 +575,6 @@ export class GTFSDatabase {
       vt.insert(rows);
       return;
     }
-    if (this.isUsingFallback) {
-      return await this.fallbackDB.insertRows(tableName, rows);
-    }
-
     if (!this.db) {
       throw new Error('Database not initialized');
     }
@@ -676,14 +646,6 @@ export class GTFSDatabase {
       vt.replace(oldKeys, newRows);
       return;
     }
-    if (this.isUsingFallback) {
-      // Fallback: delete and insert separately
-      for (const key of oldKeys) {
-        await this.fallbackDB.deleteRow(tableName, key);
-      }
-      return await this.fallbackDB.insertRows(tableName, newRows);
-    }
-
     if (!this.db) {
       throw new Error('Database not initialized');
     }
@@ -818,10 +780,6 @@ export class GTFSDatabase {
     if (vt) {
       return vt.getAll();
     }
-    if (this.isUsingFallback) {
-      return await this.fallbackDB.getAllRows(tableName);
-    }
-
     if (!this.db) {
       throw new Error('Database not initialized');
     }
