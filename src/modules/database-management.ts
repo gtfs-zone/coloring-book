@@ -174,10 +174,8 @@ export class DatabaseManagement {
       const databaseSizeEl = document.getElementById('database-size');
 
       if (storageModeEl) {
-        storageModeEl.textContent = this.database.isInFallbackMode()
-          ? 'Memory'
-          : 'IndexedDB';
-        storageModeEl.className = `stat-value text-sm ${this.database.isInFallbackMode() ? 'text-warning' : 'text-success'}`;
+        storageModeEl.textContent = 'IndexedDB';
+        storageModeEl.className = 'stat-value text-sm text-success';
       }
 
       if (totalRecordsEl) {
@@ -618,7 +616,7 @@ export class DatabaseManagement {
    * Reset the entire database
    */
   private resetDatabase(): void {
-    databaseFallbackManager['showDatabaseResetDialog']();
+    databaseFallbackManager.showDatabaseResetDialog();
   }
 
   /**
