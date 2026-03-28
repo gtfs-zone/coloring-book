@@ -16,13 +16,7 @@ import {
   GTFSState,
 } from '../types/patch.js';
 import { CONFIG } from '../config.js';
-import {
-  getNaturalKeyField,
-  isNaturalKey,
-  isCompositeKey,
-  parseCompositeKey,
-  getGTFSPrimaryKey,
-} from '../utils/gtfs-primary-keys.js';
+import { getGTFSPrimaryKey } from '../utils/gtfs-primary-keys.js';
 
 type PatchEventType = 'undo' | 'redo' | 'change' | 'jump';
 type PatchEventListener = (record?: PatchRecord) => void;
@@ -67,31 +61,15 @@ export class PatchManager {
       }
     }
 
-    // Replay patches only up to currentVersion (handles mid-undo refresh)
+    // Replay patches only up to currentVersion (handles mid-undo refresh).
+    //
+    // No pre-clearing needed: the blob loaded by GTFSParser.initialize() already
+    // reflects the correct current state (original feed + all applied patches).
+    // applyPatchForward routes inserts through vt.insert, which has a byId
+    // deduplication guard — so replaying an insert patch whose row is already
+    // present in the blob is a safe no-op. Delete patches are also safe: vt.delete
+    // returns early if the row is not found in byId.
     const patches = await this.db.getPatchesAfter(snapshot?.version ?? 0);
-
-    // Without a snapshot, blob-backed tables (stops, trips, routes, etc.) are
-    // already restored from their CSV blobs by GTFSParser.initialize(). Replaying
-    // insert patches on top of that data would double-insert, so we clear those
-    // tables first. Update and delete patches are idempotent on blob-loaded data
-    // and must NOT trigger a clear — clearing would destroy the blob-loaded rows
-    // and leave the table empty after replay (update has nothing to match against).
-    if (!snapshot && patches.length > 0) {
-      const tablesToClear = new Set(
-        patches
-          .filter(
-            (r) =>
-              (r.version ?? 0) <= this.currentVersion && r.patch.op !== 'update'
-          )
-          .map((r) => r.patch.source.table)
-      );
-      for (const table of tablesToClear) {
-        if (getGTFSPrimaryKey(table)) {
-          await this.db.clearTable(table);
-          this.parser.setInMemoryFileData(`${table}.txt`, []);
-        }
-      }
-    }
 
     for (const record of patches) {
       if (record.version! > this.currentVersion) {
@@ -101,37 +79,25 @@ export class PatchManager {
     }
   }
 
-  /** Apply a patch in the forward direction (mutates memory + IndexedDB). */
+  /**
+   * Apply a patch in the forward direction (mutates memory + IndexedDB).
+   *
+   * All in-memory state is maintained exclusively via db.* calls, which route
+   * through the virtual table handlers. Do not add direct array mutations here —
+   * the virtual table's flat array IS gtfsData[fileName].data (same reference),
+   * so bypassing the virtual table corrupts the byId index and fieldMaps.
+   */
   async applyPatchForward(patch: GTFSPatch): Promise<void> {
     const { source, forward } = patch;
-    const fileName = `${source.table}.txt`;
-    const data = this.parser.getFileDataSync(fileName);
 
     if (patch.op === 'insert') {
       const record = (forward as { record: Record<string, unknown> })
         .record as GTFSDatabaseRecord;
-      if (data) {
-        data.push(record);
-      }
       await this.db.insertRows(source.table, [record]);
     } else if (patch.op === 'delete') {
-      if (data) {
-        const idx = this.findRecordIndex(data, source.id, source.table);
-        if (idx !== -1) {
-          data.splice(idx, 1);
-        }
-      }
       await this.db.deleteRow(source.table, source.id);
     } else if (patch.op === 'update') {
       const changes = (forward as { changes: Record<string, unknown> }).changes;
-      if (data) {
-        const idx = this.findRecordIndex(data, source.id, source.table);
-        if (idx !== -1) {
-          for (const [field, value] of Object.entries(changes)) {
-            (data[idx] as Record<string, unknown>)[field] = value;
-          }
-        }
-      }
       const delta: Partial<GTFSDatabaseRecord> = {};
       for (const [field, value] of Object.entries(changes)) {
         delta[field] = value as string | number | boolean | undefined;
@@ -140,40 +106,26 @@ export class PatchManager {
     }
   }
 
-  /** Apply a patch in the reverse direction (undo). */
+  /**
+   * Apply a patch in the reverse direction (undo).
+   *
+   * Same invariant as applyPatchForward: all in-memory state goes through db.*
+   * (virtual table handlers). No direct array mutations.
+   */
   async applyPatchInverse(patch: GTFSPatch): Promise<void> {
     const { source, inverse } = patch;
-    const fileName = `${source.table}.txt`;
-    const data = this.parser.getFileDataSync(fileName);
 
     if (patch.op === 'insert') {
       // Inverse of insert → delete by id
-      if (data) {
-        const idx = this.findRecordIndex(data, source.id, source.table);
-        if (idx !== -1) {
-          data.splice(idx, 1);
-        }
-      }
       await this.db.deleteRow(source.table, source.id);
     } else if (patch.op === 'delete') {
       // Inverse of delete → re-insert full record
       const record = (inverse as { record: Record<string, unknown> })
         .record as GTFSDatabaseRecord;
-      if (data) {
-        data.push(record);
-      }
       await this.db.insertRows(source.table, [record]);
     } else if (patch.op === 'update') {
       // Inverse: apply before values
       const changes = (inverse as { changes: Record<string, unknown> }).changes;
-      if (data) {
-        const idx = this.findRecordIndex(data, source.id, source.table);
-        if (idx !== -1) {
-          for (const [field, value] of Object.entries(changes)) {
-            (data[idx] as Record<string, unknown>)[field] = value;
-          }
-        }
-      }
       const delta: Partial<GTFSDatabaseRecord> = {};
       for (const [field, value] of Object.entries(changes)) {
         delta[field] = value as string | number | boolean | undefined;
@@ -374,25 +326,6 @@ export class PatchManager {
 
   private emit(event: PatchEventType, record?: PatchRecord): void {
     this.listeners.get(event)?.forEach((l) => l(record));
-  }
-
-  private findRecordIndex(
-    data: GTFSDatabaseRecord[],
-    id: string,
-    table: string
-  ): number {
-    if (isNaturalKey(table)) {
-      const keyField = getNaturalKeyField(table);
-      if (keyField) {
-        return data.findIndex((r) => String(r[keyField]) === id);
-      }
-    } else if (isCompositeKey(table)) {
-      const keyFields = parseCompositeKey(table, id);
-      return data.findIndex((r) =>
-        Object.entries(keyFields).every(([k, v]) => String(r[k]) === String(v))
-      );
-    }
-    return -1;
   }
 
   private async maybeSnapshot(): Promise<void> {
