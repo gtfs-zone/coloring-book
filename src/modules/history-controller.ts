@@ -34,10 +34,16 @@ function opBadgeClass(op: GTFSPatch['op']): string {
   if (op === 'update') {
     return 'badge-warning';
   }
+  if (op === 'batch') {
+    return 'badge-info';
+  }
   return 'badge-error';
 }
 
 function renderFieldDiffs(patch: GTFSPatch): string {
+  if (patch.op === 'batch') {
+    return `<div class="text-xs mt-0.5">${patch.ops.length} rows updated</div>`;
+  }
   if (patch.op === 'update') {
     const before = (patch.inverse as { changes: Record<string, unknown> })
       .changes;

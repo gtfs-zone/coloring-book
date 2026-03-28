@@ -70,6 +70,15 @@ interface PatchManagerInterface {
     before: Record<string, unknown>,
     after: Record<string, unknown>
   ): Promise<void>;
+  recordBatch(
+    ops: Array<{
+      table: string;
+      id: string;
+      before: Record<string, unknown>;
+      after: Record<string, unknown>;
+    }>,
+    label: string
+  ): Promise<void>;
 }
 
 interface GTFSRelationships {
@@ -1246,6 +1255,111 @@ export class ScheduleController {
     } catch (error) {
       console.error('Failed to add stop to timetable:', error);
       notifications.showError('Failed to add stop to timetable');
+    }
+  }
+
+  /**
+   * Change the stop represented by a timetable row
+   *
+   * Updates the stop_id for every stop_times record in the current direction
+   * that references oldStopId, replacing it with newStopId. Recorded as a single
+   * batch undo/redo entry.
+   *
+   * @param oldStopId - The stop being replaced
+   * @param newStopId - The new stop to assign
+   * @param selectEl - The <select> element (used to reset value on error)
+   */
+  public async changeStopAtRow(
+    oldStopId: string,
+    newStopId: string,
+    selectEl: HTMLSelectElement
+  ): Promise<void> {
+    if (oldStopId === newStopId) {
+      return;
+    }
+
+    if (!this.currentRouteId || !this.currentServiceId) {
+      console.error(
+        '[ScheduleController] changeStopAtRow: no timetable loaded'
+      );
+      selectEl.value = oldStopId;
+      return;
+    }
+
+    if (!this.patchManager) {
+      console.error('[ScheduleController] changeStopAtRow: no patch manager');
+      selectEl.value = oldStopId;
+      return;
+    }
+
+    if (this.currentDirectionId === undefined) {
+      console.error(
+        '[ScheduleController] changeStopAtRow: no direction selected'
+      );
+      selectEl.value = oldStopId;
+      return;
+    }
+
+    try {
+      const data = await this.dataProcessor.generateTimetableData(
+        this.currentRouteId,
+        this.currentServiceId,
+        this.currentDirectionId
+      );
+
+      const ops: Array<{
+        table: string;
+        id: string;
+        before: Record<string, unknown>;
+        after: Record<string, unknown>;
+      }> = [];
+
+      for (const trip of data.trips) {
+        const stopTimes = await this.gtfsParser.gtfsDatabase.queryRows(
+          'stop_times',
+          { trip_id: trip.trip_id, stop_id: oldStopId }
+        );
+
+        for (const record of stopTimes) {
+          const id = generateCompositeKeyFromRecord(
+            'stop_times',
+            record as Record<string, unknown>
+          );
+          ops.push({
+            table: 'stop_times',
+            id,
+            before: { stop_id: oldStopId },
+            after: { stop_id: newStopId },
+          });
+        }
+      }
+
+      if (ops.length === 0) {
+        console.warn(
+          `[ScheduleController] changeStopAtRow: no stop_times found for stop ${oldStopId}`
+        );
+        selectEl.value = oldStopId;
+        return;
+      }
+
+      const [oldStopRows, newStopRows] = await Promise.all([
+        this.gtfsParser.gtfsDatabase.queryRows('stops', { stop_id: oldStopId }),
+        this.gtfsParser.gtfsDatabase.queryRows('stops', { stop_id: newStopId }),
+      ]);
+      const oldName = oldStopRows[0]?.stop_name || oldStopId;
+      const newName = newStopRows[0]?.stop_name || newStopId;
+      const routeLabel =
+        data.route.route_short_name ||
+        data.route.route_long_name ||
+        data.route.route_id;
+      const label = `Changed stop "${oldName}" → "${newName}" (Route ${routeLabel}, Direction ${this.currentDirectionId})`;
+
+      await this.patchManager.recordBatch(ops, label);
+
+      await this.refreshCurrentTimetable();
+    } catch (error) {
+      console.error('[ScheduleController] changeStopAtRow failed:', error);
+      selectEl.value = oldStopId;
     }
   }
 

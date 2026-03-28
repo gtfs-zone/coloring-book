@@ -11,12 +11,22 @@ export type PatchData =
   | { id: string }; // key-only (insert inverse / delete forward)
 
 /** A single semantic change to one GTFS record. */
-export interface GTFSPatch {
+export interface SingleGTFSPatch {
   op: PatchOp;
   source: { table: string; id: string; col?: string };
   forward: PatchData;
   inverse: PatchData;
 }
+
+/** A batch of single-record updates recorded as one undo/redo step. */
+export interface BatchGTFSPatch {
+  op: 'batch';
+  ops: SingleGTFSPatch[];
+  label?: string;
+}
+
+/** A patch is either a single-record operation or a batch of them. */
+export type GTFSPatch = SingleGTFSPatch | BatchGTFSPatch;
 
 /** Persisted patch entry in IndexedDB (version is the autoIncrement key). */
 export interface PatchRecord {
