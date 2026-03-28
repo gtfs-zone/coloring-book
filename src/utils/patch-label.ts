@@ -4,6 +4,9 @@ export function humanLabel(patch: GTFSPatch | undefined): string {
   if (!patch) {
     return 'Unknown change';
   }
+  if (patch.op === 'batch') {
+    return patch.label ?? `Batch update (${patch.ops.length} rows)`;
+  }
   const { op, source } = patch;
   if (op === 'update') {
     const fields =

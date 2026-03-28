@@ -70,6 +70,15 @@ interface PatchManagerInterface {
     before: Record<string, unknown>,
     after: Record<string, unknown>
   ): Promise<void>;
+  recordBatch(
+    ops: Array<{
+      table: string;
+      id: string;
+      before: Record<string, unknown>;
+      after: Record<string, unknown>;
+    }>,
+    label: string
+  ): Promise<void>;
 }
 
 interface GTFSRelationships {
@@ -211,17 +220,23 @@ export class ScheduleController {
   public async updateLinkedTime(
     trip_id: string,
     stop_id: string,
-    newTime: string
+    newTime: string,
+    supersequencePosition?: string,
+    stopSequence?: string
   ): Promise<void> {
     try {
+      const positionSelector = supersequencePosition
+        ? `[data-supersequence-position="${supersequencePosition}"]`
+        : '';
+
       // Handle empty input (clear both times)
       if (!newTime.trim()) {
         await this.database.updateLinkedTimes(trip_id, stop_id, null);
         console.log(`Cleared both times for ${trip_id}/${stop_id}`);
 
-        // Update input value immediately
+        // Update input value immediately — use supersequencePosition to target the correct row
         const input = document.querySelector(
-          `input[data-trip-id="${trip_id}"][data-stop-id="${stop_id}"][data-time-type="linked"]`
+          `input[data-trip-id="${trip_id}"][data-stop-id="${stop_id}"][data-time-type="linked"]${positionSelector}`
         ) as HTMLInputElement;
         if (input) {
           input.value = '';
@@ -236,8 +251,12 @@ export class ScheduleController {
       // Cast time to HH:MM:SS format
       const castedTime = TimeFormatter.castTimeToHHMMSS(newTime);
 
-      // Capture before-state (virtual table returns copies, so beforeRow is a stable snapshot).
-      const beforeRow = await this.database.getStopTime(trip_id, stop_id);
+      // Capture before-state using stop_sequence for unambiguous lookup on loop routes
+      const beforeRow = await this.database.getStopTime(
+        trip_id,
+        stop_id,
+        stopSequence
+      );
       const beforeArrivalTime = beforeRow?.arrival_time;
       const beforeDepartureTime = beforeRow?.departure_time;
 
@@ -251,9 +270,9 @@ export class ScheduleController {
       // Clear pending stop if this was the first time entered
       this.clearPendingStopIfMatches(stop_id);
 
-      // Update input value immediately
+      // Update input value immediately — use supersequencePosition to target the correct row
       const input = document.querySelector(
-        `input[data-trip-id="${trip_id}"][data-stop-id="${stop_id}"][data-time-type="linked"]`
+        `input[data-trip-id="${trip_id}"][data-stop-id="${stop_id}"][data-time-type="linked"]${positionSelector}`
       ) as HTMLInputElement;
       if (input) {
         input.value = TimeFormatter.formatTimeWithSeconds(castedTime);
@@ -263,8 +282,18 @@ export class ScheduleController {
       await this.database.rebuildStopTimesFromTable(trip_id);
       await this.refreshCurrentTimetable();
 
-      // Record patch using post-rebuild key so undo finds the correct row
-      const afterStopTime = await this.database.getStopTime(trip_id, stop_id);
+      // Record patch: after re-render, find the same logical row to get the new stop_sequence
+      const afterInput = supersequencePosition
+        ? (document.querySelector(
+            `input[data-trip-id="${trip_id}"][data-supersequence-position="${supersequencePosition}"][data-time-type="linked"]`
+          ) as HTMLInputElement | null)
+        : null;
+      const afterStopSequence = afterInput?.dataset.stopSequence;
+      const afterStopTime = await this.database.getStopTime(
+        trip_id,
+        stop_id,
+        afterStopSequence
+      );
       if (beforeRow && afterStopTime && this.patchManager) {
         const afterKey = generateCompositeKeyFromRecord(
           'stop_times',
@@ -307,9 +336,15 @@ export class ScheduleController {
     trip_id: string,
     stop_id: string,
     timeType: 'arrival' | 'departure',
-    newTime: string
+    newTime: string,
+    supersequencePosition?: string,
+    stopSequence?: string
   ): Promise<void> {
     try {
+      const positionSelector = supersequencePosition
+        ? `[data-supersequence-position="${supersequencePosition}"]`
+        : '';
+
       // Handle empty input (skip/clear time)
       if (!newTime.trim()) {
         await this.database.updateStopTimeInDatabase(
@@ -346,8 +381,12 @@ export class ScheduleController {
         return;
       }
 
-      // Capture before-state (virtual table returns copies, so beforeRow is a stable snapshot).
-      const beforeRow = await this.database.getStopTime(trip_id, stop_id);
+      // Capture before-state using stop_sequence for unambiguous lookup on loop routes
+      const beforeRow = await this.database.getStopTime(
+        trip_id,
+        stop_id,
+        stopSequence
+      );
       const field = timeType === 'arrival' ? 'arrival_time' : 'departure_time';
       const beforeFieldValue = (beforeRow as Record<string, unknown> | null)?.[
         field
@@ -368,9 +407,9 @@ export class ScheduleController {
       // Clear pending stop if this was the first time entered
       this.clearPendingStopIfMatches(stop_id);
 
-      // Update input value immediately
+      // Update input value immediately — use supersequencePosition to target the correct row
       const input = document.querySelector(
-        `input[data-trip-id="${trip_id}"][data-stop-id="${stop_id}"][data-time-type="${timeType}"]`
+        `input[data-trip-id="${trip_id}"][data-stop-id="${stop_id}"][data-time-type="${timeType}"]${positionSelector}`
       ) as HTMLInputElement;
       if (input) {
         input.value = castedTime
@@ -382,8 +421,18 @@ export class ScheduleController {
       await this.database.rebuildStopTimesFromTable(trip_id);
       await this.refreshCurrentTimetable();
 
-      // Record patch using post-rebuild key so undo finds the correct row
-      const afterStopTime = await this.database.getStopTime(trip_id, stop_id);
+      // Record patch: after re-render, find the same logical row to get the new stop_sequence
+      const afterInput = supersequencePosition
+        ? (document.querySelector(
+            `input[data-trip-id="${trip_id}"][data-supersequence-position="${supersequencePosition}"][data-time-type="${timeType}"]`
+          ) as HTMLInputElement | null)
+        : null;
+      const afterStopSequence = afterInput?.dataset.stopSequence;
+      const afterStopTime = await this.database.getStopTime(
+        trip_id,
+        stop_id,
+        afterStopSequence
+      );
       if (beforeRow && afterStopTime && this.patchManager) {
         const afterKey = generateCompositeKeyFromRecord(
           'stop_times',
@@ -776,38 +825,23 @@ export class ScheduleController {
         return;
       }
 
-      // Get all stops in the current timetable
-      const timetableData = await this.dataProcessor.generateTimetableData(
-        this.currentRouteId,
-        this.currentServiceId,
-        this.currentDirectionId
-      );
-      const currentStopIds = new Set(
-        timetableData.stops.map((stop) => stop.stop_id)
-      );
-
       // Get all stops from the database
       const allStops = await this.gtfsParser.gtfsDatabase.queryRows(
         'stops',
         {}
       );
 
-      // Filter out stops already in the timetable
-      const availableStops = allStops.filter(
-        (stop) => !currentStopIds.has(stop.stop_id)
-      );
-
       // Reset select to default option
       selectElement.innerHTML = '<option value="">Add stop...</option>';
 
-      if (availableStops.length === 0) {
+      if (allStops.length === 0) {
         selectElement.innerHTML +=
-          '<option value="" disabled>All stops are already in this timetable</option>';
+          '<option value="" disabled>No stops in database</option>';
         return;
       }
 
       // Add stops as options
-      const options = availableStops
+      const options = allStops
         .map(
           (stop) => `
           <option value="${stop.stop_id}">
@@ -879,36 +913,15 @@ export class ScheduleController {
       return;
     }
 
-    // Get all stops in the current timetable
-    const timetableData = await this.dataProcessor.generateTimetableData(
-      route_id,
-      service_id,
-      this.currentDirectionId
-    );
-    const currentStopIds = new Set(
-      timetableData.stops.map((stop) => stop.stop_id)
-    );
-    console.log(
-      'Current stops in timetable:',
-      currentStopIds.size,
-      Array.from(currentStopIds)
-    );
-
     // Get all stops from the database
     const allStops = await this.gtfsParser.gtfsDatabase.queryRows('stops', {});
     console.log('Total stops in database:', allStops.length);
 
-    // Filter out stops already in the timetable
-    const availableStops = allStops.filter(
-      (stop) => !currentStopIds.has(stop.stop_id)
-    );
-    console.log('Available stops to add:', availableStops.length);
-
     // Store for filtering
-    this.availableStops = availableStops;
+    this.availableStops = allStops;
 
     // Populate the dropdown
-    this.populateAddStopList(availableStops);
+    this.populateAddStopList(allStops);
 
     // Show the dropdown
     const dropdownContainer = document.getElementById(
@@ -957,7 +970,7 @@ export class ScheduleController {
     if (stops.length === 0) {
       console.log('No available stops to add');
       selectElement.innerHTML +=
-        '<option value="" disabled>All stops are already in this timetable</option>';
+        '<option value="" disabled>No stops in database</option>';
       return;
     }
 
@@ -1242,6 +1255,111 @@ export class ScheduleController {
     } catch (error) {
       console.error('Failed to add stop to timetable:', error);
       notifications.showError('Failed to add stop to timetable');
+    }
+  }
+
+  /**
+   * Change the stop represented by a timetable row
+   *
+   * Updates the stop_id for every stop_times record in the current direction
+   * that references oldStopId, replacing it with newStopId. Recorded as a single
+   * batch undo/redo entry.
+   *
+   * @param oldStopId - The stop being replaced
+   * @param newStopId - The new stop to assign
+   * @param selectEl - The <select> element (used to reset value on error)
+   */
+  public async changeStopAtRow(
+    oldStopId: string,
+    newStopId: string,
+    selectEl: HTMLSelectElement
+  ): Promise<void> {
+    if (oldStopId === newStopId) {
+      return;
+    }
+
+    if (!this.currentRouteId || !this.currentServiceId) {
+      console.error(
+        '[ScheduleController] changeStopAtRow: no timetable loaded'
+      );
+      selectEl.value = oldStopId;
+      return;
+    }
+
+    if (!this.patchManager) {
+      console.error('[ScheduleController] changeStopAtRow: no patch manager');
+      selectEl.value = oldStopId;
+      return;
+    }
+
+    if (this.currentDirectionId === undefined) {
+      console.error(
+        '[ScheduleController] changeStopAtRow: no direction selected'
+      );
+      selectEl.value = oldStopId;
+      return;
+    }
+
+    try {
+      const data = await this.dataProcessor.generateTimetableData(
+        this.currentRouteId,
+        this.currentServiceId,
+        this.currentDirectionId
+      );
+
+      const ops: Array<{
+        table: string;
+        id: string;
+        before: Record<string, unknown>;
+        after: Record<string, unknown>;
+      }> = [];
+
+      for (const trip of data.trips) {
+        const stopTimes = await this.gtfsParser.gtfsDatabase.queryRows(
+          'stop_times',
+          { trip_id: trip.trip_id, stop_id: oldStopId }
+        );
+
+        for (const record of stopTimes) {
+          const id = generateCompositeKeyFromRecord(
+            'stop_times',
+            record as Record<string, unknown>
+          );
+          ops.push({
+            table: 'stop_times',
+            id,
+            before: { stop_id: oldStopId },
+            after: { stop_id: newStopId },
+          });
+        }
+      }
+
+      if (ops.length === 0) {
+        console.warn(
+          `[ScheduleController] changeStopAtRow: no stop_times found for stop ${oldStopId}`
+        );
+        selectEl.value = oldStopId;
+        return;
+      }
+
+      const [oldStopRows, newStopRows] = await Promise.all([
+        this.gtfsParser.gtfsDatabase.queryRows('stops', { stop_id: oldStopId }),
+        this.gtfsParser.gtfsDatabase.queryRows('stops', { stop_id: newStopId }),
+      ]);
+      const oldName = oldStopRows[0]?.stop_name || oldStopId;
+      const newName = newStopRows[0]?.stop_name || newStopId;
+      const routeLabel =
+        data.route.route_short_name ||
+        data.route.route_long_name ||
+        data.route.route_id;
+      const label = `Changed stop "${oldName}" → "${newName}" (Route ${routeLabel}, Direction ${this.currentDirectionId})`;
+
+      await this.patchManager.recordBatch(ops, label);
+
+      await this.refreshCurrentTimetable();
+    } catch (error) {
+      console.error('[ScheduleController] changeStopAtRow failed:', error);
+      selectEl.value = oldStopId;
     }
   }
 

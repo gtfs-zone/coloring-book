@@ -25,6 +25,7 @@ import { CalendarSchema } from '../types/gtfs.js';
  */
 export interface EditableStopTime {
   stop_id: string;
+  stop_sequence: string;
   arrival_time: string | null;
   departure_time: string | null;
   isSkipped: boolean;
@@ -67,6 +68,7 @@ export interface TimetableData {
   route: Routes;
   service: Calendar | CalendarDates;
   stops: Stops[];
+  allStops: Stops[];
   trips: AlignedTrip[];
   direction_id?: string;
   directionName?: string;
@@ -244,6 +246,7 @@ export class TimetableDataProcessor {
         route,
         service,
         stops: [],
+        allStops: await this.gtfsParser.gtfsDatabase.queryRows('stops', {}),
         trips: [],
         availableDirections: defaultDirections,
         selectedDirectionId: direction_id || '0',
@@ -348,10 +351,13 @@ export class TimetableDataProcessor {
       })
     );
 
+    const allStops = await this.gtfsParser.gtfsDatabase.queryRows('stops', {});
+
     return {
       route,
       service,
       stops,
+      allStops,
       trips: alignedTrips,
       direction_id,
       directionName,
@@ -508,6 +514,7 @@ export class TimetableDataProcessor {
         if (arrival_time || departure_time) {
           editableStopTimes.set(supersequencePosition, {
             stop_id: st.stop_id,
+            stop_sequence: String(st.stop_sequence),
             arrival_time: arrival_time,
             departure_time: departure_time,
             isSkipped: false,
