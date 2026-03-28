@@ -96,3 +96,11 @@ Tailwind CSS v4 + DaisyUI v5. Themes are configured in `tailwind.config.js` (9 t
 ### Testing
 
 Playwright tests live in `tests/`. The dev server must be running on port 8080 with built assets in `dist/`. Run `npm run build && npm run serve` before running tests in CI.
+
+### Plans
+
+A common technique is that we will build a .md file that is a plan for a larger
+change. Once we understand the problem and have asked the relevant questions,
+we will write out a multi phase plan with all of the necessary information and
+checklists so we can keep track of what we are doing. We will add instructions
+to the plan for how to keep the plan updated as we go.
