@@ -776,38 +776,23 @@ export class ScheduleController {
         return;
       }
 
-      // Get all stops in the current timetable
-      const timetableData = await this.dataProcessor.generateTimetableData(
-        this.currentRouteId,
-        this.currentServiceId,
-        this.currentDirectionId
-      );
-      const currentStopIds = new Set(
-        timetableData.stops.map((stop) => stop.stop_id)
-      );
-
       // Get all stops from the database
       const allStops = await this.gtfsParser.gtfsDatabase.queryRows(
         'stops',
         {}
       );
 
-      // Filter out stops already in the timetable
-      const availableStops = allStops.filter(
-        (stop) => !currentStopIds.has(stop.stop_id)
-      );
-
       // Reset select to default option
       selectElement.innerHTML = '<option value="">Add stop...</option>';
 
-      if (availableStops.length === 0) {
+      if (allStops.length === 0) {
         selectElement.innerHTML +=
-          '<option value="" disabled>All stops are already in this timetable</option>';
+          '<option value="" disabled>No stops in database</option>';
         return;
       }
 
       // Add stops as options
-      const options = availableStops
+      const options = allStops
         .map(
           (stop) => `
           <option value="${stop.stop_id}">
@@ -879,36 +864,15 @@ export class ScheduleController {
       return;
     }
 
-    // Get all stops in the current timetable
-    const timetableData = await this.dataProcessor.generateTimetableData(
-      route_id,
-      service_id,
-      this.currentDirectionId
-    );
-    const currentStopIds = new Set(
-      timetableData.stops.map((stop) => stop.stop_id)
-    );
-    console.log(
-      'Current stops in timetable:',
-      currentStopIds.size,
-      Array.from(currentStopIds)
-    );
-
     // Get all stops from the database
     const allStops = await this.gtfsParser.gtfsDatabase.queryRows('stops', {});
     console.log('Total stops in database:', allStops.length);
 
-    // Filter out stops already in the timetable
-    const availableStops = allStops.filter(
-      (stop) => !currentStopIds.has(stop.stop_id)
-    );
-    console.log('Available stops to add:', availableStops.length);
-
     // Store for filtering
-    this.availableStops = availableStops;
+    this.availableStops = allStops;
 
     // Populate the dropdown
-    this.populateAddStopList(availableStops);
+    this.populateAddStopList(allStops);
 
     // Show the dropdown
     const dropdownContainer = document.getElementById(
@@ -957,7 +921,7 @@ export class ScheduleController {
     if (stops.length === 0) {
       console.log('No available stops to add');
       selectElement.innerHTML +=
-        '<option value="" disabled>All stops are already in this timetable</option>';
+        '<option value="" disabled>No stops in database</option>';
       return;
     }
 
