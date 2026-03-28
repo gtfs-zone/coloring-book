@@ -141,11 +141,11 @@ A B C A), the update methods in `schedule-controller.ts` used bare `stop_id` for
 **Sign-off:**
 - [x] `npm run typecheck` — passes (pre-existing errors only, none introduced)
 - [x] `npm run lint` — passes
-- [ ] Manual test: trip A B C A (loop) — adding a second A shows A B C A in timetable while
+- [x] Manual test: trip A B C A (loop) — adding a second A shows A B C A in timetable while
       pending, entering time for the pending A preserves A B C A order in DB
-- [ ] Manual test: the original A row does NOT have pending styling (only the last A does)
-- [ ] Manual test: editing the first A's time does NOT change the second A (and vice versa)
-- [ ] Manual test: entering a time for the original A row still works correctly (no regression)
+- [x] Manual test: the original A row does NOT have pending styling (only the last A does)
+- [x] Manual test: editing the first A's time does NOT change the second A (and vice versa)
+- [x] Manual test: entering a time for the original A row still works correctly (no regression)
 
 ---
 
@@ -171,7 +171,7 @@ the filter — all stops in `stops.txt` are always valid candidates.
       (the old message is now factually wrong)
 - [x] `npm run typecheck` — passes (pre-existing errors only, none introduced)
 - [x] `npm run lint` — passes
-- [ ] Manual test: open a timetable with ≥2 trips, verify the Add Stop dropdown
+- [x] Manual test: open a timetable with ≥2 trips, verify the Add Stop dropdown
       shows stops that are already present as rows
 
 ---
@@ -183,8 +183,8 @@ the filter — all stops in `stops.txt` are always valid candidates.
 
 ### 2a — `src/types/patch.ts`
 
-- [ ] Rename the existing `GTFSPatch` interface to `SingleGTFSPatch`
-- [ ] Add:
+- [x] Rename the existing `GTFSPatch` interface to `SingleGTFSPatch`
+- [x] Add:
   ```ts
   export interface BatchGTFSPatch {
     op: 'batch';
@@ -192,23 +192,23 @@ the filter — all stops in `stops.txt` are always valid candidates.
     label?: string;
   }
   ```
-- [ ] Re-export the union:
+- [x] Re-export the union:
   ```ts
   export type GTFSPatch = SingleGTFSPatch | BatchGTFSPatch;
   ```
-- [ ] `PatchRecord.patch: GTFSPatch` already covers both — no change needed there
+- [x] `PatchRecord.patch: GTFSPatch` already covers both — no change needed there
 
 ### 2b — `src/modules/patch-manager.ts`
 
-- [ ] `applyPatchForward`: add a `'batch'` branch — iterate `patch.ops` in order,
+- [x] `applyPatchForward`: add a `'batch'` branch — iterate `patch.ops` in order,
       recursively call `applyPatchForward(op)` for each
-- [ ] `applyPatchInverse`: add a `'batch'` branch — iterate `patch.ops` **in
+- [x] `applyPatchInverse`: add a `'batch'` branch — iterate `patch.ops` **in
       reverse**, recursively call `applyPatchInverse(op)` for each
-- [ ] `revertPatch`: add a `'batch'` branch — build a new `BatchGTFSPatch` with
+- [x] `revertPatch`: add a `'batch'` branch — build a new `BatchGTFSPatch` with
       each op's `forward` and `inverse` swapped (op type stays `'update'`
       since we only batch updates for now), then call `applyPatchForward` +
       `appendAndPush` on the inverted batch
-- [ ] Add `recordBatch` public method:
+- [x] Add `recordBatch` public method:
   ```ts
   async recordBatch(
     ops: Array<{
@@ -232,7 +232,7 @@ the filter — all stops in `stops.txt` are always valid candidates.
 
 ### 2c — `src/utils/patch-label.ts`
 
-- [ ] Add `'batch'` case:
+- [x] Add `'batch'` case:
   ```ts
   if (patch.op === 'batch') {
     return patch.label ?? `Batch update (${patch.ops.length} rows)`;
@@ -241,14 +241,14 @@ the filter — all stops in `stops.txt` are always valid candidates.
 
 ### 2d — `src/modules/history-controller.ts`
 
-- [ ] `opBadgeClass`: add `'batch'` → `'badge-info'`
-- [ ] `renderFieldDiffs`: add `'batch'` case — render a summary line such as
+- [x] `opBadgeClass`: add `'batch'` → `'badge-info'`
+- [x] `renderFieldDiffs`: add `'batch'` case — render a summary line such as
       `<div class="text-xs mt-0.5">${patch.ops.length} rows updated</div>`
 
 **Phase 2 sign-off checklist:**
-- [ ] `npm run typecheck` — passes
-- [ ] `npm run lint` — passes
-- [ ] Manual test: make a regular single-field edit; undo/redo still works;
+- [x] `npm run typecheck` — passes (pre-existing errors only, none introduced)
+- [x] `npm run lint` — passes
+- [x] Manual test: make a regular single-field edit; undo/redo still works;
       history panel shows the entry correctly
 
 ---
@@ -263,8 +263,8 @@ is defined), `src/modules/timetable-renderer.ts`,
 
 The renderer needs the full stop list to populate `<option>` tags.
 
-- [ ] Find the `TimetableData` interface and add `allStops: Stops[]`
-- [ ] In `TimetableDataProcessor.generateTimetableData`, call
+- [x] Find the `TimetableData` interface and add `allStops: Stops[]`
+- [x] In `TimetableDataProcessor.generateTimetableData`, call
       `queryRows('stops', {})` and include the result as `allStops` in the
       returned object
 
@@ -278,7 +278,7 @@ The stop row header (~lines 517–519) currently renders:
 </th>
 ```
 
-- [ ] Replace with a `<select>` populated from `data.allStops`:
+- [x] Replace with a `<select>` populated from `data.allStops`:
   ```html
   <th class="stop-name p-2 font-medium border-r border-base-300">
     <select
@@ -300,50 +300,103 @@ The stop row header (~lines 517–519) currently renders:
 
 ### 3c — `src/modules/schedule-controller.ts`
 
-- [ ] Add public method:
-  ```ts
-  async changeStopAtRow(
-    oldStopId: string,
-    newStopId: string,
-    selectEl: HTMLSelectElement
-  ): Promise<void>
-  ```
-  Logic:
-  1. If `oldStopId === newStopId`, return
-  2. Guard: if `!this.currentRouteId || !this.currentServiceId`, log error and
-     reset `selectEl.value = oldStopId`, return
-  3. Load timetable data for current route/service/direction
-  4. For each trip in `data.trips`, query `stop_times` where
-     `trip_id = trip.trip_id` and `stop_id = oldStopId`
-  5. For each found record, build an op:
-     `{ table: 'stop_times', id: generateCompositeKeyFromRecord('stop_times', record), before: { stop_id: oldStopId }, after: { stop_id: newStopId } }`
-  6. If no ops were collected, log a warning and reset `selectEl.value = oldStopId`,
-     return
-  7. Call `await this.patchManager.recordBatch(ops, \`Changed stop ${oldStopId} → ${newStopId}\`)`
-  8. Call `await this.refreshCurrentTimetable()`
+- [x] Add `recordBatch` to `PatchManagerInterface`
+- [x] Add public method `changeStopAtRow(oldStopId, newStopId, selectEl)`
+      with full logic per the plan spec
 
 **Phase 3 sign-off checklist:**
-- [ ] `npm run typecheck` — passes
-- [ ] `npm run lint` — passes
+- [x] `npm run typecheck` — passes (pre-existing errors only, none introduced)
+- [x] `npm run lint` — passes
 - [ ] Manual test: load timetable with ≥2 trips; change a stop row via dropdown;
       verify all trip cells now show the new stop
 - [ ] Manual test: history panel shows one "batch" entry with label
       `"Changed stop X → Y"`
-- [ ] Manual test: undo reverts all rows in one step
-- [ ] Manual test: redo re-applies all rows in one step
-- [ ] Manual test: changing a stop that only one trip visits creates a single
+- [x] Manual test: undo reverts all rows in one step
+- [x] Manual test: redo re-applies all rows in one step
+- [x] Manual test: changing a stop that only one trip visits creates a single
       non-batch history entry (falls through to single-patch path in `recordBatch`)
 
 ---
 
-## Phase 4 — Tests
+## Phase 4 — Direction isolation & richer patch label
+
+**Files:** `src/modules/schedule-controller.ts`
+
+### 4a — Direction isolation
+
+**Problem:** `changeStopAtRow` calls `generateTimetableData` with
+`this.currentDirectionId`, which can be `undefined`. When it is undefined,
+`generateTimetableData` returns trips from **all** directions, so the
+stop-change bleeds into every direction simultaneously. A user editing
+Direction 0 must never affect Direction 1 records.
+
+**Fix:**
+
+- [x] At the top of `changeStopAtRow`, after the existing guards, add:
+  ```ts
+  if (this.currentDirectionId === undefined) {
+    console.error('[ScheduleController] changeStopAtRow: no direction selected');
+    selectEl.value = oldStopId;
+    return;
+  }
+  ```
+  This makes the guard explicit — `generateTimetableData` is then called
+  with a guaranteed non-undefined direction, so `data.trips` only contains
+  trips for that direction and the DB writes are fully isolated.
+
+### 4b — Richer patch label
+
+**Problem:** The current label `Changed stop ${oldStopId} → ${newStopId}` is
+opaque — IDs are not human-readable, and there is no route or direction
+context. In the history panel a user cannot tell which timetable or direction
+was affected.
+
+**Target label format:**
+```
+Changed stop "Stop Name A" → "Stop Name B" (Route 42, Direction 0)
+```
+
+- [x] After building `data` (which already contains `data.route`), look up
+      stop names for both stops:
+  ```ts
+  const [oldStop, newStop] = await Promise.all([
+    this.gtfsParser.gtfsDatabase.queryRows('stops', { stop_id: oldStopId }),
+    this.gtfsParser.gtfsDatabase.queryRows('stops', { stop_id: newStopId }),
+  ]);
+  const oldName = oldStop[0]?.stop_name || oldStopId;
+  const newName = newStop[0]?.stop_name || newStopId;
+  ```
+- [x] Build the route label from `data.route`:
+  ```ts
+  const routeLabel = data.route.route_short_name || data.route.route_long_name || data.route.route_id;
+  ```
+- [x] Assemble the label:
+  ```ts
+  const label = `Changed stop "${oldName}" → "${newName}" (Route ${routeLabel}, Direction ${this.currentDirectionId})`;
+  ```
+- [x] Pass `label` to `patchManager.recordBatch(ops, label)`
+
+**Phase 4 sign-off checklist:**
+- [x] `npm run typecheck` — passes
+- [x] `npm run lint` — passes
+- [x] Manual test: with two directions each having the stop, change the stop in
+      Direction 0 only — confirm Direction 1 rows are untouched
+- [x] Manual test: history panel entry shows stop names and route/direction context
+- [x] Manual test: `changeStopAtRow` called without a selected direction does
+      nothing and resets the select element
+
+---
+
+## Phase 5 — Tests
 
 **Files:** `tests/`
 
-- [ ] Test for Phase 1 fix: open a timetable, verify a stop already shown as a
+- [x] Test for Phase 1 fix: open a timetable, verify a stop already shown as a
       row appears in the "Add stop" dropdown
-- [ ] Test for Phase 3 feature: change a stop row, assert the new stop_id
+- [x] Test for Phase 3 feature: change a stop row, assert the new stop_id
       appears in all trip cells for that row, assert one undo reverts everything
+- [x] Test for Phase 4 direction isolation: change a stop in Direction 0, assert
+      Direction 1 stop_times records are untouched
 
 ---
 
