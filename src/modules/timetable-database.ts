@@ -411,7 +411,8 @@ export class TimetableDatabase {
    */
   async getStopTime(
     trip_id: string,
-    stop_id: string
+    stop_id: string,
+    stop_sequence?: string
   ): Promise<StopTimes | null> {
     const database = this.gtfsParser.gtfsDatabase;
     if (!database) {
@@ -419,6 +420,16 @@ export class TimetableDatabase {
       console.error(error);
       notifications.showError('Database connection lost');
       throw new Error(error);
+    }
+
+    if (stop_sequence) {
+      // Unambiguous lookup by primary key — required for loop routes where
+      // the same stop_id appears at multiple positions.
+      const results = await database.queryRows('stop_times', {
+        trip_id,
+        stop_sequence,
+      });
+      return results[0] ?? null;
     }
 
     const stopTimes = await database.queryRows('stop_times', {
@@ -516,19 +527,21 @@ export class TimetableDatabase {
       `input[data-trip-id="${trip_id}"]`
     ) as NodeListOf<HTMLInputElement>;
 
-    const stopTimesFromTable: Partial<StopTimes>[] = [];
+    const stopTimesMap = new Map<string, Partial<StopTimes>>();
 
     inputs.forEach((input: HTMLInputElement) => {
       const stop_id = input.dataset.stopId;
       const timeType = input.dataset.timeType; // 'linked', 'arrival', or 'departure'
       const timeValue = input.value.trim();
+      const superPos = input.dataset.supersequencePosition ?? 'new';
 
       if (!stop_id || !timeValue) {
         return; // Skip empty times
       }
 
-      // Find or create stop_time entry for this stop
-      let stopTime = stopTimesFromTable.find((st) => st.stop_id === stop_id);
+      // Key by composite (stop_id, supersequencePosition) to preserve duplicate stops
+      const key = `${stop_id}:${superPos}`;
+      let stopTime = stopTimesMap.get(key);
       if (!stopTime) {
         stopTime = {
           trip_id,
@@ -537,7 +550,7 @@ export class TimetableDatabase {
           arrival_time: null,
           departure_time: null,
         };
-        stopTimesFromTable.push(stopTime);
+        stopTimesMap.set(key, stopTime);
       }
 
       // Set the time based on input type
@@ -551,6 +564,8 @@ export class TimetableDatabase {
         stopTime.departure_time = castedTime;
       }
     });
+
+    const stopTimesFromTable = Array.from(stopTimesMap.values());
 
     // Sort by time to determine sequence
     const sortedStopTimes = stopTimesFromTable.sort((a, b) => {

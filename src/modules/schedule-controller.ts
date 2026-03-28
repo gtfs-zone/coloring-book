@@ -211,17 +211,23 @@ export class ScheduleController {
   public async updateLinkedTime(
     trip_id: string,
     stop_id: string,
-    newTime: string
+    newTime: string,
+    supersequencePosition?: string,
+    stopSequence?: string
   ): Promise<void> {
     try {
+      const positionSelector = supersequencePosition
+        ? `[data-supersequence-position="${supersequencePosition}"]`
+        : '';
+
       // Handle empty input (clear both times)
       if (!newTime.trim()) {
         await this.database.updateLinkedTimes(trip_id, stop_id, null);
         console.log(`Cleared both times for ${trip_id}/${stop_id}`);
 
-        // Update input value immediately
+        // Update input value immediately — use supersequencePosition to target the correct row
         const input = document.querySelector(
-          `input[data-trip-id="${trip_id}"][data-stop-id="${stop_id}"][data-time-type="linked"]`
+          `input[data-trip-id="${trip_id}"][data-stop-id="${stop_id}"][data-time-type="linked"]${positionSelector}`
         ) as HTMLInputElement;
         if (input) {
           input.value = '';
@@ -236,8 +242,12 @@ export class ScheduleController {
       // Cast time to HH:MM:SS format
       const castedTime = TimeFormatter.castTimeToHHMMSS(newTime);
 
-      // Capture before-state (virtual table returns copies, so beforeRow is a stable snapshot).
-      const beforeRow = await this.database.getStopTime(trip_id, stop_id);
+      // Capture before-state using stop_sequence for unambiguous lookup on loop routes
+      const beforeRow = await this.database.getStopTime(
+        trip_id,
+        stop_id,
+        stopSequence
+      );
       const beforeArrivalTime = beforeRow?.arrival_time;
       const beforeDepartureTime = beforeRow?.departure_time;
 
@@ -251,9 +261,9 @@ export class ScheduleController {
       // Clear pending stop if this was the first time entered
       this.clearPendingStopIfMatches(stop_id);
 
-      // Update input value immediately
+      // Update input value immediately — use supersequencePosition to target the correct row
       const input = document.querySelector(
-        `input[data-trip-id="${trip_id}"][data-stop-id="${stop_id}"][data-time-type="linked"]`
+        `input[data-trip-id="${trip_id}"][data-stop-id="${stop_id}"][data-time-type="linked"]${positionSelector}`
       ) as HTMLInputElement;
       if (input) {
         input.value = TimeFormatter.formatTimeWithSeconds(castedTime);
@@ -263,8 +273,18 @@ export class ScheduleController {
       await this.database.rebuildStopTimesFromTable(trip_id);
       await this.refreshCurrentTimetable();
 
-      // Record patch using post-rebuild key so undo finds the correct row
-      const afterStopTime = await this.database.getStopTime(trip_id, stop_id);
+      // Record patch: after re-render, find the same logical row to get the new stop_sequence
+      const afterInput = supersequencePosition
+        ? (document.querySelector(
+            `input[data-trip-id="${trip_id}"][data-supersequence-position="${supersequencePosition}"][data-time-type="linked"]`
+          ) as HTMLInputElement | null)
+        : null;
+      const afterStopSequence = afterInput?.dataset.stopSequence;
+      const afterStopTime = await this.database.getStopTime(
+        trip_id,
+        stop_id,
+        afterStopSequence
+      );
       if (beforeRow && afterStopTime && this.patchManager) {
         const afterKey = generateCompositeKeyFromRecord(
           'stop_times',
@@ -307,9 +327,15 @@ export class ScheduleController {
     trip_id: string,
     stop_id: string,
     timeType: 'arrival' | 'departure',
-    newTime: string
+    newTime: string,
+    supersequencePosition?: string,
+    stopSequence?: string
   ): Promise<void> {
     try {
+      const positionSelector = supersequencePosition
+        ? `[data-supersequence-position="${supersequencePosition}"]`
+        : '';
+
       // Handle empty input (skip/clear time)
       if (!newTime.trim()) {
         await this.database.updateStopTimeInDatabase(
@@ -346,8 +372,12 @@ export class ScheduleController {
         return;
       }
 
-      // Capture before-state (virtual table returns copies, so beforeRow is a stable snapshot).
-      const beforeRow = await this.database.getStopTime(trip_id, stop_id);
+      // Capture before-state using stop_sequence for unambiguous lookup on loop routes
+      const beforeRow = await this.database.getStopTime(
+        trip_id,
+        stop_id,
+        stopSequence
+      );
       const field = timeType === 'arrival' ? 'arrival_time' : 'departure_time';
       const beforeFieldValue = (beforeRow as Record<string, unknown> | null)?.[
         field
@@ -368,9 +398,9 @@ export class ScheduleController {
       // Clear pending stop if this was the first time entered
       this.clearPendingStopIfMatches(stop_id);
 
-      // Update input value immediately
+      // Update input value immediately — use supersequencePosition to target the correct row
       const input = document.querySelector(
-        `input[data-trip-id="${trip_id}"][data-stop-id="${stop_id}"][data-time-type="${timeType}"]`
+        `input[data-trip-id="${trip_id}"][data-stop-id="${stop_id}"][data-time-type="${timeType}"]${positionSelector}`
       ) as HTMLInputElement;
       if (input) {
         input.value = castedTime
@@ -382,8 +412,18 @@ export class ScheduleController {
       await this.database.rebuildStopTimesFromTable(trip_id);
       await this.refreshCurrentTimetable();
 
-      // Record patch using post-rebuild key so undo finds the correct row
-      const afterStopTime = await this.database.getStopTime(trip_id, stop_id);
+      // Record patch: after re-render, find the same logical row to get the new stop_sequence
+      const afterInput = supersequencePosition
+        ? (document.querySelector(
+            `input[data-trip-id="${trip_id}"][data-supersequence-position="${supersequencePosition}"][data-time-type="${timeType}"]`
+          ) as HTMLInputElement | null)
+        : null;
+      const afterStopSequence = afterInput?.dataset.stopSequence;
+      const afterStopTime = await this.database.getStopTime(
+        trip_id,
+        stop_id,
+        afterStopSequence
+      );
       if (beforeRow && afterStopTime && this.patchManager) {
         const afterKey = generateCompositeKeyFromRecord(
           'stop_times',

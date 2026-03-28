@@ -98,28 +98,53 @@ const isPendingStop =
 ### Checklist
 
 **`src/modules/timetable-cell-renderer.ts`**
-- [ ] Add `supersequencePosition: number` parameter to `renderStackedArrivalDepartureCell`
+- [x] Add `supersequencePosition: number` parameter to `renderStackedArrivalDepartureCell`
       (and any other cell-rendering methods that emit `<input>` elements)
-- [ ] Emit `data-supersequence-position="${supersequencePosition}"` on every time input
+- [x] Emit `data-supersequence-position="${supersequencePosition}"` on every time input
       (linked, arrival, departure)
 
 **`src/modules/timetable-renderer.ts`**
-- [ ] Pass `supersequencePosition` (which is already `stopIndex`) when calling cell renderer
+- [x] Pass `supersequencePosition` (which is already `stopIndex`) when calling cell renderer
       methods
-- [ ] Fix `isPendingStop` to only be true for the last stop index when the stop_id matches
+- [x] Fix `isPendingStop` to only be true for the last stop index when the stop_id matches
 
 **`src/modules/timetable-database.ts` — `rebuildStopTimesFromTable`**
-- [ ] Change deduplication key from `stop_id` alone to `"${stop_id}:${superPos}"` where
+- [x] Change deduplication key from `stop_id` alone to `"${stop_id}:${superPos}"` where
       `superPos = input.dataset.supersequencePosition ?? 'new'`
-- [ ] Use a `Map<string, Partial<StopTimes>>` (keyed by the composite string) instead of
+- [x] Use a `Map<string, Partial<StopTimes>>` (keyed by the composite string) instead of
       the `Array.find` approach to ensure O(1) lookup and no accidental merging
 
+**Additional fix (discovered during Phase 0 implementation): duplicate-stop update bug**
+
+When a user edits a time cell for one occurrence of a duplicate stop (e.g. second A in
+A B C A), the update methods in `schedule-controller.ts` used bare `stop_id` for DOM
+`querySelector` and DB lookups, causing both A rows to be mutated. Fixed by threading
+`supersequencePosition` and `stop_sequence` through the call chain:
+
+**`src/modules/timetable-data-processor.ts`**
+- [x] Add `stop_sequence: string` to `EditableStopTime` interface; populate from `st.stop_sequence` in `alignTripsWithSCS`
+
+**`src/modules/timetable-cell-renderer.ts`**
+- [x] Rename `_editableStopTime` → `editableStopTime` (now used)
+- [x] Emit `data-stop-sequence="${editableStopTime?.stop_sequence ?? ''}"` on all three input types
+- [x] Update all three `onchange` handlers to pass `this.dataset.supersequencePosition` and `this.dataset.stopSequence`
+
+**`src/modules/timetable-database.ts` — `getStopTime`**
+- [x] Add optional `stop_sequence` parameter; when provided, query by `{trip_id, stop_sequence}` (unambiguous) instead of `{trip_id, stop_id}`
+
+**`src/modules/schedule-controller.ts` — `updateLinkedTime` and `updateArrivalDepartureTime`**
+- [x] Add `supersequencePosition?: string` and `stopSequence?: string` parameters
+- [x] Append `[data-supersequence-position="..."]` to `querySelector` selectors so only the edited row's input is normalized
+- [x] Use `stopSequence` for the before-state `getStopTime` lookup
+- [x] After rebuild + refresh, re-query DOM at same `supersequencePosition` to get the new `data-stop-sequence`, use it for the after-state lookup and patch key
+
 **Sign-off:**
-- [ ] `npm run typecheck` — passes
-- [ ] `npm run lint` — passes
+- [x] `npm run typecheck` — passes (pre-existing errors only, none introduced)
+- [x] `npm run lint` — passes
 - [ ] Manual test: trip A B C A (loop) — adding a second A shows A B C A in timetable while
       pending, entering time for the pending A preserves A B C A order in DB
 - [ ] Manual test: the original A row does NOT have pending styling (only the last A does)
+- [ ] Manual test: editing the first A's time does NOT change the second A (and vice versa)
 - [ ] Manual test: entering a time for the original A row still works correctly (no regression)
 
 ---
