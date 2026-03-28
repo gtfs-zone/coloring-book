@@ -149,6 +149,12 @@ export class GTFSParser {
    * silent aliasing bugs where a caller's "before" snapshot is mutated by a
    * later vt.update() call. Mutations (insert, update, delete, replace) still
    * operate on the internal objects directly — the copies are only for callers.
+   *
+   * SHARED-ARRAY INVARIANT: The `flat` array passed in is stored as a live
+   * reference and is the same object as gtfsData[fileName].data. All in-memory
+   * mutations MUST go through the virtual table methods (insert, update, delete,
+   * clear). Direct pushes or splices on the array bypass the byId index and
+   * fieldMaps, corrupting them silently.
    */
   private buildAndRegisterVirtual(
     tableName: string,
@@ -249,8 +255,8 @@ export class GTFSParser {
             row as Record<string, unknown>
           );
           if (byId.has(key)) {
-            continue;
-          } // guard for PatchManager double-add
+            continue; // deduplication: skip rows already present (e.g. replaying an insert patch whose row was already loaded from the blob)
+          }
           flat.push(row);
           byId.set(key, row);
           for (const [field, map] of fieldMaps) {
