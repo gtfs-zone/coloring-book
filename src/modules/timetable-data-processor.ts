@@ -68,6 +68,7 @@ export interface TimetableData {
   route: Routes;
   service: Calendar | CalendarDates;
   stops: Stops[];
+  allStops: Stops[];
   trips: AlignedTrip[];
   direction_id?: string;
   directionName?: string;
@@ -245,6 +246,7 @@ export class TimetableDataProcessor {
         route,
         service,
         stops: [],
+        allStops: await this.gtfsParser.gtfsDatabase.queryRows('stops', {}),
         trips: [],
         availableDirections: defaultDirections,
         selectedDirectionId: direction_id || '0',
@@ -349,10 +351,13 @@ export class TimetableDataProcessor {
       })
     );
 
+    const allStops = await this.gtfsParser.gtfsDatabase.queryRows('stops', {});
+
     return {
       route,
       service,
       stops,
+      allStops,
       trips: alignedTrips,
       direction_id,
       directionName,
