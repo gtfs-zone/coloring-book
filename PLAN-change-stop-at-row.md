@@ -48,6 +48,82 @@ and is stored as one record in IndexedDB.
 
 ---
 
+## Phase 0 — Fix duplicate-stop ordering bug
+
+**Problem:** When the user adds a stop (e.g. A) that is already in the timetable (creating
+a loop route A B C A), the new stop ends up at the wrong position or one of the A
+entries disappears entirely — the user sees **B C A** instead of **A B C A**.
+
+**Root cause — two interacting bugs, both keying on `stop_id` instead of `supersequencePosition`:**
+
+### Bug 0a — `rebuildStopTimesFromTable` deduplicates by `stop_id`
+
+**File:** `src/modules/timetable-database.ts` (~line 531)
+
+```ts
+let stopTime = stopTimesFromTable.find((st) => st.stop_id === stop_id);
+```
+
+When the timetable has both the original A row (input value `08:00`) and the pending A
+row (input value `11:00`), the DOM scan finds both inputs with `data-stop-id="A"`.
+The second input overwrites the first, leaving only one A entry with time `11:00`.
+Sorted alongside B=`09:00`, C=`10:00`, the sequence becomes B(1) C(2) A(3) → **B C A**.
+
+**Fix:** key entries by `(stop_id, supersequencePosition)` instead of `stop_id` alone.
+The supersequence position must come from a new `data-supersequence-position` DOM attribute
+on each time input. Use a composite key `"${stop_id}:${superPos}"` for the find-or-create
+logic so that two A rows at different positions remain separate entries.
+
+### Bug 0b — `isPendingStop` marks all rows with matching `stop_id` as pending
+
+**File:** `src/modules/timetable-renderer.ts` (~line 459)
+
+```ts
+const isPendingStop = pendingStopId === stop.stop_id;
+```
+
+Since `pendingStopId = 'A'`, BOTH the original A row and the appended pending A row receive
+the dashed-border / reduced-opacity styling.
+
+**Fix:** only treat the *last* position as pending — the pending stop is always appended at
+`data.stops.length - 1`:
+
+```ts
+const isPendingStop =
+  pendingStopId !== undefined &&
+  stop.stop_id === pendingStopId &&
+  stopIndex === data.stops.length - 1;
+```
+
+### Checklist
+
+**`src/modules/timetable-cell-renderer.ts`**
+- [ ] Add `supersequencePosition: number` parameter to `renderStackedArrivalDepartureCell`
+      (and any other cell-rendering methods that emit `<input>` elements)
+- [ ] Emit `data-supersequence-position="${supersequencePosition}"` on every time input
+      (linked, arrival, departure)
+
+**`src/modules/timetable-renderer.ts`**
+- [ ] Pass `supersequencePosition` (which is already `stopIndex`) when calling cell renderer
+      methods
+- [ ] Fix `isPendingStop` to only be true for the last stop index when the stop_id matches
+
+**`src/modules/timetable-database.ts` — `rebuildStopTimesFromTable`**
+- [ ] Change deduplication key from `stop_id` alone to `"${stop_id}:${superPos}"` where
+      `superPos = input.dataset.supersequencePosition ?? 'new'`
+- [ ] Use a `Map<string, Partial<StopTimes>>` (keyed by the composite string) instead of
+      the `Array.find` approach to ensure O(1) lookup and no accidental merging
+
+**Sign-off:**
+- [ ] `npm run typecheck` — passes
+- [ ] `npm run lint` — passes
+- [ ] Manual test: trip A B C A (loop) — adding a second A shows A B C A in timetable while
+      pending, entering time for the pending A preserves A B C A order in DB
+- [ ] Manual test: the original A row does NOT have pending styling (only the last A does)
+- [ ] Manual test: entering a time for the original A row still works correctly (no regression)
+
+---
+
 ## Phase 1 — Fix stop-adding bug
 
 **File:** `src/modules/schedule-controller.ts`
