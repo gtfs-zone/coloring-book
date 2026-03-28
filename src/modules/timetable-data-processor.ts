@@ -25,6 +25,7 @@ import { CalendarSchema } from '../types/gtfs.js';
  */
 export interface EditableStopTime {
   stop_id: string;
+  stop_sequence: string;
   arrival_time: string | null;
   departure_time: string | null;
   isSkipped: boolean;
@@ -508,6 +509,7 @@ export class TimetableDataProcessor {
         if (arrival_time || departure_time) {
           editableStopTimes.set(supersequencePosition, {
             stop_id: st.stop_id,
+            stop_sequence: String(st.stop_sequence),
             arrival_time: arrival_time,
             departure_time: departure_time,
             isSkipped: false,

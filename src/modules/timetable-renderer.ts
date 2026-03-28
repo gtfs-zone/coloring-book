@@ -456,7 +456,10 @@ export class TimetableRenderer {
         console.log(
           `\n--- Rendering row for stop [${stopIndex}]: ${stop.stop_id} ---`
         );
-        const isPendingStop = pendingStopId === stop.stop_id;
+        const isPendingStop =
+          pendingStopId !== undefined &&
+          stop.stop_id === pendingStopId &&
+          stopIndex === data.stops.length - 1;
         const rowClass = isPendingStop
           ? 'opacity-60 border-dashed border-2 border-warning'
           : '';
@@ -504,7 +507,8 @@ export class TimetableRenderer {
               stop_id,
               arrival_time || null,
               departure_time || null,
-              editableStopTime
+              editableStopTime,
+              supersequencePosition
             );
           })
           .join('');
