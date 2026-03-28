@@ -219,14 +219,6 @@ export function isNaturalKey(tableName: string): boolean {
 }
 
 /**
- * Check if a table uses a composite (multiple field) primary key
- */
-export function isCompositeKey(tableName: string): boolean {
-  const config = getGTFSPrimaryKey(tableName);
-  return config?.type === 'composite';
-}
-
-/**
  * Get the natural key field name for tables with single-field primary keys
  */
 export function getNaturalKeyField(tableName: string): string | null {
@@ -282,62 +274,6 @@ export function generateCompositeKeyFromRecord(
   if (config.type === 'none') {
     // Single row tables like feed_info use a fixed key
     return tableName;
-  }
-
-  throw new Error(
-    `Unsupported primary key type '${config.type}' for table '${tableName}'`
-  );
-}
-
-/**
- * Parse a composite key string back into its component fields
- */
-export function parseCompositeKey(
-  tableName: string,
-  key: string
-): Record<string, string> {
-  const config = getGTFSPrimaryKey(tableName);
-
-  if (!config) {
-    throw new Error(`Unknown GTFS table: ${tableName}`);
-  }
-
-  if (config.type === 'natural') {
-    const field = config.fields[0];
-    return { [field]: key };
-  }
-
-  if (config.type === 'composite') {
-    const keyParts = key.split(':');
-    if (keyParts.length !== config.fields.length) {
-      throw new Error(
-        `Invalid composite key format for table '${tableName}'. Expected ${config.fields.length} parts, got ${keyParts.length}`
-      );
-    }
-
-    const result: Record<string, string> = {};
-    config.fields.forEach((field, index) => {
-      result[field] = keyParts[index];
-    });
-    return result;
-  }
-
-  if (config.type === 'all_fields') {
-    const result: Record<string, string> = {};
-    const keyParts = key.split('&');
-
-    for (const part of keyParts) {
-      const [field, value] = part.split('=');
-      if (field && value !== undefined) {
-        result[field] = value;
-      }
-    }
-    return result;
-  }
-
-  if (config.type === 'none') {
-    // Single row tables don't have meaningful key parsing
-    return {};
   }
 
   throw new Error(
