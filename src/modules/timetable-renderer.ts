@@ -461,7 +461,10 @@ export class TimetableRenderer {
         console.log(
           `\n--- Rendering row for stop [${stopIndex}]: ${stop.stop_id} ---`
         );
-        const isPendingStop = pendingStopId === stop.stop_id;
+        const isPendingStop =
+          pendingStopId !== undefined &&
+          stop.stop_id === pendingStopId &&
+          stopIndex === data.stops.length - 1;
         const rowClass = isPendingStop
           ? 'opacity-60 border-dashed border-2 border-warning'
           : '';
@@ -509,7 +512,8 @@ export class TimetableRenderer {
               stop_id,
               arrival_time || null,
               departure_time || null,
-              editableStopTime
+              editableStopTime,
+              supersequencePosition
             );
           })
           .join('');
@@ -520,8 +524,13 @@ export class TimetableRenderer {
         return `
         <tr class="${rowClass}">
           <th class="stop-name p-2 font-medium border-r border-base-300">
-            <div class="stop-name-text">${this.escapeHtml(stop.stop_name || stop.stop_id)}</div>
-            <div class="stop-id text-xs opacity-70">${stop.stop_id}</div>
+            <select
+              class="select select-xs w-full font-medium"
+              data-old-stop-id="${this.escapeHtml(stop.stop_id)}"
+              onchange="gtfsEditor.scheduleController.changeStopAtRow(this.dataset.oldStopId, this.value, this)"
+            >
+              ${data.allStops.map((s) => `<option value="${this.escapeHtml(s.stop_id)}"${s.stop_id === stop.stop_id ? ' selected' : ''}>${this.escapeHtml(s.stop_name || s.stop_id)}</option>`).join('')}
+            </select>
           </th>
           ${timeCells}
           ${newTripCell}
