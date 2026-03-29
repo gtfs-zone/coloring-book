@@ -2,7 +2,7 @@
  * Basemap control UI component using DaisyUI FAB and speed dial
  */
 
-import { Map as MapLibreMap } from 'maplibre-gl';
+import { Map as MapLibreMap, StyleSpecification } from 'maplibre-gl';
 import { basemapStyles, getBasemapStyle } from './basemap-styles.js';
 
 export class BasemapControl {
@@ -10,7 +10,6 @@ export class BasemapControl {
   private container: HTMLElement | null = null;
   private currentBasemap: string = 'standard';
   private currentProjection: 'mercator' | 'globe' = 'globe';
-  private isOpen: boolean = false;
 
   constructor(map: MapLibreMap) {
     this.map = map;
@@ -73,7 +72,7 @@ export class BasemapControl {
           : undefined,
     };
 
-    this.map.setStyle(newStyle as Record<string, unknown>);
+    this.map.setStyle(newStyle as unknown as StyleSpecification);
   }
 
   /**
@@ -277,7 +276,7 @@ export class BasemapControl {
     };
 
     // Set new style with projection
-    this.map.setStyle(styleWithProjection);
+    this.map.setStyle(styleWithProjection as unknown as StyleSpecification);
 
     // Wait for style to load, then restore view and re-add layers
     this.map.once('styledata', () => {
@@ -369,7 +368,7 @@ export class BasemapControl {
     };
 
     // Set new style with projection
-    this.map.setStyle(newStyle as Record<string, unknown>);
+    this.map.setStyle(newStyle as unknown as StyleSpecification);
 
     // Wait for style to load, then restore view
     this.map.once('styledata', () => {

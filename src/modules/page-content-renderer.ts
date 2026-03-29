@@ -64,6 +64,12 @@ export interface ContentRendererDependencies {
     getRow: (tableName: string, key: string) => Promise<unknown | undefined>;
     getAllRows: (tableName: string) => Promise<unknown[]>;
     insertRows: (tableName: string, rows: unknown[]) => Promise<void>;
+    updateRow?: (
+      tableName: string,
+      key: string,
+      data: Record<string, unknown>
+    ) => Promise<void>;
+    deleteRow?: (tableName: string, key: string) => Promise<void>;
   };
 
   // GTFS relationships for stop controller (optional)
@@ -373,7 +379,7 @@ export class PageContentRenderer {
       // Get all services from calendar table
       const services =
         await this.dependencies.gtfsDatabase.getAllRows('calendar');
-      return services;
+      return services as Record<string, unknown>[];
     } catch (error) {
       console.error('Error getting services:', error);
       return [];
@@ -387,7 +393,7 @@ export class PageContentRenderer {
     // Generate field configurations from FeedInfoSchema
     const fieldConfigs = generateFieldConfigsFromSchema(
       FeedInfoSchema,
-      feedInfo,
+      feedInfo as Record<string, string | number | undefined>,
       GTFS_TABLES.FEED_INFO
     ).map((c) => ({ ...c, recordId: 'feed_info' }));
 
@@ -473,8 +479,9 @@ export class PageContentRenderer {
     `;
 
     // Get all available services from calendar
-    const allServices =
-      await this.dependencies.gtfsDatabase.getAllRows('calendar');
+    const allServices = (await this.dependencies.gtfsDatabase.getAllRows(
+      'calendar'
+    )) as Record<string, unknown>[];
 
     // Render new service selector
     const newServiceSelectorHTML =
@@ -716,7 +723,8 @@ export class PageContentRenderer {
    */
   private addInlineCreationListeners(container: HTMLElement): void {
     const inlineCreator = new InlineEntityCreator(
-      this.dependencies.gtfsDatabase,
+      this.dependencies
+        .gtfsDatabase as unknown as import('./gtfs-database.js').GTFSDatabase,
       notifications,
       () => {
         // Refresh the page after entity creation

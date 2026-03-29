@@ -184,7 +184,7 @@ export class TimetableRenderer {
     // Generate all field configs from TripsSchema
     const allConfigs = generateFieldConfigsFromSchema(
       TripsSchema,
-      sampleTrip,
+      sampleTrip as Record<string, string | number | undefined>,
       GTFS_TABLES.TRIPS
     );
 
@@ -225,14 +225,19 @@ export class TimetableRenderer {
 
     // Use first trip as sample to get property configs
     const sampleTrip = trips[0];
-    const propertyConfigs = this.generateTripPropertyConfigs(sampleTrip);
+    const propertyConfigs = this.generateTripPropertyConfigs(
+      sampleTrip as unknown as Record<string, unknown>
+    );
 
     // Render each property as a row
     const propertyRows = propertyConfigs
       .map((config) => {
         const cells = trips
           .map((trip) => {
-            return this.renderPropertyCell(trip, config);
+            return this.renderPropertyCell(
+              trip as unknown as Record<string, unknown>,
+              config
+            );
           })
           .join('');
 
