@@ -9,7 +9,7 @@ import { generateCompositeKeyFromRecord } from '../utils/gtfs-primary-keys.js';
 interface GTFSParser {
   updateFileInMemory(fileName: string, content: string): void;
   getFileContent(fileName: string): string;
-  getFileData(fileName: string): Promise<unknown[]>;
+  getFileData(fileName: string): Promise<unknown[] | null>;
   updateFileContent(fileName: string, content: string): Promise<void>;
   gtfsDatabase: {
     updateRow(
@@ -132,6 +132,9 @@ export class Editor {
 
     try {
       // Load data from IndexedDB
+      if (!this.gtfsParser) {
+        return;
+      }
       const data = await this.gtfsParser.getFileData(this.currentFile);
 
       if (!data || data.length === 0) {
@@ -143,8 +146,8 @@ export class Editor {
       }
 
       // Get headers from first row
-      this.headers = Object.keys(data[0]);
-      this.tableData = data;
+      this.headers = Object.keys(data[0] as Record<string, unknown>);
+      this.tableData = data as CSVRow[];
 
       // Create table container with proper structure for Clusterize.js
       if (tableContainer) {
@@ -174,11 +177,11 @@ export class Editor {
     `;
 
         // Generate row data for Clusterize.js
-        const rows = data.map((row: CSVRow, rowIndex: number) => {
+        const rows = (data as CSVRow[]).map((row: CSVRow, rowIndex: number) => {
           const cells = this.headers
             .map((header) => {
               const value = row[header] || '';
-              return `<td><input type="text" value="${this.escapeHtml(value)}" data-row="${rowIndex}" data-col="${header}" /></td>`;
+              return `<td><input type="text" value="${this.escapeHtml(String(value))}" data-row="${rowIndex}" data-col="${header}" /></td>`;
             })
             .join('');
           return `<tr>${cells}</tr>`;
@@ -285,7 +288,11 @@ export class Editor {
   }
 
   private async flushPendingUpdates(): Promise<void> {
-    if (this.pendingUpdates.size === 0 || !this.currentFile) {
+    if (
+      this.pendingUpdates.size === 0 ||
+      !this.currentFile ||
+      !this.gtfsParser
+    ) {
       return;
     }
 

@@ -400,7 +400,8 @@ export function generateFieldConfigsFromSchema(
 
     // Determine field type and options
     const typeName = innerSchema._def?.typeName;
-    const isOptional = fieldSchema.isOptional?.() ?? false;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const isOptional = (fieldSchema as any).isOptional?.() ?? false;
 
     // Detect GTFS field type for specialized handling
     const gtfsFieldType = detectGTFSFieldType(

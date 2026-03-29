@@ -4,13 +4,8 @@
  * Accessed via Objects tab → Route → Service ID
  */
 
-import {
-  Calendar,
-  CalendarDates,
-  StopTimes,
-  Stops,
-  GTFSTableMap,
-} from '../types/gtfs-entities.js';
+import { Stops, GTFSTableMap } from '../types/gtfs-entities.js';
+import { GTFSDatabaseRecord } from './gtfs-database.js';
 import { notifications } from './notification-system';
 import { TimeFormatter } from '../utils/time-formatter.js';
 import { TimetableDataProcessor } from './timetable-data-processor.js';
@@ -40,7 +35,8 @@ interface EnhancedTrip {
 }
 
 interface GTFSParserInterface {
-  getFileDataSync<T extends keyof GTFSTableMap>(filename: T): GTFSTableMap[T][];
+  getFileDataSync(filename: string): GTFSDatabaseRecord[];
+  setInMemoryFileData(fileName: string, data: Record<string, unknown>[]): void;
   gtfsDatabase: {
     queryRows<T extends keyof GTFSTableMap>(
       tableName: T,
@@ -51,9 +47,18 @@ interface GTFSParserInterface {
       key: string,
       data: Partial<GTFSTableMap[T]>
     ): Promise<void>;
+    getRow<T extends keyof GTFSTableMap>(
+      tableName: T,
+      key: string
+    ): Promise<GTFSTableMap[T] | null>;
     insertRows<T extends keyof GTFSTableMap>(
       tableName: T,
       rows: GTFSTableMap[T][]
+    ): Promise<void>;
+    replaceRows<T extends keyof GTFSTableMap>(
+      tableName: T,
+      oldKeys: string[],
+      newRows: GTFSTableMap[T][]
     ): Promise<void>;
   };
 }
@@ -82,11 +87,12 @@ interface PatchManagerInterface {
 }
 
 interface GTFSRelationships {
-  getCalendarForService(service_id: string): Calendar | CalendarDates | null;
+  getCalendarForService(service_id: string): Record<string, unknown> | null;
   getTripsForRoute(route_id: string): EnhancedTrip[];
-  getStopTimesForTrip(trip_id: string): StopTimes[];
-  getStopById(stop_id: string): Stops | null;
-  getStopByIdAsync(stop_id: string): Promise<Stops | null>;
+  getTripsForRouteAsync(route_id: string): Promise<EnhancedTrip[]>;
+  getStopTimesForTrip(trip_id: string): Record<string, unknown>[];
+  getStopById(stop_id: string): Record<string, unknown> | null;
+  getStopByIdAsync(stop_id: string): Promise<Record<string, unknown> | null>;
 }
 
 /**
@@ -102,7 +108,6 @@ interface GTFSRelationships {
  * Follows the Enhanced GTFS Object pattern and FAIL HARD error handling policy.
  */
 export class ScheduleController {
-  private relationships: GTFSRelationships;
   private gtfsParser: GTFSParserInterface;
   private patchManager: PatchManagerInterface | null = null;
   private dataProcessor: TimetableDataProcessor;
@@ -125,7 +130,6 @@ export class ScheduleController {
     gtfsRelationships: GTFSRelationships,
     gtfsParser: GTFSParserInterface
   ) {
-    this.relationships = gtfsRelationships;
     this.gtfsParser = gtfsParser;
     this.dataProcessor = new TimetableDataProcessor(
       gtfsRelationships,
@@ -514,37 +518,16 @@ export class ScheduleController {
       notifications.show(
         `Updated ${fieldLabel} to "${displayValue}" for trip ${trip_id}`,
         'success',
-        3000
+        { duration: 3000 }
       );
     } catch (error) {
       console.error('Failed to update trip property:', error);
       notifications.show(
         `Failed to update ${field} for trip ${trip_id}`,
         'error',
-        5000
+        { duration: 5000 }
       );
     }
-  }
-
-  /**
-   * Database state detection helper
-   *
-   * Determines if arrival and departure times are in a "linked" state
-   * (both non-null and identical values).
-   *
-   * @param arrival_time - Current arrival time value
-   * @param departure_time - Current departure time value
-   * @returns True if times are linked (identical and non-null)
-   */
-  private isLinkedState(
-    arrival_time: string | null,
-    departure_time: string | null
-  ): boolean {
-    return (
-      arrival_time === departure_time &&
-      arrival_time !== null &&
-      departure_time !== null
-    );
   }
 
   /**
@@ -744,7 +727,6 @@ export class ScheduleController {
       // Store current state for refresh functionality
       this.currentRouteId = route_id;
       this.currentServiceId = service_id;
-      this.currentDirectionId = direction_id;
 
       // Get all available directions for this route and service
       const fetchedDirections =
@@ -765,6 +747,7 @@ export class ScheduleController {
 
       // Use provided direction_id or Direction 0 as default
       const selectedDirection = direction_id ?? availableDirections[0].id;
+      this.currentDirectionId = selectedDirection;
 
       const timetableData = await this.dataProcessor.generateTimetableData(
         route_id,
@@ -916,9 +899,6 @@ export class ScheduleController {
     // Get all stops from the database
     const allStops = await this.gtfsParser.gtfsDatabase.queryRows('stops', {});
     console.log('Total stops in database:', allStops.length);
-
-    // Store for filtering
-    this.availableStops = allStops;
 
     // Populate the dropdown
     this.populateAddStopList(allStops);
@@ -1077,9 +1057,6 @@ export class ScheduleController {
     return div.innerHTML;
   }
 
-  // Store available stops for filtering
-  private availableStops?: Stops[];
-
   // Track pending stop that hasn't been saved to database yet
   private pendingStop?: {
     stop_id: string;
@@ -1139,8 +1116,9 @@ export class ScheduleController {
         trip_id: trimmedId,
         route_id: this.currentRouteId,
         service_id: this.currentServiceId,
+        shape_id: '',
         ...(this.currentDirectionId && {
-          direction_id: this.currentDirectionId,
+          direction_id: parseInt(this.currentDirectionId),
         }),
       };
 
