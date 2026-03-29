@@ -4,7 +4,10 @@ import {
   getGTFSFieldDescription,
   createTooltip,
 } from '../utils/zod-tooltip-helper.js';
-import { generateCompositeKeyFromRecord } from '../utils/gtfs-primary-keys.js';
+import {
+  generateCompositeKeyFromRecord,
+  getGTFSPrimaryKey,
+} from '../utils/gtfs-primary-keys.js';
 
 interface GTFSParser {
   updateFileInMemory(fileName: string, content: string): void;
@@ -149,6 +152,18 @@ export class Editor {
       this.headers = Object.keys(data[0] as Record<string, unknown>);
       this.tableData = data as CSVRow[];
 
+      // Determine which columns are PK fields (read-only)
+      const tableName = this.currentFile.replace('.txt', '');
+      const pkConfig = getGTFSPrimaryKey(tableName);
+      let pkFields: Set<string>;
+      if (pkConfig?.type === 'all_fields') {
+        pkFields = new Set(this.headers);
+      } else if (pkConfig?.type === 'none' || !pkConfig) {
+        pkFields = new Set();
+      } else {
+        pkFields = new Set(pkConfig.fields);
+      }
+
       // Create table container with proper structure for Clusterize.js
       if (tableContainer) {
         tableContainer.innerHTML = `
@@ -177,10 +192,15 @@ export class Editor {
     `;
 
         // Generate row data for Clusterize.js
+        const lockIcon =
+          '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>';
         const rows = (data as CSVRow[]).map((row: CSVRow, rowIndex: number) => {
           const cells = this.headers
             .map((header) => {
               const value = row[header] || '';
+              if (pkFields.has(header)) {
+                return `<td class="bg-base-200 opacity-70 px-2 select-text"><span class="font-mono text-sm flex items-center gap-1">${lockIcon}${this.escapeHtml(String(value))}</span></td>`;
+              }
               return `<td><input type="text" value="${this.escapeHtml(String(value))}" data-row="${rowIndex}" data-col="${header}" /></td>`;
             })
             .join('');
