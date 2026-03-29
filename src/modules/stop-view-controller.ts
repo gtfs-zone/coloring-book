@@ -11,6 +11,7 @@ import {
   type QueryOnlyDatabase,
 } from '../utils/field-component.js';
 import { GTFS_TABLES, StopsSchema } from '../types/gtfs.js';
+import { getStopDisplay, renderCardLabel } from '../utils/entity-display.js';
 
 export interface StopViewDependencies {
   gtfsDatabase?: QueryOnlyDatabase;
@@ -78,7 +79,7 @@ export class StopViewController {
 
     return `
       <div class="space-y-4">
-        <h2 class="text-lg font-semibold">Stop Properties</h2>
+        <h2 class="text-lg font-semibold">${renderCardLabel(getStopDisplay(stop as unknown as Record<string, string>))}</h2>
         <div class="card bg-base-100 shadow-lg">
           <div class="card-body p-4">
             <div class="max-w-md">
