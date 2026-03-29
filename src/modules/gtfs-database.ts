@@ -36,6 +36,27 @@ import {
 } from '../utils/gtfs-primary-keys.js';
 import { TimeFormatter } from '../utils/time-formatter.js';
 
+// Concrete union of all IDB object store names (avoids keyof GTFSDBSchema widening to string)
+type GTFSStoreName =
+  | 'agencies'
+  | 'routes'
+  | 'stops'
+  | 'trips'
+  | 'stop_times'
+  | 'calendar'
+  | 'calendar_dates'
+  | 'shapes'
+  | 'frequencies'
+  | 'transfers'
+  | 'feed_info'
+  | 'fare_attributes'
+  | 'fare_rules'
+  | 'locations'
+  | 'patches'
+  | 'snapshots'
+  | 'meta'
+  | 'file_blobs';
+
 // Keep for backwards compatibility and dynamic operations
 export interface GTFSDatabaseRecord {
   id?: number; // Auto-increment primary key
@@ -64,6 +85,14 @@ export interface GTFSDBSchema extends DBSchema {
   stop_times: {
     key: string; // Composite: trip_id + ":" + stop_sequence
     value: StopTimes;
+    indexes: {
+      trip_id: string;
+      stop_id: string;
+      stop_sequence: number;
+      arrival_time: string;
+      departure_time: string;
+      trip_sequence: [string, number];
+    };
   };
   calendar: {
     key: string; // service_id
@@ -232,11 +261,14 @@ export class GTFSDatabase {
           GTFS_FILES.map((f) => f.filename).forEach((fileName) => {
             const tableName = this.getTableName(fileName);
             const keyPath = this.getNaturalKeyPath(tableName);
-            const store = db.createObjectStore(tableName, {
+            const store = db.createObjectStore(tableName as GTFSStoreName, {
               keyPath,
               autoIncrement: false,
             });
-            this.addIndexesForTable(store, tableName);
+            this.addIndexesForTable(
+              store as unknown as IDBObjectStore,
+              tableName
+            );
           });
 
           console.log('Database schema created');
@@ -364,47 +396,6 @@ export class GTFSDatabase {
       };
       req.onerror = () => resolve(null);
     });
-  }
-
-  /**
-   * Handle database errors - FAIL HARD, NO FALLBACKS
-   */
-  private handleDatabaseError(error: unknown, operation: string): never {
-    // Convert unknown error to Error object
-    const err = error instanceof Error ? error : new Error(String(error));
-
-    console.error(`CRITICAL DATABASE ERROR in ${operation}:`, err);
-    console.error('Stack trace:', err.stack);
-
-    // Enhanced constraint error debugging
-    if (err.name === 'ConstraintError' || err.message?.includes('constraint')) {
-      console.error('CONSTRAINT ERROR DETAILS:');
-      console.error('  Error name:', err.name);
-      console.error('  Error message:', err.message);
-      console.error('  Operation:', operation);
-
-      // Try to provide more context about what kind of constraint failed
-      if (
-        err.message?.includes('duplicate') ||
-        err.message?.includes('unique')
-      ) {
-        console.error(
-          '  → This appears to be a DUPLICATE KEY constraint violation'
-        );
-        console.error(
-          '  → Check for duplicate primary keys or unique constraints'
-        );
-      } else if (err.message?.includes('not satisfied')) {
-        console.error('  → This appears to be a GENERAL CONSTRAINT violation');
-        console.error(
-          '  → Could be missing required fields, invalid data types, or key constraints'
-        );
-      }
-    }
-
-    // Show error to user and fail hard
-    databaseFallbackManager.showDatabaseError(err, operation);
-    throw err;
   }
 
   /**
@@ -589,8 +580,11 @@ export class GTFSDatabase {
       // Single transaction for all rows — eliminates per-batch transaction overhead.
       // IDB serializes readwrite transactions on the same store anyway, so multiple
       // transactions provide no parallelism benefit.
-      const transaction = this.db.transaction(tableName, 'readwrite');
-      const store = transaction.objectStore(tableName);
+      const transaction = this.db.transaction(
+        tableName as GTFSStoreName,
+        'readwrite'
+      );
+      const store = transaction.objectStore(tableName as GTFSStoreName);
       const keyPath = this.getNaturalKeyPath(tableName);
 
       for (let index = 0; index < rows.length; index++) {
@@ -653,8 +647,11 @@ export class GTFSDatabase {
     }
 
     try {
-      const transaction = this.db.transaction(tableName, 'readwrite');
-      const store = transaction.objectStore(tableName);
+      const transaction = this.db.transaction(
+        tableName as GTFSStoreName,
+        'readwrite'
+      );
+      const store = transaction.objectStore(tableName as GTFSStoreName);
       const keyPath = this.getNaturalKeyPath(tableName);
 
       // Delete old records
@@ -717,7 +714,9 @@ export class GTFSDatabase {
     }
 
     try {
-      return await this.db.get(tableName, key);
+      return (await this.db.get(tableName as GTFSStoreName, key)) as
+        | GTFSDatabaseRecord
+        | undefined;
     } catch (error) {
       console.error(`Failed to get row ${key} from ${tableName}:`, error);
       throw error;
@@ -752,9 +751,16 @@ export class GTFSDatabase {
       const keyPath = this.getNaturalKeyPath(tableName);
 
       if (keyPath) {
-        await this.db.put(tableName, updated);
+        await this.db.put(
+          tableName as GTFSStoreName,
+          updated as GTFSDatabaseRecord
+        );
       } else {
-        await this.db.put(tableName, updated, key);
+        await this.db.put(
+          tableName as GTFSStoreName,
+          updated as GTFSDatabaseRecord,
+          key
+        );
       }
 
       console.log(`Updated row ${key} in ${tableName}`);
@@ -784,7 +790,9 @@ export class GTFSDatabase {
     }
 
     try {
-      return await this.db.getAll(tableName);
+      return (await this.db.getAll(
+        tableName as GTFSStoreName
+      )) as unknown as GTFSDatabaseRecord[];
     } catch (error) {
       console.error(`Failed to get all rows from ${tableName}:`, error);
       throw error;
@@ -825,14 +833,21 @@ export class GTFSDatabase {
 
       // Try to use indexes for better performance
       const filterKeys = Object.keys(filter);
-      const transaction = this.db.transaction(tableName, 'readonly');
-      const store = transaction.objectStore(tableName);
+      const transaction = this.db.transaction(
+        tableName as GTFSStoreName,
+        'readonly'
+      );
+      const store = transaction.objectStore(tableName as GTFSStoreName);
 
       // Check if we have an index for the first filter key
       const indexName = filterKeys[0];
-      if (store.indexNames.contains(indexName)) {
-        const index = store.index(indexName);
-        const results = await index.getAll(filter[indexName]);
+      if ((store.indexNames as DOMStringList).contains(indexName)) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const index = (store as any).index(indexName);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const results = (await (index as any).getAll(
+          filter[indexName]
+        )) as GTFSDatabaseRecord[];
 
         // Apply additional filters if needed
         if (filterKeys.length > 1) {
@@ -840,7 +855,7 @@ export class GTFSDatabase {
           delete remainingFilter[indexName];
           return results.filter((row) => {
             return Object.entries(remainingFilter).every(([key, value]) => {
-              return row[key] === value;
+              return (row as GTFSDatabaseRecord)[key] === value;
             });
           });
         }
@@ -852,7 +867,7 @@ export class GTFSDatabase {
       const allRows = await this.getAllRows(tableName);
       return allRows.filter((row) => {
         return Object.entries(filter).every(([key, value]) => {
-          return row[key] === value;
+          return (row as GTFSDatabaseRecord)[key] === value;
         });
       });
     } catch (error) {
@@ -876,8 +891,11 @@ export class GTFSDatabase {
     }
 
     try {
-      const transaction = this.db.transaction(tableName, 'readwrite');
-      await transaction.objectStore(tableName).delete(key);
+      const transaction = this.db.transaction(
+        tableName as GTFSStoreName,
+        'readwrite'
+      );
+      await transaction.objectStore(tableName as GTFSStoreName).delete(key);
       await transaction.done;
 
       console.log(`Deleted row ${key} from ${tableName}`);
@@ -928,8 +946,11 @@ export class GTFSDatabase {
       throw new Error('Database not initialized');
     }
 
-    const transaction = this.db.transaction(tableName, 'readwrite');
-    const store = transaction.objectStore(tableName);
+    const transaction = this.db.transaction(
+      tableName as GTFSStoreName,
+      'readwrite'
+    );
+    const store = transaction.objectStore(tableName as GTFSStoreName);
 
     const promises = keys.map((key) => store.delete(key));
     await Promise.all(promises);
@@ -951,8 +972,11 @@ export class GTFSDatabase {
     }
 
     try {
-      const transaction = this.db.transaction(tableName, 'readwrite');
-      await transaction.objectStore(tableName).clear();
+      const transaction = this.db.transaction(
+        tableName as GTFSStoreName,
+        'readwrite'
+      );
+      await transaction.objectStore(tableName as GTFSStoreName).clear();
       await transaction.done;
 
       console.log(`Cleared table ${tableName}`);
@@ -1031,8 +1055,11 @@ export class GTFSDatabase {
       throw new Error('Database not initialized');
     }
 
-    const transaction = this.db.transaction(tableName, 'readwrite');
-    const store = transaction.objectStore(tableName);
+    const transaction = this.db.transaction(
+      tableName as GTFSStoreName,
+      'readwrite'
+    );
+    const store = transaction.objectStore(tableName as GTFSStoreName);
     const keyPath = this.getNaturalKeyPath(tableName);
 
     const promises = updates.map(async ({ key, data }) => {
@@ -1045,6 +1072,7 @@ export class GTFSDatabase {
           return store.put(updated, key);
         }
       }
+      return undefined;
     });
 
     await Promise.all(promises);
@@ -1150,7 +1178,7 @@ export class GTFSDatabase {
       const searchTables = ['agencies', 'routes', 'stops', 'trips'];
 
       for (const tableName of searchTables) {
-        if (this.db.objectStoreNames.contains(tableName)) {
+        if ((this.db.objectStoreNames as DOMStringList).contains(tableName)) {
           const allRows = await this.getAllRows(tableName);
           const matches = allRows
             .filter((row) => {
@@ -1258,9 +1286,10 @@ export class GTFSDatabase {
         const stopTimesIndex = stopTimesStore.index('trip_id');
         const stopTimesCursor = await stopTimesIndex.openCursor(trip_id);
 
-        while (stopTimesCursor) {
-          await stopTimesCursor.delete();
-          await stopTimesCursor.continue();
+        let cursor = stopTimesCursor;
+        while (cursor) {
+          await cursor.delete();
+          cursor = await cursor.continue();
         }
 
         await transaction.done;
@@ -1339,7 +1368,7 @@ export class GTFSDatabase {
 
         const stopTimesStore = transaction.objectStore('stop_times');
         const stopTimesIndex = stopTimesStore.index('trip_id');
-        const stopTimesCursor = await stopTimesIndex.openCursor(originalTripId);
+        let stopTimesCursor = await stopTimesIndex.openCursor(originalTripId);
 
         while (stopTimesCursor) {
           const originalStopTime = stopTimesCursor.value;
@@ -1365,7 +1394,7 @@ export class GTFSDatabase {
             newStopTime
           );
           await stopTimesStore.add(newStopTime, compositeKey);
-          await stopTimesCursor.continue();
+          stopTimesCursor = await stopTimesCursor.continue();
         }
 
         await transaction.done;
@@ -1447,9 +1476,11 @@ export class GTFSDatabase {
         const store = transaction.objectStore('stop_times');
         const index = store.index('trip_id');
 
-        const existingStopTimes = await index.getAll(trip_id);
+        const existingStopTimes = (await index.getAll(
+          trip_id
+        )) as GTFSDatabaseRecord[];
         const existingMap = new Map(
-          existingStopTimes.map((st) => [
+          existingStopTimes.map((st: GTFSDatabaseRecord) => [
             `${st.stop_id}_${st.stop_sequence}`,
             st,
           ])
@@ -1460,7 +1491,7 @@ export class GTFSDatabase {
           const existing = existingMap.get(key);
 
           if (existing) {
-            const updated = { ...existing };
+            const updated: GTFSDatabaseRecord = { ...existing };
             if (update.arrival_time !== undefined) {
               updated.arrival_time = update.arrival_time;
             }
@@ -1471,7 +1502,8 @@ export class GTFSDatabase {
               updated.arrival_time = '';
               updated.departure_time = '';
             }
-            await store.put(updated);
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            await (store as any).put(updated);
           } else if (!update.isSkipped) {
             const newStopTime: GTFSDatabaseRecord = {
               trip_id: trip_id,
@@ -1487,7 +1519,8 @@ export class GTFSDatabase {
               'stop_times',
               newStopTime
             );
-            await store.add(newStopTime, compositeKey);
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            await (store as any).add(newStopTime, compositeKey);
           }
         }
 
@@ -1518,17 +1551,21 @@ export class GTFSDatabase {
     try {
       const transaction = this.db.transaction('calendar', 'readwrite');
       const store = transaction.objectStore('calendar');
-      const index = store.index('service_id');
-      const existing = await index.get(service_id);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const index = (store as any).index('service_id');
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const existing = await (index as any).get(service_id);
 
       if (existing) {
         const updated = { ...existing, ...serviceData };
-        await store.put(updated);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await (store as any).put(updated);
         console.log(`Updated service ${service_id}`);
       } else {
         // Create new service record
         const newService = { ...serviceData, service_id: service_id };
-        await store.add(newService);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await (store as any).add(newService);
         console.log(`Created new service ${service_id}`);
       }
 

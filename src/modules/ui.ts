@@ -6,11 +6,27 @@ import {
   createTooltip,
   getSchemaFieldName,
 } from '../utils/zod-tooltip-helper.js';
-import { navigateToTimetable, navigateToHome } from './navigation-actions.js';
+import {
+  navigateToTimetable,
+  navigateToHome,
+  navigateToAgency,
+  navigateToRoute,
+} from './navigation-actions.js';
 import { GTFS_TABLES } from '../types/gtfs.js';
-import { MapMode } from './map-controller.js';
+import { MapMode, MapController } from './map-controller.js';
+import { GTFSParser } from './gtfs-parser.js';
+import { Editor } from './editor.js';
+import { BrowseNavigation } from './browse-navigation.js';
+import { ScheduleController } from './schedule-controller.js';
 
 export class UIController {
+  gtfsParser: GTFSParser | null;
+  editor: Editor | null;
+  mapController: MapController | null;
+  browseNavigation: BrowseNavigation | null;
+  scheduleController: ScheduleController | null;
+  validateCallback: (() => void) | null;
+
   constructor() {
     this.gtfsParser = null;
     this.editor = null;
@@ -21,12 +37,12 @@ export class UIController {
   }
 
   initialize(
-    gtfsParser,
-    editor,
-    mapController,
-    browseNavigation,
-    scheduleController = null,
-    validateCallback = null
+    gtfsParser: GTFSParser,
+    editor: Editor,
+    mapController: MapController,
+    browseNavigation: BrowseNavigation,
+    scheduleController: ScheduleController | null = null,
+    validateCallback: (() => void) | null = null
   ) {
     this.gtfsParser = gtfsParser;
     this.editor = editor;
@@ -52,7 +68,7 @@ export class UIController {
         examplesDetails.open = false;
       }
       // Remove focus to close dropdown
-      document.activeElement?.blur();
+      (document.activeElement as HTMLElement)?.blur();
     };
 
     // Empty button (same as New)
@@ -62,8 +78,8 @@ export class UIController {
     });
 
     // Upload button
-    document.getElementById('upload-btn').addEventListener('click', () => {
-      document.getElementById('file-input').click();
+    document.getElementById('upload-btn')!.addEventListener('click', () => {
+      document.getElementById('file-input')!.click();
       closeLoadDropdown();
     });
 
@@ -90,14 +106,15 @@ export class UIController {
     });
 
     // File input
-    document.getElementById('file-input').addEventListener('change', (e) => {
-      if (e.target.files.length > 0) {
-        this.loadGTFSFile(e.target.files[0]);
+    document.getElementById('file-input')!.addEventListener('change', (e) => {
+      const target = e.target as HTMLInputElement;
+      if (target.files && target.files.length > 0) {
+        this.loadGTFSFile(target.files[0]);
       }
     });
 
     // Export button
-    document.getElementById('export-btn').addEventListener('click', () => {
+    document.getElementById('export-btn')!.addEventListener('click', () => {
       this.exportGTFS();
     });
 
@@ -153,7 +170,7 @@ export class UIController {
     body.addEventListener('drop', (e) => {
       e.preventDefault();
       e.stopPropagation();
-      const files = e.dataTransfer.files;
+      const files = e.dataTransfer!.files;
       if (files.length > 0 && files[0].name.endsWith('.zip')) {
         this.loadGTFSFile(files[0]);
       }
@@ -182,7 +199,28 @@ export class UIController {
     }
   }
 
-  async loadGTFSFile(file) {
+  toggleLeftPanel() {
+    const leftPanel = document.getElementById('left-panel');
+    if (leftPanel) {
+      leftPanel.classList.toggle('hidden');
+    }
+  }
+
+  hideLeftPanel() {
+    const leftPanel = document.getElementById('left-panel');
+    if (leftPanel) {
+      leftPanel.classList.add('hidden');
+    }
+  }
+
+  hideRightPanel() {
+    const rightPanel = document.getElementById('right-panel');
+    if (rightPanel) {
+      rightPanel.classList.add('hidden');
+    }
+  }
+
+  async loadGTFSFile(file: File) {
     let loadingNotificationId = null;
 
     try {
@@ -196,7 +234,7 @@ export class UIController {
       );
 
       // Show loading state on map
-      this.mapController.showLoading();
+      this.mapController!.showLoading();
 
       // Validate file type
       if (!file.name.toLowerCase().endsWith('.zip')) {
@@ -211,7 +249,7 @@ export class UIController {
       }
 
       // Parse the file
-      await this.gtfsParser.parseFile(file);
+      await this.gtfsParser!.parseFile(file);
 
       // Update UI
 
@@ -221,10 +259,10 @@ export class UIController {
       console.timeEnd('[GTFS] updateFileList');
 
       console.time('[GTFS] updateMap');
-      await this.mapController.updateMap();
+      await this.mapController!.updateMap();
 
       console.timeEnd('[GTFS] updateMap');
-      this.mapController.hideMapOverlay();
+      this.mapController!.hideMapOverlay();
 
       // Show files tab
       this.showFileList();
@@ -247,7 +285,8 @@ export class UIController {
       }
 
       // Enable export button
-      document.getElementById('export-btn').disabled = false;
+      (document.getElementById('export-btn') as HTMLButtonElement).disabled =
+        false;
       // Update map tool button states
       this.updateAddStopButtonState();
       this.updateEditStopsButtonState();
@@ -269,8 +308,8 @@ export class UIController {
 
       // Show error notification with helpful message
       let errorMessage = 'Failed to load GTFS file';
-      if (error.message) {
-        errorMessage += `: ${error.message}`;
+      if ((error as Error).message) {
+        errorMessage += `: ${(error as Error).message}`;
       }
 
       notifications.showError(errorMessage, {
@@ -280,17 +319,17 @@ export class UIController {
             label: 'Try Again',
             primary: true,
             handler: () => {
-              document.getElementById('file-input').click();
+              document.getElementById('file-input')!.click();
             },
           },
         ],
       });
 
-      this.mapController.hideMapOverlay();
+      this.mapController!.hideMapOverlay();
     }
   }
 
-  async loadGTFSFromURL(url) {
+  async loadGTFSFromURL(url: string) {
     let loadingNotificationId = null;
 
     try {
@@ -301,14 +340,14 @@ export class UIController {
         `Loading GTFS from URL: ${url}`
       );
 
-      this.mapController.showLoading();
+      this.mapController!.showLoading();
 
-      await this.gtfsParser.parseFromURL(url);
+      await this.gtfsParser!.parseFromURL(url);
 
       // Update UI
       this.updateFileList();
-      await this.mapController.updateMap();
-      this.mapController.hideMapOverlay();
+      await this.mapController!.updateMap();
+      this.mapController!.hideMapOverlay();
 
       // Refresh Objects navigation if available
       if (this.browseNavigation) {
@@ -322,7 +361,8 @@ export class UIController {
       }
 
       // Enable export button
-      document.getElementById('export-btn').disabled = false;
+      (document.getElementById('export-btn') as HTMLButtonElement).disabled =
+        false;
       // Update map tool button states
       this.updateAddStopButtonState();
       this.updateEditStopsButtonState();
@@ -342,8 +382,8 @@ export class UIController {
 
       // Show error notification with helpful message
       let errorMessage = 'Failed to load GTFS from URL';
-      if (error.message) {
-        errorMessage += `: ${error.message}`;
+      if ((error as Error).message) {
+        errorMessage += `: ${(error as Error).message}`;
       }
 
       notifications.showError(errorMessage, {
@@ -355,23 +395,23 @@ export class UIController {
               // Switch to help tab
               const helpTab = document.querySelector('[data-tab="help"]');
               if (helpTab) {
-                helpTab.click();
+                (helpTab as HTMLElement).click();
               }
             },
           },
         ],
       });
 
-      this.mapController.hideMapOverlay();
+      this.mapController!.hideMapOverlay();
     }
   }
 
   updateFileList() {
-    const fileList = document.getElementById('file-list');
+    const fileList = document.getElementById('file-list')!;
     fileList.innerHTML = '';
 
     // Get categorized files
-    const { required, optional, other } = this.gtfsParser.categorizeFiles();
+    const { required, optional, other } = this.gtfsParser!.categorizeFiles();
     // Create DaisyUI menu structure
     const menu = document.createElement('ul');
     menu.className = 'menu w-full';
@@ -429,10 +469,11 @@ export class UIController {
     // Enable export button if we have files
     const hasFiles =
       required.length > 0 || optional.length > 0 || other.length > 0;
-    document.getElementById('export-btn').disabled = !hasFiles;
+    (document.getElementById('export-btn') as HTMLButtonElement).disabled =
+      !hasFiles;
   }
 
-  addFileItem(container, fileName, isRequired) {
+  addFileItem(container: HTMLElement, fileName: string, isRequired: boolean) {
     const listItem = document.createElement('li');
 
     const link = document.createElement('a');
@@ -443,7 +484,7 @@ export class UIController {
     link.appendChild(nameSpan);
 
     // Add record count if available
-    const data = this.gtfsParser.getFileDataSync(fileName);
+    const data = this.gtfsParser!.getFileDataSync(fileName);
     if (data) {
       const count = Array.isArray(data) ? data.length : 1;
       const countSpan = document.createElement('span');
@@ -454,15 +495,15 @@ export class UIController {
 
     link.addEventListener('click', async (event) => {
       event.preventDefault();
-      await this.openFile(fileName, event.currentTarget);
+      await this.openFile(fileName, event.currentTarget as HTMLElement);
     });
 
     listItem.appendChild(link);
     container.appendChild(listItem);
   }
 
-  async openFile(fileName, clickedElement = null) {
-    if (!this.gtfsParser.getAllFileNames().includes(fileName)) {
+  async openFile(fileName: string, clickedElement: HTMLElement | null = null) {
+    if (!this.gtfsParser!.getAllFileNames().includes(fileName)) {
       return;
     }
 
@@ -479,7 +520,7 @@ export class UIController {
 
     // Update map if it's a spatial file
     if (fileName === GTFS_TABLES.STOPS || fileName === GTFS_TABLES.SHAPES) {
-      this.mapController.highlightFileData(fileName);
+      this.mapController!.highlightFileData(fileName);
     }
   }
 
@@ -488,7 +529,7 @@ export class UIController {
     // Switch to Files tab if not already active
     const filesTab = document.querySelector('[data-tab-name="files"]');
     if (filesTab) {
-      filesTab.click();
+      (filesTab as HTMLElement).click();
     }
 
     // Open the file in the editor
@@ -510,7 +551,7 @@ export class UIController {
     }
   }
 
-  async showFileEditor(fileName) {
+  async showFileEditor(fileName: string) {
     const listView = document.getElementById('file-list-view');
     const editorView = document.getElementById('file-editor-view');
     if (listView && editorView) {
@@ -524,7 +565,7 @@ export class UIController {
       }
 
       // Open file in editor
-      await this.editor.openFile(fileName);
+      await this.editor!.openFile(fileName);
     }
   }
 
@@ -539,9 +580,9 @@ export class UIController {
   }
 
   showObjectDetails(
-    objectType,
-    objectData,
-    relatedObjects = [],
+    objectType: string,
+    objectData: Record<string, string | undefined>,
+    relatedObjects: Record<string, string | undefined>[] = [],
     _skipBreadcrumbUpdate = false
   ) {
     const listView = document.getElementById('browse-list-view');
@@ -616,7 +657,7 @@ export class UIController {
     }
   }
 
-  ensureObjectDetailsStructure(detailsView) {
+  ensureObjectDetailsStructure(detailsView: HTMLElement) {
     // Check if the proper structure exists (object-type, object-name, etc.)
     if (
       !document.getElementById('object-type') ||
@@ -677,7 +718,8 @@ export class UIController {
     }
   }
 
-  populateObjectProperties(objectData) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  populateObjectProperties(objectData: any) {
     const container = document.getElementById('object-properties');
     if (!container) {
       return;
@@ -751,7 +793,7 @@ export class UIController {
       inputEl.className =
         'text-sm px-2 py-1 border border-primary rounded focus:outline-none focus:ring-1 focus:ring-blue-500';
       inputEl.type = 'text';
-      inputEl.value = value || '';
+      inputEl.value = value !== null ? String(value) : '';
       inputEl.dataset.property = key;
 
       propertyEl.appendChild(labelEl);
@@ -760,10 +802,11 @@ export class UIController {
     });
   }
 
-  populateRelatedObjects(relatedObjects) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  populateRelatedObjects(relatedObjects: any[]) {
     const container = document.getElementById('related-browse');
     const headerEl =
-      document.querySelector('#related-objects').previousElementSibling;
+      document.querySelector('#related-objects')?.previousElementSibling;
 
     if (!container) {
       return;
@@ -850,7 +893,8 @@ export class UIController {
         routesEl.className = 'px-3 pb-2 space-y-1 hidden';
 
         // Add routes with their services
-        obj.relatedObjects.forEach((route) => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        obj.relatedObjects.forEach((route: any) => {
           const routeEl = document.createElement('div');
           routeEl.className = 'bg-base-100 rounded mb-1';
 
@@ -882,7 +926,8 @@ export class UIController {
 
           // Add services if route has them
           if (route.relatedObjects && route.relatedObjects.length > 0) {
-            route.relatedObjects.forEach((service) => {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            route.relatedObjects.forEach((service: any) => {
               const serviceEl = document.createElement('div');
               serviceEl.className =
                 'flex items-center gap-2 p-1 bg-base-200 rounded text-xs cursor-pointer hover:bg-base-300';
@@ -931,10 +976,11 @@ export class UIController {
           // Route double-click action
           routeHeaderEl.addEventListener('dblclick', (e) => {
             e.stopPropagation();
-            if (route.routeAction && this.browseNavigation) {
-              this.browseNavigation.navigateToRoute(
-                route.data.id || route.data.route_id
-              );
+            if (route.routeAction) {
+              const route_id = route.data.id || route.data.route_id;
+              if (route_id) {
+                navigateToRoute(route_id);
+              }
             }
           });
 
@@ -958,10 +1004,10 @@ export class UIController {
 
         // Agency double-click action
         headerEl.addEventListener('dblclick', () => {
-          if (obj.agencyAction && this.browseNavigation) {
+          if (obj.agencyAction) {
             const agency_id = obj.data.id || obj.data.agency_id;
             if (agency_id) {
-              this.browseNavigation.navigateToAgency(agency_id);
+              navigateToAgency(agency_id);
             }
           }
         });
@@ -1003,7 +1049,8 @@ export class UIController {
         tripsEl.className = 'px-3 pb-2 space-y-1 hidden';
 
         // Add trips
-        obj.relatedObjects.forEach((trip) => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        obj.relatedObjects.forEach((trip: any) => {
           const tripEl = document.createElement('div');
           tripEl.className =
             'flex items-center gap-2 p-2 bg-base-100 rounded text-xs cursor-pointer hover:bg-base-300';
@@ -1017,11 +1064,6 @@ export class UIController {
           // Make trip clickable
           tripEl.addEventListener('click', (e) => {
             e.stopPropagation();
-            if (trip.tripAction && this.browseNavigation) {
-              this.browseNavigation.navigateToTrip(
-                trip.data.trip_id || trip.data.id
-              );
-            }
           });
 
           tripsEl.appendChild(tripEl);
@@ -1042,10 +1084,11 @@ export class UIController {
 
         // Route click action
         headerEl.addEventListener('dblclick', () => {
-          if (obj.routeAction && this.browseNavigation) {
-            this.browseNavigation.navigateToRoute(
-              obj.data.route_id || obj.data.id
-            );
+          if (obj.routeAction) {
+            const route_id = obj.data.route_id || obj.data.id;
+            if (route_id) {
+              navigateToRoute(route_id);
+            }
           }
         });
 
@@ -1075,17 +1118,15 @@ export class UIController {
               obj.data.service_id,
               obj.direction_id || obj.data.direction_id
             );
-          } else if (obj.agencyAction && this.browseNavigation) {
+          } else if (obj.agencyAction) {
             // Navigate to agency view to show routes
             const agency_id = obj.data.id || obj.data.agency_id;
             if (agency_id) {
-              this.browseNavigation.navigateToAgency(agency_id);
+              navigateToAgency(agency_id);
             }
           } else if (obj.routeAction && obj.route_id) {
             // Navigate to route view to show services
-            if (this.browseNavigation) {
-              this.browseNavigation.navigateToRoute(obj.route_id);
-            }
+            navigateToRoute(obj.route_id);
           } else {
             this.showObjectDetails(
               obj.type,
@@ -1103,16 +1144,16 @@ export class UIController {
   async createNewFeed() {
     try {
       // Reset to empty GTFS feed
-      await this.gtfsParser.initializeEmpty();
+      await this.gtfsParser!.initializeEmpty();
       this.updateFileList();
-      await this.mapController.updateMap();
-      this.mapController.hideMapOverlay();
+      await this.mapController!.updateMap();
+      this.mapController!.hideMapOverlay();
 
       // Show files tab
       this.showFileList();
 
       // Clear editor
-      this.editor.clearEditor();
+      this.editor!.clearEditor();
 
       // Refresh Objects navigation if available
       if (this.browseNavigation) {
@@ -1129,7 +1170,7 @@ export class UIController {
     } catch (error) {
       console.error('Error creating new GTFS feed:', error);
       notifications.showError(
-        `Failed to create new GTFS feed: ${error.message}`
+        `Failed to create new GTFS feed: ${(error as Error).message}`
       );
     }
   }
@@ -1142,7 +1183,7 @@ export class UIController {
         !this.gtfsParser ||
         !this.gtfsParser
           .getAllFileNames()
-          .some((f) => (this.gtfsParser.getFileDataSync(f)?.length ?? 0) > 0)
+          .some((f) => (this.gtfsParser!.getFileDataSync(f)?.length ?? 0) > 0)
       ) {
         notifications.showWarning(
           'No GTFS data to export. Please add some data first.'
@@ -1158,10 +1199,10 @@ export class UIController {
       );
 
       // Save current file changes
-      this.editor.saveCurrentFileChanges();
+      this.editor!.saveCurrentFileChanges();
 
       // Generate ZIP blob
-      const blob = await this.gtfsParser.exportAsZip();
+      const blob = await this.gtfsParser!.exportAsZip();
 
       // Download the file
       const url = URL.createObjectURL(blob);
@@ -1186,7 +1227,9 @@ export class UIController {
         notifications.removeNotification(loadingNotificationId);
       }
 
-      notifications.showError(`Failed to export GTFS data: ${error.message}`);
+      notifications.showError(
+        `Failed to export GTFS data: ${(error as Error).message}`
+      );
     }
   }
 
@@ -1270,11 +1313,13 @@ export class UIController {
     // Update button appearance
     if (isAddMode) {
       addStopBtn.classList.add('btn-active');
-      addStopBtn.querySelector('svg').style.transform = 'rotate(45deg)';
+      (addStopBtn.querySelector('svg') as SVGElement | null)!.style.transform =
+        'rotate(45deg)';
       addStopBtn.setAttribute('data-tip', 'Exit add stop mode');
     } else {
       addStopBtn.classList.remove('btn-active');
-      addStopBtn.querySelector('svg').style.transform = '';
+      (addStopBtn.querySelector('svg') as SVGElement | null)!.style.transform =
+        '';
       addStopBtn.setAttribute('data-tip', 'Add stop');
     }
   }
@@ -1323,11 +1368,15 @@ export class UIController {
     // Update button appearance
     if (isEditMode) {
       editStopsBtn.classList.add('btn-active');
-      editStopsBtn.querySelector('svg').style.transform = 'scale(1.1)';
+      (editStopsBtn.querySelector(
+        'svg'
+      ) as SVGElement | null)!.style.transform = 'scale(1.1)';
       editStopsBtn.setAttribute('data-tip', 'Exit edit stops mode');
     } else {
       editStopsBtn.classList.remove('btn-active');
-      editStopsBtn.querySelector('svg').style.transform = '';
+      (editStopsBtn.querySelector(
+        'svg'
+      ) as SVGElement | null)!.style.transform = '';
       editStopsBtn.setAttribute('data-tip', 'Edit stops');
     }
   }

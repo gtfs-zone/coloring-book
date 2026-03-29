@@ -1967,10 +1967,6 @@ export const GTFS_TABLES = {
   FEED_INFO: 'feed_info.txt',
   ATTRIBUTIONS: 'attributions.txt',
 } as const;
-
-// Union type for all GTFS table names
-export type GTFSTableName = (typeof GTFS_TABLES)[keyof typeof GTFS_TABLES];
-
 // Utility functions for accessing schema metadata
 export function getFieldDescription(
   filename: string,
@@ -1988,7 +1984,7 @@ export function getFieldDescription(
   }
 
   // Extract description from the field schema
-  return shape[fieldName]?.description;
+  return (shape[fieldName] as unknown as { description?: string })?.description;
 }
 
 export function getFileSchema(filename: string): z.ZodSchema | undefined {

@@ -136,7 +136,7 @@ export class NotificationSystem {
     };
 
     const element = document.createElement('div');
-    element.className = `notification-item ${colorMap[type]} border rounded-lg p-4 shadow-lg max-w-sm transform transition-all duration-300 ease-in-out`;
+    element.className = `notification-item ${colorMap[type as keyof typeof colorMap]} border rounded-lg p-4 shadow-lg max-w-sm transform transition-all duration-300 ease-in-out`;
     element.style.opacity = '0';
     element.style.transform = 'translateX(100%)';
 
@@ -163,7 +163,7 @@ export class NotificationSystem {
     element.innerHTML = `
       <div class="flex items-start gap-3">
         <div class="flex-shrink-0 text-lg">
-          ${iconMap[type]}
+          ${iconMap[type as keyof typeof iconMap]}
           ${type === 'loading' ? '<span class="loading loading-spinner loading-sm ml-1"></span>' : ''}
         </div>
         <div class="flex-1 min-w-0">
@@ -177,7 +177,7 @@ export class NotificationSystem {
     `;
 
     notification.element = element;
-    this.container.appendChild(element);
+    this.container!.appendChild(element);
 
     // Animate in
     requestAnimationFrame(() => {
@@ -187,7 +187,7 @@ export class NotificationSystem {
 
     // Add event listeners
     const closeBtn = element.querySelector('.notification-close');
-    closeBtn.addEventListener('click', () => {
+    closeBtn?.addEventListener('click', () => {
       this.removeNotification(notification.id);
     });
 
@@ -195,7 +195,7 @@ export class NotificationSystem {
     const actionBtns = element.querySelectorAll('.notification-action');
     actionBtns.forEach((btn) => {
       btn.addEventListener('click', () => {
-        const actionId = btn.dataset.action;
+        const actionId = (btn as HTMLElement).dataset.action;
         const action = actions.find((a) => a.id === actionId);
         if (action && action.handler) {
           action.handler();
@@ -254,7 +254,7 @@ export class NotificationSystem {
     this.renderNotification(notification);
 
     if (oldElement && oldElement.parentNode) {
-      oldElement.parentNode.replaceChild(notification.element, oldElement);
+      oldElement.parentNode.replaceChild(notification.element!, oldElement);
     }
   }
 

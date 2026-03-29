@@ -674,7 +674,7 @@ export class GTFSParser {
       console.error('Error loading GTFS file:', error);
       loadingStateManager.finishLoading(operation);
       loadingStateManager.showError(
-        `Failed to load GTFS file: ${error.message}`
+        `Failed to load GTFS file: ${error instanceof Error ? error.message : String(error)}`
       );
       throw error;
     }
@@ -845,8 +845,10 @@ export class GTFSParser {
   // Type-safe synchronous file data retrieval
   getFileDataSyncTyped<T extends GTFSTableName>(
     fileName: `${T}.txt`
-  ): GTFSTableMap[T][] {
-    return this.getFileDataSync(fileName) as GTFSTableMap[T][];
+  ): GTFSTableMap[T][];
+  getFileDataSyncTyped<T>(fileName: string): T[];
+  getFileDataSyncTyped<T>(fileName: string): T[] {
+    return this.getFileDataSync(fileName) as T[];
   }
 
   getAllFileNames(): string[] {

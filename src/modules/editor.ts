@@ -12,7 +12,7 @@ import {
 interface GTFSParser {
   updateFileInMemory(fileName: string, content: string): void;
   getFileContent(fileName: string): string;
-  getFileData(fileName: string): Promise<unknown[]>;
+  getFileData(fileName: string): Promise<unknown[] | null>;
   updateFileContent(fileName: string, content: string): Promise<void>;
   gtfsDatabase: {
     updateRow(
@@ -135,6 +135,9 @@ export class Editor {
 
     try {
       // Load data from IndexedDB
+      if (!this.gtfsParser) {
+        return;
+      }
       const data = await this.gtfsParser.getFileData(this.currentFile);
 
       if (!data || data.length === 0) {
@@ -146,8 +149,8 @@ export class Editor {
       }
 
       // Get headers from first row
-      this.headers = Object.keys(data[0]);
-      this.tableData = data;
+      this.headers = Object.keys(data[0] as Record<string, unknown>);
+      this.tableData = data as CSVRow[];
 
       // Determine which columns are PK fields (read-only)
       const tableName = this.currentFile.replace('.txt', '');
@@ -191,7 +194,7 @@ export class Editor {
         // Generate row data for Clusterize.js
         const lockIcon =
           '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>';
-        const rows = data.map((row: CSVRow, rowIndex: number) => {
+        const rows = (data as CSVRow[]).map((row: CSVRow, rowIndex: number) => {
           const cells = this.headers
             .map((header) => {
               const value = row[header] || '';
@@ -305,7 +308,11 @@ export class Editor {
   }
 
   private async flushPendingUpdates(): Promise<void> {
-    if (this.pendingUpdates.size === 0 || !this.currentFile) {
+    if (
+      this.pendingUpdates.size === 0 ||
+      !this.currentFile ||
+      !this.gtfsParser
+    ) {
       return;
     }
 
