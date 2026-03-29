@@ -12,6 +12,12 @@ import {
 } from '../utils/field-component.js';
 import { TripsSchema, GTFS_TABLES } from '../types/gtfs.js';
 import { getGTFSFieldDescription } from '../utils/zod-tooltip-helper.js';
+import {
+  getTripDisplay,
+  getStopDisplay,
+  renderCardLabel,
+  renderOptionLabel,
+} from '../utils/entity-display.js';
 
 /**
  * Timetable Renderer - HTML generation for schedule views
@@ -392,7 +398,7 @@ export class TimetableRenderer {
         return `
           <td class="trip-header text-center min-w-[80px] p-2 text-xs"
               title="${trip.trip_headsign || trip.trip_short_name || trip.trip_id}">
-            ${trip.trip_id}
+            ${renderCardLabel(getTripDisplay(trip as unknown as Record<string, string>))}
           </td>
         `;
       })
@@ -524,7 +530,7 @@ export class TimetableRenderer {
               data-old-stop-id="${this.escapeHtml(stop.stop_id)}"
               onchange="gtfsEditor.scheduleController.changeStopAtRow(this.dataset.oldStopId, this.value, this)"
             >
-              ${data.allStops.map((s) => `<option value="${this.escapeHtml(s.stop_id)}"${s.stop_id === stop.stop_id ? ' selected' : ''}>${this.escapeHtml(s.stop_name || s.stop_id)}</option>`).join('')}
+              ${data.allStops.map((s) => `<option value="${this.escapeHtml(s.stop_id)}"${s.stop_id === stop.stop_id ? ' selected' : ''}>${this.escapeHtml(renderOptionLabel(getStopDisplay(s as unknown as Record<string, string>)))}</option>`).join('')}
             </select>
           </th>
           ${timeCells}

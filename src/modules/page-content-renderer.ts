@@ -32,6 +32,13 @@ import {
 } from '../utils/form-patch-bridge.js';
 import type { GTFSDatabaseRecord } from './gtfs-database.js';
 import { notifications } from './notification-system.js';
+import {
+  getAgencyDisplay,
+  getServiceDisplay,
+  getRouteDisplay,
+  renderCardLabel,
+  renderOptionLabel,
+} from '../utils/entity-display.js';
 
 /**
  * Interface for injected dependencies
@@ -241,17 +248,13 @@ export class PageContentRenderer {
 
     const agencyItems = agencies
       .map((agency: unknown) => {
-        const agencyData = agency as Record<string, unknown>;
-        const agencyName =
-          (agencyData.agency_name as string) ||
-          (agencyData.agency_id as string) ||
-          'Unknown Agency';
+        const agencyData = agency as Record<string, string>;
 
         return `
           <div class="flex items-center gap-3 p-3 rounded-lg hover:bg-base-200 cursor-pointer transition-colors agency-card"
-               data-agency-id="${agencyData.agency_id as string}">
+               data-agency-id="${agencyData.agency_id}">
             <div class="flex-1 min-w-0">
-              <div class="font-semibold">${agencyName}</div>
+              <div class="font-semibold">${renderCardLabel(getAgencyDisplay(agencyData))}</div>
             </div>
           </div>
         `;
@@ -260,13 +263,13 @@ export class PageContentRenderer {
 
     const serviceItems = services
       .map((service: Record<string, unknown>) => {
-        const serviceName = service.service_id as string;
+        const serviceData = service as Record<string, string>;
 
         return `
           <div class="flex items-center gap-3 p-3 rounded-lg hover:bg-base-200 cursor-pointer transition-colors service-card"
-               data-service-id="${service.service_id as string}">
+               data-service-id="${serviceData.service_id}">
             <div class="flex-1 min-w-0">
-              <div class="font-semibold">${serviceName}</div>
+              <div class="font-semibold">${renderCardLabel(getServiceDisplay(serviceData))}</div>
             </div>
           </div>
         `;
@@ -426,6 +429,14 @@ export class PageContentRenderer {
     // Update map to highlight this route
     this.dependencies.mapController.highlightRoute(route_id);
 
+    // Fetch route data for the header
+    const routeRows = await this.dependencies.gtfsDatabase.queryRows('routes', {
+      route_id,
+    });
+    const routeData = (
+      routeRows.length > 0 ? routeRows[0] : { route_id }
+    ) as Record<string, string>;
+
     // Group trips by service_id for service list
     const serviceGroups = trips.reduce(
       (groups: Record<string, unknown[]>, trip: unknown) => {
@@ -450,7 +461,7 @@ export class PageContentRenderer {
     // Render route properties section
     const routePropertiesHTML = `
       <div class="space-y-4">
-        <h2 class="text-lg font-semibold">Route Properties</h2>
+        <h2 class="text-lg font-semibold">${renderCardLabel(getRouteDisplay(routeData))}</h2>
         <div class="card bg-base-100 shadow-lg">
           <div class="card-body p-4">
             <div class="max-w-md">
@@ -483,7 +494,7 @@ export class PageContentRenderer {
             .filter((s) => !serviceGroups[s.service_id as string]) // Only show services without trips
             .map(
               (service) => `
-              <option value="${service.service_id}">${service.service_id}</option>
+              <option value="${service.service_id}">${renderOptionLabel(getServiceDisplay(service as Record<string, string>))}</option>
             `
             )
             .join('')}
