@@ -1988,7 +1988,7 @@ export function getFieldDescription(
   }
 
   // Extract description from the field schema
-  return shape[fieldName]?.description;
+  return (shape[fieldName] as unknown as { description?: string })?.description;
 }
 
 export function getFileSchema(filename: string): z.ZodSchema | undefined {

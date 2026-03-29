@@ -154,8 +154,8 @@ export class TimetableCellRenderer {
    * @returns HTML string for read-only time cell
    */
   public renderReadOnlyTimeCell(
-    trip_id: string,
-    stop_id: string,
+    _trip_id: string,
+    _stop_id: string,
     time: string | null
   ): string {
     const displayTime = time ? TimeFormatter.formatTime(time) : '';

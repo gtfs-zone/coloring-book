@@ -19,17 +19,17 @@ import {
  * Extract description from a Zod schema field
  * Handles wrapped types like ZodOptional, ZodNullable, etc.
  */
-function getFieldDescription(
-  schema: Record<string, unknown>,
-  fieldName: string
-): string {
+function getFieldDescription(schema: unknown, fieldName: string): string {
   try {
     if (!schema) {
       return '';
     }
 
+    const s = schema as Record<string, unknown>;
     // Access the schema shape - try multiple ways to be compatible
-    const shape = schema._def?.shape || schema.shape;
+    const shape = ((s._def as Record<string, unknown>)?.shape || s.shape) as
+      | Record<string, unknown>
+      | undefined;
 
     if (!shape) {
       return '';
@@ -39,18 +39,23 @@ function getFieldDescription(
       return '';
     }
 
-    let field = shape[fieldName];
+    let field = shape[fieldName] as Record<string, unknown>;
 
     // Unwrap optional, nullable, and other wrapper types to get to the inner type
     // In Zod v4, optional fields are wrapped in ZodOptional with innerType containing the actual field
-    while (field._def?.innerType) {
-      field = field._def.innerType;
+    while ((field._def as Record<string, unknown> | undefined)?.innerType) {
+      field = (field._def as Record<string, unknown>).innerType as Record<
+        string,
+        unknown
+      >;
     }
 
     // Try multiple ways to access the description based on Zod's structure
     const description =
-      field.description || // Direct access
-      field._def?.description || // Internal _def access
+      (field.description as string | undefined) || // Direct access
+      ((field._def as Record<string, unknown> | undefined)?.description as
+        | string
+        | undefined) || // Internal _def access
       '';
 
     return description;
