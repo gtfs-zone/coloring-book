@@ -1,5 +1,11 @@
 import { Map as MapLibreMap } from 'maplibre-gl';
-import { GTFS } from '../types/gtfs.js';
+import {
+  Routes,
+  Trips,
+  Shapes,
+  StopTimes,
+  Stops,
+} from '../types/gtfs-entities.js';
 import type { GTFSParser } from './gtfs-parser.js';
 
 export interface RouteFeature extends GeoJSON.Feature {
@@ -7,7 +13,7 @@ export interface RouteFeature extends GeoJSON.Feature {
   geometry: GeoJSON.LineString;
   properties: {
     route_id: string;
-    route_data: GTFS.Route;
+    route_data: Routes;
     color: string;
     route_short_name?: string;
     route_long_name?: string;
@@ -24,7 +30,6 @@ export class RouteRenderer {
   private map: MapLibreMap;
   private routeFeatures: RouteFeature[] = [];
   private gtfsParser: GTFSParser;
-  private highlightedRouteId: string | null = null;
   private initialized: boolean = false;
   private initializationPromise: Promise<void> | null = null;
 
@@ -163,14 +168,12 @@ export class RouteRenderer {
    * Create route features as GeoJSON FeatureCollection
    */
   private createRouteFeatures(): RouteFeature[] {
-    const routes =
-      this.gtfsParser.getFileDataSyncTyped<GTFS.Route>('routes.txt');
-    const trips = this.gtfsParser.getFileDataSyncTyped<GTFS.Trip>('trips.txt');
-    const shapes =
-      this.gtfsParser.getFileDataSyncTyped<GTFS.Shape>('shapes.txt');
+    const routes = this.gtfsParser.getFileDataSyncTyped<Routes>('routes.txt');
+    const trips = this.gtfsParser.getFileDataSyncTyped<Trips>('trips.txt');
+    const shapes = this.gtfsParser.getFileDataSyncTyped<Shapes>('shapes.txt');
     const stopTimes =
-      this.gtfsParser.getFileDataSyncTyped<GTFS.StopTime>('stop_times.txt');
-    const stops = this.gtfsParser.getFileDataSyncTyped<GTFS.Stop>('stops.txt');
+      this.gtfsParser.getFileDataSyncTyped<StopTimes>('stop_times.txt');
+    const stops = this.gtfsParser.getFileDataSyncTyped<Stops>('stops.txt');
 
     if (routes.length === 0 || trips.length === 0) {
       return [];
@@ -180,7 +183,7 @@ export class RouteRenderer {
     const shapeIndex = new Map<string, [number, number][]>();
     if (shapes.length > 0) {
       // Group points by shape_id
-      const buckets = new Map<string, GTFS.Shape[]>();
+      const buckets = new Map<string, Shapes[]>();
       for (const pt of shapes) {
         const arr = buckets.get(pt.shape_id);
         if (arr) {
@@ -200,7 +203,7 @@ export class RouteRenderer {
     }
 
     // Build trips index: route_id -> trips (one pass, O(T))
-    const tripsByRoute = new Map<string, GTFS.Trip[]>();
+    const tripsByRoute = new Map<string, Trips[]>();
     for (const trip of trips) {
       const arr = tripsByRoute.get(trip.route_id);
       if (arr) {
@@ -285,16 +288,16 @@ export class RouteRenderer {
    */
   private createRouteGeometryFromStops(
     trip_id: string,
-    stopTimes: GTFS.StopTime[],
-    stops: GTFS.Stop[]
+    stopTimes: StopTimes[],
+    stops: Stops[]
   ): GeoJSON.LineString | null {
     // Create stops lookup
     const stopsLookup: { [key: string]: { lat: number; lon: number } } = {};
     stops.forEach((stop) => {
-      if (stop.stop_lat && stop.stop_lon) {
+      if (stop.stop_lat !== null && stop.stop_lon !== null) {
         stopsLookup[stop.stop_id] = {
-          lat: parseFloat(stop.stop_lat),
-          lon: parseFloat(stop.stop_lon),
+          lat: stop.stop_lat,
+          lon: stop.stop_lon,
         };
       }
     });
@@ -302,7 +305,7 @@ export class RouteRenderer {
     // Get stops for this trip
     const tripStopTimes = stopTimes
       .filter((st) => st.trip_id === trip_id)
-      .sort((a, b) => parseInt(a.stop_sequence) - parseInt(b.stop_sequence));
+      .sort((a, b) => a.stop_sequence - b.stop_sequence);
 
     const routePath: [number, number][] = [];
     tripStopTimes.forEach((st) => {
@@ -394,7 +397,6 @@ export class RouteRenderer {
       });
     }
     this.routeFeatures = [];
-    this.highlightedRouteId = null;
   }
 
   /**
@@ -406,8 +408,6 @@ export class RouteRenderer {
     }
 
     console.log(`🎯 Highlighting route: ${route_id}`);
-
-    this.highlightedRouteId = route_id;
 
     // Update the highlight filter
     this.map.setFilter('routes-highlight', ['==', 'route_id', route_id]);
@@ -426,7 +426,6 @@ export class RouteRenderer {
     console.log(`🎯 Highlighting ${route_ids.length} routes`);
 
     // Store first route as the primary highlighted route
-    this.highlightedRouteId = route_ids[0];
 
     // Update the highlight filter to match any of the route IDs
     this.map.setFilter('routes-highlight', ['in', 'route_id', ...route_ids]);
@@ -438,7 +437,6 @@ export class RouteRenderer {
    * Clear route highlighting
    */
   public clearHighlight(): void {
-    this.highlightedRouteId = null;
     // Set filter to match nothing
     this.map.setFilter('routes-highlight', ['==', 'route_id', '']);
   }
@@ -447,7 +445,7 @@ export class RouteRenderer {
    * Set click handler for route interactions (DEPRECATED - handled by InteractionHandler)
    */
   public setRouteClickHandler(
-    _handler: (route_id: string, route_data: GTFS.Route) => void
+    _handler: (route_id: string, route_data: Routes) => void
   ): void {
     // NOTE: Route clicks are now handled by InteractionHandler to prevent conflicts with stop clicks
     // This method is kept for legacy compatibility but does nothing
@@ -484,6 +482,5 @@ export class RouteRenderer {
     }
 
     this.routeFeatures = [];
-    this.highlightedRouteId = null;
   }
 }

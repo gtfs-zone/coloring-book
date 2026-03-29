@@ -83,6 +83,7 @@ export class BrowseNavigation {
   public serviceDaysController: {
     renderServiceEditor: (service_id: string) => Promise<string>;
   } | null = null; // Will be set after initialization
+  public searchQuery: string = '';
   private container: HTMLElement | null = null;
   private isLoading: boolean = false;
   private contentRenderer: PageContentRenderer | null = null;
@@ -93,6 +94,11 @@ export class BrowseNavigation {
       before: Record<string, unknown>,
       after: Record<string, unknown>
     ) => Promise<void>;
+    recordInsert: (
+      table: string,
+      id: string,
+      record: Record<string, unknown>
+    ) => Promise<void>;
   } | null = null;
 
   setPatchManager(pm: {
@@ -101,6 +107,11 @@ export class BrowseNavigation {
       id: string,
       before: Record<string, unknown>,
       after: Record<string, unknown>
+    ) => Promise<void>;
+    recordInsert: (
+      table: string,
+      id: string,
+      record: Record<string, unknown>
     ) => Promise<void>;
   }): void {
     this.patchManager = pm;
@@ -161,10 +172,11 @@ export class BrowseNavigation {
     }
   ) {
     this.relationships = gtfsRelationships;
-    this.gtfsRelationshipsInstance = gtfsRelationships; // Store the actual instance for database access
+    this.gtfsRelationshipsInstance =
+      gtfsRelationships as unknown as import('./gtfs-relationships.js').GTFSRelationships;
     this.mapController = mapController;
-    this.scheduleController = scheduleController;
-    this.serviceDaysController = serviceDaysController;
+    this.scheduleController = scheduleController ?? null;
+    this.serviceDaysController = serviceDaysController ?? null;
   }
 
   initialize(containerId: string): void {
@@ -205,19 +217,13 @@ export class BrowseNavigation {
           Promise.resolve(null),
         getRouteAsync: (route_id: string) =>
           this.relationships.getRouteByIdAsync(route_id),
-        getRoutesForService: (service_id: string) =>
-          this.relationships.getRoutesForServiceAsync?.(service_id) ||
-          Promise.resolve([]),
-        getTripsForService: (service_id: string) =>
-          this.relationships.getTripsForServiceAsync?.(service_id) ||
-          Promise.resolve([]),
       },
       // Provide access to the actual database for StopViewController
       gtfsDatabase: {
         queryRows: (tableName: string, filter?: Record<string, unknown>) =>
           this.gtfsRelationshipsInstance.gtfsDatabase.queryRows(
             tableName,
-            filter
+            filter as { [key: string]: string | number | boolean } | undefined
           ),
         updateRow: (
           tableName: string,
@@ -227,22 +233,26 @@ export class BrowseNavigation {
           this.gtfsRelationshipsInstance.gtfsDatabase.updateRow(
             tableName,
             key,
-            data
+            data as Partial<import('./gtfs-database.js').GTFSDatabaseRecord>
           ),
         getRow: (tableName: string, key: string) =>
           this.gtfsRelationshipsInstance.gtfsDatabase.getRow(tableName, key),
         getAllRows: (tableName: string) =>
           this.gtfsRelationshipsInstance.gtfsDatabase.getAllRows(tableName),
-        insertRows: <T extends Record<string, unknown>>(
-          tableName: string,
-          rows: T[]
-        ) =>
+        insertRows: (tableName: string, rows: unknown[]) =>
           this.gtfsRelationshipsInstance.gtfsDatabase.insertRows(
             tableName,
-            rows
+            rows as import('./gtfs-database.js').GTFSDatabaseRecord[]
           ),
       },
-      gtfsRelationships: this.gtfsRelationshipsInstance,
+      gtfsRelationships: {
+        getRoutesForService: (service_id: string) =>
+          this.relationships.getRoutesForServiceAsync?.(service_id) ||
+          Promise.resolve([]),
+        getTripsForService: (service_id: string) =>
+          this.relationships.getTripsForServiceAsync?.(service_id) ||
+          Promise.resolve([]),
+      },
       scheduleController: this.scheduleController || {
         renderSchedule: () =>
           Promise.resolve('<div>Schedule not available</div>'),
@@ -285,15 +295,6 @@ export class BrowseNavigation {
     console.log(
       'Browse: Map callbacks set up to use PageStateManager navigation'
     );
-  }
-
-  private async navigateToRouteById(route_id: string): Promise<void> {
-    // Get the route to find its agency
-    const route = await this.relationships.getRouteByIdAsync(route_id);
-    if (route) {
-      const agency_id = route.agency_id || route.agency_id || 'default';
-      navigateToRoute(agency_id, route_id);
-    }
   }
 
   async render(): Promise<void> {
@@ -432,32 +433,30 @@ export class BrowseNavigation {
   }
 
   // Map highlighting methods
-  highlightAgencyOnMap(agency_id) {
-    if (this.mapController && this.mapController.highlightAgencyRoutes) {
-      this.mapController.highlightAgencyRoutes(agency_id);
-    }
+  highlightAgencyOnMap(_agency_id: string) {
+    // mapController does not expose agency-level route highlighting
   }
 
-  highlightRouteOnMap(route_id) {
+  highlightRouteOnMap(route_id: string) {
     if (this.mapController && this.mapController.focusRoute) {
       // Use new focus method instead of old highlight method
       this.mapController.focusRoute(route_id);
     }
   }
 
-  highlightTripOnMap(trip_id) {
+  highlightTripOnMap(trip_id: string) {
     if (this.mapController && this.mapController.highlightTrip) {
       this.mapController.highlightTrip(trip_id);
     }
   }
 
-  highlightStopOnMap(stop_id) {
+  highlightStopOnMap(stop_id: string) {
     if (this.mapController && this.mapController.highlightStop) {
       this.mapController.highlightStop(stop_id);
     }
   }
 
-  escapeHtml(text) {
+  escapeHtml(text: string) {
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;

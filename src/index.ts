@@ -254,7 +254,7 @@ export class GTFSEditor {
     // Note: InfoDisplay is not used in the new UI structure
     // Validation results are displayed in the object details view when relevant
 
-    return validationResults;
+    void validationResults;
   }
 
   /**

@@ -19,7 +19,7 @@ interface GTFSParserInterface {
 
 export class GTFSRelationships {
   public gtfsParser: GTFSParserInterface;
-  private gtfsDatabase: GTFSDatabase;
+  public gtfsDatabase: GTFSDatabase;
 
   constructor(gtfsParser: GTFSParserInterface) {
     this.gtfsParser = gtfsParser;
@@ -83,19 +83,32 @@ export class GTFSRelationships {
     return tripsData
       .filter((trip) => trip.route_id === route_id)
       .map((trip) => ({
-        id: trip.trip_id,
-        trip_id: trip.trip_id,
-        route_id: trip.route_id,
-        service_id: trip.service_id,
-        headsign: trip.trip_headsign,
-        trip_headsign: trip.trip_headsign,
-        shortName: trip.trip_short_name,
-        trip_short_name: trip.trip_short_name,
-        direction_id: trip.direction_id,
-        block_id: trip.block_id,
-        shape_id: trip.shape_id,
-        wheelchairAccessible: trip.wheelchair_accessible,
-        bikesAllowed: trip.bikes_allowed,
+        id: String(trip.trip_id ?? ''),
+        trip_id: String(trip.trip_id ?? ''),
+        route_id: String(trip.route_id ?? ''),
+        service_id: String(trip.service_id ?? ''),
+        headsign:
+          trip.trip_headsign !== null ? String(trip.trip_headsign) : undefined,
+        trip_headsign:
+          trip.trip_headsign !== null ? String(trip.trip_headsign) : undefined,
+        shortName:
+          trip.trip_short_name !== null
+            ? String(trip.trip_short_name)
+            : undefined,
+        trip_short_name:
+          trip.trip_short_name !== null
+            ? String(trip.trip_short_name)
+            : undefined,
+        direction_id:
+          trip.direction_id !== null ? String(trip.direction_id) : undefined,
+        block_id: trip.block_id !== null ? String(trip.block_id) : undefined,
+        shape_id: trip.shape_id !== null ? String(trip.shape_id) : undefined,
+        wheelchair_accessible:
+          trip.wheelchair_accessible !== null
+            ? String(trip.wheelchair_accessible)
+            : undefined,
+        bikes_allowed:
+          trip.bikes_allowed !== null ? String(trip.bikes_allowed) : undefined,
       }));
   }
 
@@ -106,11 +119,11 @@ export class GTFSRelationships {
     const stopTimesData = this.gtfsParser.getFileDataSync('stop_times.txt');
     const stopTimes = stopTimesData
       .filter((stopTime) => stopTime.trip_id === trip_id)
-      .sort((a, b) => parseInt(a.stop_sequence) - parseInt(b.stop_sequence))
+      .sort((a, b) => Number(a.stop_sequence) - Number(b.stop_sequence))
       .map((stopTime) => ({
         trip_id: stopTime.trip_id,
         stop_id: stopTime.stop_id,
-        stop_sequence: parseInt(stopTime.stop_sequence),
+        stop_sequence: Number(stopTime.stop_sequence),
         arrival_time: stopTime.arrival_time,
         departure_time: stopTime.departure_time,
         stopHeadsign: stopTime.stop_headsign,
@@ -141,8 +154,8 @@ export class GTFSRelationships {
       stop_name: stop.stop_name,
       stop_code: stop.stop_code,
       stop_desc: stop.stop_desc,
-      stop_lat: parseFloat(stop.stop_lat),
-      stop_lon: parseFloat(stop.stop_lon),
+      stop_lat: parseFloat(String(stop.stop_lat)),
+      stop_lon: parseFloat(String(stop.stop_lon)),
       zone_id: stop.zone_id,
       stop_url: stop.stop_url,
       location_type: stop.location_type,
@@ -193,16 +206,16 @@ export class GTFSRelationships {
     }
 
     return {
-      service_id: calendar.service_id,
-      monday: calendar.monday === '1',
-      tuesday: calendar.tuesday === '1',
-      wednesday: calendar.wednesday === '1',
-      thursday: calendar.thursday === '1',
-      friday: calendar.friday === '1',
-      saturday: calendar.saturday === '1',
-      sunday: calendar.sunday === '1',
-      start_date: calendar.start_date,
-      end_date: calendar.end_date,
+      service_id: String(calendar.service_id ?? ''),
+      monday: calendar.monday === '1' ? 1 : 0,
+      tuesday: calendar.tuesday === '1' ? 1 : 0,
+      wednesday: calendar.wednesday === '1' ? 1 : 0,
+      thursday: calendar.thursday === '1' ? 1 : 0,
+      friday: calendar.friday === '1' ? 1 : 0,
+      saturday: calendar.saturday === '1' ? 1 : 0,
+      sunday: calendar.sunday === '1' ? 1 : 0,
+      start_date: String(calendar.start_date ?? ''),
+      end_date: String(calendar.end_date ?? ''),
     };
   }
 
@@ -217,7 +230,7 @@ export class GTFSRelationships {
       .map((calDate) => ({
         service_id: calDate.service_id,
         date: calDate.date,
-        exceptionType: parseInt(calDate.exception_type),
+        exceptionType: parseInt(String(calDate.exception_type)),
       }));
   }
 
@@ -226,7 +239,7 @@ export class GTFSRelationships {
    */
   enrichStopTimesWithStops(stopTimes: Record<string, unknown>[]) {
     return stopTimes.map((stopTime: Record<string, unknown>) => {
-      const stop = this.getStopById(stopTime.stop_id);
+      const stop = this.getStopById(stopTime.stop_id as string);
       return {
         ...stopTime,
         stop: stop,
@@ -261,7 +274,7 @@ export class GTFSRelationships {
     const service_ids = [...new Set(trips.map((trip) => trip.service_id))];
 
     return service_ids.map((service_id) => {
-      const calendar = this.getCalendarForService(service_id);
+      const calendar = this.getCalendarForService(String(service_id));
       return {
         service_id,
         calendar,
@@ -321,7 +334,7 @@ export class GTFSRelationships {
     ];
 
     if (headsigns.length === 1) {
-      return headsigns[0];
+      return headsigns[0] as string;
     } else if (headsigns.length > 1) {
       return headsigns.join(' / ');
     }
@@ -484,11 +497,18 @@ export class GTFSRelationships {
         trip_headsign: trip.trip_headsign,
         shortName: trip.trip_short_name,
         trip_short_name: trip.trip_short_name,
-        direction_id: trip.direction_id,
+        direction_id:
+          trip.direction_id !== null ? String(trip.direction_id) : undefined,
         block_id: trip.block_id,
         shape_id: trip.shape_id,
-        wheelchairAccessible: trip.wheelchair_accessible,
-        bikesAllowed: trip.bikes_allowed,
+        wheelchair_accessible:
+          (trip as Record<string, unknown>).wheelchair_accessible !== null
+            ? String((trip as Record<string, unknown>).wheelchair_accessible)
+            : undefined,
+        bikes_allowed:
+          (trip as Record<string, unknown>).bikes_allowed !== null
+            ? String((trip as Record<string, unknown>).bikes_allowed)
+            : undefined,
       }));
     } catch (error) {
       console.error('Error getting trips for route from IndexedDB:', error);
@@ -510,11 +530,11 @@ export class GTFSRelationships {
       }
 
       const stopTimes = stopTimesData
-        .sort((a, b) => parseInt(a.stop_sequence) - parseInt(b.stop_sequence))
+        .sort((a, b) => a.stop_sequence - b.stop_sequence)
         .map((stopTime) => ({
           trip_id: stopTime.trip_id,
           stop_id: stopTime.stop_id,
-          stop_sequence: parseInt(stopTime.stop_sequence),
+          stop_sequence: stopTime.stop_sequence,
           arrival_time: stopTime.arrival_time,
           departure_time: stopTime.departure_time,
           stopHeadsign: stopTime.stop_headsign,
@@ -553,8 +573,8 @@ export class GTFSRelationships {
         stop_name: stop.stop_name,
         stop_code: stop.stop_code,
         stop_desc: stop.stop_desc,
-        stop_lat: parseFloat(stop.stop_lat),
-        stop_lon: parseFloat(stop.stop_lon),
+        stop_lat: stop.stop_lat,
+        stop_lon: stop.stop_lon,
         zone_id: stop.zone_id,
         stop_url: stop.stop_url,
         location_type: stop.location_type,
@@ -629,13 +649,13 @@ export class GTFSRelationships {
       const calendar = calendarData[0];
       return {
         service_id: calendar.service_id,
-        monday: calendar.monday === '1',
-        tuesday: calendar.tuesday === '1',
-        wednesday: calendar.wednesday === '1',
-        thursday: calendar.thursday === '1',
-        friday: calendar.friday === '1',
-        saturday: calendar.saturday === '1',
-        sunday: calendar.sunday === '1',
+        monday: calendar.monday === 1,
+        tuesday: calendar.tuesday === 1,
+        wednesday: calendar.wednesday === 1,
+        thursday: calendar.thursday === 1,
+        friday: calendar.friday === 1,
+        saturday: calendar.saturday === 1,
+        sunday: calendar.sunday === 1,
         start_date: calendar.start_date,
         end_date: calendar.end_date,
       };
@@ -665,7 +685,7 @@ export class GTFSRelationships {
       return calendarDatesData.map((calDate) => ({
         service_id: calDate.service_id,
         date: calDate.date,
-        exceptionType: parseInt(calDate.exception_type),
+        exceptionType: calDate.exception_type,
       }));
     } catch (error) {
       console.error(
@@ -684,7 +704,7 @@ export class GTFSRelationships {
     try {
       const enrichedStopTimes = await Promise.all(
         stopTimes.map(async (stopTime: Record<string, unknown>) => {
-          const stop = await this.getStopByIdAsync(stopTime.stop_id);
+          const stop = await this.getStopByIdAsync(stopTime.stop_id as string);
           return {
             ...stopTime,
             stop: stop,
@@ -712,7 +732,9 @@ export class GTFSRelationships {
 
       const services = await Promise.all(
         service_ids.map(async (service_id) => {
-          const calendar = await this.getCalendarForServiceAsync(service_id);
+          const calendar = await this.getCalendarForServiceAsync(
+            String(service_id)
+          );
           return {
             service_id,
             calendar,
@@ -881,8 +903,8 @@ export class GTFSRelationships {
           id: stop.stop_id,
           name: stop.stop_name || stop.stop_id,
           code: stop.stop_code,
-          lat: parseFloat(stop.stop_lat),
-          lon: parseFloat(stop.stop_lon),
+          lat: stop.stop_lat,
+          lon: stop.stop_lon,
           desc: stop.stop_desc,
         }))
         .slice(0, 10); // Limit to 10 results
@@ -1004,7 +1026,7 @@ export class GTFSRelationships {
 
       // Get route details for each route ID
       const routes = await Promise.all(
-        route_ids.map((route_id) => this.getRouteByIdAsync(route_id))
+        route_ids.map((route_id) => this.getRouteByIdAsync(String(route_id)))
       );
 
       // Filter out null routes and return
@@ -1015,7 +1037,7 @@ export class GTFSRelationships {
       const trips = this.getTripsForStop(stop_id);
       const route_ids = [...new Set(trips.map((trip) => trip.route_id))];
       return route_ids
-        .map((route_id) => this.getRouteById(route_id))
+        .map((route_id) => this.getRouteById(String(route_id)))
         .filter((route) => route !== null);
     }
   }

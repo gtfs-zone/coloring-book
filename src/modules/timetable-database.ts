@@ -20,10 +20,11 @@ interface GTFSParserInterface {
       key: string,
       data: Partial<GTFSTableMap[T]>
     ): Promise<void>;
-    generateKey<T extends keyof GTFSTableMap>(
+    replaceRows<T extends keyof GTFSTableMap>(
       tableName: T,
-      data: GTFSTableMap[T]
-    ): string;
+      oldKeys: string[],
+      newRows: GTFSTableMap[T][]
+    ): Promise<void>;
   };
   getFileDataSync(fileName: string): Record<string, unknown>[];
   setInMemoryFileData(fileName: string, data: Record<string, unknown>[]): void;
@@ -255,7 +256,7 @@ export class TimetableDatabase {
       // Renumber sequences
       const renumberedStopTimes = sortedStopTimes.map((st, index) => ({
         ...st,
-        stop_sequence: String(index + 1),
+        stop_sequence: index + 1,
       }));
 
       // Get old keys for deletion (only existing records, not the new one)
@@ -264,7 +265,11 @@ export class TimetableDatabase {
       );
 
       // Replace all in single transaction (delete old, insert new + renumbered)
-      await database.replaceRows('stop_times', oldKeys, renumberedStopTimes);
+      await database.replaceRows(
+        'stop_times',
+        oldKeys,
+        renumberedStopTimes as unknown as StopTimes[]
+      );
 
       notifications.showSuccess(`Added stop to trip`, { duration: 2000 });
       return;
@@ -348,9 +353,9 @@ export class TimetableDatabase {
       const newStopTime = {
         trip_id: trip_id,
         stop_id: stop_id,
-        stop_sequence: '1', // Temporary, will be renumbered
-        arrival_time: newTime,
-        departure_time: newTime,
+        stop_sequence: 1, // Temporary, will be renumbered
+        arrival_time: newTime ?? '',
+        departure_time: newTime ?? '',
       };
 
       // ATOMIC: Add new record and renumber all in single transaction
@@ -367,7 +372,7 @@ export class TimetableDatabase {
       // Renumber sequences
       const renumberedStopTimes = sortedStopTimes.map((st, index) => ({
         ...st,
-        stop_sequence: String(index + 1),
+        stop_sequence: index + 1,
       }));
 
       // Get old keys for deletion (only existing records, not the new one)
@@ -376,7 +381,12 @@ export class TimetableDatabase {
       );
 
       // Replace all in single transaction (delete old, insert new + renumbered)
-      await database.replaceRows('stop_times', oldKeys, renumberedStopTimes);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (database as any).replaceRows(
+        'stop_times',
+        oldKeys,
+        renumberedStopTimes
+      );
 
       notifications.showSuccess(`Added stop to trip`, { duration: 2000 });
       return;
@@ -387,8 +397,8 @@ export class TimetableDatabase {
 
     // Update both times to the same value
     await database.updateRow('stop_times', naturalKey, {
-      arrival_time: newTime,
-      departure_time: newTime,
+      arrival_time: newTime ?? undefined,
+      departure_time: newTime ?? undefined,
     });
 
     const message = newTime
@@ -533,22 +543,22 @@ export class TimetableDatabase {
         stopTime = {
           trip_id,
           stop_id,
-          stop_sequence: '1', // Temporary, will be set after sorting
-          arrival_time: null,
-          departure_time: null,
-        };
+          stop_sequence: 1, // Temporary, will be set after sorting
+          arrival_time: undefined,
+          departure_time: undefined,
+        } as unknown as StopTimes;
         stopTimesFromTable.push(stopTime);
       }
 
       // Set the time based on input type
       const castedTime = timeValue; // Already in HH:MM:SS format from input
       if (timeType === 'linked') {
-        stopTime.arrival_time = castedTime;
-        stopTime.departure_time = castedTime;
+        stopTime!.arrival_time = castedTime;
+        stopTime!.departure_time = castedTime;
       } else if (timeType === 'arrival') {
-        stopTime.arrival_time = castedTime;
+        stopTime!.arrival_time = castedTime;
       } else if (timeType === 'departure') {
-        stopTime.departure_time = castedTime;
+        stopTime!.departure_time = castedTime;
       }
     });
 
@@ -562,8 +572,8 @@ export class TimetableDatabase {
     // Assign sequential stop_sequence numbers
     const finalStopTimes = sortedStopTimes.map((st, index) => ({
       ...st,
-      stop_sequence: String(index + 1),
-    })) as StopTimes[];
+      stop_sequence: index + 1,
+    })) as unknown as StopTimes[];
 
     // Get ALL old stop_times for this trip
     const oldStopTimes = await database.queryRows('stop_times', { trip_id });

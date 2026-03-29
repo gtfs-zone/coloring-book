@@ -69,17 +69,27 @@ export class GTFSMetadata {
     }
 
     // Extract additional information from the schema
-    const shape = (schema as Record<string, unknown>).shape;
-    const fieldSchema = shape?.[fieldName];
+    const shape = (schema as unknown as Record<string, unknown>).shape as
+      | Record<string, unknown>
+      | undefined;
+    const fieldSchema = shape?.[fieldName] as
+      | Record<string, unknown>
+      | undefined;
 
-    const isOptional = fieldSchema?._def?.typeName === 'ZodOptional';
-    const baseType = isOptional ? fieldSchema._def.innerType : fieldSchema;
+    const fieldDef = fieldSchema?._def as Record<string, unknown> | undefined;
+    const isOptional = fieldDef?.typeName === 'ZodOptional';
+    const baseType = isOptional
+      ? (fieldDef?.innerType as Record<string, unknown> | undefined)
+      : fieldSchema;
 
     return {
       name: fieldName,
       description,
       required: !isOptional,
-      type: baseType?._def?.typeName || 'unknown',
+      type:
+        ((baseType?._def as Record<string, unknown> | undefined)?.typeName as
+          | string
+          | undefined) || 'unknown',
     };
   }
 
