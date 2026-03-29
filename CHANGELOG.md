@@ -1,3 +1,34 @@
+## v0.8.0 (2026-03-30)
+
+### Feat
+
+- phase 1-4
+- add ability to change stops in the timetable
+- finish patch integrity plan
+
+### Fix
+
+- phase 5
+- typeos from linting
+- allow trips with repeat stops
+- allow dupliacate stops for trips
+- fix the deletion of all stops on new stop
+- phase 5 + 6
+- finish phase 3
+- mostly working phase 3
+- stops patch load fix
+- phase 1
+- fix and simplify timetable inbound/outbound
+
+### Refactor
+
+- knip
+- strengthen husky
+- knip
+- fix typecheck and lint errors
+- knip
+- pass knip
+
 ## v0.7.0 (2026-03-27)
 
 ### Feat
