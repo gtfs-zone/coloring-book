@@ -1968,9 +1968,6 @@ export const GTFS_TABLES = {
   ATTRIBUTIONS: 'attributions.txt',
 } as const;
 
-// Union type for all GTFS table names
-export type GTFSTableName = (typeof GTFS_TABLES)[keyof typeof GTFS_TABLES];
-
 // Utility functions for accessing schema metadata
 export function getFieldDescription(
   filename: string,
