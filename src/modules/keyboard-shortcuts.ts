@@ -95,7 +95,7 @@ export class KeyboardShortcuts {
     this.addShortcut(
       'ctrl+s',
       (e) => {
-        e.preventDefault();
+        e?.preventDefault();
         this.gtfsEditor.editor.saveCurrentFileChanges();
       },
       'Save current file'
@@ -113,7 +113,7 @@ export class KeyboardShortcuts {
     this.addShortcut(
       'f1',
       (e) => {
-        e.preventDefault();
+        e?.preventDefault();
         this.showHelp();
       },
       'Show help'
@@ -122,7 +122,7 @@ export class KeyboardShortcuts {
     this.addShortcut(
       'ctrl+f',
       (e) => {
-        e.preventDefault();
+        e?.preventDefault();
         this.focusMapSearch();
       },
       'Focus map search'
@@ -181,7 +181,7 @@ export class KeyboardShortcuts {
     this.addShortcut(
       'ctrl+z',
       (e) => {
-        e.preventDefault();
+        e?.preventDefault();
         this.gtfsEditor.patchManager
           ?.undo()
           .catch((e: unknown) =>
@@ -196,7 +196,7 @@ export class KeyboardShortcuts {
     this.addShortcut(
       'ctrl+shift+z',
       (e) => {
-        e.preventDefault();
+        e?.preventDefault();
         this.gtfsEditor.patchManager
           ?.redo()
           .catch((e: unknown) =>

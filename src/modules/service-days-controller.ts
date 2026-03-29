@@ -42,10 +42,6 @@ interface GTFSParserInterface {
       tableName: T,
       rows: GTFSTableMap[T][]
     ): Promise<void>;
-    generateKey<T extends keyof GTFSTableMap>(
-      tableName: T,
-      data: GTFSTableMap[T]
-    ): string;
   };
 }
 
@@ -81,7 +77,6 @@ interface PatchManagerInterface {
 export class ServiceDaysController {
   private gtfsParser: GTFSParserInterface;
   private patchManager: PatchManagerInterface | null = null;
-  private currentServiceId: string | null = null;
   private savingIndicators: Set<string> = new Set();
 
   /**
@@ -108,8 +103,6 @@ export class ServiceDaysController {
    */
   async renderServiceEditor(service_id: string): Promise<string> {
     try {
-      this.currentServiceId = service_id;
-
       // Get calendar and calendar_dates data
       const [calendarRows, calendarDatesRows] = await Promise.all([
         this.gtfsParser.gtfsDatabase.queryRows('calendar', { service_id }),

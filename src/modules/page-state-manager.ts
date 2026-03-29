@@ -401,12 +401,10 @@ export class PageStateManager {
         return `/?${params.toString()}`;
 
       case 'route':
-        params.set('agency', pageState.agency_id);
         params.set('route', pageState.route_id);
         return `/?${params.toString()}`;
 
       case 'timetable':
-        params.set('agency', pageState.agency_id);
         params.set('route', pageState.route_id);
         params.set('service', pageState.service_id);
         if (pageState.direction_id) {
@@ -462,7 +460,6 @@ export class PageStateManager {
 
             return {
               type: 'timetable',
-              agency_id,
               route_id,
               service_id,
               ...(direction_id && { direction_id }),
@@ -471,7 +468,6 @@ export class PageStateManager {
 
           return {
             type: 'route',
-            agency_id,
             route_id,
           };
         }
