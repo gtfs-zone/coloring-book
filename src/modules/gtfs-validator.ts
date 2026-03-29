@@ -1,6 +1,5 @@
 import { GTFSDatabaseRecord } from './gtfs-database.js';
-import { GTFSTableMap } from '../types/gtfs-entities.js';
-import { GTFS_TABLES, GTFSTableName } from '../types/gtfs.js';
+import { GTFS_TABLES } from '../types/gtfs.js';
 import { GTFSFieldType } from '../types/gtfs-field-types.js';
 import { validateValue } from '../utils/field-formatters.js';
 
@@ -26,17 +25,8 @@ interface ValidationResults {
 
 interface GTFSParserInterface {
   getFileDataSync(fileName: string): GTFSDatabaseRecord[];
-  getFileDataSyncTyped<T extends GTFSTableName>(
-    fileName: `${T}.txt`
-  ): GTFSTableMap[T][];
+  getFileDataSyncTyped(fileName: string): GTFSDatabaseRecord[];
   getAllFileNames(): string[];
-  gtfsData: {
-    [fileName: string]: {
-      content: string;
-      data: GTFSDatabaseRecord[];
-      errors: unknown[];
-    };
-  };
 }
 
 export class GTFSValidator {
@@ -145,7 +135,7 @@ export class GTFSValidator {
       const rowNum = index + 1;
 
       // Required fields
-      if (!agency.agency_name || agency.agency_name.trim() === '') {
+      if (!agency.agency_name || String(agency.agency_name).trim() === '') {
         this.addError(
           `Row ${rowNum}: agency_name is required`,
           'MISSING_REQUIRED_FIELD',
@@ -154,14 +144,14 @@ export class GTFSValidator {
         );
       }
 
-      if (!agency.agency_url || agency.agency_url.trim() === '') {
+      if (!agency.agency_url || String(agency.agency_url).trim() === '') {
         this.addError(
           `Row ${rowNum}: agency_url is required`,
           'MISSING_REQUIRED_FIELD',
           GTFS_TABLES.AGENCY,
           rowNum
         );
-      } else if (!this.isValidUrl(agency.agency_url)) {
+      } else if (!this.isValidUrl(String(agency.agency_url))) {
         this.addError(
           `Row ${rowNum}: agency_url is not a valid URL`,
           'INVALID_URL',
@@ -170,7 +160,10 @@ export class GTFSValidator {
         );
       }
 
-      if (!agency.agency_timezone || agency.agency_timezone.trim() === '') {
+      if (
+        !agency.agency_timezone ||
+        String(agency.agency_timezone).trim() === ''
+      ) {
         this.addError(
           `Row ${rowNum}: agency_timezone is required`,
           'MISSING_REQUIRED_FIELD',
@@ -219,7 +212,7 @@ export class GTFSValidator {
       const rowNum = index + 1;
 
       // Required fields
-      if (!route.route_id || route.route_id.trim() === '') {
+      if (!route.route_id || String(route.route_id).trim() === '') {
         this.addError(
           `Row ${rowNum}: route_id is required`,
           'MISSING_REQUIRED_FIELD',
@@ -267,7 +260,7 @@ export class GTFSValidator {
           '11',
           '12',
         ];
-        if (!validRouteTypes.includes(route.route_type)) {
+        if (!validRouteTypes.includes(String(route.route_type))) {
           this.addWarning(
             `Row ${rowNum}: Unknown route_type '${route.route_type}'`,
             'UNKNOWN_ROUTE_TYPE',
@@ -304,7 +297,7 @@ export class GTFSValidator {
       const rowNum = index + 1;
 
       // Required fields
-      if (!stop.stop_id || stop.stop_id.trim() === '') {
+      if (!stop.stop_id || String(stop.stop_id).trim() === '') {
         this.addError(
           `Row ${rowNum}: stop_id is required`,
           'MISSING_REQUIRED_FIELD',
@@ -323,7 +316,7 @@ export class GTFSValidator {
         stop_ids.add(stop.stop_id);
       }
 
-      if (!stop.stop_name || stop.stop_name.trim() === '') {
+      if (!stop.stop_name || String(stop.stop_name).trim() === '') {
         this.addError(
           `Row ${rowNum}: stop_name is required`,
           'MISSING_REQUIRED_FIELD',
@@ -343,7 +336,7 @@ export class GTFSValidator {
           GTFS_TABLES.STOPS,
           rowNum
         );
-      } else if (!this.isValidLatitude(stop.stop_lat)) {
+      } else if (!this.isValidLatitude(stop.stop_lat as string | number)) {
         this.addError(
           `Row ${rowNum}: stop_lat must be between -90.0 and 90.0`,
           'INVALID_COORDINATE',
@@ -362,7 +355,7 @@ export class GTFSValidator {
           GTFS_TABLES.STOPS,
           rowNum
         );
-      } else if (!this.isValidLongitude(stop.stop_lon)) {
+      } else if (!this.isValidLongitude(stop.stop_lon as string | number)) {
         this.addError(
           `Row ${rowNum}: stop_lon must be between -180.0 and 180.0`,
           'INVALID_COORDINATE',
@@ -374,7 +367,7 @@ export class GTFSValidator {
       // Validate location_type
       if (stop.location_type) {
         const validLocationTypes = ['0', '1', '2', '3', '4'];
-        if (!validLocationTypes.includes(stop.location_type)) {
+        if (!validLocationTypes.includes(String(stop.location_type))) {
           this.addWarning(
             `Row ${rowNum}: Unknown location_type '${stop.location_type}'`,
             'UNKNOWN_LOCATION_TYPE',
@@ -404,7 +397,7 @@ export class GTFSValidator {
       const rowNum = index + 1;
 
       // Required fields
-      if (!trip.trip_id || trip.trip_id.trim() === '') {
+      if (!trip.trip_id || String(trip.trip_id).trim() === '') {
         this.addError(
           `Row ${rowNum}: trip_id is required`,
           'MISSING_REQUIRED_FIELD',
@@ -423,7 +416,7 @@ export class GTFSValidator {
         trip_ids.add(trip.trip_id);
       }
 
-      if (!trip.route_id || trip.route_id.trim() === '') {
+      if (!trip.route_id || String(trip.route_id).trim() === '') {
         this.addError(
           `Row ${rowNum}: route_id is required`,
           'MISSING_REQUIRED_FIELD',
@@ -439,7 +432,7 @@ export class GTFSValidator {
         );
       }
 
-      if (!trip.service_id || trip.service_id.trim() === '') {
+      if (!trip.service_id || String(trip.service_id).trim() === '') {
         this.addError(
           `Row ${rowNum}: service_id is required`,
           'MISSING_REQUIRED_FIELD',
@@ -475,7 +468,7 @@ export class GTFSValidator {
       const rowNum = index + 1;
 
       // Required fields
-      if (!stopTime.trip_id || stopTime.trip_id.trim() === '') {
+      if (!stopTime.trip_id || String(stopTime.trip_id).trim() === '') {
         this.addError(
           `Row ${rowNum}: trip_id is required`,
           'MISSING_REQUIRED_FIELD',
@@ -491,7 +484,7 @@ export class GTFSValidator {
         );
       }
 
-      if (!stopTime.stop_id || stopTime.stop_id.trim() === '') {
+      if (!stopTime.stop_id || String(stopTime.stop_id).trim() === '') {
         this.addError(
           `Row ${rowNum}: stop_id is required`,
           'MISSING_REQUIRED_FIELD',
@@ -514,7 +507,7 @@ export class GTFSValidator {
           GTFS_TABLES.STOP_TIMES,
           rowNum
         );
-      } else if (isNaN(parseInt(stopTime.stop_sequence))) {
+      } else if (isNaN(parseInt(String(stopTime.stop_sequence)))) {
         this.addError(
           `Row ${rowNum}: stop_sequence must be a number`,
           'INVALID_NUMBER',
@@ -524,7 +517,10 @@ export class GTFSValidator {
       }
 
       // Validate time format
-      if (stopTime.arrival_time && !this.isValidTime(stopTime.arrival_time)) {
+      if (
+        stopTime.arrival_time &&
+        !this.isValidTime(String(stopTime.arrival_time))
+      ) {
         this.addError(
           `Row ${rowNum}: arrival_time format is invalid`,
           'INVALID_TIME_FORMAT',
@@ -535,7 +531,7 @@ export class GTFSValidator {
 
       if (
         stopTime.departure_time &&
-        !this.isValidTime(stopTime.departure_time)
+        !this.isValidTime(String(stopTime.departure_time))
       ) {
         this.addError(
           `Row ${rowNum}: departure_time format is invalid`,
@@ -559,7 +555,7 @@ export class GTFSValidator {
       calendar.forEach((service, index: number) => {
         const rowNum = index + 1;
 
-        if (!service.service_id || service.service_id.trim() === '') {
+        if (!service.service_id || String(service.service_id).trim() === '') {
           this.addError(
             `Row ${rowNum}: service_id is required`,
             'MISSING_REQUIRED_FIELD',
@@ -569,7 +565,10 @@ export class GTFSValidator {
         }
 
         // Validate date format
-        if (service.start_date && !this.isValidDate(service.start_date)) {
+        if (
+          service.start_date &&
+          !this.isValidDate(String(service.start_date))
+        ) {
           this.addError(
             `Row ${rowNum}: start_date format is invalid (should be YYYYMMDD)`,
             'INVALID_DATE_FORMAT',
@@ -578,7 +577,7 @@ export class GTFSValidator {
           );
         }
 
-        if (service.end_date && !this.isValidDate(service.end_date)) {
+        if (service.end_date && !this.isValidDate(String(service.end_date))) {
           this.addError(
             `Row ${rowNum}: end_date format is invalid (should be YYYYMMDD)`,
             'INVALID_DATE_FORMAT',
@@ -593,7 +592,10 @@ export class GTFSValidator {
       calendarDates.forEach((exception, index: number) => {
         const rowNum = index + 1;
 
-        if (!exception.service_id || exception.service_id.trim() === '') {
+        if (
+          !exception.service_id ||
+          String(exception.service_id).trim() === ''
+        ) {
           this.addError(
             `Row ${rowNum}: service_id is required`,
             'MISSING_REQUIRED_FIELD',
@@ -602,7 +604,7 @@ export class GTFSValidator {
           );
         }
 
-        if (!exception.date || !this.isValidDate(exception.date)) {
+        if (!exception.date || !this.isValidDate(String(exception.date))) {
           this.addError(
             `Row ${rowNum}: date format is invalid (should be YYYYMMDD)`,
             'INVALID_DATE_FORMAT',
@@ -613,7 +615,7 @@ export class GTFSValidator {
 
         if (
           !exception.exception_type ||
-          !['1', '2'].includes(exception.exception_type)
+          !['1', '2'].includes(String(exception.exception_type))
         ) {
           this.addError(
             `Row ${rowNum}: exception_type must be 1 or 2`,
@@ -635,7 +637,7 @@ export class GTFSValidator {
     shapes.forEach((shape, index: number) => {
       const rowNum = index + 1;
 
-      if (!shape.shape_id || shape.shape_id.trim() === '') {
+      if (!shape.shape_id || String(shape.shape_id).trim() === '') {
         this.addError(
           `Row ${rowNum}: shape_id is required`,
           'MISSING_REQUIRED_FIELD',
@@ -652,7 +654,7 @@ export class GTFSValidator {
           GTFS_TABLES.SHAPES,
           rowNum
         );
-      } else if (!this.isValidLatitude(shape.shape_pt_lat)) {
+      } else if (!this.isValidLatitude(shape.shape_pt_lat as string | number)) {
         this.addError(
           `Row ${rowNum}: shape_pt_lat must be between -90.0 and 90.0`,
           'INVALID_COORDINATE',
@@ -668,7 +670,9 @@ export class GTFSValidator {
           GTFS_TABLES.SHAPES,
           rowNum
         );
-      } else if (!this.isValidLongitude(shape.shape_pt_lon)) {
+      } else if (
+        !this.isValidLongitude(shape.shape_pt_lon as string | number)
+      ) {
         this.addError(
           `Row ${rowNum}: shape_pt_lon must be between -180.0 and 180.0`,
           'INVALID_COORDINATE',
@@ -684,7 +688,7 @@ export class GTFSValidator {
           GTFS_TABLES.SHAPES,
           rowNum
         );
-      } else if (isNaN(parseInt(shape.shape_pt_sequence))) {
+      } else if (isNaN(parseInt(String(shape.shape_pt_sequence)))) {
         this.addError(
           `Row ${rowNum}: shape_pt_sequence must be a number`,
           'INVALID_NUMBER',
@@ -709,7 +713,7 @@ export class GTFSValidator {
       const tripsWithStopTimes = new Set(stopTimes.map((st) => st.trip_id));
 
       // Check for trips without stop times
-      trip_ids.forEach((trip_id: string) => {
+      trip_ids.forEach((trip_id) => {
         if (!tripsWithStopTimes.has(trip_id)) {
           this.addWarning(
             `Trip '${trip_id}' has no stop times`,
@@ -724,7 +728,7 @@ export class GTFSValidator {
   // Helper methods
   addError(
     message: string,
-    code: string,
+    _code: string,
     fileName: string | null = null,
     rowNum: number | null = null
   ) {
@@ -738,7 +742,7 @@ export class GTFSValidator {
 
   addWarning(
     message: string,
-    code: string,
+    _code: string,
     fileName: string | null = null,
     rowNum: number | null = null
   ) {
@@ -752,7 +756,7 @@ export class GTFSValidator {
 
   addInfo(
     message: string,
-    code: string,
+    _code: string,
     fileName: string | null = null,
     rowNum: number | null = null
   ) {

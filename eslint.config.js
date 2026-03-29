@@ -31,7 +31,6 @@ export default tseslint.config(
         setInterval: 'readonly',
         clearInterval: 'readonly',
         showErrorNotification: 'readonly',
-        nonExistentFunction: 'readonly',
         require: 'readonly'
       }
     },

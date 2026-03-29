@@ -97,16 +97,15 @@ interface EnhancedTrip {
 }
 
 interface GTFSRelationships {
-  getCalendarForService(service_id: string): Calendar | CalendarDates | null;
+  getCalendarForService(service_id: string): Record<string, unknown> | null;
   getTripsForRoute(route_id: string): EnhancedTrip[];
   getTripsForRouteAsync(route_id: string): Promise<EnhancedTrip[]>;
-  getStopTimesForTrip(trip_id: string): StopTimes[];
-  getStopById(stop_id: string): Stops | null;
-  getStopByIdAsync(stop_id: string): Promise<Stops | null>;
+  getStopTimesForTrip(trip_id: string): Record<string, unknown>[];
+  getStopById(stop_id: string): Record<string, unknown> | null;
+  getStopByIdAsync(stop_id: string): Promise<Record<string, unknown> | null>;
 }
 
 interface GTFSParserInterface {
-  getFileDataSync<T extends keyof GTFSTableMap>(filename: T): GTFSTableMap[T][];
   gtfsDatabase: {
     queryRows<T extends keyof GTFSTableMap>(
       tableName: T,
@@ -244,7 +243,7 @@ export class TimetableDataProcessor {
 
       return {
         route,
-        service,
+        service: service as Calendar | CalendarDates,
         stops: [],
         allStops: await this.gtfsParser.gtfsDatabase.queryRows('stops', {}),
         trips: [],
@@ -281,7 +280,7 @@ export class TimetableDataProcessor {
     });
 
     // Get stop details for the optimal sequence
-    const stops: Stops[] = await Promise.all(
+    const stops: Stops[] = (await Promise.all(
       scsResult.supersequence.map(async (stop_id) => {
         const stop = await this.relationships.getStopByIdAsync(stop_id);
         if (!stop) {
@@ -292,7 +291,7 @@ export class TimetableDataProcessor {
         // Return the stop with standard GTFS properties
         return stop;
       })
-    );
+    )) as Stops[];
 
     // Align trips using the SCS result
     const alignedTrips = await this.alignTripsWithSCS(
@@ -355,7 +354,7 @@ export class TimetableDataProcessor {
 
     return {
       route,
-      service,
+      service: service as Calendar | CalendarDates,
       stops,
       allStops,
       trips: alignedTrips,
@@ -421,10 +420,10 @@ export class TimetableDataProcessor {
     ) {
       const { trip, originalIndex } = tripsWithFirstTime[sortedIndex];
       const stopTimes = await this.getStopTimesFromDatabase(trip.id);
-      const stopTimeMap = new Map<string, string>();
-      const arrival_timeMap = new Map<string, string>();
-      const departure_timeMap = new Map<string, string>();
-      const editableStopTimes = new Map<string, EditableStopTime>();
+      const stopTimeMap = new Map<number, string>();
+      const arrival_timeMap = new Map<number, string>();
+      const departure_timeMap = new Map<number, string>();
+      const editableStopTimes = new Map<number, EditableStopTime>();
 
       // Sort stop times by sequence
       const sortedStopTimes = stopTimes.sort(

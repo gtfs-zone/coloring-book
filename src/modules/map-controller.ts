@@ -8,8 +8,8 @@ import {
   InteractionCallbacks,
 } from './interaction-handler.js';
 import { PageStateManager } from './page-state-manager.js';
-import { GTFSDatabaseRecord } from './gtfs-database.js';
-import { GTFS } from '../types/gtfs.js';
+import { GTFSParser } from './gtfs-parser.js';
+import { Stops, StopTimes, Trips, Routes } from '../types/gtfs.js';
 import { BasemapControl } from './basemap-control.js';
 
 // Map interaction modes
@@ -17,21 +17,6 @@ export enum MapMode {
   NAVIGATE = 'navigate',
   ADD_STOP = 'add_stop',
   EDIT_STOPS = 'edit_stops',
-}
-
-// Dependencies interface for dependency injection
-interface MapControllerDependencies {
-  getFileDataSync: (filename: string) => GTFSDatabaseRecord[];
-  getFileDataSyncTyped: <T>(filename: string) => T[];
-  getRoutesForStop: (stop_id: string) => GTFSDatabaseRecord[];
-  getWheelchairText: (code: string) => string;
-  getRouteTypeText: (typeCode: string) => string;
-  createStop: (stop: GTFSDatabaseRecord) => Promise<void>;
-  updateStopCoordinates: (
-    stopId: string,
-    lat: number,
-    lng: number
-  ) => Promise<void>;
 }
 
 // Callback interfaces
@@ -61,7 +46,7 @@ export class MapController {
   private basemapControl: BasemapControl | null = null;
 
   // Dependencies (injected)
-  private gtfsParser: MapControllerDependencies | null = null;
+  private gtfsParser: GTFSParser | null = null;
   private pageStateManager: PageStateManager | null = null;
 
   // Callbacks
@@ -85,9 +70,7 @@ export class MapController {
   /**
    * Initialize the map controller with dependencies
    */
-  public async initialize(
-    gtfsParser: MapControllerDependencies
-  ): Promise<void> {
+  public async initialize(gtfsParser: GTFSParser): Promise<void> {
     if (this.isInitialized) {
       console.warn('MapController already initialized');
       return;
@@ -128,7 +111,6 @@ export class MapController {
       },
       center: [-74.006, 40.7128], // NYC default
       zoom: 10,
-      antialias: true, // Enable antialiasing for smoother lines
     });
 
     // Keep welcome overlay visible initially
@@ -219,8 +201,6 @@ export class MapController {
           await this.routeRenderer.renderRoutes({
             lineWidth: 3,
             opacity: 0.8,
-            enableBlending: true,
-            pickable: true,
           });
 
           // Re-add stops layer
@@ -286,8 +266,6 @@ export class MapController {
     await this.routeRenderer!.renderRoutes({
       lineWidth: 3,
       opacity: 0.8,
-      enableBlending: true,
-      pickable: true,
     });
 
     // Add stops using LayerManager
@@ -326,27 +304,26 @@ export class MapController {
    * Fit map to show all GTFS data
    */
   private fitMapToData(): void {
-    const stops = this.gtfsParser!.getFileDataSyncTyped<GTFS.Stop>('stops.txt');
+    const stops = this.gtfsParser!.getFileDataSyncTyped<Stops>('stops.txt');
     if (!stops || stops.length === 0) {
       return;
     }
 
     const validStops = stops.filter(
       (stop) =>
-        stop.stop_lat &&
-        stop.stop_lon &&
-        !isNaN(parseFloat(stop.stop_lat)) &&
-        !isNaN(parseFloat(stop.stop_lon))
+        stop.stop_lat !== null &&
+        stop.stop_lon !== null &&
+        !isNaN(stop.stop_lat) &&
+        !isNaN(stop.stop_lon)
     );
 
     if (validStops.length === 0) {
       return;
     }
 
-    const coordinates = validStops.map((stop) => [
-      parseFloat(stop.stop_lon),
-      parseFloat(stop.stop_lat),
-    ]);
+    const coordinates = validStops.map(
+      (stop) => [stop.stop_lon!, stop.stop_lat!] as [number, number]
+    );
 
     const bounds = coordinates.reduce(
       (bounds, coord) => bounds.extend(coord),
@@ -399,12 +376,12 @@ export class MapController {
 
     // Smoothly fly to stop location
     const stops =
-      this.gtfsParser!.getFileDataSyncTyped<GTFS.Stop>('stops.txt') || [];
+      this.gtfsParser!.getFileDataSyncTyped<Stops>('stops.txt') || [];
     const stop = stops.find((s) => s.stop_id === stop_id);
 
     if (stop && stop.stop_lat && stop.stop_lon) {
-      const lat = parseFloat(stop.stop_lat);
-      const lon = parseFloat(stop.stop_lon);
+      const lat = stop.stop_lat;
+      const lon = stop.stop_lon;
 
       // Use flyTo for smooth animation with reduced zoom level
       this.map!.flyTo({
@@ -439,14 +416,13 @@ export class MapController {
    */
   private fitMapToTrip(trip_id: string): void {
     const stopTimes =
-      this.gtfsParser!.getFileDataSyncTyped<GTFS.StopTime>('stop_times.txt') ||
-      [];
+      this.gtfsParser!.getFileDataSyncTyped<StopTimes>('stop_times.txt') || [];
     const stops =
-      this.gtfsParser!.getFileDataSyncTyped<GTFS.Stop>('stops.txt') || [];
+      this.gtfsParser!.getFileDataSyncTyped<Stops>('stops.txt') || [];
 
     const tripStopTimes = stopTimes
       .filter((st) => st.trip_id === trip_id)
-      .sort((a, b) => parseInt(a.stop_sequence) - parseInt(b.stop_sequence));
+      .sort((a, b) => a.stop_sequence - b.stop_sequence);
 
     const coordinates: [number, number][] = [];
     const stopsLookup: { [key: string]: { lat: number; lon: number } } = {};
@@ -454,8 +430,8 @@ export class MapController {
     stops.forEach((stop) => {
       if (stop.stop_lat && stop.stop_lon) {
         stopsLookup[stop.stop_id] = {
-          lat: parseFloat(stop.stop_lat),
-          lon: parseFloat(stop.stop_lon),
+          lat: stop.stop_lat,
+          lon: stop.stop_lon,
         };
       }
     });
@@ -503,12 +479,11 @@ export class MapController {
    */
   private flyToRoute(route_id: string): void {
     const trips =
-      this.gtfsParser!.getFileDataSyncTyped<GTFS.Trip>('trips.txt') || [];
+      this.gtfsParser!.getFileDataSyncTyped<Trips>('trips.txt') || [];
     const stopTimes =
-      this.gtfsParser!.getFileDataSyncTyped<GTFS.StopTime>('stop_times.txt') ||
-      [];
+      this.gtfsParser!.getFileDataSyncTyped<StopTimes>('stop_times.txt') || [];
     const stops =
-      this.gtfsParser!.getFileDataSyncTyped<GTFS.Stop>('stops.txt') || [];
+      this.gtfsParser!.getFileDataSyncTyped<Stops>('stops.txt') || [];
 
     // Find all stops for this route
     const routeStops = new Set<string>();
@@ -524,10 +499,7 @@ export class MapController {
     const coordinates: [number, number][] = [];
     stops.forEach((stop) => {
       if (routeStops.has(stop.stop_id) && stop.stop_lat && stop.stop_lon) {
-        coordinates.push([
-          parseFloat(stop.stop_lon),
-          parseFloat(stop.stop_lat),
-        ]);
+        coordinates.push([stop.stop_lon, stop.stop_lat]);
       }
     });
 
@@ -551,12 +523,11 @@ export class MapController {
    */
   public fitToRoutes(route_ids: string[]): void {
     const trips =
-      this.gtfsParser!.getFileDataSyncTyped<GTFS.Trip>('trips.txt') || [];
+      this.gtfsParser!.getFileDataSyncTyped<Trips>('trips.txt') || [];
     const stopTimes =
-      this.gtfsParser!.getFileDataSyncTyped<GTFS.StopTime>('stop_times.txt') ||
-      [];
+      this.gtfsParser!.getFileDataSyncTyped<StopTimes>('stop_times.txt') || [];
     const stops =
-      this.gtfsParser!.getFileDataSyncTyped<GTFS.Stop>('stops.txt') || [];
+      this.gtfsParser!.getFileDataSyncTyped<Stops>('stops.txt') || [];
 
     // Find all stops for these routes
     const allStops = new Set<string>();
@@ -575,10 +546,7 @@ export class MapController {
     const coordinates: [number, number][] = [];
     stops.forEach((stop) => {
       if (allStops.has(stop.stop_id) && stop.stop_lat && stop.stop_lon) {
-        coordinates.push([
-          parseFloat(stop.stop_lon),
-          parseFloat(stop.stop_lat),
-        ]);
+        coordinates.push([stop.stop_lon, stop.stop_lat]);
       }
     });
 
@@ -597,7 +565,7 @@ export class MapController {
    */
   public highlightAgencyRoutes(agency_id: string): void {
     const routes =
-      this.gtfsParser!.getFileDataSyncTyped<GTFS.Route>('routes.txt') || [];
+      this.gtfsParser!.getFileDataSyncTyped<Routes>('routes.txt') || [];
     const agencyRoutes = routes.filter(
       (route) => route.agency_id === agency_id
     );
