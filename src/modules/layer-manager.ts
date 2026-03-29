@@ -1,5 +1,5 @@
 import { Map as MapLibreMap, GeoJSONSource } from 'maplibre-gl';
-import { GTFS } from '../types/gtfs.js';
+import { Stops, StopTimes } from '../types/gtfs-entities.js';
 import type { GTFSParser } from './gtfs-parser.js';
 
 export interface StopLayerOptions {
@@ -85,7 +85,7 @@ export class LayerManager {
    * Add stops to map with enhanced styling and functionality
    */
   public addStopsLayer(options: Partial<StopLayerOptions> = {}): void {
-    const stops = this.gtfsParser.getFileDataSyncTyped<GTFS.Stop>('stops.txt');
+    const stops = this.gtfsParser.getFileDataSyncTyped<Stops>('stops.txt');
     if (!stops) {
       console.warn('No stops data available for rendering');
       return;
@@ -95,10 +95,10 @@ export class LayerManager {
 
     const validStops = stops.filter(
       (stop) =>
-        stop.stop_lat &&
-        stop.stop_lon &&
-        !isNaN(parseFloat(stop.stop_lat)) &&
-        !isNaN(parseFloat(stop.stop_lon))
+        stop.stop_lat !== null &&
+        stop.stop_lon !== null &&
+        !isNaN(stop.stop_lat) &&
+        !isNaN(stop.stop_lon)
     );
 
     if (validStops.length === 0) {
@@ -114,7 +114,7 @@ export class LayerManager {
       ...stopsGeoJSON,
       features: stopsGeoJSON.features.map((feature) => ({
         ...feature,
-        id: feature.properties.stop_id, // Add ID for feature state
+        id: feature.properties?.stop_id, // Add ID for feature state
       })),
     };
 
@@ -148,13 +148,13 @@ export class LayerManager {
   /**
    * Create GeoJSON data for stops
    */
-  private createStopsGeoJSON(stops: GTFS.Stop[]): GeoJSON.FeatureCollection {
+  private createStopsGeoJSON(stops: Stops[]): GeoJSON.FeatureCollection {
     return {
       type: 'FeatureCollection',
       features: stops.map((stop) => {
-        const lat = parseFloat(stop.stop_lat);
-        const lon = parseFloat(stop.stop_lon);
-        const stopType = stop.location_type || '0';
+        const lat = stop.stop_lat;
+        const lon = stop.stop_lon;
+        const stopType = stop.location_type ?? 0;
 
         return {
           type: 'Feature',
@@ -255,7 +255,7 @@ export class LayerManager {
   ): void {
     const finalOptions = { ...this.defaultHighlightOptions, ...options };
     const stops =
-      this.gtfsParser.getFileDataSyncTyped<GTFS.Stop>('stops.txt') || [];
+      this.gtfsParser.getFileDataSyncTyped<Stops>('stops.txt') || [];
 
     // Clear existing highlights
     this.clearHighlights();
@@ -266,17 +266,17 @@ export class LayerManager {
       return;
     }
 
-    const lat = parseFloat(stop.stop_lat);
-    const lon = parseFloat(stop.stop_lon);
+    const lat = stop.stop_lat;
+    const lon = stop.stop_lon;
 
     // Create highlight GeoJSON
     const highlightGeoJSON = {
-      type: 'FeatureCollection',
+      type: 'FeatureCollection' as const,
       features: [
         {
-          type: 'Feature',
+          type: 'Feature' as const,
           geometry: {
-            type: 'Point',
+            type: 'Point' as const,
             coordinates: [lon, lat],
           },
           properties: {
@@ -321,21 +321,22 @@ export class LayerManager {
   ): void {
     const finalOptions = { ...this.defaultHighlightOptions, ...options };
     const stopTimes =
-      this.gtfsParser.getFileDataSyncTyped<GTFS.StopTime>('stop_times.txt') ||
-      [];
+      this.gtfsParser.getFileDataSyncTyped<StopTimes>('stop_times.txt') || [];
     const stops =
-      this.gtfsParser.getFileDataSyncTyped<GTFS.Stop>('stops.txt') || [];
+      this.gtfsParser.getFileDataSyncTyped<Stops>('stops.txt') || [];
 
     // Clear existing highlights
     this.clearHighlights();
 
     // Create stops lookup
-    const stopsLookup: { [key: string]: GTFS.Stop } = {};
+    const stopsLookup: {
+      [key: string]: { lat: number; lon: number; name: string };
+    } = {};
     stops.forEach((stop) => {
-      if (stop.stop_lat && stop.stop_lon) {
+      if (stop.stop_lat !== null && stop.stop_lon !== null) {
         stopsLookup[stop.stop_id] = {
-          lat: parseFloat(stop.stop_lat),
-          lon: parseFloat(stop.stop_lon),
+          lat: stop.stop_lat,
+          lon: stop.stop_lon,
           name: stop.stop_name,
         };
       }
@@ -344,7 +345,7 @@ export class LayerManager {
     // Get stop times for this trip
     const tripStopTimes = stopTimes
       .filter((st) => st.trip_id === trip_id)
-      .sort((a, b) => parseInt(a.stop_sequence) - parseInt(b.stop_sequence));
+      .sort((a, b) => a.stop_sequence - b.stop_sequence);
 
     const tripPath: [number, number][] = [];
     const tripStopsFeatures: GeoJSON.Feature[] = [];
@@ -392,12 +393,12 @@ export class LayerManager {
   ): void {
     // Create trip line GeoJSON
     const tripLineGeoJSON = {
-      type: 'FeatureCollection',
+      type: 'FeatureCollection' as const,
       features: [
         {
-          type: 'Feature',
+          type: 'Feature' as const,
           geometry: {
-            type: 'LineString',
+            type: 'LineString' as const,
             coordinates: tripPath,
           },
           properties: {},
@@ -429,7 +430,7 @@ export class LayerManager {
     // Add trip stops if available
     if (tripStopsFeatures.length > 0) {
       const stopsGeoJSON = {
-        type: 'FeatureCollection',
+        type: 'FeatureCollection' as const,
         features: tripStopsFeatures,
       };
 
@@ -500,17 +501,17 @@ export class LayerManager {
       return;
     }
 
-    const stops = this.gtfsParser.getFileDataSyncTyped<GTFS.Stop>('stops.txt');
+    const stops = this.gtfsParser.getFileDataSyncTyped<Stops>('stops.txt');
     if (!stops) {
       return;
     }
 
     const validStops = stops.filter(
       (stop) =>
-        stop.stop_lat &&
-        stop.stop_lon &&
-        !isNaN(parseFloat(stop.stop_lat)) &&
-        !isNaN(parseFloat(stop.stop_lon))
+        stop.stop_lat !== null &&
+        stop.stop_lon !== null &&
+        !isNaN(stop.stop_lat) &&
+        !isNaN(stop.stop_lon)
     );
 
     const stopsGeoJSON = this.createStopsGeoJSON(validStops);
@@ -518,7 +519,7 @@ export class LayerManager {
       ...stopsGeoJSON,
       features: stopsGeoJSON.features.map((feature) => ({
         ...feature,
-        id: feature.properties.stop_id,
+        id: feature.properties?.stop_id,
       })),
     };
 
