@@ -1967,7 +1967,6 @@ export const GTFS_TABLES = {
   FEED_INFO: 'feed_info.txt',
   ATTRIBUTIONS: 'attributions.txt',
 } as const;
-
 // Utility functions for accessing schema metadata
 export function getFieldDescription(
   filename: string,
