@@ -825,16 +825,16 @@ export class GTFSRelationships {
 
       const route = routesData[0];
       return {
-        id: route.route_id,
+        route_id: route.route_id,
         agency_id: route.agency_id,
-        shortName: route.route_short_name,
-        longName: route.route_long_name,
-        desc: route.route_desc,
-        type: route.route_type,
-        url: route.route_url,
-        color: route.route_color,
-        textColor: route.route_text_color,
-        sortOrder: route.route_sort_order,
+        route_short_name: route.route_short_name,
+        route_long_name: route.route_long_name,
+        route_desc: route.route_desc,
+        route_type: route.route_type,
+        route_url: route.route_url,
+        route_color: route.route_color,
+        route_text_color: route.route_text_color,
+        route_sort_order: route.route_sort_order,
       };
     } catch (error) {
       console.error('Error getting route by ID from IndexedDB:', error);
