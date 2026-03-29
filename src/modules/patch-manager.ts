@@ -11,6 +11,8 @@ import { GTFSDatabase, GTFSDatabaseRecord } from './gtfs-database.js';
 import { GTFSParser } from './gtfs-parser.js';
 import {
   GTFSPatch,
+  SingleGTFSPatch,
+  BatchGTFSPatch,
   PatchRecord,
   SnapshotRecord,
   GTFSState,
@@ -88,6 +90,13 @@ export class PatchManager {
    * so bypassing the virtual table corrupts the byId index and fieldMaps.
    */
   async applyPatchForward(patch: GTFSPatch): Promise<void> {
+    if (patch.op === 'batch') {
+      for (const op of patch.ops) {
+        await this.applyPatchForward(op);
+      }
+      return;
+    }
+
     const { source, forward } = patch;
 
     if (patch.op === 'insert') {
@@ -113,6 +122,13 @@ export class PatchManager {
    * (virtual table handlers). No direct array mutations.
    */
   async applyPatchInverse(patch: GTFSPatch): Promise<void> {
+    if (patch.op === 'batch') {
+      for (const op of [...patch.ops].reverse()) {
+        await this.applyPatchInverse(op);
+      }
+      return;
+    }
+
     const { source, inverse } = patch;
 
     if (patch.op === 'insert') {
@@ -189,6 +205,57 @@ export class PatchManager {
     await this.appendAndPush(patch);
   }
 
+  async recordBatch(
+    ops: Array<{
+      table: string;
+      id: string;
+      before: Record<string, unknown>;
+      after: Record<string, unknown>;
+    }>,
+    label: string
+  ): Promise<void> {
+    const singlePatches: SingleGTFSPatch[] = [];
+
+    for (const op of ops) {
+      const forwardChanges: Record<string, unknown> = {};
+      const inverseChanges: Record<string, unknown> = {};
+      for (const key of Object.keys(op.after)) {
+        if (op.before[key] !== op.after[key]) {
+          forwardChanges[key] = op.after[key];
+          inverseChanges[key] = op.before[key];
+        }
+      }
+      if (Object.keys(forwardChanges).length === 0) {
+        continue;
+      }
+      singlePatches.push({
+        op: 'update',
+        source: { table: op.table, id: op.id },
+        forward: { changes: forwardChanges },
+        inverse: { changes: inverseChanges },
+      });
+    }
+
+    if (singlePatches.length === 0) {
+      return;
+    }
+
+    if (singlePatches.length === 1) {
+      const patch = singlePatches[0];
+      await this.applyPatchForward(patch);
+      await this.appendAndPush(patch);
+      return;
+    }
+
+    const batchPatch: BatchGTFSPatch = {
+      op: 'batch',
+      ops: singlePatches,
+      label,
+    };
+    await this.applyPatchForward(batchPatch);
+    await this.appendAndPush(batchPatch);
+  }
+
   async undo(): Promise<void> {
     if (this.currentVersion === 0) {
       return;
@@ -237,7 +304,22 @@ export class PatchManager {
     const { patch } = record;
 
     let inverted: GTFSPatch;
-    if (patch.op === 'update') {
+    if (patch.op === 'batch') {
+      const invertedBatch: BatchGTFSPatch = {
+        op: 'batch',
+        ops: patch.ops.map((op) => ({
+          op: 'update' as const,
+          source: op.source,
+          forward: op.inverse,
+          inverse: op.forward,
+        })),
+        label: patch.label,
+      };
+      await this.applyPatchForward(invertedBatch);
+      await this.appendAndPush(invertedBatch);
+      this.emit('jump');
+      return;
+    } else if (patch.op === 'update') {
       inverted = {
         op: 'update',
         source: patch.source,

@@ -38,7 +38,8 @@ export class TimetableCellRenderer {
     stop_id: string,
     arrival_time: string | null,
     departure_time: string | null,
-    _editableStopTime?: EditableStopTime
+    editableStopTime?: EditableStopTime,
+    supersequencePosition?: number
   ): string {
     const arrivalDisplay = arrival_time
       ? TimeFormatter.formatTimeWithSeconds(arrival_time)
@@ -73,9 +74,11 @@ export class TimetableCellRenderer {
                 data-trip-id="${trip_id}"
                 data-stop-id="${stop_id}"
                 data-time-type="linked"
+                data-supersequence-position="${supersequencePosition ?? ''}"
+                data-stop-sequence="${editableStopTime?.stop_sequence ?? ''}"
                 pattern="^([01]?[0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]$|^(2[4-9]|[3-9][0-9]):[0-5][0-9]:[0-5][0-9]$"
                 title="Enter time in HH:MM:SS format (linked arrival and departure)"
-                onchange="gtfsEditor.scheduleController.updateLinkedTime('${trip_id}', '${stop_id}', this.value)"
+                onchange="gtfsEditor.scheduleController.updateLinkedTime('${trip_id}', '${stop_id}', this.value, this.dataset.supersequencePosition, this.dataset.stopSequence)"
                 onfocus="this.select()"
               />
               <button
@@ -102,9 +105,11 @@ export class TimetableCellRenderer {
                   data-trip-id="${trip_id}"
                   data-stop-id="${stop_id}"
                   data-time-type="arrival"
+                  data-supersequence-position="${supersequencePosition ?? ''}"
+                  data-stop-sequence="${editableStopTime?.stop_sequence ?? ''}"
                   pattern="^([01]?[0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]$|^(2[4-9]|[3-9][0-9]):[0-5][0-9]:[0-5][0-9]$"
                   title="Enter arrival time in HH:MM:SS format"
-                  onchange="gtfsEditor.scheduleController.updateArrivalDepartureTime('${trip_id}', '${stop_id}', 'arrival', this.value)"
+                  onchange="gtfsEditor.scheduleController.updateArrivalDepartureTime('${trip_id}', '${stop_id}', 'arrival', this.value, this.dataset.supersequencePosition, this.dataset.stopSequence)"
                     onfocus="this.select()"
                 />
                 <div class="w-6"></div>
@@ -119,9 +124,11 @@ export class TimetableCellRenderer {
                   data-trip-id="${trip_id}"
                   data-stop-id="${stop_id}"
                   data-time-type="departure"
+                  data-supersequence-position="${supersequencePosition ?? ''}"
+                  data-stop-sequence="${editableStopTime?.stop_sequence ?? ''}"
                   pattern="^([01]?[0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]$|^(2[4-9]|[3-9][0-9]):[0-5][0-9]:[0-5][0-9]$"
                   title="Enter departure time in HH:MM:SS format"
-                  onchange="gtfsEditor.scheduleController.updateArrivalDepartureTime('${trip_id}', '${stop_id}', 'departure', this.value)"
+                  onchange="gtfsEditor.scheduleController.updateArrivalDepartureTime('${trip_id}', '${stop_id}', 'departure', this.value, this.dataset.supersequencePosition, this.dataset.stopSequence)"
                     onfocus="this.select()"
                 />
                 <button
