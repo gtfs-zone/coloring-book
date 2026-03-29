@@ -60,47 +60,6 @@ export function getServiceDisplay(
   return { primary: record['service_id'] ?? '' };
 }
 
-export function getShapeDisplay(
-  record: Record<string, string>
-): EntityDisplayInfo {
-  return { primary: record['shape_id'] ?? '' };
-}
-
-export function getLevelDisplay(
-  record: Record<string, string>
-): EntityDisplayInfo {
-  const name = record['level_name'];
-  const id = record['level_id'];
-  if (name) {
-    return { primary: name, secondary: id };
-  }
-  return { primary: id ?? '' };
-}
-
-export function getPathwayDisplay(
-  record: Record<string, string>
-): EntityDisplayInfo {
-  return { primary: record['pathway_id'] ?? '' };
-}
-
-export function getFareAttributeDisplay(
-  record: Record<string, string>
-): EntityDisplayInfo {
-  return { primary: record['fare_id'] ?? '' };
-}
-
-export function getNetworkDisplay(
-  record: Record<string, string>
-): EntityDisplayInfo {
-  return { primary: record['network_id'] ?? '' };
-}
-
-export function getAreaDisplay(
-  record: Record<string, string>
-): EntityDisplayInfo {
-  return { primary: record['area_id'] ?? '' };
-}
-
 /**
  * For cards, list items, and detail headers — secondary on its own line, muted.
  */
