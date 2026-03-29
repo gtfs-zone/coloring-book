@@ -14,6 +14,7 @@ import { TimetableCellRenderer } from './timetable-cell-renderer.js';
 import { TimetableDatabase } from './timetable-database.js';
 import { generateCompositeKeyFromRecord } from '../utils/gtfs-primary-keys.js';
 import { patchUpdate } from '../utils/patch-utils.js';
+import { getStopDisplay, renderOptionLabel } from '../utils/entity-display.js';
 
 // Enhanced GTFS interfaces using standard GTFS property names
 
@@ -828,7 +829,7 @@ export class ScheduleController {
         .map(
           (stop) => `
           <option value="${stop.stop_id}">
-            ${this.escapeHtml(stop.stop_name || stop.stop_id)}
+            ${this.escapeHtml(renderOptionLabel(getStopDisplay(stop as unknown as Record<string, string>)))}
           </option>
         `
         )
@@ -965,7 +966,7 @@ export class ScheduleController {
       .map(
         (stop) => `
         <option value="${stop.stop_id}">
-          ${this.escapeHtml(stop.stop_name || stop.stop_id)} (${stop.stop_id})
+          ${this.escapeHtml(renderOptionLabel(getStopDisplay(stop as unknown as Record<string, string>)))}
         </option>
       `
       )
