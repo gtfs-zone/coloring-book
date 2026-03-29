@@ -41,19 +41,6 @@ export function getRouteDisplay(
   return { primary: id ?? '' };
 }
 
-export function getTripDisplay(
-  record: Record<string, string>
-): EntityDisplayInfo {
-  const headsign = record['trip_headsign'];
-  const shortName = record['trip_short_name'];
-  const id = record['trip_id'];
-  const name = headsign || shortName;
-  if (name) {
-    return { primary: name, secondary: id };
-  }
-  return { primary: id ?? '' };
-}
-
 export function getServiceDisplay(
   record: Record<string, string>
 ): EntityDisplayInfo {

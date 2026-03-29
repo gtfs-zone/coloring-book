@@ -344,10 +344,10 @@ clearing the UUID.
 
 ## Phase 5 — QA and Cleanup
 
-- [ ] Run `npm run typecheck` — fix all type errors
-- [ ] Run `npm run lint` — fix all lint warnings
-- [ ] Run `npm test` — confirm existing tests pass
-- [ ] Manual smoke test each entity type:
+- [x] Run `npm run typecheck` — fix all type errors
+- [x] Run `npm run lint` — fix all lint warnings
+- [x] Run `npm test` — confirm existing tests pass
+- [x] Manual smoke test each entity type:
   - Create agency, route, trip, service — confirm IDs cannot be changed in form views
   - Create stop via map click — confirm modal appears, UUID pre-filled, input focused,
     cancel works, duplicate ID is rejected, valid ID inserts and navigates correctly
@@ -355,7 +355,7 @@ clearing the UUID.
   - Open `stop_times.txt` in Files view — confirm `trip_id` and `stop_sequence` are locked
   - Open `transfers.txt` — confirm all columns are locked
   - Open `feed_info.txt` — confirm no columns are locked
-- [ ] Confirm PKs are visible alongside names in:
+- [x] Confirm PKs are visible alongside names in:
   - Home page agency cards
   - Route list under an agency
   - Timetable trip headers (trip_id as subtext under headsign)
