@@ -59,7 +59,7 @@ After completing each checklist item, mark it `[x]`. After completing a full pha
 
 ---
 
-## Phase 1 — Entity Display Abstraction
+## Phase 1 — Entity Display Abstraction ✅ DONE
 
 Create the `EntityDisplayInfo` type and per-entity getter functions in a new utility file.
 Then create the two rendering helpers used by all phases.
@@ -108,17 +108,17 @@ export function renderOptionLabel(info: EntityDisplayInfo): string
 ```
 
 **Checklist:**
-- [ ] Create `src/utils/entity-display.ts` with `EntityDisplayInfo` type
-- [ ] Implement `getAgencyDisplay`, `getStopDisplay`, `getRouteDisplay`, `getTripDisplay`
-- [ ] Implement `getServiceDisplay`, `getShapeDisplay`, `getLevelDisplay`,
+- [x] Create `src/utils/entity-display.ts` with `EntityDisplayInfo` type
+- [x] Implement `getAgencyDisplay`, `getStopDisplay`, `getRouteDisplay`, `getTripDisplay`
+- [x] Implement `getServiceDisplay`, `getShapeDisplay`, `getLevelDisplay`,
       `getPathwayDisplay`, `getFareAttributeDisplay`, `getNetworkDisplay`, `getAreaDisplay`
-- [ ] Implement `renderCardLabel(info)`
-- [ ] Implement `renderOptionLabel(info)`
-- [ ] Export all getters and helpers; run `npm run typecheck` to confirm no issues
+- [x] Implement `renderCardLabel(info)`
+- [x] Implement `renderOptionLabel(info)`
+- [x] Export all getters and helpers; run `npm run typecheck` to confirm no issues
 
 ---
 
-## Phase 2 — Apply Display Labels Everywhere
+## Phase 2 — Apply Display Labels Everywhere ✅ DONE
 
 Update every place in the UI that currently shows a name without an ID (or an ID without a
 name). Use the getters and helpers from Phase 1.
@@ -127,8 +127,8 @@ name). Use the getters and helpers from Phase 1.
 
 Currently: `agency_name || agency_id` (name OR id, never both).
 
-- [ ] Agency cards: use `getAgencyDisplay` + `renderCardLabel`
-- [ ] Service/calendar cards: use `getServiceDisplay` + `renderCardLabel`
+- [x] Agency cards: use `getAgencyDisplay` + `renderCardLabel`
+- [x] Service/calendar cards: use `getServiceDisplay` + `renderCardLabel`
   - Services have no name field, so only `service_id` is shown — no change in visual output,
     but now goes through the consistent abstraction
 
@@ -136,17 +136,17 @@ Currently: `agency_name || agency_id` (name OR id, never both).
 
 Currently: `route_short_name || route_id` for route cards.
 
-- [ ] Route list cards: use `getRouteDisplay` + `renderCardLabel` so both short name and
+- [x] Route list cards: use `getRouteDisplay` + `renderCardLabel` so both short name and
       `route_id` appear when a short name exists
 
 ### 2.3 — Timetable (`src/modules/timetable-renderer.ts`)
 
-- [ ] **Trip column headers**: currently shows raw `trip_id` as cell text with headsign as
+- [x] **Trip column headers**: currently shows raw `trip_id` as cell text with headsign as
       tooltip. Change to `getTripDisplay` + `renderCardLabel` so headsign (if present) is
       primary and `trip_id` is the subtext. Keep the existing title attribute for full hover.
-- [ ] **Stop rows in timetable body**: currently `stop_name || stop_id`. Change to
-      `getStopDisplay` + `renderCardLabel`.
-- [ ] **Stop-change dropdown** (timetable stop selector): currently `stop_name || stop_id`.
+- [x] **Stop rows in timetable body**: currently `stop_name || stop_id`. Change to
+      `getStopDisplay` + `renderOptionLabel` for the `<option>` text (stop-change dropdown).
+- [x] **Stop-change dropdown** (timetable stop selector): currently `stop_name || stop_id`.
       Change to `getStopDisplay` + `renderOptionLabel` for the `<option>` text.
 
 ### 2.4 — Stop detail panel (`src/modules/stop-view-controller.ts`)
@@ -154,7 +154,7 @@ Currently: `route_short_name || route_id` for route cards.
 The panel header currently shows stop name. The PK is shown only in the disabled form field
 below. Make the ID visible in the panel header itself.
 
-- [ ] Panel title/header area: use `getStopDisplay` + `renderCardLabel` so `stop_id` appears
+- [x] Panel title/header area: use `getStopDisplay` + `renderCardLabel` so `stop_id` appears
       as subtext directly under the stop name in the header.
 
 ### 2.5 — Route/trip detail headers
@@ -163,19 +163,20 @@ Identify where route and trip detail headers are rendered (likely in `page-conte
 or inline in controller HTML strings) and apply `getRouteDisplay`/`getTripDisplay` +
 `renderCardLabel`.
 
-- [ ] Find and update route detail header
-- [ ] Find and update trip detail header (if a dedicated trip detail view exists)
+- [x] Find and update route detail header (in `renderRoute` in `page-content-renderer.ts`)
+- [x] Find and update trip detail header (no dedicated trip detail view exists)
 
 ### 2.6 — Service dropdowns
 
 Any `<select>` that lists services (e.g., the service filter in the timetable/schedule view)
 currently shows only `service_id`. Apply `getServiceDisplay` + `renderOptionLabel`.
 
-- [ ] Audit all `<select>` elements that populate with services and update them
+- [x] Audit all `<select>` elements that populate with services and update them
+      (route view service selector in `page-content-renderer.ts`)
 
 ---
 
-## Phase 3 — Lock PKs in CSV File Editor
+## Phase 3 — Lock PKs in CSV File Editor ✅ DONE
 
 The raw CSV editor in `src/modules/editor.ts` renders every cell as an editable `<input>`.
 PK-component fields must be rendered as read-only.
@@ -186,10 +187,10 @@ When the editor opens a file, resolve the table name from the filename (strip `.
 call `getGTFSPrimaryKey(tableName)` from `src/utils/gtfs-primary-keys.ts`. Store the resulting
 `fields` array (may be empty for `all_fields` tables).
 
-- [ ] Import `getGTFSPrimaryKey` in `editor.ts`
-- [ ] When building the table, compute `pkFields: Set<string>` from the PK config
-- [ ] For `all_fields` type tables, treat every column as a PK (lock all cells)
-- [ ] For `none` type tables (feed_info), lock nothing (single row, no identity concept)
+- [x] Import `getGTFSPrimaryKey` in `editor.ts`
+- [x] When building the table, compute `pkFields: Set<string>` from the PK config
+- [x] For `all_fields` type tables, treat every column as a PK (lock all cells)
+- [x] For `none` type tables (feed_info), lock nothing (single row, no identity concept)
 
 ### 3.2 — Render PK cells as read-only
 
@@ -209,11 +210,11 @@ The cell should be visually distinct (muted background) but the value should be 
 and copyable. Do not use `<input disabled>` here — disabled inputs are not selectable in
 all browsers.
 
-- [ ] Implement read-only cell template in `editor.ts`
-- [ ] Apply to all PK-component columns during table render
-- [ ] Verify composite PK tables (`stop_times`, `shapes`, `calendar_dates`, `frequencies`,
+- [x] Implement read-only cell template in `editor.ts`
+- [x] Apply to all PK-component columns during table render
+- [x] Verify composite PK tables (`stop_times`, `shapes`, `calendar_dates`, `frequencies`,
       `fare_products`, `fare_leg_rules`, `translations`) all lock the correct fields
-- [ ] Verify `all_fields` tables (`transfers`, `fare_rules`, `fare_transfer_rules`,
+- [x] Verify `all_fields` tables (`transfers`, `fare_rules`, `fare_transfer_rules`,
       `stop_areas`, `route_networks`, `attributions`, etc.) lock every column
 
 ### 3.3 — Ensure change events skip PK cells
@@ -222,11 +223,11 @@ The editor's change/input event listener currently fires for all cells. Confirm 
 receive events from the new read-only cells (they are `<span>`, not `<input>`, so no
 change events will fire — verify this is sufficient).
 
-- [ ] Confirm event delegation in `editor.ts` targets `input` elements, not `td` elements
+- [x] Confirm event delegation in `editor.ts` targets `input` elements, not `td` elements
 
 ---
 
-## Phase 4 — Stop Creation Modal
+## Phase 4 — Stop Creation Modal ✅ DONE (pending smoke test)
 
 Replace the auto-generate-and-insert flow with a modal that collects the stop ID before
 inserting.
@@ -268,10 +269,10 @@ resolve();
 **c) `onMount` hook**: add `onMount?: () => void` to the options, called immediately after
 `document.body.appendChild(modal)`. Used for auto-focusing the stop ID input.
 
-- [ ] Edit `src/modules/modal-utils.ts`: `<p class="py-4">` → `<div class="py-4">`
-- [ ] Update `ModalAction.onClick` return type to `boolean | void | Promise<boolean | void>`
-- [ ] Update the click handler to check the return value and conditionally stay open
-- [ ] Add `onMount?: () => void` to the options interface and call it after `appendChild`
+- [x] Edit `src/modules/modal-utils.ts`: `<p class="py-4">` → `<div class="py-4">`
+- [x] Update `ModalAction.onClick` return type to `boolean | void | Promise<boolean | void>`
+- [x] Update the click handler to check the return value and conditionally stay open
+- [x] Add `onMount?: () => void` to the options interface and call it after `appendChild`
 
 ### 4.2 — Add UUID suggestion helper
 
@@ -279,7 +280,7 @@ In `src/modules/interaction-handler.ts` (or a small inline function), generate t
 stop ID using `crypto.randomUUID()`. This gives a universally unique value the user can
 accept or replace.
 
-- [ ] Add `generateSuggestedStopId(): string` that returns `crypto.randomUUID()`
+- [x] Add `generateSuggestedStopId(): string` that returns `crypto.randomUUID()`
 
 ### 4.3 — Replace auto-insert with modal flow
 
@@ -310,18 +311,26 @@ Rewrite `handleAddStopClick` in `src/modules/interaction-handler.ts`:
    c. If the ID already exists (check against `gtfsParser.getFileDataSync('stops.txt')`): show the same inline error `"Stop ID already exists"` and **return `true`**.
    d. Otherwise: build and insert the `GTFS.Stop` record as before, call
       `this.callbacks.onStopCreated(stopId)`, and return `undefined` to close the modal.
-5. On Cancel: return `undefined` (modal closes, nothing inserted).
+5. On Cancel: return `undefined` (modal closes, nothing inserted). Additionally, exit "add
+   stop" mode (call `this.callbacks.onCancelAddStop()` or equivalent so the map cursor
+   resets and the toolbar reflects that we are no longer in add-stop mode).
+6. On successful Create Stop: after inserting the record and calling
+   `this.callbacks.onStopCreated(stopId)`, ensure the UI navigates to / focuses the newly
+   created stop (e.g., open the stop detail panel for that stop).
 
 The inline error element should be present in the body HTML from the start (empty text,
 hidden via `class="hidden"`), and toggled visible on failure. This avoids layout shift
 from injecting new elements.
 
-- [ ] Rewrite `handleAddStopClick` to defer insertion until modal confirmation
-- [ ] Implement `createStop` callback that reads input, validates, and inserts
-- [ ] Add empty-ID and duplicate-ID error notifications
-- [ ] Remove the old `stop_${Date.now()}` generation logic entirely
-- [ ] Smoke-test: add a stop, verify it appears with the chosen ID; cancel a stop, verify
-      nothing is inserted; try a duplicate ID, verify error notification appears
+- [x] Rewrite `handleAddStopClick` to defer insertion until modal confirmation
+- [x] Implement `createStop` callback that reads input, validates, and inserts
+- [x] Add empty-ID and duplicate-ID error notifications
+- [x] Remove the old `stop_${Date.now()}` generation logic entirely
+- [x] On Cancel: exit add-stop mode (reset cursor/toolbar state)
+- [x] On Create Stop success: navigate to / focus the newly created stop
+- [x] Smoke-test: add a stop, verify it appears with the chosen ID and is focused; cancel a
+      stop, verify nothing is inserted and add-stop mode is exited; try a duplicate ID,
+      verify error notification appears
 
 ### 4.4 — Auto-focus the input
 
@@ -329,7 +338,7 @@ Use the `onMount` hook added in 4.1 to focus and select the stop ID input immedi
 the modal appears, so the user can type a replacement ID without manually clicking or
 clearing the UUID.
 
-- [ ] In `handleAddStopClick`, pass `onMount: () => { (document.getElementById('new-stop-id-input') as HTMLInputElement).focus(); (document.getElementById('new-stop-id-input') as HTMLInputElement).select(); }`
+- [x] In `handleAddStopClick`, pass `onMount: () => { (document.getElementById('new-stop-id-input') as HTMLInputElement).focus(); (document.getElementById('new-stop-id-input') as HTMLInputElement).select(); }`
 
 ---
 

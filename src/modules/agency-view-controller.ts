@@ -11,6 +11,7 @@ import {
   type QueryOnlyDatabase,
 } from '../utils/field-component.js';
 import { GTFS_TABLES, AgencySchema } from '../types/gtfs.js';
+import { getRouteDisplay, renderCardLabel } from '../utils/entity-display.js';
 
 export interface AgencyViewDependencies {
   gtfsDatabase?: QueryOnlyDatabase;
@@ -128,8 +129,6 @@ export class AgencyViewController {
    */
   private renderRouteItem(route: Routes): string {
     const routeId = route.route_id;
-    const routeShortName = route.route_short_name || route.route_id;
-    const routeLongName = route.route_long_name || '';
     const routeColor = route.route_color ? `#${route.route_color}` : '#6366f1';
 
     return `
@@ -137,10 +136,7 @@ export class AgencyViewController {
            data-route-id="${routeId}">
         <div class="w-3 h-3 rounded-full flex-shrink-0" style="background-color: ${routeColor}"></div>
         <div class="flex-1 min-w-0">
-          <div class="flex items-center gap-2">
-            <span class="font-semibold">${routeShortName}</span>
-            ${routeLongName ? `<span class="text-sm opacity-70 truncate">${routeLongName}</span>` : ''}
-          </div>
+          <div class="font-semibold">${renderCardLabel(getRouteDisplay(route as unknown as Record<string, string>))}</div>
         </div>
       </div>
     `;

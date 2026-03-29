@@ -2,6 +2,7 @@ import { Map as MapLibreMap, GeoJSONSource, MapMouseEvent } from 'maplibre-gl';
 import { GTFS } from '../types/gtfs.js';
 import { MapMode } from './map-controller.js';
 import type { GTFSParser } from './gtfs-parser.js';
+import { showModal } from './modal-utils.js';
 
 export interface InteractionCallbacks {
   onRouteClick?: (route_id: string) => void;
@@ -143,50 +144,94 @@ export class InteractionHandler {
   /**
    * Handle add stop mode clicks
    */
-  private async handleAddStopClick(e: MapMouseEvent): Promise<void> {
+  private handleAddStopClick(e: MapMouseEvent): void {
     if (!this.gtfsParser) {
       console.error('Cannot add stop: GTFSParser not initialized');
       return;
     }
 
     const { lng, lat } = e.lngLat;
+    const suggestedId = crypto.randomUUID();
 
-    try {
-      // Generate unique stop ID
-      const stops =
-        this.gtfsParser.getFileDataSyncTyped<GTFS.Stop>('stops.txt') || [];
-      const stopIds = stops.map((stop) => stop.stop_id);
-      let newStopId = `stop_${Date.now()}`;
+    const bodyHtml = `
+      <label class="label"><span class="label-text">Stop ID</span></label>
+      <input
+        id="new-stop-id-input"
+        type="text"
+        class="input input-bordered w-full font-mono"
+        value="${suggestedId}"
+      />
+      <p class="text-xs opacity-60 mt-2">The Stop ID cannot be changed after creation.</p>
+      <p id="stop-id-error" class="text-xs text-error mt-1 hidden"></p>
+    `;
 
-      // Ensure uniqueness
-      while (stopIds.includes(newStopId)) {
-        newStopId = `stop_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+    const createStop = async (): Promise<boolean | void> => {
+      const input = document.getElementById(
+        'new-stop-id-input'
+      ) as HTMLInputElement;
+      const stopId = input.value.trim();
+      const errorEl = document.getElementById('stop-id-error') as HTMLElement;
+
+      if (!stopId) {
+        errorEl.textContent = 'Stop ID is required.';
+        errorEl.classList.remove('hidden');
+        return true;
       }
 
-      // Create new stop object
+      const stops =
+        this.gtfsParser.getFileDataSyncTyped<GTFS.Stop>('stops.txt') || [];
+      if (stops.some((s) => s.stop_id === stopId)) {
+        errorEl.textContent = 'Stop ID already exists.';
+        errorEl.classList.remove('hidden');
+        return true;
+      }
+
       const newStop: GTFS.Stop = {
-        stop_id: newStopId,
-        stop_name: `New Stop ${stops.length + 1}`,
+        stop_id: stopId,
         stop_lat: lat.toFixed(6),
         stop_lon: lng.toFixed(6),
-        location_type: '0', // Default to stop/platform
+        location_type: '0',
       };
 
       console.log('Creating new stop:', newStop);
 
-      // Add stop to data (this should trigger a callback to the main controller)
-      await this.addStopToData(newStop);
+      try {
+        await this.addStopToData(newStop);
+        this.setMapMode(MapMode.NAVIGATE);
+        if (this.callbacks.onStopClick) {
+          this.callbacks.onStopClick(stopId);
+        }
+        console.log(
+          `✅ Created stop ${stopId} at ${lat.toFixed(6)}, ${lng.toFixed(6)}`
+        );
+      } catch (error) {
+        console.error('Failed to create stop:', error);
+        errorEl.textContent = 'Failed to create stop. See console for details.';
+        errorEl.classList.remove('hidden');
+        return true;
+      }
+    };
 
-      // Switch back to navigation mode
-      this.setMapMode(MapMode.NAVIGATE);
-
-      console.log(
-        `✅ Created stop ${newStopId} at ${lat.toFixed(6)}, ${lng.toFixed(6)}`
-      );
-    } catch (error) {
-      console.error('Failed to create stop:', error);
-      // Keep in add mode if creation failed
-    }
+    showModal({
+      title: 'New Stop',
+      body: bodyHtml,
+      actions: [
+        {
+          label: 'Cancel',
+          onClick: () => {
+            this.setMapMode(MapMode.NAVIGATE);
+          },
+        },
+        { label: 'Create Stop', className: 'btn-primary', onClick: createStop },
+      ],
+      onMount: () => {
+        const input = document.getElementById(
+          'new-stop-id-input'
+        ) as HTMLInputElement;
+        input.focus();
+        input.select();
+      },
+    });
   }
 
   /**
