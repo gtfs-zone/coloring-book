@@ -727,7 +727,6 @@ export class ScheduleController {
       // Store current state for refresh functionality
       this.currentRouteId = route_id;
       this.currentServiceId = service_id;
-      this.currentDirectionId = direction_id;
 
       // Get all available directions for this route and service
       const fetchedDirections =
@@ -748,6 +747,7 @@ export class ScheduleController {
 
       // Use provided direction_id or Direction 0 as default
       const selectedDirection = direction_id ?? availableDirections[0].id;
+      this.currentDirectionId = selectedDirection;
 
       const timetableData = await this.dataProcessor.generateTimetableData(
         route_id,
