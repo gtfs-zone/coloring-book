@@ -12,12 +12,7 @@ import {
 } from '../utils/field-component.js';
 import { TripsSchema, GTFS_TABLES } from '../types/gtfs.js';
 import { getGTFSFieldDescription } from '../utils/zod-tooltip-helper.js';
-import {
-  getTripDisplay,
-  getStopDisplay,
-  renderCardLabel,
-  renderOptionLabel,
-} from '../utils/entity-display.js';
+import { getStopDisplay, renderOptionLabel } from '../utils/entity-display.js';
 
 /**
  * Timetable Renderer - HTML generation for schedule views
@@ -401,9 +396,8 @@ export class TimetableRenderer {
     const tripHeaders = trips
       .map((trip) => {
         return `
-          <td class="trip-header text-center min-w-[80px] p-2 text-xs"
-              title="${trip.trip_headsign || trip.trip_short_name || trip.trip_id}">
-            ${renderCardLabel(getTripDisplay(trip as unknown as Record<string, string>))}
+          <td class="trip-header text-center min-w-[80px] p-2 text-xs font-mono">
+            ${this.escapeHtml(trip.trip_id)}
           </td>
         `;
       })
