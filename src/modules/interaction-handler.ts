@@ -1,5 +1,5 @@
 import { Map as MapLibreMap, GeoJSONSource, MapMouseEvent } from 'maplibre-gl';
-import { GTFS } from '../types/gtfs.js';
+import { Stops } from '../types/gtfs-entities.js';
 import { MapMode } from './map-controller.js';
 import type { GTFSParser } from './gtfs-parser.js';
 import { showModal } from './modal-utils.js';
@@ -179,18 +179,20 @@ export class InteractionHandler {
       }
 
       const stops =
-        this.gtfsParser.getFileDataSyncTyped<GTFS.Stop>('stops.txt') || [];
+        this.gtfsParser.getFileDataSyncTyped<Stops>('stops.txt') || [];
       if (stops.some((s) => s.stop_id === stopId)) {
         errorEl.textContent = 'Stop ID already exists.';
         errorEl.classList.remove('hidden');
         return true;
       }
 
-      const newStop: GTFS.Stop = {
+      const newStop: Stops = {
         stop_id: stopId,
-        stop_lat: lat.toFixed(6),
-        stop_lon: lng.toFixed(6),
-        location_type: '0',
+        stop_name: '',
+        stop_lat: parseFloat(lat.toFixed(6)),
+        stop_lon: parseFloat(lng.toFixed(6)),
+        parent_station: '',
+        location_type: 0,
       };
 
       console.log('Creating new stop:', newStop);
@@ -418,8 +420,10 @@ export class InteractionHandler {
 
     // Remove hover effects
     ['stops-background', 'stops-clickarea'].forEach((layerId) => {
-      this.map.off('mouseenter', layerId);
-      this.map.off('mouseleave', layerId);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (this.map as any).off('mouseenter', layerId);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (this.map as any).off('mouseleave', layerId);
 
       // Re-add standard hover effects
       this.map.on('mouseenter', layerId, () => {
@@ -437,7 +441,7 @@ export class InteractionHandler {
   /**
    * Add stop to GTFS data (delegates to gtfsParser)
    */
-  private async addStopToData(stop: GTFS.Stop): Promise<void> {
+  private async addStopToData(stop: Stops): Promise<void> {
     if (!this.gtfsParser || !this.gtfsParser.createStop) {
       throw new Error('GTFSParser or createStop method not available');
     }

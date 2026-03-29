@@ -3,7 +3,7 @@
  * Provides sensible defaults for creating new GTFS entities
  */
 
-import type { Agency, Route, Calendar } from '../types/gtfs';
+import type { Agency, Routes, Calendar } from '../types/gtfs';
 
 /**
  * Get current date in YYYYMMDD format
@@ -64,8 +64,8 @@ export function createDefaultService(service_id: string): Calendar {
 export function createDefaultRoute(
   route_id: string,
   agency_id?: string
-): Route {
-  const route: Route = {
+): Routes {
+  const route: Partial<Routes> = {
     route_id,
     route_short_name: route_id,
     route_long_name: '',
@@ -76,5 +76,5 @@ export function createDefaultRoute(
     route.agency_id = agency_id;
   }
 
-  return route;
+  return route as Routes;
 }

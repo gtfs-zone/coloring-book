@@ -22,7 +22,6 @@ export class SearchController {
   private mapController: MapController;
   private searchInput: HTMLInputElement | null = null;
   private searchResults: HTMLElement | null = null;
-  private isSearching: boolean = false;
   private searchTimeout: NodeJS.Timeout | null = null;
 
   constructor(gtfsParser: GTFSParser, mapController: MapController) {
@@ -79,7 +78,7 @@ export class SearchController {
     this.searchInput.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') {
         this.hideResults();
-        this.searchInput.blur();
+        this.searchInput!.blur();
       } else if (e.key === 'Enter') {
         e.preventDefault();
         const firstResult = this.searchResults?.querySelector(
@@ -93,15 +92,15 @@ export class SearchController {
 
     // Hide results when clicking outside
     document.addEventListener('click', (e) => {
-      if (!e.target.closest('#map-controls')) {
+      if (!(e.target as Element)?.closest('#map-controls')) {
         this.hideResults();
       }
     });
 
     // Show results when focusing on search input (if has content)
     this.searchInput.addEventListener('focus', () => {
-      if (this.searchInput.value.trim().length >= 2) {
-        this.performSearch(this.searchInput.value.trim());
+      if (this.searchInput!.value.trim().length >= 2) {
+        this.performSearch(this.searchInput!.value.trim());
       }
     });
   }
@@ -112,7 +111,6 @@ export class SearchController {
       return;
     }
 
-    this.isSearching = true;
     this.showLoadingState();
 
     try {
@@ -125,8 +123,6 @@ export class SearchController {
       console.error('Search error:', error);
       this.showErrorState();
     }
-
-    this.isSearching = false;
   }
 
   private displayResults(results: SearchResults, query: string): void {
@@ -171,7 +167,7 @@ export class SearchController {
                     ? `<div class="text-sm text-gray-500 truncate">${route.route_long_name}</div>`
                     : ''
                 }
-                <div class="text-xs text-gray-400">${this.gtfsParser.getRouteTypeText(route.route_type)}</div>
+                <div class="text-xs text-gray-400">${this.gtfsParser.getRouteTypeText(String(route.route_type))}</div>
               </div>
             </div>
           </div>
@@ -191,8 +187,8 @@ export class SearchController {
       `;
 
       stops.forEach((stop: Stops) => {
-        const stopType = stop.location_type || '0';
-        const stopIcon = stopType === '1' ? '🚉' : '🚏';
+        const stopType = stop.location_type ?? 0;
+        const stopIcon = stopType === 1 ? '🚉' : '🚏';
 
         html += `
           <div class="search-result-item px-3 py-2 hover:bg-blue-50 cursor-pointer border-b border-gray-100" 
@@ -207,7 +203,7 @@ export class SearchController {
                 <div class="text-xs text-gray-400">
                   ${
                     stop.stop_lat && stop.stop_lon
-                      ? `${parseFloat(stop.stop_lat).toFixed(4)}, ${parseFloat(stop.stop_lon).toFixed(4)}`
+                      ? `${stop.stop_lat.toFixed(4)}, ${stop.stop_lon.toFixed(4)}`
                       : 'No coordinates'
                   }
                 </div>
@@ -226,18 +222,19 @@ export class SearchController {
   }
 
   private attachResultHandlers(): void {
-    const resultItems = this.searchResults.querySelectorAll(
+    const resultItems = this.searchResults!.querySelectorAll(
       '.search-result-item'
     );
 
     resultItems.forEach((item) => {
       item.addEventListener('click', () => {
-        const type = item.dataset.type!;
-        const id = item.dataset.id!;
+        const el = item as HTMLElement;
+        const type = el.dataset.type!;
+        const id = el.dataset.id!;
 
         this.selectResult(type, id);
         this.hideResults();
-        this.searchInput.blur();
+        this.searchInput!.blur();
       });
     });
   }

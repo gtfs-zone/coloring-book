@@ -137,7 +137,7 @@ export class StopViewController {
           </div>
 
           <div class="grid grid-cols-1 gap-2">
-            ${agencyRoutes.map((route) => this.renderRouteCard(route)).join('')}
+            ${(agencyRoutes as Routes[]).map((route: Routes) => this.renderRouteCard(route)).join('')}
           </div>
         </div>
       `;
@@ -209,10 +209,10 @@ export class StopViewController {
 
     try {
       // Get all routes that serve this stop via stop_times
-      const stopTimes = await this.dependencies.gtfsDatabase.queryRows(
+      const stopTimes = (await this.dependencies.gtfsDatabase.queryRows(
         'stop_times',
         { stop_id }
-      );
+      )) as StopTimes[];
       const tripIds = [
         ...new Set(stopTimes.map((st: StopTimes) => st.trip_id)),
       ];
@@ -222,7 +222,9 @@ export class StopViewController {
       }
 
       // Get routes from trips
-      const allTrips = await this.dependencies.gtfsDatabase.queryRows('trips');
+      const allTrips = (await this.dependencies.gtfsDatabase.queryRows(
+        'trips'
+      )) as Trips[];
       const relevantTrips = allTrips.filter((trip: Trips) =>
         tripIds.includes(trip.trip_id)
       );
@@ -231,8 +233,9 @@ export class StopViewController {
       ];
 
       // Get agencies from routes
-      const allRoutes =
-        await this.dependencies.gtfsDatabase.queryRows('routes');
+      const allRoutes = (await this.dependencies.gtfsDatabase.queryRows(
+        'routes'
+      )) as Routes[];
       const relevantRoutes = allRoutes.filter((route: Routes) =>
         routeIds.includes(route.route_id)
       );
@@ -245,7 +248,9 @@ export class StopViewController {
       ];
 
       // Get agency details
-      const agencies = await this.dependencies.gtfsDatabase.queryRows('agency');
+      const agencies = (await this.dependencies.gtfsDatabase.queryRows(
+        'agency'
+      )) as Agency[];
       return agencies.filter((agency: Agency) =>
         agencyIds.includes(agency.agency_id)
       );
@@ -265,10 +270,10 @@ export class StopViewController {
 
     try {
       // Get all routes that serve this stop via stop_times
-      const stopTimes = await this.dependencies.gtfsDatabase.queryRows(
+      const stopTimes = (await this.dependencies.gtfsDatabase.queryRows(
         'stop_times',
         { stop_id }
-      );
+      )) as StopTimes[];
       const tripIds = [
         ...new Set(stopTimes.map((st: StopTimes) => st.trip_id)),
       ];
@@ -278,7 +283,9 @@ export class StopViewController {
       }
 
       // Get routes from trips
-      const allTrips = await this.dependencies.gtfsDatabase.queryRows('trips');
+      const allTrips = (await this.dependencies.gtfsDatabase.queryRows(
+        'trips'
+      )) as Trips[];
       const relevantTrips = allTrips.filter((trip: Trips) =>
         tripIds.includes(trip.trip_id)
       );
@@ -287,7 +294,9 @@ export class StopViewController {
       ];
 
       // Get route details
-      const routes = await this.dependencies.gtfsDatabase.queryRows('routes');
+      const routes = (await this.dependencies.gtfsDatabase.queryRows(
+        'routes'
+      )) as Routes[];
       return routes.filter((route: Routes) =>
         routeIds.includes(route.route_id)
       );

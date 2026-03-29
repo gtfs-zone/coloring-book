@@ -70,7 +70,7 @@ export class InfoDisplay {
         <div class="mb-4">
           <h3 class="text-lg font-semibold text-slate-800 mb-2">🏢 Agency Details</h3>
           <div class="bg-slate-50 rounded-lg p-4">
-            <h4 class="font-medium text-slate-800 mb-3">${this.escapeHtml(agency.name)}</h4>
+            <h4 class="font-medium text-slate-800 mb-3">${this.escapeHtml(agency.name as string)}</h4>
             
             <div class="space-y-2 text-sm">
               <div>${createTooltip('<strong>ID:</strong>', getAgencyFieldDescription('agency_id'))} ${agency.id}</div>
@@ -91,10 +91,10 @@ export class InfoDisplay {
                 (route: Record<string, unknown>) => `
               <div class="bg-white border border-slate-200 rounded p-3">
                 <div class="font-medium text-slate-800">
-                  ${route.shortName ? this.escapeHtml(route.shortName) + ' - ' : ''}${this.escapeHtml(route.longName || route.id)}
+                  ${route.shortName ? this.escapeHtml(route.shortName as string) + ' - ' : ''}${this.escapeHtml((route.longName || route.id) as string)}
                 </div>
                 <div class="text-sm text-slate-500">Route ID: ${route.id}</div>
-                ${route.desc ? `<div class="text-xs text-slate-400 mt-1">${this.escapeHtml(route.desc)}</div>` : ''}
+                ${route.desc ? `<div class="text-xs text-slate-400 mt-1">${this.escapeHtml(route.desc as string)}</div>` : ''}
               </div>
             `
               )
@@ -132,16 +132,16 @@ export class InfoDisplay {
           <h3 class="text-lg font-semibold text-slate-800 mb-2">🚌 Route Details</h3>
           <div class="bg-slate-50 rounded-lg p-4">
             <h4 class="font-medium text-slate-800 mb-3">
-              ${route.route_short_name ? this.escapeHtml(route.route_short_name) + ' - ' : ''}${this.escapeHtml(route.route_long_name || route.route_id)}
+              ${route.route_short_name ? this.escapeHtml(route.route_short_name as string) + ' - ' : ''}${this.escapeHtml((route.route_long_name || route.route_id) as string)}
             </h4>
-            
+
             <div class="space-y-2 text-sm">
               <div>${createTooltip('<strong>Route ID:</strong>', getRouteFieldDescription('route_id'))} ${route.route_id}</div>
-              ${route.route_short_name ? `<div>${createTooltip('<strong>Short Name:</strong>', getRouteFieldDescription('routeShortName'))} ${this.escapeHtml(route.route_short_name)}</div>` : ''}
-              ${route.route_long_name ? `<div>${createTooltip('<strong>Long Name:</strong>', getRouteFieldDescription('routeLongName'))} ${this.escapeHtml(route.route_long_name)}</div>` : ''}
-              ${route.route_desc ? `<div>${createTooltip('<strong>Description:</strong>', getRouteFieldDescription('routeDesc'))} ${this.escapeHtml(route.route_desc)}</div>` : ''}
-              <div>${createTooltip('<strong>Type:</strong>', getRouteFieldDescription('routeType'))} ${this.getRouteTypeText(route.route_type)}</div>
-              ${agency ? `<div>${createTooltip('<strong>Agency:</strong>', getAgencyFieldDescription('agency_id'))} ${this.escapeHtml(agency.name)}</div>` : ''}
+              ${route.route_short_name ? `<div>${createTooltip('<strong>Short Name:</strong>', getRouteFieldDescription('routeShortName'))} ${this.escapeHtml(route.route_short_name as string)}</div>` : ''}
+              ${route.route_long_name ? `<div>${createTooltip('<strong>Long Name:</strong>', getRouteFieldDescription('routeLongName'))} ${this.escapeHtml(route.route_long_name as string)}</div>` : ''}
+              ${route.route_desc ? `<div>${createTooltip('<strong>Description:</strong>', getRouteFieldDescription('routeDesc'))} ${this.escapeHtml(route.route_desc as string)}</div>` : ''}
+              <div>${createTooltip('<strong>Type:</strong>', getRouteFieldDescription('routeType'))} ${this.getRouteTypeText(route.route_type as number)}</div>
+              ${agency ? `<div>${createTooltip('<strong>Agency:</strong>', getAgencyFieldDescription('agency_id'))} ${this.escapeHtml(agency.name as string)}</div>` : ''}
               ${route.route_color ? `<div>${createTooltip('<strong>Color:</strong>', getRouteFieldDescription('routeColor'))} <span style="background: #${route.route_color}; color: #${route.route_text_color || 'ffffff'};" class="px-2 py-1 rounded">#${route.route_color}</span></div>` : ''}
               ${route.route_url ? `<div>${createTooltip('<strong>URL:</strong>', getRouteFieldDescription('routeUrl'))} <a href="${route.route_url}" target="_blank" class="text-info hover:underline">${route.route_url}</a></div>` : ''}
             </div>
@@ -201,7 +201,7 @@ export class InfoDisplay {
             
             <div class="space-y-2 text-sm">
               <div>${createTooltip('<strong>Trip ID:</strong>', 'Identifies a trip.')} ${trip.trip_id}</div>
-              ${trip.trip_short_name ? `<div>${createTooltip('<strong>Short Name:</strong>', 'Short name of a trip.')} ${this.escapeHtml(trip.trip_short_name)}</div>` : ''}
+              ${trip.trip_short_name ? `<div>${createTooltip('<strong>Short Name:</strong>', 'Short name of a trip.')} ${this.escapeHtml(trip.trip_short_name as string)}</div>` : ''}
               <div>${createTooltip('<strong>Route:</strong>', getRouteFieldDescription('route_id'))} ${route ? route.route_short_name || route.route_long_name || route.route_id : trip.route_id}</div>
               <div>${createTooltip('<strong>Service ID:</strong>', getCalendarFieldDescription('service_id'))} ${trip.service_id}</div>
               ${trip.direction_id ? `<div>${createTooltip('<strong>Direction:</strong>', 'Indicates the direction of travel for a trip.')} ${trip.direction_id}</div>` : ''}
@@ -219,7 +219,7 @@ export class InfoDisplay {
                 (st: Record<string, unknown>, _index: number) => `
               <div class="bg-white border border-slate-200 rounded p-2 flex justify-between items-center">
                 <div class="flex-1">
-                  <div class="font-medium text-sm">${st.stop ? this.escapeHtml(st.stop.name) : st.stop_id}</div>
+                  <div class="font-medium text-sm">${st.stop ? this.escapeHtml((st.stop as Record<string, unknown>).name as string) : st.stop_id}</div>
                   <div class="text-xs text-slate-500">Stop ${st.stop_sequence}: ${st.stop_id}</div>
                 </div>
                 <div class="text-right">
@@ -254,17 +254,17 @@ export class InfoDisplay {
         <div class="mb-4">
           <h3 class="text-lg font-semibold text-slate-800 mb-2">🚏 Stop Details</h3>
           <div class="bg-slate-50 rounded-lg p-4">
-            <h4 class="font-medium text-slate-800 mb-3">${this.escapeHtml(stop.name)}</h4>
-            
+            <h4 class="font-medium text-slate-800 mb-3">${this.escapeHtml(stop.name as string)}</h4>
+
             <div class="space-y-2 text-sm">
               <div><strong>Stop ID:</strong> ${stop.id}</div>
               ${stop.code ? `<div><strong>Code:</strong> ${stop.code}</div>` : ''}
-              ${stop.desc ? `<div><strong>Description:</strong> ${this.escapeHtml(stop.desc)}</div>` : ''}
+              ${stop.desc ? `<div><strong>Description:</strong> ${this.escapeHtml(stop.desc as string)}</div>` : ''}
               ${
                 stop.lat && stop.lon
                   ? `
-                <div><strong>Location:</strong> ${stop.lat.toFixed(6)}, ${stop.lon.toFixed(6)}</div>
-                <div><strong>Coordinates:</strong> 
+                <div><strong>Location:</strong> ${(stop.lat as number).toFixed(6)}, ${(stop.lon as number).toFixed(6)}</div>
+                <div><strong>Coordinates:</strong>
                   <a href="https://www.openstreetmap.org/?mlat=${stop.lat}&mlon=${stop.lon}&zoom=18" target="_blank" class="text-info hover:underline">View on OpenStreetMap</a>
                 </div>
               `
@@ -272,9 +272,9 @@ export class InfoDisplay {
               }
               ${stop.zone_id ? `<div><strong>Zone ID:</strong> ${stop.zone_id}</div>` : ''}
               ${stop.url ? `<div><strong>URL:</strong> <a href="${stop.url}" target="_blank" class="text-info hover:underline">${stop.url}</a></div>` : ''}
-              ${stop.locationType ? `<div><strong>Location Type:</strong> ${this.getLocationTypeText(stop.locationType)}</div>` : ''}
+              ${stop.locationType ? `<div><strong>Location Type:</strong> ${this.getLocationTypeText(stop.locationType as number)}</div>` : ''}
               ${stop.parent_station ? `<div><strong>Parent Station:</strong> ${stop.parent_station}</div>` : ''}
-              ${stop.wheelchairBoarding ? `<div><strong>Wheelchair Boarding:</strong> ${this.getWheelchairText(stop.wheelchairBoarding)}</div>` : ''}
+              ${stop.wheelchairBoarding ? `<div><strong>Wheelchair Boarding:</strong> ${this.getWheelchairText(stop.wheelchairBoarding as number)}</div>` : ''}
             </div>
           </div>
         </div>
@@ -301,7 +301,13 @@ export class InfoDisplay {
   }
 
   showFeedStatistics(validationResults: Record<string, unknown> | null = null) {
-    const stats = this.relationships.getStatistics();
+    const stats = this.relationships.getStatistics() as {
+      agencies: number;
+      routes: number;
+      trips: number;
+      stops: number;
+      stopTimes: number;
+    };
 
     let validationSection = '';
     if (validationResults) {
@@ -412,7 +418,12 @@ export class InfoDisplay {
   }
 
   showValidationDetails(validationResults: Record<string, unknown>) {
-    const { errors, warnings, info, summary } = validationResults;
+    const { errors, warnings, info, summary } = validationResults as {
+      errors: Record<string, unknown>[];
+      warnings: Record<string, unknown>[];
+      info: Record<string, unknown>[];
+      summary: { errorCount: number; warningCount: number; infoCount: number };
+    };
 
     const renderIssues = (
       issues: Record<string, unknown>[],
@@ -434,7 +445,7 @@ export class InfoDisplay {
               .map(
                 (issue: Record<string, unknown>) => `
               <div class="bg-${colorClass}-50 border border-${colorClass}-200 rounded p-3">
-                <div class="font-medium text-${colorClass}-800">${this.escapeHtml(issue.message)}</div>
+                <div class="font-medium text-${colorClass}-800">${this.escapeHtml(issue.message as string)}</div>
                 <div class="text-sm text-${colorClass}-600 mt-1">
                   ${issue.fileName ? `File: ${issue.fileName}` : ''}
                   ${issue.rowNum ? ` | Row: ${issue.rowNum}` : ''}
