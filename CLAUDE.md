@@ -109,14 +109,21 @@ The repo is at `gtfs.zone/coloring-book`. Use the `mcp__forgejo__*` tools to int
 2. Explore the codebase as needed to understand the scope.
 3. Ask the user clarifying questions inline (in chat). Wait for answers before writing the plan.
 4. Write the plan to the issue body using `mcp__forgejo__update_issue`. Preserve the original issue text verbatim at the bottom under a `---` divider and `## Original Issue` heading. The plan itself goes at the top and must include:
-   - A brief summary of the approach
-   - Numbered phases, each with a markdown checklist of concrete implementation steps
-   - Any relevant file paths, type names, or architectural notes needed to execute each phase without re-researching
+   - **Summary**: 2–4 sentences on what the feature/fix is, why it matters, and the chosen approach. Include any key tradeoffs or alternatives considered.
+   - **Relevant context**: the specific files, types, functions, and architectural patterns involved. Enough that a future session can start coding immediately without re-exploring.
+   - **Numbered phases**, each containing:
+     - A short prose description of the goal of that phase and why it's sequenced here
+     - A markdown checklist of concrete, atomic implementation steps (specific enough that no ambiguity remains — e.g. "add `renderMode: 'shapes' | 'stops'` field to `RouteRendererState` in `src/modules/route-renderer.ts`" not "update the renderer")
+     - Any gotchas, edge cases, or invariants to preserve that are specific to that phase
 5. Do not start any implementation — the plan session ends here.
+
+**Creating a PR** — triggered by a prompt like "make a pr for this branch closing #50":
+
+1. Use `mcp__forgejo__create_pull_request` with `owner: "gtfs.zone"`, `repo: "coloring-book"`, the current branch as `head`, `main` as `base`, the issue title as the PR title, and `Closes #50` as the body (substituting the actual issue number).
 
 **Completing a phase** — triggered by a prompt like "Lets complete phase 1 of the plan in #50":
 
 1. Fetch the issue body with `mcp__forgejo__get_issue_by_index` using `owner: "gtfs.zone"`, `repo: "coloring-book"`.
 2. Implement everything in the requested phase. Commit as you go using conventional commits.
-3. After completing the phase, update the issue body with `mcp__forgejo__update_issue`: check off all completed items in that phase's checklist and add any discoveries or notes that would help future phases.
+3. After completing the phase, update the issue body with `mcp__forgejo__update_issue`: check off all completed items in that phase's checklist, and append any discoveries, surprises, or revised understanding to that phase's prose description so future phases have accurate context.
 4. Do not run tests, do not start the next phase. Stop and let the user test.
