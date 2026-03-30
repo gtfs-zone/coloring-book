@@ -1147,7 +1147,6 @@ export class UIController {
       await this.gtfsParser!.initializeEmpty();
       this.updateFileList();
       await this.mapController!.updateMap();
-      this.mapController!.hideMapOverlay();
 
       // Show files tab
       this.showFileList();
