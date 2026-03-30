@@ -131,3 +131,5 @@ tests/fixtures/*.zip
 .Trashes
 ehthumbs.db
 Thumbs.db
+
+.envrc
