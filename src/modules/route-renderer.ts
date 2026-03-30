@@ -32,6 +32,7 @@ export class RouteRenderer {
   private gtfsParser: GTFSParser;
   private initialized: boolean = false;
   private initializationPromise: Promise<void> | null = null;
+  private renderMode: 'shapes' | 'stops' = 'shapes';
 
   // Default rendering options
   private defaultOptions: RouteRenderingOptions = {
@@ -224,8 +225,12 @@ export class RouteRenderer {
       routeTrips.forEach((trip) => {
         let geometry = null;
 
-        // Try to use shape data first
-        if (trip.shape_id && shapeIndex.size > 0) {
+        // Try to use shape data first (only in shapes mode)
+        if (
+          this.renderMode === 'shapes' &&
+          trip.shape_id &&
+          shapeIndex.size > 0
+        ) {
           geometry = this.createRouteGeometryFromShape(
             trip.shape_id,
             shapeIndex
@@ -347,6 +352,15 @@ export class RouteRenderer {
     }
     const hue = Math.abs(hash) % 360;
     return `hsl(${hue}, 70%, 50%)`;
+  }
+
+  /**
+   * Set the render mode and re-render routes
+   */
+  public setRenderMode(mode: 'shapes' | 'stops'): void {
+    console.log(`[RouteRenderer] Setting render mode: ${mode}`);
+    this.renderMode = mode;
+    void this.renderRoutes();
   }
 
   /**
