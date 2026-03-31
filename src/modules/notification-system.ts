@@ -33,7 +33,7 @@ export class NotificationSystem {
     // Create notification container
     this.container = document.createElement('div');
     this.container.id = 'notification-container';
-    this.container.className = 'fixed top-4 right-4 z-50 space-y-2';
+    this.container.className = 'fixed bottom-4 left-4 z-50 space-y-2';
     document.body.appendChild(this.container);
   }
 
@@ -113,41 +113,46 @@ export class NotificationSystem {
   }
 
   showLoading(message: string, options: NotificationOptions = {}): number {
-    return this.show(message, 'loading', { autoHide: false, ...options });
+    return this.show(message, 'loading', {
+      autoHide: true,
+      duration: 30000,
+      ...options,
+    });
   }
 
   renderNotification(notification: Notification): void {
     const { message, type, actions } = notification;
 
-    const iconMap = {
-      error: '❌',
-      warning: '⚠️',
-      success: '✅',
-      info: 'ℹ️',
-      loading: '⏳',
+    const alertClassMap: Record<string, string> = {
+      error: 'alert',
+      warning: 'alert',
+      success: 'alert',
+      info: 'alert',
+      loading: 'alert',
     };
 
-    const colorMap = {
-      error: 'bg-red-50 border-red-200 text-red-800',
-      warning: 'bg-yellow-50 border-yellow-200 text-yellow-800',
-      success: 'bg-green-50 border-green-200 text-green-800',
-      info: 'bg-blue-50 border-blue-200 text-blue-800',
-      loading: 'bg-gray-50 border-gray-200 text-gray-800',
+    const iconMap: Record<string, string> = {
+      info: `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-info h-6 w-6 shrink-0"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>`,
+      success: `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-success h-6 w-6 shrink-0"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>`,
+      warning: `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-warning h-6 w-6 shrink-0"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>`,
+      error: `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-error h-6 w-6 shrink-0"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>`,
+      loading: `<span class="loading loading-spinner loading-sm shrink-0"></span>`,
     };
 
     const element = document.createElement('div');
-    element.className = `notification-item ${colorMap[type as keyof typeof colorMap]} border rounded-lg p-4 shadow-lg max-w-sm transform transition-all duration-300 ease-in-out`;
+    element.setAttribute('role', 'alert');
+    element.className = `notification-item ${alertClassMap[type] ?? 'alert'} shadow-lg max-w-sm transform transition-all duration-300 ease-in-out`;
     element.style.opacity = '0';
-    element.style.transform = 'translateX(100%)';
+    element.style.transform = 'translateX(-100%)';
 
     let actionsHtml = '';
     if (actions.length > 0) {
       actionsHtml = `
-        <div class="mt-3 flex gap-2">
+        <div class="flex gap-2 mt-1">
           ${actions
             .map(
               (action) => `
-            <button 
+            <button
               class="notification-action btn btn-xs ${action.primary ? 'btn-info' : 'btn-outline'}"
               data-action="${action.id}"
             >
@@ -161,19 +166,12 @@ export class NotificationSystem {
     }
 
     element.innerHTML = `
-      <div class="flex items-start gap-3">
-        <div class="flex-shrink-0 text-lg">
-          ${iconMap[type as keyof typeof iconMap]}
-          ${type === 'loading' ? '<span class="loading loading-spinner loading-sm ml-1"></span>' : ''}
-        </div>
-        <div class="flex-1 min-w-0">
-          <div class="text-sm font-medium">${this.escapeHtml(message)}</div>
-          ${actionsHtml}
-        </div>
-        <button class="notification-close btn btn-ghost btn-xs btn-circle text-base-content">
-          ×
-        </button>
+      ${iconMap[type] ?? ''}
+      <div class="flex-1 min-w-0">
+        <span class="text-sm">${this.escapeHtml(message)}</span>
+        ${actionsHtml}
       </div>
+      <button class="notification-close btn btn-ghost btn-xs btn-circle shrink-0">×</button>
     `;
 
     notification.element = element;
@@ -218,7 +216,7 @@ export class NotificationSystem {
 
     // Animate out
     notification.element.style.opacity = '0';
-    notification.element.style.transform = 'translateX(100%)';
+    notification.element.style.transform = 'translateX(-100%)';
 
     setTimeout(() => {
       if (notification.element && notification.element.parentNode) {
