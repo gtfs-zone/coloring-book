@@ -214,30 +214,27 @@ export class GTFSEditor {
       // Check for URL parameters (legacy support)
       await this.uiController.checkURLParams();
 
-      // If any file has rows, this is a reload with existing data — update UI and hide overlay.
+      // If no existing data, initialize an empty feed so the invariant "there is always a feed" holds.
       const hasExistingRows = this.gtfsParser
         .getAllFileNames()
         .some((f) => (this.gtfsParser.getFileDataSync(f)?.length ?? 0) > 0);
 
-      if (hasExistingRows) {
-        this.uiController.updateFileList();
-        await this.mapController.updateMap();
-        this.mapController.hideMapOverlay();
+      if (!hasExistingRows) {
+        await this.gtfsParser.initializeEmpty();
+      }
 
-        if (this.browseNavigation) {
-          this.browseNavigation.refresh();
-        }
+      this.uiController.updateFileList();
+      await this.mapController.updateMap();
 
-        const exportBtn = document.getElementById(
-          'export-btn'
-        ) as HTMLButtonElement;
-        if (exportBtn) {
-          exportBtn.disabled = false;
-        }
-      } else {
-        notifications.showInfo(
-          'Welcome to edit.gtfs.zone! Create a new GTFS feed or upload an existing one to get started.'
-        );
+      if (this.browseNavigation) {
+        this.browseNavigation.refresh();
+      }
+
+      const exportBtn = document.getElementById(
+        'export-btn'
+      ) as HTMLButtonElement;
+      if (exportBtn) {
+        exportBtn.disabled = false;
       }
     } catch (error) {
       console.error('Failed to initialize application:', error);
