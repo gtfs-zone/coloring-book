@@ -33,7 +33,7 @@ export class NotificationSystem {
     // Create notification container
     this.container = document.createElement('div');
     this.container.id = 'notification-container';
-    this.container.className = 'fixed top-4 right-4 z-50 space-y-2';
+    this.container.className = 'fixed bottom-4 left-4 z-50 space-y-2';
     document.body.appendChild(this.container);
   }
 
@@ -119,26 +119,18 @@ export class NotificationSystem {
   renderNotification(notification: Notification): void {
     const { message, type, actions } = notification;
 
-    const iconMap = {
-      error: '❌',
-      warning: '⚠️',
-      success: '✅',
-      info: 'ℹ️',
-      loading: '⏳',
-    };
-
-    const colorMap = {
-      error: 'bg-red-50 border-red-200 text-red-800',
-      warning: 'bg-yellow-50 border-yellow-200 text-yellow-800',
-      success: 'bg-green-50 border-green-200 text-green-800',
-      info: 'bg-blue-50 border-blue-200 text-blue-800',
-      loading: 'bg-gray-50 border-gray-200 text-gray-800',
+    const alertClassMap = {
+      error: 'alert alert-error',
+      warning: 'alert alert-warning',
+      success: 'alert alert-success',
+      info: 'alert alert-info',
+      loading: 'alert',
     };
 
     const element = document.createElement('div');
-    element.className = `notification-item ${colorMap[type as keyof typeof colorMap]} border rounded-lg p-4 shadow-lg max-w-sm transform transition-all duration-300 ease-in-out`;
+    element.className = `notification-item ${alertClassMap[type as keyof typeof alertClassMap] ?? 'alert'} shadow-lg max-w-sm transform transition-all duration-300 ease-in-out`;
     element.style.opacity = '0';
-    element.style.transform = 'translateX(100%)';
+    element.style.transform = 'translateX(-100%)';
 
     let actionsHtml = '';
     if (actions.length > 0) {
@@ -147,7 +139,7 @@ export class NotificationSystem {
           ${actions
             .map(
               (action) => `
-            <button 
+            <button
               class="notification-action btn btn-xs ${action.primary ? 'btn-info' : 'btn-outline'}"
               data-action="${action.id}"
             >
@@ -160,17 +152,19 @@ export class NotificationSystem {
       `;
     }
 
+    const iconHtml =
+      type === 'loading'
+        ? '<span class="loading loading-spinner loading-sm"></span>'
+        : '';
+
     element.innerHTML = `
-      <div class="flex items-start gap-3">
-        <div class="flex-shrink-0 text-lg">
-          ${iconMap[type as keyof typeof iconMap]}
-          ${type === 'loading' ? '<span class="loading loading-spinner loading-sm ml-1"></span>' : ''}
-        </div>
+      <div class="flex items-start gap-3 w-full">
+        ${iconHtml}
         <div class="flex-1 min-w-0">
           <div class="text-sm font-medium">${this.escapeHtml(message)}</div>
           ${actionsHtml}
         </div>
-        <button class="notification-close btn btn-ghost btn-xs btn-circle text-base-content">
+        <button class="notification-close btn btn-ghost btn-xs btn-circle">
           ×
         </button>
       </div>
@@ -218,7 +212,7 @@ export class NotificationSystem {
 
     // Animate out
     notification.element.style.opacity = '0';
-    notification.element.style.transform = 'translateX(100%)';
+    notification.element.style.transform = 'translateX(-100%)';
 
     setTimeout(() => {
       if (notification.element && notification.element.parentNode) {
