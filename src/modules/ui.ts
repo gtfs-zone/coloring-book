@@ -221,17 +221,10 @@ export class UIController {
   }
 
   async loadGTFSFile(file: File) {
-    let loadingNotificationId = null;
-
     try {
       console.log('Loading GTFS file:', file.name);
 
       console.time('[GTFS] loadGTFSFile total');
-
-      // Show loading notification
-      loadingNotificationId = notifications.showLoading(
-        `Loading GTFS file: ${file.name}`
-      );
 
       // Show loading state on map
       this.mapController!.showLoading();
@@ -241,15 +234,13 @@ export class UIController {
         throw new Error('Please upload a ZIP file containing GTFS data');
       }
 
-      // Check file size (warn if > 50MB)
-      if (file.size > 50 * 1024 * 1024) {
+      // Parse the file
+      const { unknownFiles } = await this.gtfsParser!.parseFile(file);
+      if (unknownFiles.length > 0) {
         notifications.showWarning(
-          'Large file detected. Processing may take a moment...'
+          `Ignoring unknown files: ${unknownFiles.join(', ')}`
         );
       }
-
-      // Parse the file
-      await this.gtfsParser!.parseFile(file);
 
       // Update UI
 
@@ -291,20 +282,11 @@ export class UIController {
       this.updateAddStopButtonState();
       this.updateEditStopsButtonState();
 
-      // Remove loading notification and show success
-      if (loadingNotificationId) {
-        notifications.removeNotification(loadingNotificationId);
-      }
       notifications.showSuccess(`Successfully loaded GTFS file: ${file.name}`);
 
       console.timeEnd('[GTFS] loadGTFSFile total');
     } catch (error) {
       console.error('Error loading GTFS file:', error);
-
-      // Remove loading notification
-      if (loadingNotificationId) {
-        notifications.removeNotification(loadingNotificationId);
-      }
 
       // Show error notification with helpful message
       let errorMessage = 'Failed to load GTFS file';
@@ -330,19 +312,17 @@ export class UIController {
   }
 
   async loadGTFSFromURL(url: string) {
-    let loadingNotificationId = null;
-
     try {
       console.log('Loading GTFS from URL:', url);
 
-      // Show loading notification
-      loadingNotificationId = notifications.showLoading(
-        `Loading GTFS from URL: ${url}`
-      );
-
       this.mapController!.showLoading();
 
-      await this.gtfsParser!.parseFromURL(url);
+      const { unknownFiles } = await this.gtfsParser!.parseFromURL(url);
+      if (unknownFiles.length > 0) {
+        notifications.showWarning(
+          `Ignoring unknown files: ${unknownFiles.join(', ')}`
+        );
+      }
 
       // Update UI
       this.updateFileList();
@@ -367,18 +347,9 @@ export class UIController {
       this.updateAddStopButtonState();
       this.updateEditStopsButtonState();
 
-      // Remove loading notification and show success
-      if (loadingNotificationId) {
-        notifications.removeNotification(loadingNotificationId);
-      }
       notifications.showSuccess('Successfully loaded GTFS from URL');
     } catch (error) {
       console.error('Error loading GTFS from URL:', error);
-
-      // Remove loading notification
-      if (loadingNotificationId) {
-        notifications.removeNotification(loadingNotificationId);
-      }
 
       // Show error notification with helpful message
       let errorMessage = 'Failed to load GTFS from URL';

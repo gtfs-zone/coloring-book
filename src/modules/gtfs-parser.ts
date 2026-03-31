@@ -3,7 +3,7 @@ import Papa from 'papaparse';
 import { CONFIG } from '../config.js';
 import { GTFSDatabase, GTFSDatabaseRecord } from './gtfs-database.js';
 import { GTFS_FILES, GTFSFilePresence, GTFS_TABLES } from '../types/gtfs.js';
-import { loadingStateManager } from './loading-state-manager.js';
+import { feedProgressIndicator } from './feed-progress-indicator.js';
 import {
   ALL_GTFS_FILES,
   makeHeaderOnlyCSV,
@@ -529,7 +529,10 @@ export class GTFSParser {
 
   async parseFile(
     file: File | Blob
-  ): Promise<{ [fileName: string]: GTFSFileData }> {
+  ): Promise<{
+    data: { [fileName: string]: GTFSFileData };
+    unknownFiles: string[];
+  }> {
     const operation = 'parseFile';
 
     try {
@@ -538,10 +541,10 @@ export class GTFSParser {
       console.time('[GTFS] parseFile total');
 
       // Start loading indicator
-      loadingStateManager.startLoading(operation, 'Loading GTFS file...');
+      feedProgressIndicator.startLoading(operation, 'Loading GTFS file...');
 
       // Clear existing data from database
-      loadingStateManager.updateProgress(
+      feedProgressIndicator.updateProgress(
         operation,
         10,
         'Clearing existing data...'
@@ -553,7 +556,7 @@ export class GTFSParser {
 
       console.timeEnd('[GTFS] clearDatabase');
 
-      loadingStateManager.updateProgress(
+      feedProgressIndicator.updateProgress(
         operation,
         20,
         'Extracting ZIP file...'
@@ -583,7 +586,7 @@ export class GTFSParser {
         }
         const progress = 20 + 60 * (i / totalFiles); // 20-80% for file processing
 
-        loadingStateManager.updateProgress(
+        feedProgressIndicator.updateProgress(
           operation,
           progress,
           `Processing ${fileName}...`
@@ -614,7 +617,7 @@ export class GTFSParser {
           const tableName = this.getTableName(fileName);
 
           // All .txt tables: store as CSV blob + register virtual handler
-          loadingStateManager.updateProgress(
+          feedProgressIndicator.updateProgress(
             operation,
             progress + 5,
             `Registering ${fileName} (${processedData.length} records)...`
@@ -642,12 +645,6 @@ export class GTFSParser {
         console.timeEnd(`[GTFS] file: ${fileName}`);
       }
 
-      if (unknownFiles.length > 0) {
-        loadingStateManager.showWarning(
-          `Ignoring unknown files: ${unknownFiles.join(', ')}`
-        );
-      }
-
       // Ensure all 31 GTFS files are registered — fill in header-only for those not in the ZIP.
       for (const filename of ALL_GTFS_FILES) {
         if (!this.gtfsData[filename]) {
@@ -659,23 +656,17 @@ export class GTFSParser {
         }
       }
 
-      loadingStateManager.updateProgress(operation, 90, 'Finalizing...');
-      loadingStateManager.updateProgress(operation, 100, 'Complete!');
-      loadingStateManager.finishLoading(operation);
-      loadingStateManager.showSuccess(
-        `Successfully loaded ${files.length} GTFS files`
-      );
+      feedProgressIndicator.updateProgress(operation, 90, 'Finalizing...');
+      feedProgressIndicator.updateProgress(operation, 100, 'Complete!');
+      feedProgressIndicator.finishLoading(operation);
 
       console.log('Loaded GTFS data to IndexedDB and memory:', this.gtfsData);
 
       console.timeEnd('[GTFS] parseFile total');
-      return this.gtfsData;
+      return { data: this.gtfsData, unknownFiles };
     } catch (error) {
       console.error('Error loading GTFS file:', error);
-      loadingStateManager.finishLoading(operation);
-      loadingStateManager.showError(
-        `Failed to load GTFS file: ${error instanceof Error ? error.message : String(error)}`
-      );
+      feedProgressIndicator.finishLoading(operation);
       throw error;
     }
   }
@@ -684,7 +675,7 @@ export class GTFSParser {
     return fileName.replace('.txt', '').replace('.geojson', '');
   }
 
-  async parseFromURL(url: string): Promise<void> {
+  async parseFromURL(url: string): Promise<{ unknownFiles: string[] }> {
     console.log('[GTFSParser] Fetching GTFS from URL:', url);
     let response: Response;
     try {
@@ -708,7 +699,8 @@ export class GTFSParser {
 
     console.log('[GTFSParser] Download complete, parsing ZIP...');
     const blob = await response.blob();
-    await this.parseFile(blob);
+    const { unknownFiles } = await this.parseFile(blob);
+    return { unknownFiles };
   }
 
   async updateFileContent(fileName: string, content: string): Promise<void> {
