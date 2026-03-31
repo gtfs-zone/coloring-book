@@ -8,6 +8,7 @@ import {
   ALL_GTFS_FILES,
   makeHeaderOnlyCSV,
   isSupportedFile,
+  getFileHeaders,
 } from './gtfs-file-registry.js';
 import { GTFSTableMap, StopTimes } from '../types/gtfs-entities.js';
 import { generateCompositeKeyFromRecord } from '../utils/gtfs-primary-keys.js';
@@ -520,11 +521,29 @@ export class GTFSParser {
 
     for (const filename of ALL_GTFS_FILES) {
       const content = makeHeaderOnlyCSV(filename);
-      this.gtfsData[filename] = { content, data: [], errors: [] };
+      // Use the same array for gtfsData.data and the virtual table's flat array.
+      // If they diverge, persistDirtyBlobs reads a stale empty array and never
+      // saves blobs, so edits are lost on refresh.
+      const data: GTFSDatabaseRecord[] = [];
+      this.gtfsData[filename] = { content, data, errors: [] };
       if (filename.endsWith('.txt')) {
-        this.setupVirtual(this.getTableName(filename), []);
+        this.setupVirtual(this.getTableName(filename), data);
       }
     }
+
+    // Seed feed_info with a row whose keys match the schema so vt.update can
+    // find it. Without a row, every field edit silently does nothing (the virtual
+    // table update handler returns early when byId has no entry). On reload the
+    // patch replay would also fail, hasExistingRows would be false, and
+    // initializeEmpty would clear the patches — losing all edits.
+    const seedRow = Object.fromEntries(
+      getFileHeaders('feed_info.txt').map((h) => [h, ''])
+    ) as GTFSDatabaseRecord;
+    await this.gtfsDatabase.insertRows('feed_info', [seedRow]);
+    // Flush immediately so the seed blob is in IDB before any patch is recorded.
+    // This guarantees that a quick refresh (before the 3-second debounce) still
+    // has a row for patch replay to land on.
+    await this.persistDirtyBlobs();
   }
 
   async parseFile(
