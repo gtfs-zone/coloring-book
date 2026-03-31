@@ -280,9 +280,6 @@ export class UIController {
         console.timeEnd('[GTFS] validate');
       }
 
-      // Enable export button
-      (document.getElementById('export-btn') as HTMLButtonElement).disabled =
-        false;
       // Update map tool button states
       this.updateAddStopButtonState();
       this.updateEditStopsButtonState();
@@ -351,9 +348,6 @@ export class UIController {
         this.validateCallback();
       }
 
-      // Enable export button
-      (document.getElementById('export-btn') as HTMLButtonElement).disabled =
-        false;
       // Update map tool button states
       this.updateAddStopButtonState();
       this.updateEditStopsButtonState();
@@ -406,38 +400,34 @@ export class UIController {
     menu.className = 'menu w-full';
 
     // Add required files section
-    if (required.length > 0) {
-      const requiredSection = document.createElement('li');
-      const requiredHeader = document.createElement('div');
-      requiredHeader.className = 'menu-title';
-      requiredHeader.textContent = 'Required Files';
-      requiredSection.appendChild(requiredHeader);
+    const requiredSection = document.createElement('li');
+    const requiredHeader = document.createElement('div');
+    requiredHeader.className = 'menu-title';
+    requiredHeader.textContent = 'Required Files';
+    requiredSection.appendChild(requiredHeader);
 
-      const requiredList = document.createElement('ul');
-      required.forEach((fileName) => {
-        this.addFileItem(requiredList, fileName, true);
-      });
-      requiredSection.appendChild(requiredList);
-      menu.appendChild(requiredSection);
-    }
+    const requiredList = document.createElement('ul');
+    required.forEach((fileName) => {
+      this.addFileItem(requiredList, fileName, true);
+    });
+    requiredSection.appendChild(requiredList);
+    menu.appendChild(requiredSection);
 
     // Add optional files section
-    if (optional.length > 0) {
-      const optionalSection = document.createElement('li');
-      const optionalHeader = document.createElement('div');
-      optionalHeader.className = 'menu-title';
-      optionalHeader.textContent = 'Optional Files';
-      optionalSection.appendChild(optionalHeader);
+    const optionalSection = document.createElement('li');
+    const optionalHeader = document.createElement('div');
+    optionalHeader.className = 'menu-title';
+    optionalHeader.textContent = 'Optional Files';
+    optionalSection.appendChild(optionalHeader);
 
-      const optionalList = document.createElement('ul');
-      optional.forEach((fileName) => {
-        this.addFileItem(optionalList, fileName, false);
-      });
-      optionalSection.appendChild(optionalList);
-      menu.appendChild(optionalSection);
-    }
+    const optionalList = document.createElement('ul');
+    optional.forEach((fileName) => {
+      this.addFileItem(optionalList, fileName, false);
+    });
+    optionalSection.appendChild(optionalList);
+    menu.appendChild(optionalSection);
 
-    // Add other files section
+    // Add other files section (only if populated, since empty feeds have no "other" files)
     if (other.length > 0) {
       const otherSection = document.createElement('li');
       const otherHeader = document.createElement('div');
@@ -454,12 +444,6 @@ export class UIController {
     }
 
     fileList.appendChild(menu);
-
-    // Enable export button if we have files
-    const hasFiles =
-      required.length > 0 || optional.length > 0 || other.length > 0;
-    (document.getElementById('export-btn') as HTMLButtonElement).disabled =
-      !hasFiles;
   }
 
   addFileItem(container: HTMLElement, fileName: string, isRequired: boolean) {
