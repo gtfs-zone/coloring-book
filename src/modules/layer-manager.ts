@@ -101,11 +101,6 @@ export class LayerManager {
         !isNaN(stop.stop_lon)
     );
 
-    if (validStops.length === 0) {
-      console.warn('No valid stops with coordinates found');
-      return;
-    }
-
     // Create GeoJSON for stops
     const stopsGeoJSON = this.createStopsGeoJSON(validStops);
 
