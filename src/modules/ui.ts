@@ -233,9 +233,6 @@ export class UIController {
         `Loading GTFS file: ${file.name}`
       );
 
-      // Show loading state on map
-      this.mapController!.showLoading();
-
       // Validate file type
       if (!file.name.toLowerCase().endsWith('.zip')) {
         throw new Error('Please upload a ZIP file containing GTFS data');
@@ -262,7 +259,6 @@ export class UIController {
       await this.mapController!.updateMap();
 
       console.timeEnd('[GTFS] updateMap');
-      this.mapController!.hideMapOverlay();
 
       // Show files tab
       this.showFileList();
@@ -284,9 +280,6 @@ export class UIController {
         console.timeEnd('[GTFS] validate');
       }
 
-      // Enable export button
-      (document.getElementById('export-btn') as HTMLButtonElement).disabled =
-        false;
       // Update map tool button states
       this.updateAddStopButtonState();
       this.updateEditStopsButtonState();
@@ -324,8 +317,6 @@ export class UIController {
           },
         ],
       });
-
-      this.mapController!.hideMapOverlay();
     }
   }
 
@@ -340,14 +331,11 @@ export class UIController {
         `Loading GTFS from URL: ${url}`
       );
 
-      this.mapController!.showLoading();
-
       await this.gtfsParser!.parseFromURL(url);
 
       // Update UI
       this.updateFileList();
       await this.mapController!.updateMap();
-      this.mapController!.hideMapOverlay();
 
       // Refresh Objects navigation if available
       if (this.browseNavigation) {
@@ -360,9 +348,6 @@ export class UIController {
         this.validateCallback();
       }
 
-      // Enable export button
-      (document.getElementById('export-btn') as HTMLButtonElement).disabled =
-        false;
       // Update map tool button states
       this.updateAddStopButtonState();
       this.updateEditStopsButtonState();
@@ -401,8 +386,6 @@ export class UIController {
           },
         ],
       });
-
-      this.mapController!.hideMapOverlay();
     }
   }
 
@@ -417,38 +400,34 @@ export class UIController {
     menu.className = 'menu w-full';
 
     // Add required files section
-    if (required.length > 0) {
-      const requiredSection = document.createElement('li');
-      const requiredHeader = document.createElement('div');
-      requiredHeader.className = 'menu-title';
-      requiredHeader.textContent = 'Required Files';
-      requiredSection.appendChild(requiredHeader);
+    const requiredSection = document.createElement('li');
+    const requiredHeader = document.createElement('div');
+    requiredHeader.className = 'menu-title';
+    requiredHeader.textContent = 'Required Files';
+    requiredSection.appendChild(requiredHeader);
 
-      const requiredList = document.createElement('ul');
-      required.forEach((fileName) => {
-        this.addFileItem(requiredList, fileName, true);
-      });
-      requiredSection.appendChild(requiredList);
-      menu.appendChild(requiredSection);
-    }
+    const requiredList = document.createElement('ul');
+    required.forEach((fileName) => {
+      this.addFileItem(requiredList, fileName, true);
+    });
+    requiredSection.appendChild(requiredList);
+    menu.appendChild(requiredSection);
 
     // Add optional files section
-    if (optional.length > 0) {
-      const optionalSection = document.createElement('li');
-      const optionalHeader = document.createElement('div');
-      optionalHeader.className = 'menu-title';
-      optionalHeader.textContent = 'Optional Files';
-      optionalSection.appendChild(optionalHeader);
+    const optionalSection = document.createElement('li');
+    const optionalHeader = document.createElement('div');
+    optionalHeader.className = 'menu-title';
+    optionalHeader.textContent = 'Optional Files';
+    optionalSection.appendChild(optionalHeader);
 
-      const optionalList = document.createElement('ul');
-      optional.forEach((fileName) => {
-        this.addFileItem(optionalList, fileName, false);
-      });
-      optionalSection.appendChild(optionalList);
-      menu.appendChild(optionalSection);
-    }
+    const optionalList = document.createElement('ul');
+    optional.forEach((fileName) => {
+      this.addFileItem(optionalList, fileName, false);
+    });
+    optionalSection.appendChild(optionalList);
+    menu.appendChild(optionalSection);
 
-    // Add other files section
+    // Add other files section (only if populated, since empty feeds have no "other" files)
     if (other.length > 0) {
       const otherSection = document.createElement('li');
       const otherHeader = document.createElement('div');
@@ -465,12 +444,6 @@ export class UIController {
     }
 
     fileList.appendChild(menu);
-
-    // Enable export button if we have files
-    const hasFiles =
-      required.length > 0 || optional.length > 0 || other.length > 0;
-    (document.getElementById('export-btn') as HTMLButtonElement).disabled =
-      !hasFiles;
   }
 
   addFileItem(container: HTMLElement, fileName: string, isRequired: boolean) {
@@ -1147,7 +1120,6 @@ export class UIController {
       await this.gtfsParser!.initializeEmpty();
       this.updateFileList();
       await this.mapController!.updateMap();
-      this.mapController!.hideMapOverlay();
 
       // Show files tab
       this.showFileList();
@@ -1281,12 +1253,6 @@ export class UIController {
       return;
     }
 
-    // Check if GTFS data is loaded
-    if (!this.gtfsParser || !this.gtfsParser.getFileDataSync('stops.txt')) {
-      notifications.show('Load GTFS data first before adding stops', 'warning');
-      return;
-    }
-
     // Toggle the mode
     this.mapController.toggleAddStopMode();
 
@@ -1330,15 +1296,6 @@ export class UIController {
   toggleEditStopsMode() {
     if (!this.mapController) {
       console.warn('Map controller not initialized');
-      return;
-    }
-
-    // Check if GTFS data is loaded
-    if (!this.gtfsParser || !this.gtfsParser.getFileDataSync('stops.txt')) {
-      notifications.show(
-        'Load GTFS data first before editing stops',
-        'warning'
-      );
       return;
     }
 
