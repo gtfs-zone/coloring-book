@@ -1,3 +1,29 @@
+## v0.9.0 (2026-03-31)
+
+### Feat
+
+- **parser**: move ZIP/CSV parsing to Web Worker
+- remove dead load-data-first guards in add/edit stops modes
+- always show Feed Information block on home page
+- always show all file sections and keep export button enabled
+- remove welcome overlay and map overlay methods
+- always initialize empty feed on startup
+- **basemap-control**: add shape/stops render mode toggle (#50)
+- **route-renderer**: add render mode toggle (shapes vs stops)
+
+### Fix
+
+- fix bug with new feeds not showing stops and trips
+- seed feed_info row and fix array aliasing in initializeEmpty
+- use cleaner bg color'
+- **notifications**: use DaisyUI alert structure with SVG icons, always expire
+- **notifications**: use DaisyUI semantic colors, remove emojis, move to bottom-left
+
+### Refactor
+
+- knip
+- **loading**: clean split between progress indicator and notification toasts
+
 ## v0.8.0 (2026-03-30)
 
 ### Feat
