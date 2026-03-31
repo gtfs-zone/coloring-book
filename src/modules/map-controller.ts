@@ -112,12 +112,6 @@ export class MapController {
       center: [-74.006, 40.7128], // NYC default
       zoom: 10,
     });
-
-    // Keep welcome overlay visible initially
-    const welcomeOverlay = document.getElementById('map-overlay');
-    if (welcomeOverlay) {
-      welcomeOverlay.classList.remove('hidden');
-    }
   }
 
   /**
@@ -623,44 +617,6 @@ export class MapController {
   // ========================================
   // UI INTEGRATION METHODS
   // ========================================
-
-  /**
-   * Show map overlay (welcome screen)
-   */
-  public showMapOverlay(): void {
-    const welcomeOverlay = document.getElementById('map-overlay');
-    if (welcomeOverlay) {
-      welcomeOverlay.classList.remove('hidden');
-    }
-  }
-
-  /**
-   * Hide map overlay
-   */
-  public hideMapOverlay(): void {
-    const welcomeOverlay = document.getElementById('map-overlay');
-    if (welcomeOverlay) {
-      welcomeOverlay.classList.add('hidden');
-    }
-  }
-
-  /**
-   * Show loading state
-   */
-  public showLoading(): void {
-    const welcomeOverlay = document.getElementById('map-overlay');
-    if (welcomeOverlay) {
-      const welcomeContent = welcomeOverlay.querySelector('.welcome-content');
-      if (welcomeContent) {
-        welcomeContent.innerHTML = `
-          <div class="welcome-icon">⏳</div>
-          <h2>Loading GTFS Data...</h2>
-          <p>Please wait while we process your transit feed</p>
-        `;
-      }
-      welcomeOverlay.classList.remove('hidden');
-    }
-  }
 
   /**
    * Force map resize (for layout changes)
