@@ -1253,12 +1253,6 @@ export class UIController {
       return;
     }
 
-    // Check if GTFS data is loaded
-    if (!this.gtfsParser || !this.gtfsParser.getFileDataSync('stops.txt')) {
-      notifications.show('Load GTFS data first before adding stops', 'warning');
-      return;
-    }
-
     // Toggle the mode
     this.mapController.toggleAddStopMode();
 
@@ -1302,15 +1296,6 @@ export class UIController {
   toggleEditStopsMode() {
     if (!this.mapController) {
       console.warn('Map controller not initialized');
-      return;
-    }
-
-    // Check if GTFS data is loaded
-    if (!this.gtfsParser || !this.gtfsParser.getFileDataSync('stops.txt')) {
-      notifications.show(
-        'Load GTFS data first before editing stops',
-        'warning'
-      );
       return;
     }
 
