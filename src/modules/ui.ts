@@ -233,9 +233,6 @@ export class UIController {
         `Loading GTFS file: ${file.name}`
       );
 
-      // Show loading state on map
-      this.mapController!.showLoading();
-
       // Validate file type
       if (!file.name.toLowerCase().endsWith('.zip')) {
         throw new Error('Please upload a ZIP file containing GTFS data');
@@ -262,7 +259,6 @@ export class UIController {
       await this.mapController!.updateMap();
 
       console.timeEnd('[GTFS] updateMap');
-      this.mapController!.hideMapOverlay();
 
       // Show files tab
       this.showFileList();
@@ -324,8 +320,6 @@ export class UIController {
           },
         ],
       });
-
-      this.mapController!.hideMapOverlay();
     }
   }
 
@@ -340,14 +334,11 @@ export class UIController {
         `Loading GTFS from URL: ${url}`
       );
 
-      this.mapController!.showLoading();
-
       await this.gtfsParser!.parseFromURL(url);
 
       // Update UI
       this.updateFileList();
       await this.mapController!.updateMap();
-      this.mapController!.hideMapOverlay();
 
       // Refresh Objects navigation if available
       if (this.browseNavigation) {
@@ -401,8 +392,6 @@ export class UIController {
           },
         ],
       });
-
-      this.mapController!.hideMapOverlay();
     }
   }
 
