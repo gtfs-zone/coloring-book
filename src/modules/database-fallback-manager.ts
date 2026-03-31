@@ -2,7 +2,8 @@
  * Database Fallback Manager
  * Handles IndexedDB support detection and error recovery.
  */
-import { loadingStateManager } from './loading-state-manager.js';
+import { feedProgressIndicator } from './feed-progress-indicator.js';
+import { notifications } from './notification-system.js';
 import { showModal } from './modal-utils.js';
 
 export interface BrowserCapabilities {
@@ -249,7 +250,7 @@ export class DatabaseFallbackManager {
    */
   private async resetDatabase(): Promise<void> {
     try {
-      loadingStateManager.startLoading('reset', 'Resetting database...');
+      feedProgressIndicator.startLoading('reset', 'Resetting database...');
 
       await new Promise<void>((resolve, reject) => {
         const deleteReq = indexedDB.deleteDatabase('GTFSZoneDB');
@@ -261,15 +262,15 @@ export class DatabaseFallbackManager {
         };
       });
 
-      loadingStateManager.finishLoading('reset');
-      loadingStateManager.showSuccess(
+      feedProgressIndicator.finishLoading('reset');
+      notifications.showSuccess(
         'Database reset successfully. Reloading page...'
       );
 
       setTimeout(() => window.location.reload(), 1500);
     } catch (error) {
-      loadingStateManager.finishLoading('reset');
-      loadingStateManager.showError(
+      feedProgressIndicator.finishLoading('reset');
+      notifications.showError(
         'Failed to reset database. Please clear browser data manually.'
       );
 
