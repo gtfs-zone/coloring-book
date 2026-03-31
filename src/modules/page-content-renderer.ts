@@ -284,7 +284,7 @@ export class PageContentRenderer {
 
     return `
       <div class="p-4 space-y-4">
-        ${feedInfo ? this.renderFeedInfoProperties(feedInfo) : ''}
+        ${this.renderFeedInfoProperties(feedInfo)}
 
         <div class="space-y-4">
           <div class="flex items-center justify-between gap-4">
@@ -358,16 +358,16 @@ export class PageContentRenderer {
   /**
    * Get feed_info data
    */
-  private async getFeedInfo(): Promise<Record<string, unknown> | null> {
+  private async getFeedInfo(): Promise<Record<string, unknown>> {
     try {
       const feedInfoRows =
         await this.dependencies.gtfsDatabase.queryRows('feed_info');
       return feedInfoRows.length > 0
         ? (feedInfoRows[0] as Record<string, unknown>)
-        : null;
+        : {};
     } catch (error) {
       console.error('Error getting feed_info:', error);
-      return null;
+      return {};
     }
   }
 
