@@ -124,10 +124,10 @@ export class NotificationSystem {
     const { message, type, actions } = notification;
 
     const alertClassMap: Record<string, string> = {
-      error: 'alert alert-error',
-      warning: 'alert alert-warning',
-      success: 'alert alert-success',
-      info: 'alert alert-info',
+      error: 'alert',
+      warning: 'alert',
+      success: 'alert',
+      info: 'alert',
       loading: 'alert',
     };
 
