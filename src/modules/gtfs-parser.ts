@@ -7,9 +7,12 @@ import { feedProgressIndicator } from './feed-progress-indicator.js';
 import {
   ALL_GTFS_FILES,
   makeHeaderOnlyCSV,
-  isSupportedFile,
   getFileHeaders,
 } from './gtfs-file-registry.js';
+import type {
+  WorkerDoneMessage,
+  WorkerOutbound,
+} from '../workers/gtfs-parser.worker.js';
 import { GTFSTableMap, StopTimes } from '../types/gtfs-entities.js';
 import { generateCompositeKeyFromRecord } from '../utils/gtfs-primary-keys.js';
 interface GTFSFileData<T = GTFSDatabaseRecord> {
@@ -554,13 +557,9 @@ export class GTFSParser {
 
     try {
       console.log('Loading GTFS file:', (file as File).name || 'blob');
-
       console.time('[GTFS] parseFile total');
 
-      // Start loading indicator
       feedProgressIndicator.startLoading(operation, 'Loading GTFS file...');
-
-      // Clear existing data from database
       feedProgressIndicator.updateProgress(
         operation,
         10,
@@ -570,115 +569,77 @@ export class GTFSParser {
       console.time('[GTFS] clearDatabase');
       await this.gtfsDatabase.clearDatabase();
       this.gtfsDatabase.clearVirtualTables();
-
       console.timeEnd('[GTFS] clearDatabase');
 
-      feedProgressIndicator.updateProgress(
-        operation,
-        20,
-        'Extracting ZIP file...'
+      // Convert File/Blob to ArrayBuffer for zero-copy transfer to worker
+      const buffer = await file.arrayBuffer();
+
+      // Spawn worker and transfer the buffer (zero-copy)
+      const worker = new Worker(
+        new URL('../workers/gtfs-parser.worker.ts', import.meta.url),
+        { type: 'module' }
       );
 
-      console.time('[GTFS] zip extraction');
-      const zip = new JSZip();
-      const zipContent = await zip.loadAsync(file);
-
-      console.timeEnd('[GTFS] zip extraction');
-
-      // Parse all text files in the ZIP
-      const files = Object.keys(zipContent.files).filter(
-        (name) => name.endsWith('.txt') || name.endsWith('.geojson')
-      );
-
-      this.gtfsData = {};
-      const unknownFiles: string[] = [];
-      const totalFiles = files.length;
-
-      for (let i = 0; i < files.length; i++) {
-        const fileName = files[i];
-
-        if (!isSupportedFile(fileName)) {
-          unknownFiles.push(fileName);
-          continue;
-        }
-        const progress = 20 + 60 * (i / totalFiles); // 20-80% for file processing
-
-        feedProgressIndicator.updateProgress(
-          operation,
-          progress,
-          `Processing ${fileName}...`
-        );
-
-        console.time(`[GTFS] file: ${fileName}`);
-        const fileContent = await zipContent.files[fileName].async('text');
-
-        if (fileName.endsWith('.txt')) {
-          // Parse CSV files
-          const parsed = Papa.parse(fileContent, {
-            header: true,
-            skipEmptyLines: true,
-          });
-
-          // Process parsed data with type coercion
-          const processedData = this.processParsedData(
-            parsed.data as Record<string, unknown>[]
-          );
-
-          // Store rows in memory; content is generated on demand by getFileContent.
-          this.gtfsData[fileName] = {
-            content: '',
-            data: processedData,
-            errors: parsed.errors,
+      const { files: workerFiles, unknownFiles } =
+        await new Promise<WorkerDoneMessage>((resolve, reject) => {
+          worker.onmessage = (event: MessageEvent<WorkerOutbound>) => {
+            const msg = event.data;
+            if (msg.type === 'progress') {
+              feedProgressIndicator.updateProgress(
+                operation,
+                msg.progress,
+                msg.status
+              );
+            } else if (msg.type === 'done') {
+              worker.terminate();
+              resolve(msg);
+            } else if (msg.type === 'error') {
+              worker.terminate();
+              reject(new Error(msg.message));
+            }
           };
+          worker.onerror = (err) => {
+            worker.terminate();
+            reject(new Error(err.message));
+          };
+          worker.postMessage({ type: 'parse', buffer }, [buffer]);
+        });
 
-          const tableName = this.getTableName(fileName);
-
-          // All .txt tables: store as CSV blob + register virtual handler
-          feedProgressIndicator.updateProgress(
-            operation,
-            progress + 5,
-            `Registering ${fileName} (${processedData.length} records)...`
-          );
-          if (processedData.length > 0) {
-            await this.gtfsDatabase.saveTableBlob(tableName, fileContent);
-          }
-          this.setupVirtual(tableName, processedData);
-        } else if (fileName.endsWith('.geojson')) {
-          // Handle GeoJSON files
-          const geoJsonData = JSON.parse(fileContent);
+      // Apply worker results on the main thread: set up virtual tables and persist blobs
+      this.gtfsData = {};
+      for (const [fileName, fileResult] of Object.entries(workerFiles)) {
+        if (fileResult.isGeoJSON) {
+          const geoJsonData = fileResult.data[0] ?? {};
           this.gtfsData[fileName] = {
-            content: fileContent,
-            data: geoJsonData,
+            content: fileResult.rawContent,
+            data: fileResult.data,
             errors: [],
           };
-
-          // Store GeoJSON in IndexedDB as well
           const tableName = this.getTableName(fileName);
           await this.gtfsDatabase.insertRows(tableName, [
             geoJsonData as GTFSDatabaseRecord,
           ]);
-        }
-
-        console.timeEnd(`[GTFS] file: ${fileName}`);
-      }
-
-      // Ensure all 31 GTFS files are registered — fill in header-only for those not in the ZIP.
-      for (const filename of ALL_GTFS_FILES) {
-        if (!this.gtfsData[filename]) {
-          this.gtfsData[filename] = {
-            content: makeHeaderOnlyCSV(filename),
-            data: [],
-            errors: [],
+        } else {
+          this.gtfsData[fileName] = {
+            content: '',
+            data: fileResult.data,
+            errors: fileResult.errors,
           };
+          const tableName = this.getTableName(fileName);
+          if (fileResult.data.length > 0) {
+            await this.gtfsDatabase.saveTableBlob(
+              tableName,
+              fileResult.rawContent
+            );
+          }
+          this.setupVirtual(tableName, fileResult.data);
         }
       }
 
-      feedProgressIndicator.updateProgress(operation, 90, 'Finalizing...');
       feedProgressIndicator.updateProgress(operation, 100, 'Complete!');
       feedProgressIndicator.finishLoading(operation);
 
       console.log('Loaded GTFS data to IndexedDB and memory:', this.gtfsData);
-
       console.timeEnd('[GTFS] parseFile total');
       return { data: this.gtfsData, unknownFiles };
     } catch (error) {
