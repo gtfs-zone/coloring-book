@@ -489,11 +489,17 @@ export class ScheduleController {
       }
 
       // Capture before value from in-memory data
-      const allTrips = this.gtfsParser.getFileDataSync('trips');
+      const allTrips = this.gtfsParser.getFileDataSync('trips.txt');
       const currentTrip = allTrips.find((t) => t.trip_id === trip_id) as
         | Record<string, unknown>
         | undefined;
-      const before = { [field]: currentTrip?.[field] ?? null };
+      const storedValue = currentTrip?.[field] ?? null;
+      const before = { [field]: storedValue };
+
+      // No-op guard: skip if value is unchanged
+      if (processedValue === storedValue) {
+        return;
+      }
 
       // Update database
       await patchUpdate(
