@@ -461,7 +461,7 @@ export class ScheduleController {
    *
    * Updates a single property on a trip record.
    * Handles type conversion for enum and number fields.
-   * Shows success/error notifications.
+   * Shows an error notification on failure; success is handled by the patch-manager change event.
    *
    * @param trip_id - GTFS trip identifier
    * @param field - Property name (e.g., 'trip_headsign', 'direction_id')
@@ -514,18 +514,6 @@ export class ScheduleController {
       console.log(
         `Updated trip property ${field} for ${trip_id} to:`,
         processedValue
-      );
-
-      // Show success notification
-      const fieldLabel = field
-        .replace(/_/g, ' ')
-        .replace(/\b\w/g, (l) => l.toUpperCase());
-      const displayValue =
-        processedValue === null ? '(empty)' : String(processedValue);
-      notifications.show(
-        `Updated ${fieldLabel} to "${displayValue}" for trip ${trip_id}`,
-        'success',
-        { duration: 3000 }
       );
     } catch (error) {
       console.error('Failed to update trip property:', error);
