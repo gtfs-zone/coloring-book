@@ -28,6 +28,8 @@ import { routeNetworksSpec } from './files/route-networks';
 import { locationGroupsSpec } from './files/location-groups';
 import { locationGroupStopsSpec } from './files/location-group-stops';
 import { bookingRulesSpec } from './files/booking-rules';
+import { translationsSpec } from './files/translations';
+import { attributionsSpec } from './files/attributions';
 
 export const gtfsSpec: GTFSSpec = {
   specVersion: '2026-04',
@@ -61,5 +63,7 @@ export const gtfsSpec: GTFSSpec = {
     locationGroupsSpec,
     locationGroupStopsSpec,
     bookingRulesSpec,
+    translationsSpec,
+    attributionsSpec,
   ],
 };
