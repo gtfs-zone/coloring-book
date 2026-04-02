@@ -14,6 +14,11 @@ import { pathwaysSpec } from './files/pathways';
 import { levelsSpec } from './files/levels';
 import { fareAttributesSpec } from './files/fare-attributes';
 import { fareRulesSpec } from './files/fare-rules';
+import { fareMediaSpec } from './files/fare-media';
+import { fareProductsSpec } from './files/fare-products';
+import { fareLegRulesSpec } from './files/fare-leg-rules';
+import { fareLegJoinRulesSpec } from './files/fare-leg-join-rules';
+import { fareTransferRulesSpec } from './files/fare-transfer-rules';
 
 export const gtfsSpec: GTFSSpec = {
   specVersion: '2026-04',
@@ -33,5 +38,10 @@ export const gtfsSpec: GTFSSpec = {
     levelsSpec,
     fareAttributesSpec,
     fareRulesSpec,
+    fareMediaSpec,
+    fareProductsSpec,
+    fareLegRulesSpec,
+    fareLegJoinRulesSpec,
+    fareTransferRulesSpec,
   ],
 };
