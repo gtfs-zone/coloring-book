@@ -7,6 +7,9 @@ import { tripsSpec } from './files/trips';
 import { stopTimesSpec } from './files/stop-times';
 import { calendarSpec } from './files/calendar';
 import { calendarDatesSpec } from './files/calendar-dates';
+import { shapesSpec } from './files/shapes';
+import { frequenciesSpec } from './files/frequencies';
+import { transfersSpec } from './files/transfers';
 
 export const gtfsSpec: GTFSSpec = {
   specVersion: '2026-04',
@@ -19,5 +22,8 @@ export const gtfsSpec: GTFSSpec = {
     stopTimesSpec,
     calendarSpec,
     calendarDatesSpec,
+    shapesSpec,
+    frequenciesSpec,
+    transfersSpec,
   ],
 };
