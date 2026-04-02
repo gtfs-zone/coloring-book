@@ -236,6 +236,11 @@ export class ScheduleController {
 
       // Handle empty input (clear both times)
       if (!newTime.trim()) {
+        const beforeRow = await this.database.getStopTime(
+          trip_id,
+          stop_id,
+          stopSequence
+        );
         await this.database.updateLinkedTimes(trip_id, stop_id, null);
         console.log(`Cleared both times for ${trip_id}/${stop_id}`);
 
@@ -250,6 +255,32 @@ export class ScheduleController {
         // Rebuild stop_times from table and refresh timetable
         await this.database.rebuildStopTimesFromTable(trip_id);
         await this.refreshCurrentTimetable();
+
+        if (beforeRow && this.patchManager) {
+          const afterStopTime = await this.database.getStopTime(
+            trip_id,
+            stop_id,
+            stopSequence
+          );
+          if (afterStopTime) {
+            const afterKey = generateCompositeKeyFromRecord(
+              'stop_times',
+              afterStopTime as unknown as Record<string, unknown>
+            );
+            await this.patchManager.recordUpdate(
+              'stop_times',
+              afterKey,
+              {
+                arrival_time: beforeRow.arrival_time,
+                departure_time: beforeRow.departure_time,
+              },
+              {
+                arrival_time: afterStopTime.arrival_time,
+                departure_time: afterStopTime.departure_time,
+              }
+            );
+          }
+        }
         return;
       }
 
@@ -352,6 +383,13 @@ export class ScheduleController {
 
       // Handle empty input (skip/clear time)
       if (!newTime.trim()) {
+        const beforeRow = await this.database.getStopTime(
+          trip_id,
+          stop_id,
+          stopSequence
+        );
+        const field =
+          timeType === 'arrival' ? 'arrival_time' : 'departure_time';
         await this.database.updateStopTimeInDatabase(
           trip_id,
           stop_id,
@@ -363,6 +401,26 @@ export class ScheduleController {
         // Rebuild stop_times from table and refresh timetable
         await this.database.rebuildStopTimesFromTable(trip_id);
         await this.refreshCurrentTimetable();
+
+        if (beforeRow && this.patchManager) {
+          const afterStopTime = await this.database.getStopTime(
+            trip_id,
+            stop_id,
+            stopSequence
+          );
+          if (afterStopTime) {
+            const afterKey = generateCompositeKeyFromRecord(
+              'stop_times',
+              afterStopTime as unknown as Record<string, unknown>
+            );
+            await this.patchManager.recordUpdate(
+              'stop_times',
+              afterKey,
+              { [field]: (beforeRow as Record<string, unknown>)[field] },
+              { [field]: (afterStopTime as Record<string, unknown>)[field] }
+            );
+          }
+        }
         return;
       }
 
