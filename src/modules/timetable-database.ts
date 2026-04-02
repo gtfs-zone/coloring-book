@@ -437,7 +437,7 @@ export class TimetableDatabase {
       // the same stop_id appears at multiple positions.
       const results = await database.queryRows('stop_times', {
         trip_id,
-        stop_sequence,
+        stop_sequence: Number(stop_sequence),
       });
       return results[0] ?? null;
     }
