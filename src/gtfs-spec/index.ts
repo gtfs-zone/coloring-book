@@ -25,6 +25,9 @@ import { areasSpec } from './files/areas';
 import { stopAreasSpec } from './files/stop-areas';
 import { networksSpec } from './files/networks';
 import { routeNetworksSpec } from './files/route-networks';
+import { locationGroupsSpec } from './files/location-groups';
+import { locationGroupStopsSpec } from './files/location-group-stops';
+import { bookingRulesSpec } from './files/booking-rules';
 
 export const gtfsSpec: GTFSSpec = {
   specVersion: '2026-04',
@@ -55,5 +58,8 @@ export const gtfsSpec: GTFSSpec = {
     stopAreasSpec,
     networksSpec,
     routeNetworksSpec,
+    locationGroupsSpec,
+    locationGroupStopsSpec,
+    bookingRulesSpec,
   ],
 };
