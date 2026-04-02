@@ -291,10 +291,6 @@ export class TimetableDatabase {
     await database.updateRow('stop_times', naturalKey, {
       [field]: newTime,
     });
-
-    notifications.showSuccess(`Time updated to ${newTime || 'skipped'}`, {
-      duration: 2000,
-    });
   }
 
   /**
@@ -400,11 +396,6 @@ export class TimetableDatabase {
       arrival_time: newTime ?? undefined,
       departure_time: newTime ?? undefined,
     });
-
-    const message = newTime
-      ? `Linked time updated to ${newTime}`
-      : 'Linked times cleared';
-    notifications.showSuccess(message, { duration: 2000 });
   }
 
   /**
