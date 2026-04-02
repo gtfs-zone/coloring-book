@@ -5,6 +5,8 @@ import { stopsSpec } from './files/stops';
 import { routesSpec } from './files/routes';
 import { tripsSpec } from './files/trips';
 import { stopTimesSpec } from './files/stop-times';
+import { calendarSpec } from './files/calendar';
+import { calendarDatesSpec } from './files/calendar-dates';
 
 export const gtfsSpec: GTFSSpec = {
   specVersion: '2026-04',
@@ -15,5 +17,7 @@ export const gtfsSpec: GTFSSpec = {
     routesSpec,
     tripsSpec,
     stopTimesSpec,
+    calendarSpec,
+    calendarDatesSpec,
   ],
 };
