@@ -638,6 +638,33 @@ export class ScheduleController {
     console.log(
       `Linked times for ${trip_id}/${stop_id}: set both times to ${primaryTime}`
     );
+
+    // Record patch if departure time actually changed (arrival_time !== primaryTime || departure_time !== primaryTime)
+    if (
+      primaryTime &&
+      this.patchManager &&
+      (arrival_time !== primaryTime || departure_time !== primaryTime)
+    ) {
+      const afterStopTime = await this.database.getStopTime(trip_id, stop_id);
+      if (afterStopTime) {
+        const afterKey = generateCompositeKeyFromRecord(
+          'stop_times',
+          afterStopTime as unknown as Record<string, unknown>
+        );
+        await this.patchManager.recordUpdate(
+          'stop_times',
+          afterKey,
+          {
+            arrival_time,
+            departure_time,
+          },
+          {
+            arrival_time: afterStopTime.arrival_time,
+            departure_time: afterStopTime.departure_time,
+          }
+        );
+      }
+    }
   }
 
   /**
