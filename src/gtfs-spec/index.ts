@@ -12,6 +12,8 @@ import { frequenciesSpec } from './files/frequencies';
 import { transfersSpec } from './files/transfers';
 import { pathwaysSpec } from './files/pathways';
 import { levelsSpec } from './files/levels';
+import { fareAttributesSpec } from './files/fare-attributes';
+import { fareRulesSpec } from './files/fare-rules';
 
 export const gtfsSpec: GTFSSpec = {
   specVersion: '2026-04',
@@ -29,5 +31,7 @@ export const gtfsSpec: GTFSSpec = {
     transfersSpec,
     pathwaysSpec,
     levelsSpec,
+    fareAttributesSpec,
+    fareRulesSpec,
   ],
 };
