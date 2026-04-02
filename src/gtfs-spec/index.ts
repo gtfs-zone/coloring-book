@@ -19,6 +19,12 @@ import { fareProductsSpec } from './files/fare-products';
 import { fareLegRulesSpec } from './files/fare-leg-rules';
 import { fareLegJoinRulesSpec } from './files/fare-leg-join-rules';
 import { fareTransferRulesSpec } from './files/fare-transfer-rules';
+import { timeframesSpec } from './files/timeframes';
+import { riderCategoriesSpec } from './files/rider-categories';
+import { areasSpec } from './files/areas';
+import { stopAreasSpec } from './files/stop-areas';
+import { networksSpec } from './files/networks';
+import { routeNetworksSpec } from './files/route-networks';
 
 export const gtfsSpec: GTFSSpec = {
   specVersion: '2026-04',
@@ -43,5 +49,11 @@ export const gtfsSpec: GTFSSpec = {
     fareLegRulesSpec,
     fareLegJoinRulesSpec,
     fareTransferRulesSpec,
+    timeframesSpec,
+    riderCategoriesSpec,
+    areasSpec,
+    stopAreasSpec,
+    networksSpec,
+    routeNetworksSpec,
   ],
 };
