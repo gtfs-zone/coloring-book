@@ -7,7 +7,7 @@ import {
 } from '../types/gtfs-field-types';
 
 // Local file info type — mirrors GTFSFileInfo in gtfs.ts to avoid circular deps in Phase 15
-export interface GTFSAdapterFileInfo {
+interface GTFSAdapterFileInfo {
   filename: string;
   presence: GTFSPresence;
   description: string;
@@ -59,63 +59,13 @@ export function deriveGTFSFieldTypes(
   return result;
 }
 
-// ─── Foreign key relationships ────────────────────────────────────────────────
-
-export function deriveGTFSRelationships(
-  spec: GTFSSpec
-): Record<string, Record<string, { file: string; field: string }>> {
-  const result: Record<
-    string,
-    Record<string, { file: string; field: string }>
-  > = {};
-  for (const file of spec.files) {
-    if (!file.fields) {
-      continue;
-    }
-    for (const field of file.fields) {
-      if (field.foreignKey) {
-        if (!result[file.filename]) {
-          result[file.filename] = {};
-        }
-        result[file.filename][field.name] = field.foreignKey;
-      }
-    }
-  }
-  return result;
-}
-
-// ─── Table name constants ─────────────────────────────────────────────────────
-// Returns { AGENCY: 'agency.txt', STOP_TIMES: 'stop_times.txt', ... }
-
-export function deriveGTFSTables(spec: GTFSSpec): Record<string, string> {
-  const result: Record<string, string> = {};
-  for (const file of spec.files) {
-    result[filenameToTableKey(file.filename)] = file.filename;
-  }
-  return result;
-}
-
-function filenameToTableKey(filename: string): string {
-  return filename
-    .replace(/\.txt$/, '')
-    .replace(/\.geojson$/, '_geojson')
-    .replace(/-/g, '_')
-    .toUpperCase();
-}
-
-// ─── File list ────────────────────────────────────────────────────────────────
-
-export function deriveGTFSFiles(spec: GTFSSpec): string[] {
-  return spec.files.map((f) => f.filename);
-}
-
 // ─── Enum registry ────────────────────────────────────────────────────────────
 // Collects all enumValues across all files, keyed by field name.
 // When the same field name appears in multiple files (e.g. continuous_pickup
 // in routes.txt and stop_times.txt) the first occurrence wins — the spec
 // guarantees they are identical.
 
-export interface GTFSAdapterEnumOption {
+interface GTFSAdapterEnumOption {
   value: number | string;
   label: string;
   description?: string;
