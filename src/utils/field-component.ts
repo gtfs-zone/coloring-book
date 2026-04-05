@@ -491,7 +491,7 @@ export function generateFieldConfigsFromSchema(
       if (enumOptions) {
         options = enumOptions.map((opt) => ({
           value: opt.value,
-          label: opt.label,
+          label: opt.value !== '' ? `${opt.value} - ${opt.label}` : opt.label,
         }));
       }
     }
