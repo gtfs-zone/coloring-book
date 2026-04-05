@@ -1372,7 +1372,11 @@ export class GTFSDatabase {
 
         while (stopTimesCursor) {
           const originalStopTime = stopTimesCursor.value;
-          const newStopTime = { ...originalStopTime, trip_id: newTripId };
+          // Explicit type annotation preserves the index signature through the spread
+          const newStopTime: StopTimes = {
+            ...originalStopTime,
+            trip_id: newTripId,
+          };
 
           if (timeOffset !== 0) {
             if (newStopTime.arrival_time) {

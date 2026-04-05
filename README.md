@@ -92,6 +92,10 @@ npm run build
 - [ ] **Component Library**: Reusable UI components
 - [ ] **Performance Monitoring**: Real-time performance metrics
 
+## GTFS Implementation Status
+
+Not all GTFS Schedule files have dedicated views — see [docs/gtfs-implementation-status.md](docs/gtfs-implementation-status.md) for a full breakdown of which files are fully supported, partially supported (table editor only), or not yet supported.
+
 ## Releasing
 
 Deployments are triggered by pushing a version tag. The Forgejo CI will build and copy the output to the server.
