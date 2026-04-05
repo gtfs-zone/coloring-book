@@ -24,7 +24,11 @@ import {
   mapGTFSTypeString,
 } from '../types/gtfs-field-types.js';
 import { formatValueForDisplay } from './field-formatters.js';
-import { getEnumOptions, isEnumField } from '../types/gtfs-enums.js';
+import {
+  getEnumOptions,
+  isEnumField,
+  type GTFSEnumOption,
+} from '../types/gtfs-enums.js';
 
 export interface FieldConfig {
   /** Field name in the GTFS specification (e.g., 'stop_name', 'stop_lat') */
@@ -61,6 +65,8 @@ export interface FieldConfig {
   presence?: GTFSPresence;
   /** Prose condition for Conditionally Required/Forbidden fields */
   presenceCondition?: string;
+  /** When an enum field has an empty-equivalent value in spec, its implicit default */
+  emptyEquivalentValue?: string | number;
   /** Custom CSS classes for the input element */
   inputClasses?: string;
   /** Whether the field is readonly (typically for primary keys) */
@@ -247,6 +253,31 @@ function renderTextInput(config: FieldConfig, inputId: string): string {
 }
 
 /**
+ * Scan enum options for the "An empty value is equivalent to X" pattern in spec descriptions.
+ * Returns the equivalent value (as number if parseable, else string), or undefined if absent.
+ */
+function findEmptyEquivalent(
+  options: GTFSEnumOption[]
+): string | number | undefined {
+  const marker = 'An empty value is equivalent to ';
+  for (const opt of options) {
+    if (!opt.description) {
+      continue;
+    }
+    const idx = opt.description.indexOf(marker);
+    if (idx === -1) {
+      continue;
+    }
+    const rest = opt.description.slice(idx + marker.length);
+    // Take the first word and strip trailing period
+    const token = rest.split(' ')[0].replace(/\.$/, '');
+    const num = Number(token);
+    return Number.isNaN(num) ? token : num;
+  }
+  return undefined;
+}
+
+/**
  * Render select dropdown field
  */
 function renderSelectInput(config: FieldConfig, inputId: string): string {
@@ -259,8 +290,12 @@ function renderSelectInput(config: FieldConfig, inputId: string): string {
     config.value !== undefined && config.value !== null && config.value !== '';
 
   // Add empty option for optional fields
+  const emptyLabel =
+    config.emptyEquivalentValue !== undefined
+      ? `-- (empty = ${config.emptyEquivalentValue}) --`
+      : '-- Select --';
   const emptyOption = !config.required
-    ? `<option value="" ${!hasValue ? 'selected' : ''}>-- Select --</option>`
+    ? `<option value="" ${!hasValue ? 'selected' : ''}>${emptyLabel}</option>`
     : '';
 
   const optionsHtml = config.options
@@ -485,10 +520,12 @@ export function generateFieldConfigsFromSchema(
     const attributes: Record<string, string | number> = {};
 
     // Check if this is an enum field first
+    let emptyEquivalentValue: string | number | undefined;
     if (isEnumField(fieldName)) {
       fieldType = 'select';
       const enumOptions = getEnumOptions(fieldName);
       if (enumOptions) {
+        emptyEquivalentValue = findEmptyEquivalent(enumOptions);
         options = enumOptions.map((opt) => ({
           value: opt.value,
           label: opt.value !== '' ? `${opt.value} - ${opt.label}` : opt.label,
@@ -579,6 +616,7 @@ export function generateFieldConfigsFromSchema(
       required: fieldSpec ? fieldSpec.presence === 'Required' : !isOptional,
       presence: fieldSpec?.presence,
       presenceCondition: fieldSpec?.presenceCondition,
+      emptyEquivalentValue,
       options,
       attributes: Object.keys(attributes).length > 0 ? attributes : undefined,
       readonly: isPrimaryKey,
