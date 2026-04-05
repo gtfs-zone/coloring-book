@@ -22,7 +22,6 @@ export enum GTFSFilePresence {
   Required = 'Required',
   Optional = 'Optional',
   ConditionallyRequired = 'Conditionally Required',
-  ConditionallyForbidden = 'Conditionally Forbidden',
 }
 
 export interface GTFSFileInfo {
@@ -54,30 +53,8 @@ export const TripsSchema = GTFSSchemas['trips.txt'];
 export const StopTimesSchema = GTFSSchemas['stop_times.txt'];
 export const CalendarSchema = GTFSSchemas['calendar.txt'];
 export const CalendarDatesSchema = GTFSSchemas['calendar_dates.txt'];
-export const FareAttributesSchema = GTFSSchemas['fare_attributes.txt'];
-export const FareRulesSchema = GTFSSchemas['fare_rules.txt'];
-export const TimeframesSchema = GTFSSchemas['timeframes.txt'];
-export const RiderCategoriesSchema = GTFSSchemas['rider_categories.txt'];
-export const FareMediaSchema = GTFSSchemas['fare_media.txt'];
-export const FareProductsSchema = GTFSSchemas['fare_products.txt'];
-export const FareLegRulesSchema = GTFSSchemas['fare_leg_rules.txt'];
-export const FareLegJoinRulesSchema = GTFSSchemas['fare_leg_join_rules.txt'];
-export const FareTransferRulesSchema = GTFSSchemas['fare_transfer_rules.txt'];
-export const AreasSchema = GTFSSchemas['areas.txt'];
-export const StopAreasSchema = GTFSSchemas['stop_areas.txt'];
-export const NetworksSchema = GTFSSchemas['networks.txt'];
-export const RouteNetworksSchema = GTFSSchemas['route_networks.txt'];
 export const ShapesSchema = GTFSSchemas['shapes.txt'];
-export const FrequenciesSchema = GTFSSchemas['frequencies.txt'];
-export const TransfersSchema = GTFSSchemas['transfers.txt'];
-export const PathwaysSchema = GTFSSchemas['pathways.txt'];
-export const LevelsSchema = GTFSSchemas['levels.txt'];
-export const LocationGroupsSchema = GTFSSchemas['location_groups.txt'];
-export const LocationGroupStopsSchema = GTFSSchemas['location_group_stops.txt'];
-export const BookingRulesSchema = GTFSSchemas['booking_rules.txt'];
-export const TranslationsSchema = GTFSSchemas['translations.txt'];
 export const FeedInfoSchema = GTFSSchemas['feed_info.txt'];
-export const AttributionsSchema = GTFSSchemas['attributions.txt'];
 
 // ─── Individual type exports ───────────────────────────────────────────────────
 // Re-exported from gtfs-entities for consumers that import types from this module.
@@ -89,20 +66,6 @@ export type {
   Trips,
   StopTimes,
   Calendar,
-  CalendarDates,
-  FareAttributes,
-  FareRules,
-  Timeframes,
-  RiderCategories,
-  FareMedia,
-  FareProducts,
-  FareLegRules,
-  FareLegJoinRules,
-  FareTransferRules,
-  Areas,
-  StopAreas,
-  Networks,
-  RouteNetworks,
   Shapes,
   Frequencies,
   Transfers,
