@@ -1,6 +1,7 @@
 import type { KnipConfig } from "knip";
 
 const config: KnipConfig = {
+  tags: ["-lintignore"],
   entry: [
     "src/index.html",
     // Standalone scripts invoked directly (not imported by other modules)
