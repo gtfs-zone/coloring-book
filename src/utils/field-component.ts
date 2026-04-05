@@ -12,8 +12,10 @@ import { getGTFSFieldDescription } from './zod-tooltip-helper.js';
 import {
   GTFS_PRIMARY_KEYS,
   GTFS_FIELD_TYPES,
+  GTFS_FIELD_SPECS,
   GTFSSchemas,
 } from '../types/gtfs.js';
+import type { GTFSPresence } from '../gtfs-spec/types.js';
 import type { z } from 'zod';
 import {
   GTFSFieldType,
@@ -53,8 +55,12 @@ export interface FieldConfig {
   tableName?: string;
   /** Custom tooltip override (if not using Zod description) */
   tooltip?: string;
-  /** Whether the field is required */
+  /** Whether the field is required (hard Required only — drives HTML required attribute) */
   required?: boolean;
+  /** Spec presence level for this field */
+  presence?: GTFSPresence;
+  /** Prose condition for Conditionally Required/Forbidden fields */
+  presenceCondition?: string;
   /** Custom CSS classes for the input element */
   inputClasses?: string;
   /** Whether the field is readonly (typically for primary keys) */
@@ -127,6 +133,32 @@ function renderTooltip(description: string): string {
 }
 
 /**
+ * Render presence indicator (*) with color coding and optional hover tooltip
+ */
+function renderPresenceMark(config: FieldConfig): string {
+  if (!config.presence || config.presence === 'Optional') {
+    return '';
+  }
+
+  const presenceColors: Partial<Record<GTFSPresence, string>> = {
+    Required: 'text-error',
+    'Conditionally Required': 'text-warning',
+    Recommended: 'text-success',
+    'Conditionally Forbidden': 'text-base-content opacity-40',
+  };
+  const colorClass = presenceColors[config.presence] ?? '';
+
+  const markSpan = `<span class="${colorClass}">*</span>`;
+
+  if (config.presenceCondition) {
+    const escapedCondition = escapeHtml(config.presenceCondition);
+    return ` <div class="tooltip tooltip-top inline-block" data-tip='${escapedCondition}'>${markSpan}</div>`;
+  }
+
+  return ` ${markSpan}`;
+}
+
+/**
  * Render label using Pattern 4: Label with for attribute
  */
 function renderLabel(
@@ -135,9 +167,7 @@ function renderLabel(
   inputId: string
 ): string {
   const tooltipHtml = renderTooltip(tooltip);
-  const requiredMark = config.required
-    ? ' <span class="text-error">*</span>'
-    : '';
+  const presenceMark = renderPresenceMark(config);
   const readonlyIcon = config.readonly
     ? ` <svg class="w-3 h-3 inline-block opacity-60" fill="none" stroke="currentColor" viewBox="0 0 24 24">
          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
@@ -145,7 +175,7 @@ function renderLabel(
     : '';
 
   return `
-    <label class="label" for="${inputId}">${escapeHtml(config.label)}${requiredMark}${readonlyIcon}${tooltipHtml}</label>
+    <label class="label" for="${inputId}">${escapeHtml(config.label)}${presenceMark}${readonlyIcon}${tooltipHtml}</label>
   `;
 }
 
@@ -504,6 +534,9 @@ export function generateFieldConfigsFromSchema(
     // Generate human-readable label from field name
     const label = generateLabel(fieldName);
 
+    // Look up field spec for presence metadata
+    const fieldSpec = GTFS_FIELD_SPECS[tableName]?.[fieldName];
+
     configs.push({
       field: fieldName,
       label: `${label} (${fieldName})`,
@@ -513,7 +546,9 @@ export function generateFieldConfigsFromSchema(
         ? `Optional ${label.toLowerCase()}`
         : `Enter ${label.toLowerCase()}`,
       tableName,
-      required: !isOptional,
+      required: fieldSpec ? fieldSpec.presence === 'Required' : !isOptional,
+      presence: fieldSpec?.presence,
+      presenceCondition: fieldSpec?.presenceCondition,
       options,
       attributes: Object.keys(attributes).length > 0 ? attributes : undefined,
       readonly: isPrimaryKey,
