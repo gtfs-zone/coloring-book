@@ -10,6 +10,7 @@ export const timeframesSpec: GTFSFileSpec = {
       name: 'timeframe_group_id',
       type: 'ID',
       presence: 'Required',
+      isPrimaryKey: true,
       description:
         'Identifies a timeframe or set of timeframes. Multiple records may share the same timeframe_group_id to represent different time windows when the same fare applies.',
     },
