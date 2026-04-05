@@ -10,6 +10,7 @@ export const fareLegRulesSpec: GTFSFileSpec = {
       name: 'leg_group_id',
       type: 'ID',
       presence: 'Optional',
+      isPrimaryKey: true,
       description:
         'Identifies a group of entries in fare_leg_rules.txt. Used to reference groups of fare leg entries from fare_transfer_rules.txt and fare_leg_join_rules.txt.',
     },
