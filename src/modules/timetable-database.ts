@@ -294,10 +294,6 @@ export class TimetableDatabase {
     await database.updateRow('stop_times', naturalKey, {
       [field]: newTime,
     });
-
-    notifications.showSuccess(`Time updated to ${newTime || 'skipped'}`, {
-      duration: 2000,
-    });
   }
 
   /**
@@ -406,11 +402,6 @@ export class TimetableDatabase {
       arrival_time: newTime ?? undefined,
       departure_time: newTime ?? undefined,
     });
-
-    const message = newTime
-      ? `Linked time updated to ${newTime}`
-      : 'Linked times cleared';
-    notifications.showSuccess(message, { duration: 2000 });
   }
 
   /**
@@ -443,7 +434,7 @@ export class TimetableDatabase {
       // the same stop_id appears at multiple positions.
       const results = await database.queryRows('stop_times', {
         trip_id,
-        stop_sequence,
+        stop_sequence: Number(stop_sequence),
       });
       return results[0] ?? null;
     }

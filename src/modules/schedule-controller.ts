@@ -236,6 +236,11 @@ export class ScheduleController {
 
       // Handle empty input (clear both times)
       if (!newTime.trim()) {
+        const beforeRow = await this.database.getStopTime(
+          trip_id,
+          stop_id,
+          stopSequence
+        );
         await this.database.updateLinkedTimes(trip_id, stop_id, null);
         console.log(`Cleared both times for ${trip_id}/${stop_id}`);
 
@@ -250,6 +255,32 @@ export class ScheduleController {
         // Rebuild stop_times from table and refresh timetable
         await this.database.rebuildStopTimesFromTable(trip_id);
         await this.refreshCurrentTimetable();
+
+        if (beforeRow && this.patchManager) {
+          const afterStopTime = await this.database.getStopTime(
+            trip_id,
+            stop_id,
+            stopSequence
+          );
+          if (afterStopTime) {
+            const afterKey = generateCompositeKeyFromRecord(
+              'stop_times',
+              afterStopTime as unknown as Record<string, unknown>
+            );
+            await this.patchManager.recordUpdate(
+              'stop_times',
+              afterKey,
+              {
+                arrival_time: beforeRow.arrival_time,
+                departure_time: beforeRow.departure_time,
+              },
+              {
+                arrival_time: afterStopTime.arrival_time,
+                departure_time: afterStopTime.departure_time,
+              }
+            );
+          }
+        }
         return;
       }
 
@@ -352,6 +383,13 @@ export class ScheduleController {
 
       // Handle empty input (skip/clear time)
       if (!newTime.trim()) {
+        const beforeRow = await this.database.getStopTime(
+          trip_id,
+          stop_id,
+          stopSequence
+        );
+        const field =
+          timeType === 'arrival' ? 'arrival_time' : 'departure_time';
         await this.database.updateStopTimeInDatabase(
           trip_id,
           stop_id,
@@ -363,6 +401,26 @@ export class ScheduleController {
         // Rebuild stop_times from table and refresh timetable
         await this.database.rebuildStopTimesFromTable(trip_id);
         await this.refreshCurrentTimetable();
+
+        if (beforeRow && this.patchManager) {
+          const afterStopTime = await this.database.getStopTime(
+            trip_id,
+            stop_id,
+            stopSequence
+          );
+          if (afterStopTime) {
+            const afterKey = generateCompositeKeyFromRecord(
+              'stop_times',
+              afterStopTime as unknown as Record<string, unknown>
+            );
+            await this.patchManager.recordUpdate(
+              'stop_times',
+              afterKey,
+              { [field]: (beforeRow as Record<string, unknown>)[field] },
+              { [field]: (afterStopTime as Record<string, unknown>)[field] }
+            );
+          }
+        }
         return;
       }
 
@@ -461,7 +519,7 @@ export class ScheduleController {
    *
    * Updates a single property on a trip record.
    * Handles type conversion for enum and number fields.
-   * Shows success/error notifications.
+   * Shows an error notification on failure; success is handled by the patch-manager change event.
    *
    * @param trip_id - GTFS trip identifier
    * @param field - Property name (e.g., 'trip_headsign', 'direction_id')
@@ -489,11 +547,17 @@ export class ScheduleController {
       }
 
       // Capture before value from in-memory data
-      const allTrips = this.gtfsParser.getFileDataSync('trips');
+      const allTrips = this.gtfsParser.getFileDataSync('trips.txt');
       const currentTrip = allTrips.find((t) => t.trip_id === trip_id) as
         | Record<string, unknown>
         | undefined;
-      const before = { [field]: currentTrip?.[field] ?? null };
+      const storedValue = currentTrip?.[field] ?? null;
+      const before = { [field]: storedValue };
+
+      // No-op guard: skip if value is unchanged
+      if (processedValue === storedValue) {
+        return;
+      }
 
       // Update database
       await patchUpdate(
@@ -508,18 +572,6 @@ export class ScheduleController {
       console.log(
         `Updated trip property ${field} for ${trip_id} to:`,
         processedValue
-      );
-
-      // Show success notification
-      const fieldLabel = field
-        .replace(/_/g, ' ')
-        .replace(/\b\w/g, (l) => l.toUpperCase());
-      const displayValue =
-        processedValue === null ? '(empty)' : String(processedValue);
-      notifications.show(
-        `Updated ${fieldLabel} to "${displayValue}" for trip ${trip_id}`,
-        'success',
-        { duration: 3000 }
       );
     } catch (error) {
       console.error('Failed to update trip property:', error);
@@ -586,6 +638,33 @@ export class ScheduleController {
     console.log(
       `Linked times for ${trip_id}/${stop_id}: set both times to ${primaryTime}`
     );
+
+    // Record patch if departure time actually changed (arrival_time !== primaryTime || departure_time !== primaryTime)
+    if (
+      primaryTime &&
+      this.patchManager &&
+      (arrival_time !== primaryTime || departure_time !== primaryTime)
+    ) {
+      const afterStopTime = await this.database.getStopTime(trip_id, stop_id);
+      if (afterStopTime) {
+        const afterKey = generateCompositeKeyFromRecord(
+          'stop_times',
+          afterStopTime as unknown as Record<string, unknown>
+        );
+        await this.patchManager.recordUpdate(
+          'stop_times',
+          afterKey,
+          {
+            arrival_time,
+            departure_time,
+          },
+          {
+            arrival_time: afterStopTime.arrival_time,
+            departure_time: afterStopTime.departure_time,
+          }
+        );
+      }
+    }
   }
 
   /**
