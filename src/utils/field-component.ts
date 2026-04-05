@@ -102,11 +102,25 @@ function getFieldTooltip(config: FieldConfig): string {
 }
 
 /**
+ * Build a GTFS reference URL for a given table name.
+ * Returns empty string when tableName is undefined.
+ */
+function getSpecUrl(tableName: string | undefined): string {
+  if (!tableName) {
+    return '';
+  }
+  return (
+    'https://gtfs.org/documentation/schedule/reference/#' +
+    tableName.replace('.', '')
+  );
+}
+
+/**
  * Render a tooltip icon with description using DaisyUI tooltip
  * Handles long text with proper wrapping and max-width
  * Preserves newlines using CSS white-space: pre-line
  */
-function renderTooltip(description: string): string {
+function renderTooltip(description: string, specUrl?: string): string {
   if (!description) {
     return '';
   }
@@ -114,12 +128,7 @@ function renderTooltip(description: string): string {
   // Escape HTML but keep newlines - they'll be rendered via CSS white-space: pre-line
   const escapedDescription = escapeHtml(description);
 
-  // Use DaisyUI tooltip with white-space: pre to preserve line breaks
-  // The tooltip-open class can be added for testing
-  // Use single quotes for data-tip attribute to avoid escaping issues
-  return `
-    <div class="tooltip tooltip-right" data-tip='${escapedDescription}'>
-      <svg class="w-4 h-4 opacity-60 hover:opacity-100 cursor-help inline-block ml-1"
+  const svgIcon = `<svg class="w-4 h-4 opacity-60 hover:opacity-100 cursor-help inline-block ml-1"
            fill="none"
            stroke="currentColor"
            viewBox="0 0 24 24">
@@ -127,15 +136,23 @@ function renderTooltip(description: string): string {
               stroke-linejoin="round"
               stroke-width="2"
               d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-      </svg>
-    </div>
+      </svg>`;
+
+  if (specUrl) {
+    return `
+    <a href="${specUrl}" target="_blank" rel="noopener noreferrer" class="tooltip tooltip-right" data-tip='${escapedDescription}'>${svgIcon}</a>
+  `;
+  }
+
+  return `
+    <div class="tooltip tooltip-right" data-tip='${escapedDescription}'>${svgIcon}</div>
   `;
 }
 
 /**
  * Render presence indicator (*) with color coding and optional hover tooltip
  */
-function renderPresenceMark(config: FieldConfig): string {
+function renderPresenceMark(config: FieldConfig, specUrl?: string): string {
   if (!config.presence || config.presence === 'Optional') {
     return '';
   }
@@ -150,12 +167,19 @@ function renderPresenceMark(config: FieldConfig): string {
 
   const markSpan = `<span class="${colorClass}">*</span>`;
 
+  let inner: string;
   if (config.presenceCondition) {
     const escapedCondition = escapeHtml(config.presenceCondition);
-    return ` <div class="tooltip tooltip-top inline-block" data-tip='${escapedCondition}'>${markSpan}</div>`;
+    inner = `<div class="tooltip tooltip-top inline-block" data-tip='${escapedCondition}'>${markSpan}</div>`;
+  } else {
+    inner = markSpan;
   }
 
-  return ` ${markSpan}`;
+  if (specUrl) {
+    return ` <a href="${specUrl}" target="_blank" rel="noopener noreferrer" class="no-underline">${inner}</a>`;
+  }
+
+  return ` ${inner}`;
 }
 
 /**
@@ -166,13 +190,19 @@ function renderLabel(
   tooltip: string,
   inputId: string
 ): string {
-  const tooltipHtml = renderTooltip(tooltip);
-  const presenceMark = renderPresenceMark(config);
-  const readonlyIcon = config.readonly
-    ? ` <svg class="w-3 h-3 inline-block opacity-60" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+  const specUrl = getSpecUrl(config.tableName);
+  const tooltipHtml = renderTooltip(tooltip, specUrl);
+  const presenceMark = renderPresenceMark(config, specUrl);
+
+  let readonlyIcon = '';
+  if (config.readonly) {
+    const lockSvg = `<svg class="w-3 h-3 inline-block opacity-60" fill="none" stroke="currentColor" viewBox="0 0 24 24">
          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-       </svg>`
-    : '';
+       </svg>`;
+    readonlyIcon = specUrl
+      ? ` <a href="${specUrl}" target="_blank" rel="noopener noreferrer" title="Primary key (read-only)">${lockSvg}</a>`
+      : ` ${lockSvg}`;
+  }
 
   return `
     <label class="label" for="${inputId}">${escapeHtml(config.label)}${presenceMark}${readonlyIcon}${tooltipHtml}</label>
