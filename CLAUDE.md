@@ -124,6 +124,8 @@ The repo is at `gtfs.zone/coloring-book`. Use the `mcp__forgejo__*` tools to int
 **Completing a phase** — triggered by a prompt like "Lets complete phase 1 of the plan in #50":
 
 1. Fetch the issue body with `mcp__forgejo__get_issue_by_index` using `owner: "gtfs.zone"`, `repo: "coloring-book"`.
-2. Implement everything in the requested phase. Commit as you go using conventional commits.
-3. After completing the phase, update the issue body with `mcp__forgejo__update_issue`: check off all completed items in that phase's checklist, and append any discoveries, surprises, or revised understanding to that phase's prose description so future phases have accurate context.
-4. Do not run tests, do not start the next phase. Stop and let the user test.
+2. If this is phase 1 (or `CURRENT_PLAN.md` does not yet exist), write the full plan to `CURRENT_PLAN.md` in the repo root. This file is the local working copy of the plan — all phase progress is tracked here, not on the issue.
+3. Implement everything in the requested phase. Commit as you go using conventional commits.
+4. After completing the phase, update `CURRENT_PLAN.md`: check off all completed items in that phase's checklist, and append any discoveries, surprises, or revised understanding to that phase's prose description so future phases have accurate context.
+5. Do not update the Forgejo issue — wait until the user explicitly says "Update issue #50" (substituting the actual issue number). At that point, overwrite the issue body with the current contents of `CURRENT_PLAN.md`.
+6. Do not run tests, do not start the next phase. Stop and let the user test.
