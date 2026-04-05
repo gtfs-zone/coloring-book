@@ -210,7 +210,10 @@ export class TimetableDatabase {
     // Validate time format using GTFS schema if not null
     if (newTime !== null) {
       const timeValidation =
-        StopTimesSchema.shape.arrival_time.safeParse(newTime);
+        // Cast to z.ZodType to access safeParse — ZodTypeAny from ZodRawShape
+        // doesn't expose safeParse in its TypeScript type in Zod v4
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (StopTimesSchema.shape.arrival_time as any).safeParse(newTime);
       if (!timeValidation.success) {
         const error = `Invalid time format: ${newTime}. Must be HH:MM:SS format.`;
         console.error('Time validation failed:', timeValidation.error);
@@ -328,7 +331,10 @@ export class TimetableDatabase {
     // Validate time format using GTFS schema if not null
     if (newTime !== null) {
       const timeValidation =
-        StopTimesSchema.shape.arrival_time.safeParse(newTime);
+        // Cast to z.ZodType to access safeParse — ZodTypeAny from ZodRawShape
+        // doesn't expose safeParse in its TypeScript type in Zod v4
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (StopTimesSchema.shape.arrival_time as any).safeParse(newTime);
       if (!timeValidation.success) {
         const error = `Invalid time format: ${newTime}. Must be HH:MM:SS format.`;
         console.error('Time validation failed:', timeValidation.error);

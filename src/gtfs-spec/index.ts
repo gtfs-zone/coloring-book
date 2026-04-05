@@ -30,6 +30,7 @@ import { locationGroupStopsSpec } from './files/location-group-stops';
 import { bookingRulesSpec } from './files/booking-rules';
 import { translationsSpec } from './files/translations';
 import { attributionsSpec } from './files/attributions';
+import { locationsGeojsonSpec } from './files/locations-geojson';
 
 export const gtfsSpec: GTFSSpec = {
   specVersion: '2026-04',
@@ -65,5 +66,6 @@ export const gtfsSpec: GTFSSpec = {
     bookingRulesSpec,
     translationsSpec,
     attributionsSpec,
+    locationsGeojsonSpec,
   ],
 };
