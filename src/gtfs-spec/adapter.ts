@@ -177,6 +177,25 @@ function buildBaseValidator(
   return z.string();
 }
 
+// ─── Field spec lookup ────────────────────────────────────────────────────────
+// Builds filename → fieldName → GTFSFieldSpec for presence/condition lookups.
+
+export function deriveGTFSFieldSpecs(
+  spec: GTFSSpec
+): Record<string, Record<string, GTFSFieldSpec>> {
+  const result: Record<string, Record<string, GTFSFieldSpec>> = {};
+  for (const file of spec.files) {
+    if (!file.fields) {
+      continue;
+    }
+    result[file.filename] = {};
+    for (const field of file.fields) {
+      result[file.filename][field.name] = field;
+    }
+  }
+  return result;
+}
+
 // ─── Full file info list ───────────────────────────────────────────────────────
 // Combines spec metadata with derived Zod schemas into a GTFSFileInfo-compatible
 // array. Use this to replace GTFS_FILES in Phase 15.

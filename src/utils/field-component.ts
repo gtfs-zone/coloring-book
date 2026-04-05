@@ -12,8 +12,10 @@ import { getGTFSFieldDescription } from './zod-tooltip-helper.js';
 import {
   GTFS_PRIMARY_KEYS,
   GTFS_FIELD_TYPES,
+  GTFS_FIELD_SPECS,
   GTFSSchemas,
 } from '../types/gtfs.js';
+import type { GTFSPresence } from '../gtfs-spec/types.js';
 import type { z } from 'zod';
 import {
   GTFSFieldType,
@@ -22,7 +24,11 @@ import {
   mapGTFSTypeString,
 } from '../types/gtfs-field-types.js';
 import { formatValueForDisplay } from './field-formatters.js';
-import { getEnumOptions, isEnumField } from '../types/gtfs-enums.js';
+import {
+  getEnumOptions,
+  isEnumField,
+  type GTFSEnumOption,
+} from '../types/gtfs-enums.js';
 
 export interface FieldConfig {
   /** Field name in the GTFS specification (e.g., 'stop_name', 'stop_lat') */
@@ -53,8 +59,14 @@ export interface FieldConfig {
   tableName?: string;
   /** Custom tooltip override (if not using Zod description) */
   tooltip?: string;
-  /** Whether the field is required */
+  /** Whether the field is required (hard Required only — drives HTML required attribute) */
   required?: boolean;
+  /** Spec presence level for this field */
+  presence?: GTFSPresence;
+  /** Prose condition for Conditionally Required/Forbidden fields */
+  presenceCondition?: string;
+  /** When an enum field has an empty-equivalent value in spec, its implicit default */
+  emptyEquivalentValue?: string | number;
   /** Custom CSS classes for the input element */
   inputClasses?: string;
   /** Whether the field is readonly (typically for primary keys) */
@@ -96,11 +108,25 @@ function getFieldTooltip(config: FieldConfig): string {
 }
 
 /**
+ * Build a GTFS reference URL for a given table name.
+ * Returns empty string when tableName is undefined.
+ */
+function getSpecUrl(tableName: string | undefined): string {
+  if (!tableName) {
+    return '';
+  }
+  return (
+    'https://gtfs.org/documentation/schedule/reference/#' +
+    tableName.replace('.', '')
+  );
+}
+
+/**
  * Render a tooltip icon with description using DaisyUI tooltip
  * Handles long text with proper wrapping and max-width
  * Preserves newlines using CSS white-space: pre-line
  */
-function renderTooltip(description: string): string {
+function renderTooltip(description: string, specUrl?: string): string {
   if (!description) {
     return '';
   }
@@ -108,12 +134,7 @@ function renderTooltip(description: string): string {
   // Escape HTML but keep newlines - they'll be rendered via CSS white-space: pre-line
   const escapedDescription = escapeHtml(description);
 
-  // Use DaisyUI tooltip with white-space: pre to preserve line breaks
-  // The tooltip-open class can be added for testing
-  // Use single quotes for data-tip attribute to avoid escaping issues
-  return `
-    <div class="tooltip tooltip-right" data-tip='${escapedDescription}'>
-      <svg class="w-4 h-4 opacity-60 hover:opacity-100 cursor-help inline-block ml-1"
+  const svgIcon = `<svg class="w-4 h-4 opacity-60 hover:opacity-100 cursor-help inline-block ml-1"
            fill="none"
            stroke="currentColor"
            viewBox="0 0 24 24">
@@ -121,9 +142,50 @@ function renderTooltip(description: string): string {
               stroke-linejoin="round"
               stroke-width="2"
               d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-      </svg>
-    </div>
+      </svg>`;
+
+  if (specUrl) {
+    return `
+    <a href="${specUrl}" target="_blank" rel="noopener noreferrer" class="tooltip tooltip-right" data-tip='${escapedDescription}'>${svgIcon}</a>
   `;
+  }
+
+  return `
+    <div class="tooltip tooltip-right" data-tip='${escapedDescription}'>${svgIcon}</div>
+  `;
+}
+
+/**
+ * Render presence indicator (*) with color coding and optional hover tooltip
+ */
+function renderPresenceMark(config: FieldConfig, specUrl?: string): string {
+  if (!config.presence || config.presence === 'Optional') {
+    return '';
+  }
+
+  const presenceColors: Partial<Record<GTFSPresence, string>> = {
+    Required: 'text-error',
+    'Conditionally Required': 'text-warning',
+    Recommended: 'text-success',
+    'Conditionally Forbidden': 'text-base-content opacity-40',
+  };
+  const colorClass = presenceColors[config.presence] ?? '';
+
+  const markSpan = `<span class="${colorClass}">*</span>`;
+
+  let inner: string;
+  if (config.presenceCondition) {
+    const escapedCondition = escapeHtml(config.presenceCondition);
+    inner = `<div class="tooltip tooltip-top inline-block" data-tip='${escapedCondition}'>${markSpan}</div>`;
+  } else {
+    inner = markSpan;
+  }
+
+  if (specUrl) {
+    return ` <a href="${specUrl}" target="_blank" rel="noopener noreferrer" class="no-underline">${inner}</a>`;
+  }
+
+  return ` ${inner}`;
 }
 
 /**
@@ -134,18 +196,22 @@ function renderLabel(
   tooltip: string,
   inputId: string
 ): string {
-  const tooltipHtml = renderTooltip(tooltip);
-  const requiredMark = config.required
-    ? ' <span class="text-error">*</span>'
-    : '';
-  const readonlyIcon = config.readonly
-    ? ` <svg class="w-3 h-3 inline-block opacity-60" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+  const specUrl = getSpecUrl(config.tableName);
+  const tooltipHtml = renderTooltip(tooltip, specUrl);
+  const presenceMark = renderPresenceMark(config, specUrl);
+
+  let readonlyIcon = '';
+  if (config.readonly) {
+    const lockSvg = `<svg class="w-3 h-3 inline-block opacity-60" fill="none" stroke="currentColor" viewBox="0 0 24 24">
          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-       </svg>`
-    : '';
+       </svg>`;
+    readonlyIcon = specUrl
+      ? ` <a href="${specUrl}" target="_blank" rel="noopener noreferrer" title="Primary key (read-only)">${lockSvg}</a>`
+      : ` ${lockSvg}`;
+  }
 
   return `
-    <label class="label" for="${inputId}">${escapeHtml(config.label)}${requiredMark}${readonlyIcon}${tooltipHtml}</label>
+    <label class="label" for="${inputId}">${escapeHtml(config.label)}${presenceMark}${readonlyIcon}${tooltipHtml}</label>
   `;
 }
 
@@ -187,6 +253,31 @@ function renderTextInput(config: FieldConfig, inputId: string): string {
 }
 
 /**
+ * Scan enum options for the "An empty value is equivalent to X" pattern in spec descriptions.
+ * Returns the equivalent value (as number if parseable, else string), or undefined if absent.
+ */
+function findEmptyEquivalent(
+  options: GTFSEnumOption[]
+): string | number | undefined {
+  const marker = 'An empty value is equivalent to ';
+  for (const opt of options) {
+    if (!opt.description) {
+      continue;
+    }
+    const idx = opt.description.indexOf(marker);
+    if (idx === -1) {
+      continue;
+    }
+    const rest = opt.description.slice(idx + marker.length);
+    // Take the first word and strip trailing period
+    const token = rest.split(' ')[0].replace(/\.$/, '');
+    const num = Number(token);
+    return Number.isNaN(num) ? token : num;
+  }
+  return undefined;
+}
+
+/**
  * Render select dropdown field
  */
 function renderSelectInput(config: FieldConfig, inputId: string): string {
@@ -199,8 +290,12 @@ function renderSelectInput(config: FieldConfig, inputId: string): string {
     config.value !== undefined && config.value !== null && config.value !== '';
 
   // Add empty option for optional fields
+  const emptyLabel =
+    config.emptyEquivalentValue !== undefined
+      ? `-- (empty = ${config.emptyEquivalentValue}) --`
+      : '-- Select --';
   const emptyOption = !config.required
-    ? `<option value="" ${!hasValue ? 'selected' : ''}>-- Select --</option>`
+    ? `<option value="" ${!hasValue ? 'selected' : ''}>${emptyLabel}</option>`
     : '';
 
   const optionsHtml = config.options
@@ -425,13 +520,15 @@ export function generateFieldConfigsFromSchema(
     const attributes: Record<string, string | number> = {};
 
     // Check if this is an enum field first
+    let emptyEquivalentValue: string | number | undefined;
     if (isEnumField(fieldName)) {
       fieldType = 'select';
       const enumOptions = getEnumOptions(fieldName);
       if (enumOptions) {
+        emptyEquivalentValue = findEmptyEquivalent(enumOptions);
         options = enumOptions.map((opt) => ({
           value: opt.value,
-          label: opt.label,
+          label: opt.value !== '' ? `${opt.value} - ${opt.label}` : opt.label,
         }));
       }
     }
@@ -504,6 +601,9 @@ export function generateFieldConfigsFromSchema(
     // Generate human-readable label from field name
     const label = generateLabel(fieldName);
 
+    // Look up field spec for presence metadata
+    const fieldSpec = GTFS_FIELD_SPECS[tableName]?.[fieldName];
+
     configs.push({
       field: fieldName,
       label: `${label} (${fieldName})`,
@@ -513,7 +613,10 @@ export function generateFieldConfigsFromSchema(
         ? `Optional ${label.toLowerCase()}`
         : `Enter ${label.toLowerCase()}`,
       tableName,
-      required: !isOptional,
+      required: fieldSpec ? fieldSpec.presence === 'Required' : !isOptional,
+      presence: fieldSpec?.presence,
+      presenceCondition: fieldSpec?.presenceCondition,
+      emptyEquivalentValue,
       options,
       attributes: Object.keys(attributes).length > 0 ? attributes : undefined,
       readonly: isPrimaryKey,
