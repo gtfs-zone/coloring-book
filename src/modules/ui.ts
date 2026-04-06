@@ -162,11 +162,6 @@ export class UIController {
       this.toggleAddStopMode();
     });
 
-    // Edit Stops button
-    document.getElementById('edit-stops-btn')?.addEventListener('click', () => {
-      this.toggleEditStopsMode();
-    });
-
     // Back to files button
     const backToFilesBtn = document.getElementById('back-to-files');
     if (backToFilesBtn) {
@@ -312,7 +307,6 @@ export class UIController {
 
       // Update map tool button states
       this.updateAddStopButtonState();
-      this.updateEditStopsButtonState();
 
       notifications.showSuccess(`Successfully loaded GTFS file: ${file.name}`);
 
@@ -408,7 +402,6 @@ export class UIController {
 
       // Update map tool button states
       this.updateAddStopButtonState();
-      this.updateEditStopsButtonState();
 
       notifications.showSuccess('Successfully loaded GTFS from URL');
     } catch (error) {
@@ -1277,7 +1270,6 @@ export class UIController {
       // Set up mode change callback to update UI
       this.mapController.setModeChangeCallback(() => {
         this.updateAddStopButtonState();
-        this.updateEditStopsButtonState();
       });
     }
   }
@@ -1325,54 +1317,6 @@ export class UIController {
       (addStopBtn.querySelector('svg') as SVGElement | null)!.style.transform =
         '';
       addStopBtn.setAttribute('data-tip', 'Add stop');
-    }
-  }
-
-  /**
-   * Toggle edit stops mode on the map
-   */
-  toggleEditStopsMode() {
-    if (!this.mapController) {
-      console.warn('Map controller not initialized');
-      return;
-    }
-
-    // Toggle the mode
-    this.mapController.toggleEditStopsMode();
-
-    // Update button state
-    this.updateEditStopsButtonState();
-  }
-
-  /**
-   * Update the Edit Stops button state based on current map mode
-   */
-  updateEditStopsButtonState() {
-    if (!this.mapController) {
-      return;
-    }
-
-    const editStopsBtn = document.getElementById('edit-stops-btn');
-    if (!editStopsBtn) {
-      return;
-    }
-
-    const currentMode = this.mapController.getCurrentMode();
-    const isEditMode = currentMode === MapMode.EDIT_STOPS;
-
-    // Update button appearance
-    if (isEditMode) {
-      editStopsBtn.classList.add('btn-active');
-      (editStopsBtn.querySelector(
-        'svg'
-      ) as SVGElement | null)!.style.transform = 'scale(1.1)';
-      editStopsBtn.setAttribute('data-tip', 'Exit edit stops mode');
-    } else {
-      editStopsBtn.classList.remove('btn-active');
-      (editStopsBtn.querySelector(
-        'svg'
-      ) as SVGElement | null)!.style.transform = '';
-      editStopsBtn.setAttribute('data-tip', 'Edit stops');
     }
   }
 }
