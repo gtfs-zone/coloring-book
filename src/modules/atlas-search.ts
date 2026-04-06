@@ -1,3 +1,5 @@
+import uFuzzy from '@leeoniya/ufuzzy';
+
 interface AtlasFeed {
   id: string;
   name: string;
@@ -6,7 +8,10 @@ interface AtlasFeed {
   url: string;
 }
 
+const uf = new uFuzzy({ intraIns: 1 });
+
 let cachedFeeds: AtlasFeed[] | null = null;
+let cachedHaystack: string[] | null = null;
 
 async function loadAtlasFeeds(): Promise<AtlasFeed[]> {
   if (cachedFeeds !== null) {
@@ -17,6 +22,9 @@ async function loadAtlasFeeds(): Promise<AtlasFeed[]> {
     throw new Error(`Failed to fetch atlas-feeds.json: ${response.status}`);
   }
   cachedFeeds = (await response.json()) as AtlasFeed[];
+  cachedHaystack = cachedFeeds.map(
+    (f) => `${f.name} ${f.operator_name} ${f.location} ${f.url}`
+  );
   console.log(`[AtlasSearch] Loaded ${cachedFeeds.length} feeds from atlas`);
   return cachedFeeds;
 }
@@ -36,19 +44,22 @@ function debounce(fn: () => void, ms: number) {
 function filterAndRender(
   query: string,
   feeds: AtlasFeed[],
+  haystack: string[],
   resultsEl: HTMLElement,
   onSelect: (url: string) => void
 ) {
-  const q = query.trim().toLowerCase();
-  const filtered = q
-    ? feeds.filter(
-        (f) =>
-          f.name.toLowerCase().includes(q) ||
-          f.operator_name.toLowerCase().includes(q) ||
-          f.location.toLowerCase().includes(q) ||
-          f.url.toLowerCase().includes(q)
-      )
-    : feeds;
+  const q = query.trim();
+  let filtered: AtlasFeed[];
+  if (!q) {
+    filtered = feeds;
+  } else {
+    const [idxs] = uf.search(haystack, q);
+    if (!idxs || idxs.length === 0) {
+      filtered = [];
+    } else {
+      filtered = idxs.map((i) => feeds[i]);
+    }
+  }
 
   const shown = filtered.slice(0, 50);
 
@@ -94,7 +105,7 @@ export async function showAtlasSearchModal(): Promise<string | null> {
     modal.className = 'modal modal-open';
     modal.innerHTML = `
       <div class="modal-box max-w-2xl flex flex-col gap-3">
-        <h3 class="font-bold text-lg">Search Atlas</h3>
+        <h3 class="font-bold text-lg">From TransitLand Atlas</h3>
         <input
           id="atlas-search-input"
           type="search"
@@ -140,11 +151,18 @@ export async function showAtlasSearchModal(): Promise<string | null> {
 
     loadAtlasFeeds()
       .then((feeds) => {
-        filterAndRender('', feeds, resultsEl, onSelect);
+        const haystack = cachedHaystack!;
+        filterAndRender('', feeds, haystack, resultsEl, onSelect);
 
         searchInput.addEventListener('input', () => {
           debounce(() => {
-            filterAndRender(searchInput.value, feeds, resultsEl, onSelect);
+            filterAndRender(
+              searchInput.value,
+              feeds,
+              haystack,
+              resultsEl,
+              onSelect
+            );
           }, 200);
         });
 
