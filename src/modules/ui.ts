@@ -157,14 +157,15 @@ export class UIController {
       this.exportGTFS();
     });
 
+    // Pointer button
+    document.getElementById('pointer-btn')?.addEventListener('click', () => {
+      this.mapController?.setMapMode(MapMode.NAVIGATE);
+      this.updateMapToolButtonState();
+    });
+
     // Add Stop button
     document.getElementById('add-stop-btn')?.addEventListener('click', () => {
       this.toggleAddStopMode();
-    });
-
-    // Edit Stops button
-    document.getElementById('edit-stops-btn')?.addEventListener('click', () => {
-      this.toggleEditStopsMode();
     });
 
     // Back to files button
@@ -311,8 +312,7 @@ export class UIController {
       }
 
       // Update map tool button states
-      this.updateAddStopButtonState();
-      this.updateEditStopsButtonState();
+      this.updateMapToolButtonState();
 
       notifications.showSuccess(`Successfully loaded GTFS file: ${file.name}`);
 
@@ -407,8 +407,7 @@ export class UIController {
       }
 
       // Update map tool button states
-      this.updateAddStopButtonState();
-      this.updateEditStopsButtonState();
+      this.updateMapToolButtonState();
 
       notifications.showSuccess('Successfully loaded GTFS from URL');
     } catch (error) {
@@ -1276,8 +1275,7 @@ export class UIController {
     if (this.mapController) {
       // Set up mode change callback to update UI
       this.mapController.setModeChangeCallback(() => {
-        this.updateAddStopButtonState();
-        this.updateEditStopsButtonState();
+        this.updateMapToolButtonState();
       });
     }
   }
@@ -1295,84 +1293,20 @@ export class UIController {
     this.mapController.toggleAddStopMode();
 
     // Update button state
-    this.updateAddStopButtonState();
+    this.updateMapToolButtonState();
   }
 
   /**
-   * Update the Add Stop button state based on current map mode
+   * Update the map tool button states based on current map mode
    */
-  updateAddStopButtonState() {
+  updateMapToolButtonState() {
     if (!this.mapController) {
       return;
     }
-
+    const mode = this.mapController.getCurrentMode();
+    const pointerBtn = document.getElementById('pointer-btn');
     const addStopBtn = document.getElementById('add-stop-btn');
-    if (!addStopBtn) {
-      return;
-    }
-
-    const currentMode = this.mapController.getCurrentMode();
-    const isAddMode = currentMode === MapMode.ADD_STOP;
-
-    // Update button appearance
-    if (isAddMode) {
-      addStopBtn.classList.add('btn-active');
-      (addStopBtn.querySelector('svg') as SVGElement | null)!.style.transform =
-        'rotate(45deg)';
-      addStopBtn.setAttribute('data-tip', 'Exit add stop mode');
-    } else {
-      addStopBtn.classList.remove('btn-active');
-      (addStopBtn.querySelector('svg') as SVGElement | null)!.style.transform =
-        '';
-      addStopBtn.setAttribute('data-tip', 'Add stop');
-    }
-  }
-
-  /**
-   * Toggle edit stops mode on the map
-   */
-  toggleEditStopsMode() {
-    if (!this.mapController) {
-      console.warn('Map controller not initialized');
-      return;
-    }
-
-    // Toggle the mode
-    this.mapController.toggleEditStopsMode();
-
-    // Update button state
-    this.updateEditStopsButtonState();
-  }
-
-  /**
-   * Update the Edit Stops button state based on current map mode
-   */
-  updateEditStopsButtonState() {
-    if (!this.mapController) {
-      return;
-    }
-
-    const editStopsBtn = document.getElementById('edit-stops-btn');
-    if (!editStopsBtn) {
-      return;
-    }
-
-    const currentMode = this.mapController.getCurrentMode();
-    const isEditMode = currentMode === MapMode.EDIT_STOPS;
-
-    // Update button appearance
-    if (isEditMode) {
-      editStopsBtn.classList.add('btn-active');
-      (editStopsBtn.querySelector(
-        'svg'
-      ) as SVGElement | null)!.style.transform = 'scale(1.1)';
-      editStopsBtn.setAttribute('data-tip', 'Exit edit stops mode');
-    } else {
-      editStopsBtn.classList.remove('btn-active');
-      (editStopsBtn.querySelector(
-        'svg'
-      ) as SVGElement | null)!.style.transform = '';
-      editStopsBtn.setAttribute('data-tip', 'Edit stops');
-    }
+    pointerBtn?.classList.toggle('btn-primary', mode === MapMode.NAVIGATE);
+    addStopBtn?.classList.toggle('btn-primary', mode === MapMode.ADD_STOP);
   }
 }
