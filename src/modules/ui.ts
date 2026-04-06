@@ -1,5 +1,6 @@
 import { notifications } from './notification-system';
 import { showModal } from './modal-utils.js';
+import { showAtlasSearchModal } from './atlas-search.js';
 import {
   getAgencyFieldDescription,
   getRouteFieldDescription,
@@ -89,6 +90,17 @@ export class UIController {
       closeLoadDropdown();
       this.showFromURLModal();
     });
+
+    // Search Atlas button
+    document
+      .getElementById('atlas-search-btn')
+      ?.addEventListener('click', async () => {
+        closeLoadDropdown();
+        const url = await showAtlasSearchModal();
+        if (url) {
+          this.loadGTFSFromURL(url);
+        }
+      });
 
     // Example buttons
     document
