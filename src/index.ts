@@ -123,6 +123,11 @@ export class GTFSEditor {
       // Initialize all modules
       await this.mapController.initialize(this.gtfsParser);
       this.mapController.setPageStateManager(this.pageStateManager);
+      this.mapController.setCallbacks({
+        onEmptyClick: () => {
+          this.pageStateManager.setPageState({ type: 'home' });
+        },
+      });
       this.editor.initialize(this.gtfsParser);
 
       // Note: InfoDisplay is not used in the new UI structure
