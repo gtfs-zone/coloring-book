@@ -24,6 +24,7 @@ interface MapControllerCallbacks {
   onRouteSelect?: (route_id: string) => void;
   onStopSelect?: (stop_id: string) => void;
   onModeChange?: (mode: MapMode) => void;
+  onEmptyClick?: () => void;
 }
 
 /**
@@ -159,6 +160,10 @@ export class MapController {
       onModeChange: this.handleModeChange.bind(this),
       onStopDragComplete: this.handleStopDragComplete.bind(this),
       onStopCreated: this.handleStopCreated.bind(this),
+      onEmptyClick: () => {
+        this.clearHighlights();
+        this.callbacks.onEmptyClick?.();
+      },
     };
 
     this.interactionHandler.setCallbacks(interactionCallbacks);

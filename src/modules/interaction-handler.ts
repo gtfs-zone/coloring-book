@@ -10,6 +10,7 @@ export interface InteractionCallbacks {
   onModeChange?: (mode: MapMode) => void;
   onStopDragComplete?: (stop_id: string, lat: number, lng: number) => void;
   onStopCreated?: (stop_id: string) => void;
+  onEmptyClick?: () => void;
 }
 
 export class InteractionHandler {
@@ -139,6 +140,7 @@ export class InteractionHandler {
     }
 
     // No features found at click point
+    this.callbacks.onEmptyClick?.();
   }
 
   /**
