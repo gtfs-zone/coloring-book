@@ -1,4 +1,6 @@
 import { notifications } from './notification-system';
+import { showModal } from './modal-utils.js';
+import { showAtlasSearchModal } from './atlas-search.js';
 import {
   getAgencyFieldDescription,
   getRouteFieldDescription,
@@ -82,6 +84,23 @@ export class UIController {
       document.getElementById('file-input')!.click();
       closeLoadDropdown();
     });
+
+    // From URL button
+    document.getElementById('from-url-btn')?.addEventListener('click', () => {
+      closeLoadDropdown();
+      this.showFromURLModal();
+    });
+
+    // Search Atlas button
+    document
+      .getElementById('atlas-search-btn')
+      ?.addEventListener('click', async () => {
+        closeLoadDropdown();
+        const url = await showAtlasSearchModal();
+        if (url) {
+          this.loadGTFSFromURL(url);
+        }
+      });
 
     // Example buttons
     document
@@ -300,6 +319,45 @@ export class UIController {
         ],
       });
     }
+  }
+
+  showFromURLModal() {
+    showModal({
+      title: 'Load from URL',
+      body: `<input id="gtfs-url-input" type="url" class="input input-bordered w-full" placeholder="https://example.com/gtfs.zip" />`,
+      actions: [
+        { label: 'Cancel', onClick: () => {} },
+        {
+          label: 'Load',
+          className: 'btn-primary',
+          onClick: async () => {
+            const input = document.getElementById(
+              'gtfs-url-input'
+            ) as HTMLInputElement;
+            const url = input.value.trim();
+            if (!url) {
+              return true;
+            }
+            this.loadGTFSFromURL(url);
+            return false;
+          },
+        },
+      ],
+      onMount: () => {
+        const input = document.getElementById(
+          'gtfs-url-input'
+        ) as HTMLInputElement;
+        input.focus();
+        input.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') {
+            const loadBtn = document.querySelector(
+              '.modal-action .btn-primary'
+            ) as HTMLButtonElement | null;
+            loadBtn?.click();
+          }
+        });
+      },
+    });
   }
 
   async loadGTFSFromURL(url: string) {
