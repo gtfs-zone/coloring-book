@@ -94,7 +94,7 @@ export async function showAtlasSearchModal(): Promise<string | null> {
     modal.className = 'modal modal-open';
     modal.innerHTML = `
       <div class="modal-box max-w-2xl flex flex-col gap-3">
-        <h3 class="font-bold text-lg">Search Atlas</h3>
+        <h3 class="font-bold text-lg">From TransitLand Atlas</h3>
         <input
           id="atlas-search-input"
           type="search"
