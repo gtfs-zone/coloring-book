@@ -1,3 +1,48 @@
+## v0.10.0 (2026-04-06)
+
+### Feat
+
+- **ui**: replace map tool buttons with joined radio group
+- **map**: highlighted stop draggable in navigate mode, remove EDIT_STOPS
+- **map**: navigate home on empty map click
+- **atlas**: replace includes() filter with uFuzzy for fuzzy atlas search
+- **ui**: replace 'Need Help?' with error detail modal on URL load failure
+- **atlas**: add Search Atlas dropdown item and modal
+- **ui**: add From URL option to Load dropdown
+- **atlas**: add generate-atlas-data script and commit atlas-feeds.json
+- **field-component**: show empty-equivalent value in dropdown placeholder
+- **field-component**: prefix enum option labels with numeric value
+- **field-component**: clickable spec links on info, presence, and lock icons
+- **field-component**: presence colors and conditional hover on asterisk mark
+- **gtfs-spec**: phase 17 — add locations.geojson spec entry
+- **gtfs-spec**: phase 15 — swap app imports to adapter-derived exports, delete generated files
+- **gtfs-spec**: phase 14 — add runtime adapter deriving all GTFS exports from spec
+- **gtfs-spec**: phase 13 — add translations.txt and attributions.txt spec files
+- **gtfs-spec**: phase 12 — add location_groups, location_group_stops, and booking_rules spec files
+- **gtfs-spec**: phase 11 — add 6 compact spec files
+- **gtfs-spec**: phase 10 — add Fares v2 spec files
+- **gtfs-spec**: phase 9 — add fare_attributes.txt and fare_rules.txt spec files
+- **gtfs-spec**: phase 8 — add pathways.txt and levels.txt spec files
+- **gtfs-spec**: phase 7 — add shapes.txt, frequencies.txt, and transfers.txt spec files
+- **gtfs-spec**: phase 6 — add calendar.txt and calendar_dates.txt spec files
+- **gtfs-spec**: phase 5 — add stop_times.txt spec file
+- **gtfs-spec**: phase 4 — add routes.txt and trips.txt spec files
+- **gtfs-spec**: phase 3 — add stops.txt spec file
+- **gtfs-spec**: phase 2 — add agency.txt and feed_info.txt spec files
+- **gtfs-spec**: phase 1 — add spec types, stub index, delete scraper/codegen
+
+### Fix
+
+- **layout**: prevent right panel from overflowing viewport
+- **map**: highlight circle follows stop during drag
+- **schedule**: record patch when toggling from unlinked to linked input
+- **timetable**: remove duplicate success notifications for time edits
+- **timetable**: coerce stop_sequence to number in getStopTime for patch recording
+- **schedule**: record patches when clearing arrival/departure times
+- **schedule**: remove duplicate success notification in updateTripProperty
+- **schedule**: correct trips.txt key and add no-op guard in updateTripProperty
+- **knip**: restore knip.config.ts, remove dead deps and exports
+
 ## v0.9.0 (2026-03-31)
 
 ### Feat
