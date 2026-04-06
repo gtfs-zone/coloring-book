@@ -27,7 +27,8 @@
     "lighthouse": "lhci autorun",
     "audit": "audit-ci --config audit-ci.json",
     "perf-test": "npm run build && npm run lighthouse",
-    "commit": "cz commit"
+    "commit": "cz commit",
+    "atlas": "tsx scripts/generate-atlas-data.ts"
   },
   "keywords": [
     "gtfs",
