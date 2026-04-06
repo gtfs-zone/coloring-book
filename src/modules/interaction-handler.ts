@@ -10,6 +10,7 @@ export interface InteractionCallbacks {
   onModeChange?: (mode: MapMode) => void;
   onStopDragComplete?: (stop_id: string, lat: number, lng: number) => void;
   onStopCreated?: (stop_id: string) => void;
+  onEmptyClick?: () => void;
 }
 
 export class InteractionHandler {
@@ -21,6 +22,9 @@ export class InteractionHandler {
   // Drag state
   private isDragging = false;
   private draggedStopId: string | null = null;
+
+  // Currently highlighted stop (draggable in NAVIGATE mode)
+  private highlightedStopId: string | null = null;
 
   // Local copy of stops GeoJSON for drag — avoids reading MapLibre's private _data
   private stopsGeoJSON: GeoJSON.FeatureCollection | null = null;
@@ -40,6 +44,10 @@ export class InteractionHandler {
 
   public setStopsGeoJSON(data: GeoJSON.FeatureCollection): void {
     this.stopsGeoJSON = data;
+  }
+
+  public setHighlightedStop(stop_id: string | null): void {
+    this.highlightedStopId = stop_id;
   }
 
   /**
@@ -79,10 +87,35 @@ export class InteractionHandler {
     // Primary click handler
     this.map.on('click', this.handleMapClick.bind(this));
 
-    // Mouse events for dragging (will be activated based on mode)
+    // Mouse events for dragging
     this.map.on('mousedown', this.handleMouseDown.bind(this));
     this.map.on('mousemove', this.handleMouseMove.bind(this));
     this.map.on('mouseup', this.handleMouseUp.bind(this));
+
+    // Always-on hover handlers for stop layers — show grab cursor on highlighted stop
+    ['stops-background', 'stops-clickarea'].forEach((layerId) => {
+      this.map.on('mouseenter', layerId, (e) => {
+        const features = this.map.queryRenderedFeatures(e.point, {
+          layers: [layerId],
+        });
+        const stop_id = features[0]?.properties?.stop_id;
+        if (
+          this.currentMode === MapMode.NAVIGATE &&
+          stop_id === this.highlightedStopId &&
+          !this.isDragging
+        ) {
+          this.map.getCanvas().style.cursor = 'grab';
+        } else if (this.currentMode === MapMode.NAVIGATE) {
+          this.map.getCanvas().style.cursor = 'pointer';
+        }
+      });
+
+      this.map.on('mouseleave', layerId, () => {
+        if (!this.isDragging) {
+          this.updateCursor(this.currentMode);
+        }
+      });
+    });
   }
 
   /**
@@ -139,6 +172,7 @@ export class InteractionHandler {
     }
 
     // No features found at click point
+    this.callbacks.onEmptyClick?.();
   }
 
   /**
@@ -240,7 +274,7 @@ export class InteractionHandler {
    * Handle mouse down events (for dragging)
    */
   private handleMouseDown(e: MapMouseEvent): void {
-    if (this.currentMode !== MapMode.EDIT_STOPS) {
+    if (this.currentMode !== MapMode.NAVIGATE) {
       return;
     }
 
@@ -252,30 +286,25 @@ export class InteractionHandler {
       return;
     }
 
-    e.preventDefault();
-    const feature = features[0];
-    this.draggedStopId = feature.properties?.stop_id;
-
-    if (!this.draggedStopId) {
+    const stop_id = features[0].properties?.stop_id;
+    if (!stop_id || stop_id !== this.highlightedStopId) {
       return;
     }
 
+    e.preventDefault();
+    this.draggedStopId = stop_id;
     this.isDragging = true;
     this.map.getCanvas().style.cursor = 'grabbing';
 
     // Visual feedback for dragging
-    this.setStopDragState(this.draggedStopId, true);
+    this.setStopDragState(stop_id, true);
   }
 
   /**
    * Handle mouse move events (for dragging)
    */
   private handleMouseMove(e: MapMouseEvent): void {
-    if (
-      !this.isDragging ||
-      !this.draggedStopId ||
-      this.currentMode !== MapMode.EDIT_STOPS
-    ) {
+    if (!this.isDragging || !this.draggedStopId) {
       return;
     }
 
@@ -298,6 +327,29 @@ export class InteractionHandler {
         e.lngLat.lat,
       ];
       source.setData(data);
+
+      // Also move the highlight circle so it follows the dragged stop
+      const highlightSource = this.map.getSource('stops-highlight') as
+        | GeoJSONSource
+        | undefined;
+      if (highlightSource) {
+        const existingProps =
+          (highlightSource as unknown as { _data: GeoJSON.FeatureCollection })
+            ._data?.features?.[0]?.properties ?? {};
+        highlightSource.setData({
+          type: 'FeatureCollection',
+          features: [
+            {
+              type: 'Feature',
+              geometry: {
+                type: 'Point',
+                coordinates: [e.lngLat.lng, e.lngLat.lat],
+              },
+              properties: existingProps,
+            },
+          ],
+        });
+      }
     }
   }
 
@@ -358,9 +410,6 @@ export class InteractionHandler {
       case MapMode.ADD_STOP:
         canvas.style.cursor = 'crosshair';
         break;
-      case MapMode.EDIT_STOPS:
-        canvas.style.cursor = this.isDragging ? 'grabbing' : 'move';
-        break;
       case MapMode.NAVIGATE:
       default:
         canvas.style.cursor = '';
@@ -372,70 +421,7 @@ export class InteractionHandler {
    * Handle mode change logic
    */
   private handleModeChange(previousMode: MapMode, newMode: MapMode): void {
-    // Clean up previous mode
-    if (previousMode === MapMode.EDIT_STOPS) {
-      this.disableStopDragging();
-    }
-
-    // Setup new mode
-    if (newMode === MapMode.EDIT_STOPS) {
-      this.enableStopDragging();
-    }
-
     console.log(`🔄 Map mode changed: ${previousMode} → ${newMode}`);
-  }
-
-  /**
-   * Enable stop dragging interactions
-   */
-  private enableStopDragging(): void {
-    // Add hover effects for edit mode
-    ['stops-background', 'stops-clickarea'].forEach((layerId) => {
-      this.map.on('mouseenter', layerId, () => {
-        if (this.currentMode === MapMode.EDIT_STOPS && !this.isDragging) {
-          this.map.getCanvas().style.cursor = 'grab';
-        }
-      });
-
-      this.map.on('mouseleave', layerId, () => {
-        if (this.currentMode === MapMode.EDIT_STOPS && !this.isDragging) {
-          this.map.getCanvas().style.cursor = 'move';
-        }
-      });
-    });
-
-    console.log('🎯 Stop dragging enabled');
-  }
-
-  /**
-   * Disable stop dragging interactions
-   */
-  private disableStopDragging(): void {
-    // Reset any dragging states
-    if (this.isDragging && this.draggedStopId) {
-      this.setStopDragState(this.draggedStopId, false);
-      this.isDragging = false;
-      this.draggedStopId = null;
-    }
-
-    // Remove hover effects
-    ['stops-background', 'stops-clickarea'].forEach((layerId) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (this.map as any).off('mouseenter', layerId);
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (this.map as any).off('mouseleave', layerId);
-
-      // Re-add standard hover effects
-      this.map.on('mouseenter', layerId, () => {
-        this.map.getCanvas().style.cursor = 'pointer';
-      });
-
-      this.map.on('mouseleave', layerId, () => {
-        this.map.getCanvas().style.cursor = '';
-      });
-    });
-
-    console.log('🚫 Stop dragging disabled');
   }
 
   /**
@@ -468,17 +454,6 @@ export class InteractionHandler {
       this.currentMode === MapMode.ADD_STOP
         ? MapMode.NAVIGATE
         : MapMode.ADD_STOP;
-    this.setMapMode(newMode);
-  }
-
-  /**
-   * Toggle between edit stops mode and navigation mode
-   */
-  public toggleEditStopsMode(): void {
-    const newMode =
-      this.currentMode === MapMode.EDIT_STOPS
-        ? MapMode.NAVIGATE
-        : MapMode.EDIT_STOPS;
     this.setMapMode(newMode);
   }
 

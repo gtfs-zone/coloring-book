@@ -16,7 +16,6 @@ import { BasemapControl } from './basemap-control.js';
 export enum MapMode {
   NAVIGATE = 'navigate',
   ADD_STOP = 'add_stop',
-  EDIT_STOPS = 'edit_stops',
 }
 
 // Callback interfaces
@@ -24,6 +23,7 @@ interface MapControllerCallbacks {
   onRouteSelect?: (route_id: string) => void;
   onStopSelect?: (stop_id: string) => void;
   onModeChange?: (mode: MapMode) => void;
+  onEmptyClick?: () => void;
 }
 
 /**
@@ -159,6 +159,10 @@ export class MapController {
       onModeChange: this.handleModeChange.bind(this),
       onStopDragComplete: this.handleStopDragComplete.bind(this),
       onStopCreated: this.handleStopCreated.bind(this),
+      onEmptyClick: () => {
+        this.clearHighlights();
+        this.callbacks.onEmptyClick?.();
+      },
     };
 
     this.interactionHandler.setCallbacks(interactionCallbacks);
@@ -361,6 +365,7 @@ export class MapController {
     // Set new highlight state
     this.currentHighlight = { type: 'stop', id: stop_id };
 
+    this.interactionHandler?.setHighlightedStop(stop_id);
     this.layerManager?.highlightStop(stop_id, { color, radius });
 
     // Get routes that serve this stop and highlight them
@@ -456,6 +461,7 @@ export class MapController {
     // Reset highlight state
     this.currentHighlight = { type: 'none', id: null };
 
+    this.interactionHandler?.setHighlightedStop(null);
     this.layerManager?.clearHighlights();
     this.routeRenderer?.clearHighlight();
   }
@@ -605,13 +611,6 @@ export class MapController {
    */
   public toggleAddStopMode(): void {
     this.interactionHandler?.toggleAddStopMode();
-  }
-
-  /**
-   * Toggle edit stops mode
-   */
-  public toggleEditStopsMode(): void {
-    this.interactionHandler?.toggleEditStopsMode();
   }
 
   // ========================================
