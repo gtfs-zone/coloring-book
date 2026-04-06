@@ -21,6 +21,26 @@ import { Editor } from './editor.js';
 import { BrowseNavigation } from './browse-navigation.js';
 import { ScheduleController } from './schedule-controller.js';
 
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function showURLErrorModal(url: string, error: Error) {
+  showModal({
+    title: 'Failed to load feed',
+    body: `
+      <p><code class="break-all whitespace-pre-wrap">${escapeHtml(error.message)}</code></p>
+      <p>Attempted URL: <a href="${url}" target="_blank" rel="noopener" class="link">${escapeHtml(url)}</a></p>
+      <p class="text-sm text-base-content/60">Some feeds block direct browser requests (CORS). You can try opening the link above to download the file, then upload it directly using Load → Upload.</p>
+    `,
+    actions: [{ label: 'Close', onClick: () => {} }],
+  });
+}
+
 export class UIController {
   gtfsParser: GTFSParser | null;
   editor: Editor | null;
@@ -394,24 +414,13 @@ export class UIController {
     } catch (error) {
       console.error('Error loading GTFS from URL:', error);
 
-      // Show error notification with helpful message
-      let errorMessage = 'Failed to load GTFS from URL';
-      if ((error as Error).message) {
-        errorMessage += `: ${(error as Error).message}`;
-      }
-
-      notifications.showError(errorMessage, {
+      notifications.showError('Failed to load feed', {
+        autoHide: false,
         actions: [
           {
-            id: 'help',
-            label: 'Need Help?',
-            handler: () => {
-              // Switch to help tab
-              const helpTab = document.querySelector('[data-tab="help"]');
-              if (helpTab) {
-                (helpTab as HTMLElement).click();
-              }
-            },
+            id: 'more-info',
+            label: 'More Info',
+            handler: () => showURLErrorModal(url, error as Error),
           },
         ],
       });
