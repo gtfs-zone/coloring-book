@@ -312,6 +312,9 @@ export class BrowseNavigation {
       // Capture scroll position before rebuild
       const contentDiv = this.container.querySelector<HTMLElement>('.content');
       const savedScrollTop = contentDiv?.scrollTop ?? 0;
+      const scrollXDiv =
+        this.container.querySelector<HTMLElement>('.overflow-x-auto');
+      const savedScrollLeft = scrollXDiv?.scrollLeft ?? 0;
 
       // Get current page state from PageStateManager
       const pageState = getCurrentPageState();
@@ -344,6 +347,13 @@ export class BrowseNavigation {
           this.container.querySelector<HTMLElement>('.content');
         if (newContent) {
           newContent.scrollTop = savedScrollTop;
+        }
+        if (savedScrollLeft > 0) {
+          const newScrollXDiv =
+            this.container.querySelector<HTMLElement>('.overflow-x-auto');
+          if (newScrollXDiv) {
+            newScrollXDiv.scrollLeft = savedScrollLeft;
+          }
         }
       }
     } catch (error) {
