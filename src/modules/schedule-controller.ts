@@ -947,15 +947,30 @@ export class ScheduleController {
 
     // Update the timetable container
     const container = document.getElementById('schedule-view');
+    console.log('[Schedule:refresh] container found:', !!container);
     if (container) {
       const scrollDiv =
         container.querySelector<HTMLElement>('.overflow-x-auto');
       const savedScrollLeft = scrollDiv?.scrollLeft ?? 0;
+      console.log(
+        '[Schedule:refresh] savedScrollLeft:',
+        savedScrollLeft,
+        'scrollDiv found:',
+        !!scrollDiv
+      );
       container.innerHTML = html;
       const newScrollDiv =
         container.querySelector<HTMLElement>('.overflow-x-auto');
+      console.log(
+        '[Schedule:refresh] after innerHTML, newScrollDiv found:',
+        !!newScrollDiv
+      );
       if (newScrollDiv) {
         newScrollDiv.scrollLeft = savedScrollLeft;
+        console.log(
+          '[Schedule:refresh] scrollLeft after restore:',
+          newScrollDiv.scrollLeft
+        );
       }
     }
   }
