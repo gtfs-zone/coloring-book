@@ -14,6 +14,7 @@ import {
   createGTFSBreadcrumbLookup,
 } from './gtfs-breadcrumb-lookup.js';
 import { GTFSParser } from './gtfs-parser.js';
+import { GTFSRelationships } from './gtfs-relationships.js';
 
 let globalBreadcrumbLookup: GTFSBreadcrumbLookup | null = null;
 
@@ -21,21 +22,44 @@ let globalBreadcrumbLookup: GTFSBreadcrumbLookup | null = null;
  * Initialize the page state system with GTFS integration
  */
 export function initializePageStateWithGTFS(
-  gtfsParser: GTFSParser
+  gtfsParser: GTFSParser,
+  relationships: GTFSRelationships
 ): PageStateManager {
   // Create breadcrumb lookup
   globalBreadcrumbLookup = createGTFSBreadcrumbLookup(gtfsParser.getDatabase());
 
-  // Initialize PageStateManager with default config (URL sync disabled per user request)
+  // Initialize PageStateManager with hash-based URL sync enabled
   const pageStateManager = initPageStateManager({
     enableHistory: true,
     maxHistoryLength: 50,
-    enableUrlSync: false,
-    enableBrowserHistory: false,
+    enableUrlSync: true,
   });
 
   // Set up breadcrumb lookup
   pageStateManager.setBreadcrumbLookup(globalBreadcrumbLookup);
+
+  // Inject state validator so restored hash states are checked against live data
+  pageStateManager.setStateValidator(async (state) => {
+    switch (state.type) {
+      case 'route':
+        return (await relationships.getRouteByIdAsync(state.route_id)) !== null;
+      case 'stop':
+        return (await relationships.getStopByIdAsync(state.stop_id)) !== null;
+      case 'agency':
+        return (
+          (await relationships.getAgencyByIdAsync(state.agency_id)) !== null
+        );
+      case 'service':
+        return (
+          (await relationships.getCalendarForServiceAsync(state.service_id)) !==
+          null
+        );
+      case 'timetable':
+        return (await relationships.getRouteByIdAsync(state.route_id)) !== null;
+      default:
+        return true;
+    }
+  });
 
   return pageStateManager;
 }

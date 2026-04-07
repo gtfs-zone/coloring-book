@@ -84,7 +84,10 @@ export class GTFSEditor {
     this.themeController = new ThemeController();
 
     // Initialize PageStateManager (will be fully set up after GTFS parser initialization)
-    this.pageStateManager = initializePageStateWithGTFS(this.gtfsParser);
+    this.pageStateManager = initializePageStateWithGTFS(
+      this.gtfsParser,
+      this.relationships
+    );
 
     // PatchManager wires the append-only patch log to the parser's database
     this.patchManager = new PatchManager(
