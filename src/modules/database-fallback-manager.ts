@@ -228,6 +228,7 @@ export class DatabaseFallbackManager {
     void showModal({
       title: 'Reset Database',
       body: 'This will permanently delete all stored GTFS data. Make sure to export any important data before proceeding.',
+      dismissable: true,
       actions: [
         {
           label: 'Reset Database',

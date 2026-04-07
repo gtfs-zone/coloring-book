@@ -24,6 +24,7 @@ import { PatchManager } from './modules/patch-manager';
 import { HistoryController } from './modules/history-controller';
 import { TabLockController } from './modules/tab-lock';
 import { humanLabel } from './utils/patch-label';
+import { showAboutModal } from './modules/about-modal';
 import './styles/main.css';
 
 declare global {
@@ -203,6 +204,17 @@ export class GTFSEditor {
 
       // Initialize keyboard shortcuts
       this.keyboardShortcuts.initialize();
+
+      // Wire up about modal
+      const openAbout = () =>
+        showAboutModal(
+          __APP_VERSION__,
+          this.keyboardShortcuts.getShortcutsList()
+        );
+      this.keyboardShortcuts.setShowHelpHandler(openAbout);
+      document
+        .getElementById('about-btn')
+        ?.addEventListener('click', openAbout);
 
       // Initialize theme controller
       this.themeController.initialize();

@@ -251,6 +251,7 @@ export class InteractionHandler {
     showModal({
       title: 'New Stop',
       body: bodyHtml,
+      dismissable: true,
       actions: [
         {
           label: 'Cancel',
