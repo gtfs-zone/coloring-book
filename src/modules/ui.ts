@@ -37,6 +37,7 @@ function showURLErrorModal(url: string, error: Error) {
       <p>Attempted URL: <a href="${url}" target="_blank" rel="noopener" class="link">${escapeHtml(url)}</a></p>
       <p class="text-sm text-base-content/60">Some feeds block direct browser requests (CORS). You can try opening the link above to download the file, then upload it directly using Load → Upload.</p>
     `,
+    dismissable: true,
     actions: [{ label: 'Close', onClick: () => {} }],
   });
 }
@@ -345,6 +346,7 @@ export class UIController {
     showModal({
       title: 'Load from URL',
       body: `<input id="gtfs-url-input" type="url" class="input input-bordered w-full" placeholder="https://example.com/gtfs.zip" />`,
+      dismissable: true,
       actions: [
         { label: 'Cancel', onClick: () => {} },
         {
