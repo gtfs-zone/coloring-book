@@ -64,11 +64,11 @@ The app currently has no awareness of multiple browser tabs. Since IndexedDB is 
 
 **Goal:** Prevent keyboard shortcuts from firing in an inactive tab (the overlay blocks mouse events but not keyboard).
 
-- [ ] Extend the duck-typed `gtfsEditor` interface in `src/modules/keyboard-shortcuts.ts` to include:
+- [x] Extend the duck-typed `gtfsEditor` interface in `src/modules/keyboard-shortcuts.ts` to include:
   ```typescript
   tabLock?: { isActive(): boolean };
   ```
-- [ ] At the top of the `keydown` handler in `bindEventListeners()` (`keyboard-shortcuts.ts:218`), add:
+- [x] At the top of the `keydown` handler in `bindEventListeners()` (`keyboard-shortcuts.ts:218`), add:
   ```typescript
   if (this.gtfsEditor.tabLock && !this.gtfsEditor.tabLock.isActive()) return;
   ```
