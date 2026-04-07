@@ -620,6 +620,10 @@ export class MapController {
   /**
    * Force map resize (for layout changes)
    */
+  public resizeNow(): void {
+    this.map?.resize();
+  }
+
   public forceMapResize(): void {
     if (!this.map) {
       return;

@@ -26,6 +26,7 @@ import { HistoryController } from './modules/history-controller';
 import { TabLockController } from './modules/tab-lock';
 import { humanLabel } from './utils/patch-label';
 import { showAboutModal } from './modules/about-modal';
+import { PanelResizer } from './modules/panel-resizer';
 import './styles/main.css';
 
 declare global {
@@ -97,6 +98,9 @@ export class GTFSEditor {
     );
     this.historyController = new HistoryController();
     this.tabLock = new TabLockController();
+
+    const appContainer = document.querySelector<HTMLElement>('.app-container')!;
+    new PanelResizer(appContainer, this.mapController);
 
     // Inject patchManager so edit operations are recorded
     this.gtfsParser.setPatchManager(this.patchManager);
