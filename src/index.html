@@ -90,6 +90,28 @@
               </svg>
             </label>
 
+            <!-- About / Help -->
+            <button
+              id="about-btn"
+              class="btn btn-ghost btn-sm btn-square"
+              title="About / Help (F1)"
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                class="h-5 w-5"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                />
+              </svg>
+            </button>
+
             <!-- Undo / Redo -->
             <div class="flex items-center gap-1">
               <button
@@ -518,264 +540,6 @@
             class="tab-content overflow-y-auto bg-base-100 border-base-300 p-0"
           >
             <div id="changes-panel"></div>
-          </div>
-
-          <!-- Help Tab -->
-          <input
-            type="radio"
-            name="main_tabs"
-            id="help-tab-radio"
-            class="tab"
-            aria-label="Help"
-          />
-          <div
-            class="tab-content overflow-y-auto bg-base-100 border-base-300 p-0"
-          >
-            <div class="p-4 overflow-y-auto h-full">
-              <div class="text-base-content">
-                <!-- Getting Started Section -->
-                <h3 class="text-lg font-semibold mb-3">🚀 Getting Started</h3>
-                <div class="alert alert-info mb-6">
-                  <h4 class="font-medium mb-2">Quick Start Guide</h4>
-                  <ol class="text-sm space-y-2 list-decimal list-inside">
-                    <li>
-                      <strong>Create a new feed:</strong> Click "New" to start
-                      with sample GTFS data
-                    </li>
-                    <li>
-                      <strong>Upload existing data:</strong> Click "Upload" or
-                      drag & drop a GTFS ZIP file
-                    </li>
-                    <li>
-                      <strong>Explore your data:</strong> Use the "Browse" tab
-                      to navigate agencies, routes, trips, and stops
-                    </li>
-                    <li>
-                      <strong>Edit files:</strong> Click any file in the "Files"
-                      tab to edit with syntax highlighting
-                    </li>
-                    <li>
-                      <strong>Visualize on map:</strong> See your transit data
-                      plotted automatically on the map
-                    </li>
-                    <li>
-                      <strong>Export:</strong> Click "Export" to download your
-                      modified GTFS feed
-                    </li>
-                  </ol>
-                </div>
-
-                <!-- Features Section -->
-                <h3 class="text-lg font-semibold mb-3">✨ Features</h3>
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-                  <div class="card card-bordered bg-base-200 p-3">
-                    <h4 class="font-medium mb-2">🗺️ Interactive Map</h4>
-                    <p class="text-sm opacity-70">
-                      Visualize stops, routes, and shapes on an interactive map.
-                      Search for specific stops or routes using the map search.
-                    </p>
-                  </div>
-                  <div class="card card-bordered bg-base-200 p-3">
-                    <h4 class="font-medium mb-2">📝 Smart Editor</h4>
-                    <p class="text-sm opacity-70">
-                      Edit GTFS files with CSV syntax highlighting. Switch
-                      between text and table views for easier editing.
-                    </p>
-                  </div>
-                  <div class="card card-bordered bg-base-200 p-3">
-                    <h4 class="font-medium mb-2">🔍 Data Explorer</h4>
-                    <p class="text-sm opacity-70">
-                      Navigate your GTFS data hierarchically: Home → Routes →
-                      Trips → Stop Times. Search and filter objects.
-                    </p>
-                  </div>
-                  <div class="card card-bordered bg-base-200 p-3">
-                    <h4 class="font-medium mb-2">✅ Validation</h4>
-                    <p class="text-sm opacity-70">
-                      Automatic GTFS validation with detailed error reports,
-                      warnings, and feed statistics.
-                    </p>
-                  </div>
-                </div>
-
-                <!-- GTFS Resources Section -->
-                <h3 class="text-lg font-semibold mb-3">📚 GTFS Resources</h3>
-                <div class="alert alert-success mb-6">
-                  <h4 class="font-medium mb-3">Official GTFS Documentation</h4>
-                  <div class="space-y-2 text-sm">
-                    <div>
-                      <a
-                        href="https://gtfs.org/"
-                        target="_blank"
-                        class="link link-primary"
-                        >📖 GTFS.org - Official specification</a
-                      >
-                    </div>
-                    <div>
-                      <a
-                        href="https://gtfs.org/reference/"
-                        target="_blank"
-                        class="link link-primary"
-                        >📋 GTFS Reference - File formats and fields</a
-                      >
-                    </div>
-                    <div>
-                      <a
-                        href="https://gtfs.org/examples/"
-                        target="_blank"
-                        class="link link-primary"
-                        >💡 GTFS Examples - Sample feeds and use cases</a
-                      >
-                    </div>
-                    <div>
-                      <a
-                        href="https://gtfs.org/best-practices/"
-                        target="_blank"
-                        class="link link-primary"
-                        >⭐ GTFS Best Practices - Recommendations</a
-                      >
-                    </div>
-                  </div>
-                </div>
-
-                <!-- Sample Data Section -->
-                <h3 class="text-lg font-semibold mb-3">🗃️ Sample GTFS Feeds</h3>
-                <div class="alert alert-warning mb-6">
-                  <h4 class="font-medium mb-3">Try These Sample Feeds</h4>
-                  <div class="space-y-2 text-sm">
-                    <div>
-                      <a
-                        href="https://developers.google.com/transit/gtfs/examples/gtfs-feed"
-                        target="_blank"
-                        class="link link-primary"
-                        >🚌 Google Sample Feed - Simple bus system</a
-                      >
-                    </div>
-                    <div>
-                      <a
-                        href="https://www.transitland.org/"
-                        target="_blank"
-                        class="link link-primary"
-                        >🌍 Transitland - Real-world feeds database</a
-                      >
-                    </div>
-                    <div>
-                      <a
-                        href="https://openmobilitydata.org/"
-                        target="_blank"
-                        class="link link-primary"
-                        >📊 OpenMobilityData - GTFS feeds worldwide</a
-                      >
-                    </div>
-                  </div>
-                </div>
-
-                <!-- Keyboard Shortcuts Section -->
-                <h3 class="text-lg font-semibold mb-3">
-                  ⌨️ Keyboard Shortcuts
-                </h3>
-                <div class="card bg-base-200 p-4 mb-6">
-                  <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <h4 class="font-medium mb-2">File Operations</h4>
-                      <ul class="text-sm space-y-1">
-                        <li><kbd class="kbd kbd-sm">Ctrl+N</kbd> New feed</li>
-                        <li>
-                          <kbd class="kbd kbd-sm">Ctrl+O</kbd> Upload file
-                        </li>
-                        <li>
-                          <kbd class="kbd kbd-sm">Ctrl+S</kbd> Save current file
-                        </li>
-                        <li>
-                          <kbd class="kbd kbd-sm">Ctrl+E</kbd> Export feed
-                        </li>
-                      </ul>
-                    </div>
-                    <div>
-                      <h4 class="font-medium mb-2">Navigation</h4>
-                      <ul class="text-sm space-y-1">
-                        <li>
-                          <kbd class="kbd kbd-sm">Tab</kbd> Switch between
-                          panels
-                        </li>
-                        <li>
-                          <kbd class="kbd kbd-sm">Ctrl+F</kbd> Search on map
-                        </li>
-                        <li>
-                          <kbd class="kbd kbd-sm">Esc</kbd> Clear search/close
-                          dialogs
-                        </li>
-                        <li><kbd class="kbd kbd-sm">F1</kbd> Show this help</li>
-                      </ul>
-                    </div>
-                  </div>
-                </div>
-
-                <!-- File Format Guide -->
-                <h3 class="text-lg font-semibold mb-3">📄 GTFS File Guide</h3>
-                <div class="space-y-3 mb-6">
-                  <div class="card bg-base-200 border border-base-300 p-3">
-                    <h4 class="font-medium mb-1">Required Files</h4>
-                    <div class="text-sm opacity-70 grid grid-cols-2 gap-1">
-                      <div>• agency.txt - Transit agencies</div>
-                      <div>• routes.txt - Transit routes</div>
-                      <div>• trips.txt - Individual trips</div>
-                      <div>• stops.txt - Stop locations</div>
-                      <div>• stop_times.txt - Trip schedules</div>
-                      <div>• calendar.txt - Service dates</div>
-                    </div>
-                  </div>
-                  <div class="card bg-base-200 border border-base-300 p-3">
-                    <h4 class="font-medium mb-1">Optional Files</h4>
-                    <div class="text-sm opacity-70 grid grid-cols-2 gap-1">
-                      <div>• shapes.txt - Route geometry</div>
-                      <div>• calendar_dates.txt - Service exceptions</div>
-                      <div>• fare_attributes.txt - Fare information</div>
-                      <div>• fare_rules.txt - Fare rules</div>
-                      <div>• frequencies.txt - Headway-based service</div>
-                      <div>• transfers.txt - Transfer rules</div>
-                    </div>
-                  </div>
-                </div>
-
-                <!-- Tips Section -->
-                <h3 class="text-lg font-semibold mb-3">💡 Tips & Tricks</h3>
-                <div class="alert mb-6">
-                  <ul class="text-sm space-y-2">
-                    <li>
-                      • <strong>Large files:</strong> Use the table view for
-                      easier editing of large CSV files
-                    </li>
-                    <li>
-                      • <strong>Validation:</strong> Check the Info tab for
-                      validation results and feed statistics
-                    </li>
-                    <li>
-                      • <strong>Map navigation:</strong> Click on stops or
-                      routes in the Browse tab to highlight them on the map
-                    </li>
-                    <li>
-                      • <strong>Search:</strong> Use the search bar on the map
-                      or in the Browse tab to find specific data
-                    </li>
-                    <li>
-                      • <strong>Export format:</strong> Exported files maintain
-                      the original structure and can be used with any
-                      GTFS-compatible software
-                    </li>
-                  </ul>
-                </div>
-
-                <!-- Support Section -->
-                <div class="mt-6 pt-4 border-t border-base-300">
-                  <h4 class="font-medium mb-2">Need Help?</h4>
-                  <p class="text-sm opacity-70">
-                    edit.gtfs.zone is an open-source project. Visit our GitHub
-                    repository for documentation, examples, and support.
-                  </p>
-                </div>
-              </div>
-            </div>
           </div>
         </div>
       </div>

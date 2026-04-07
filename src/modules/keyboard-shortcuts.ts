@@ -35,6 +35,7 @@ export class KeyboardShortcuts {
     { handler: (e?: Event) => void; description: string }
   >;
   private initialized: boolean;
+  private showHelpHandler?: () => void;
 
   constructor(gtfsEditor: {
     uiController: {
@@ -175,14 +176,6 @@ export class KeyboardShortcuts {
       'Switch to Info tab'
     );
 
-    this.addShortcut(
-      'ctrl+5',
-      () => {
-        this.switchToTab('help');
-      },
-      'Switch to Help tab'
-    );
-
     // Undo / redo
     this.addShortcut(
       'ctrl+z',
@@ -287,12 +280,12 @@ export class KeyboardShortcuts {
     return parts.join('+');
   }
 
+  setShowHelpHandler(fn: () => void): void {
+    this.showHelpHandler = fn;
+  }
+
   showHelp() {
-    // Switch to help tab
-    const helpTab = document.querySelector('[data-tab="help"]');
-    if (helpTab && !helpTab.classList.contains('active')) {
-      (helpTab as HTMLElement).click();
-    }
+    this.showHelpHandler?.();
   }
 
   focusMapSearch() {
