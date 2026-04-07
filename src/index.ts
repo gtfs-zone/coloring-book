@@ -16,6 +16,7 @@ import { ThemeController } from './modules/theme-controller';
 import { notifications } from './modules/notification-system';
 import {
   initializePageStateWithGTFS,
+  processURLCommands,
   updateBreadcrumbLookup,
 } from './modules/page-state-integration';
 import { PageStateManager } from './modules/page-state-manager';
@@ -237,8 +238,8 @@ export class GTFSEditor {
       // Initialize PageStateManager from URL
       await this.pageStateManager.initializeFromURL();
 
-      // Check for URL parameters (legacy support)
-      await this.uiController.checkURLParams();
+      // Process URL commands (e.g. #load=<url>)
+      processURLCommands(this.uiController);
 
       // If no existing data, initialize an empty feed so the invariant "there is always a feed" holds.
       const hasExistingRows = this.gtfsParser
