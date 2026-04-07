@@ -86,6 +86,7 @@ export class BrowseNavigation {
   public searchQuery: string = '';
   private container: HTMLElement | null = null;
   private isLoading: boolean = false;
+  private lastRenderedPageState: PageState | null = null;
   private contentRenderer: PageContentRenderer | null = null;
   private patchManager: {
     recordUpdate: (
@@ -308,8 +309,17 @@ export class BrowseNavigation {
     }
 
     try {
+      // Capture scroll position before rebuild
+      const contentDiv = this.container.querySelector<HTMLElement>('.content');
+      const savedScrollTop = contentDiv?.scrollTop ?? 0;
+
       // Get current page state from PageStateManager
       const pageState = getCurrentPageState();
+
+      const isSamePage =
+        this.lastRenderedPageState !== null &&
+        JSON.stringify(this.lastRenderedPageState) ===
+          JSON.stringify(pageState);
 
       // Get breadcrumbs from PageStateManager
       const breadcrumbs = await getPageStateManager().getBreadcrumbs();
@@ -327,6 +337,15 @@ export class BrowseNavigation {
       `;
 
       this.attachEventListeners();
+
+      this.lastRenderedPageState = pageState;
+      if (isSamePage) {
+        const newContent =
+          this.container.querySelector<HTMLElement>('.content');
+        if (newContent) {
+          newContent.scrollTop = savedScrollTop;
+        }
+      }
     } catch (error) {
       console.error('Error rendering browse navigation:', error);
       this.renderErrorState();
