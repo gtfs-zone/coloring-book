@@ -121,11 +121,16 @@ export type NavigationEvent = {
 
 /**
  * Configuration options for page state manager
- * Simplified: URL sync disabled for cleaner user experience
  */
 export type PageStateManagerConfig = {
   enableHistory: boolean;
   maxHistoryLength: number;
   enableUrlSync: boolean;
-  enableBrowserHistory: boolean;
 };
+
+/**
+ * Async validator that checks whether a non-home page state refers to an
+ * object that actually exists in the current feed.  Returns true if the state
+ * is valid, false if the object is missing (caller falls back to home).
+ */
+export type StateValidator = (state: PageState) => Promise<boolean>;

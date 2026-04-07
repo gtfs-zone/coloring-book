@@ -342,7 +342,7 @@ export class UIController {
     }
   }
 
-  showFromURLModal() {
+  showFromURLModal(initialUrl?: string) {
     showModal({
       title: 'Load from URL',
       body: `<input id="gtfs-url-input" type="url" class="input input-bordered w-full" placeholder="https://example.com/gtfs.zip" />`,
@@ -369,6 +369,9 @@ export class UIController {
         const input = document.getElementById(
           'gtfs-url-input'
         ) as HTMLInputElement;
+        if (initialUrl) {
+          input.value = initialUrl;
+        }
         input.focus();
         input.addEventListener('keydown', (e) => {
           if (e.key === 'Enter') {
@@ -1242,32 +1245,6 @@ export class UIController {
         `Failed to export GTFS data: ${(error as Error).message}`
       );
     }
-  }
-
-  async checkURLParams() {
-    // Check for URL parameters to load GTFS data
-
-    // Check query parameter first: ?url=...
-    const searchParams = new URLSearchParams(window.location.search);
-    const urlParam = searchParams.get('url');
-    if (urlParam) {
-      await this.loadGTFSFromURL(urlParam);
-      return;
-    }
-
-    // Check hash parameter: #data=url:...
-    const hash = window.location.hash.substring(1);
-    if (hash.startsWith('data=')) {
-      const dataParam = hash.substring(5);
-
-      if (dataParam.startsWith('url:')) {
-        // Load from URL
-        const url = dataParam.substring(4);
-        await this.loadGTFSFromURL(url);
-      }
-      // Future: support for base64, github, etc.
-    }
-    // Production: No default feed loading - page starts empty
   }
 
   /**
