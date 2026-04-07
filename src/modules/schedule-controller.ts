@@ -939,6 +939,18 @@ export class ScheduleController {
       direction_id: this.currentDirectionId,
     });
 
+    // Save scroll position BEFORE the async renderSchedule call.
+    // Reading it after the await is too late — the browser resets scrollLeft
+    // to 0 during the DB round-trips (focus/layout events fire during yields).
+    const containerBefore = document.getElementById('schedule-view');
+    const scrollDivBefore =
+      containerBefore?.querySelector<HTMLElement>('.overflow-x-auto');
+    const savedScrollLeft = scrollDivBefore?.scrollLeft ?? 0;
+    console.log(
+      '[Schedule:refresh] savedScrollLeft (before async):',
+      savedScrollLeft
+    );
+
     const html = await this.renderSchedule(
       this.currentRouteId,
       this.currentServiceId,
@@ -947,25 +959,11 @@ export class ScheduleController {
 
     // Update the timetable container
     const container = document.getElementById('schedule-view');
-    console.log('[Schedule:refresh] container found:', !!container);
     if (container) {
-      const scrollDiv =
-        container.querySelector<HTMLElement>('.overflow-x-auto');
-      const savedScrollLeft = scrollDiv?.scrollLeft ?? 0;
-      console.log(
-        '[Schedule:refresh] savedScrollLeft:',
-        savedScrollLeft,
-        'scrollDiv found:',
-        !!scrollDiv
-      );
       container.innerHTML = html;
       const newScrollDiv =
         container.querySelector<HTMLElement>('.overflow-x-auto');
-      console.log(
-        '[Schedule:refresh] after innerHTML, newScrollDiv found:',
-        !!newScrollDiv
-      );
-      if (newScrollDiv) {
+      if (newScrollDiv && savedScrollLeft > 0) {
         newScrollDiv.scrollLeft = savedScrollLeft;
         console.log(
           '[Schedule:refresh] scrollLeft after restore:',
