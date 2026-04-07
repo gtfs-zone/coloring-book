@@ -948,7 +948,15 @@ export class ScheduleController {
     // Update the timetable container
     const container = document.getElementById('schedule-view');
     if (container) {
+      const scrollDiv =
+        container.querySelector<HTMLElement>('.overflow-x-auto');
+      const savedScrollLeft = scrollDiv?.scrollLeft ?? 0;
       container.innerHTML = html;
+      const newScrollDiv =
+        container.querySelector<HTMLElement>('.overflow-x-auto');
+      if (newScrollDiv) {
+        newScrollDiv.scrollLeft = savedScrollLeft;
+      }
     }
   }
 
