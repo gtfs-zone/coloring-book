@@ -324,6 +324,20 @@ export class BrowseNavigation {
         JSON.stringify(this.lastRenderedPageState) ===
           JSON.stringify(pageState);
 
+      console.log(
+        '[BrowseNav:render] ENTER',
+        'pageState:',
+        JSON.stringify(pageState),
+        'isSamePage:',
+        isSamePage,
+        'scrollXDiv:',
+        !!scrollXDiv,
+        'savedScrollLeft:',
+        savedScrollLeft,
+        'savedScrollTop:',
+        savedScrollTop
+      );
+
       // Get breadcrumbs from PageStateManager
       const breadcrumbs = await getPageStateManager().getBreadcrumbs();
 
@@ -351,9 +365,23 @@ export class BrowseNavigation {
         if (savedScrollLeft > 0) {
           const newScrollXDiv =
             this.container.querySelector<HTMLElement>('.overflow-x-auto');
+          console.log(
+            '[BrowseNav:render] restoring scrollLeft:',
+            savedScrollLeft,
+            'newScrollXDiv found:',
+            !!newScrollXDiv
+          );
           if (newScrollXDiv) {
             newScrollXDiv.scrollLeft = savedScrollLeft;
+            console.log(
+              '[BrowseNav:render] scrollLeft after restore:',
+              newScrollXDiv.scrollLeft
+            );
           }
+        } else {
+          console.log(
+            '[BrowseNav:render] NOT restoring scrollLeft (savedScrollLeft=0 or not isSamePage)'
+          );
         }
       }
     } catch (error) {
