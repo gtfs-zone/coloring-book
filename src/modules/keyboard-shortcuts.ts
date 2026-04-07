@@ -26,6 +26,9 @@ export class KeyboardShortcuts {
       undo: () => Promise<void>;
       redo: () => Promise<void>;
     };
+    tabLock?: {
+      isActive(): boolean;
+    };
   };
   private shortcuts: Map<
     string,
@@ -57,6 +60,9 @@ export class KeyboardShortcuts {
     patchManager?: {
       undo: () => Promise<void>;
       redo: () => Promise<void>;
+    };
+    tabLock?: {
+      isActive(): boolean;
     };
   }) {
     this.gtfsEditor = gtfsEditor;
@@ -215,6 +221,9 @@ export class KeyboardShortcuts {
 
   bindEventListeners() {
     document.addEventListener('keydown', (e: KeyboardEvent) => {
+      if (this.gtfsEditor.tabLock && !this.gtfsEditor.tabLock.isActive()) {
+        return;
+      }
       const key = this.getKeyString(e);
       const shortcut = this.shortcuts.get(key);
 
