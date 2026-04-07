@@ -11,6 +11,7 @@ import {
   BreadcrumbItem,
   NavigationEvent,
   PageStateManagerConfig,
+  StateValidator,
   isPageState,
 } from '../types/page-state.js';
 import { CONFIG } from '../config.js';
@@ -40,19 +41,22 @@ export class PageStateManager {
   private eventHandlers: NavigationEventHandler[] = [];
   private config: PageStateManagerConfig;
   private breadcrumbLookup: BreadcrumbLookup | null = null;
+  private stateValidator: StateValidator | null = null;
+  private suppressHashUpdate = false;
 
   constructor(config: Partial<PageStateManagerConfig> = {}) {
     this.config = {
       enableHistory: true,
       maxHistoryLength: CONFIG.MAX_NAVIGATION_HISTORY,
       enableUrlSync: false,
-      enableBrowserHistory: false,
       ...config,
     };
 
-    // Set up browser history integration if enabled
-    if (this.config.enableBrowserHistory && typeof window !== 'undefined') {
-      window.addEventListener('popstate', this.handlePopState.bind(this));
+    // Set up hash-based URL sync if enabled
+    if (this.config.enableUrlSync && typeof window !== 'undefined') {
+      window.addEventListener('hashchange', () => {
+        void this.handleHashChange();
+      });
     }
   }
 
@@ -61,6 +65,14 @@ export class PageStateManager {
    */
   setBreadcrumbLookup(lookup: BreadcrumbLookup): void {
     this.breadcrumbLookup = lookup;
+  }
+
+  /**
+   * Set the async validator used to check whether a restored page state still
+   * refers to an existing object.  Returns false → fall back to home.
+   */
+  setStateValidator(fn: StateValidator): void {
+    this.stateValidator = fn;
   }
 
   /**
@@ -100,10 +112,15 @@ export class PageStateManager {
       }
     }
 
-    // Update browser URL if enabled
+    // Update browser hash if enabled
     if (this.config.enableUrlSync && typeof window !== 'undefined') {
-      const url = this.pageStateToURL(newState);
-      window.history.pushState({ pageState: newState }, '', url);
+      const hash = this.pageStateToURL(newState);
+      const currentHash = window.location.hash.slice(1);
+      if (hash !== currentHash) {
+        this.suppressHashUpdate = true;
+        window.location.hash = hash;
+        // suppressHashUpdate is reset in handleHashChange once the event fires
+      }
     }
 
     // Notify event handlers
@@ -192,19 +209,39 @@ export class PageStateManager {
   }
 
   /**
-   * Initialize from URL (call this on page load)
+   * Initialize from URL hash (call this on page load).
+   * Parses the hash, skipping any `load=` command param (handled separately).
+   * Validates the parsed state; falls back to home if the object doesn't exist.
+   * Sets currentState directly without dispatching navigation events.
    */
   async initializeFromURL(): Promise<void> {
     if (typeof window === 'undefined') {
       return;
     }
 
-    const pageState = this.urlToPageState(
-      window.location.pathname + window.location.search
-    );
-    if (pageState) {
-      this.currentState = pageState;
+    const rawHash = window.location.hash.slice(1);
+    const params = new URLSearchParams(rawHash);
+    params.delete('load'); // `load=` is a command, not state
+    const cleanHash = params.toString();
+
+    const candidate = this.urlToPageState(cleanHash);
+
+    if (candidate.type !== 'home' && this.stateValidator) {
+      const valid = await this.stateValidator(candidate);
+      if (!valid) {
+        console.warn(
+          '[PageStateManager] initializeFromURL: object not found in current feed, falling back to home'
+        );
+        this.currentState = { type: 'home' };
+        return;
+      }
     }
+
+    this.currentState = candidate;
+    console.log(
+      '[PageStateManager] initializeFromURL: restored state',
+      candidate
+    );
   }
 
   /**
@@ -387,22 +424,23 @@ export class PageStateManager {
   }
 
   /**
-   * Convert page state to URL
+   * Convert page state to a URL hash string (no leading `#`).
+   * Returns empty string for home state (clears the hash).
    */
-  private pageStateToURL(pageState: PageState): string {
+  pageStateToURL(pageState: PageState): string {
     const params = new URLSearchParams();
 
     switch (pageState.type) {
       case 'home':
-        return '/';
+        return '';
 
       case 'agency':
         params.set('agency', pageState.agency_id);
-        return `/?${params.toString()}`;
+        return params.toString();
 
       case 'route':
         params.set('route', pageState.route_id);
-        return `/?${params.toString()}`;
+        return params.toString();
 
       case 'timetable':
         params.set('route', pageState.route_id);
@@ -410,112 +448,111 @@ export class PageStateManager {
         if (pageState.direction_id) {
           params.set('direction', pageState.direction_id);
         }
-        return `/?${params.toString()}`;
+        return params.toString();
 
       case 'stop':
         params.set('stop', pageState.stop_id);
-        return `/?${params.toString()}`;
+        return params.toString();
 
       case 'service':
         params.set('service', pageState.service_id);
-        return `/?${params.toString()}`;
+        return params.toString();
 
       default:
-        return '/';
+        return '';
     }
   }
 
   /**
-   * Convert URL to page state
+   * Convert a hash string (no leading `#`) to a PageState.
+   * Parses with URLSearchParams.  Priority: stop → service (no route) →
+   * timetable (route + service) → route → agency → home.
+   * Always returns a valid PageState (never null).
    */
-  private urlToPageState(url: string): PageState | null {
-    try {
-      const urlObj = new URL(url, 'http://localhost');
-      const params = urlObj.searchParams;
+  urlToPageState(hash: string): PageState {
+    const params = new URLSearchParams(hash);
 
-      // Check for different page types based on URL parameters
-      if (params.has('stop')) {
-        return {
-          type: 'stop',
-          stop_id: params.get('stop')!,
-        };
-      }
-
-      if (params.has('service') && !params.has('route')) {
-        return {
-          type: 'service',
-          service_id: params.get('service')!,
-        };
-      }
-
-      if (params.has('agency')) {
-        const agency_id = params.get('agency')!;
-
-        if (params.has('route')) {
-          const route_id = params.get('route')!;
-
-          if (params.has('service')) {
-            const service_id = params.get('service')!;
-            const direction_id = params.get('direction') || undefined;
-
-            return {
-              type: 'timetable',
-              route_id,
-              service_id,
-              ...(direction_id && { direction_id }),
-            };
-          }
-
-          return {
-            type: 'route',
-            route_id,
-          };
-        }
-
-        return {
-          type: 'agency',
-          agency_id,
-        };
-      }
-
-      // Default to home if no recognized parameters
-      return { type: 'home' };
-    } catch (error) {
-      console.warn('Failed to parse URL to page state:', error);
-      return null;
+    if (params.has('stop')) {
+      return { type: 'stop', stop_id: params.get('stop')! };
     }
-  }
 
-  /**
-   * Handle browser popstate event
-   */
-  private handlePopState(event: PopStateEvent): void {
-    if (event.state?.pageState && isPageState(event.state.pageState)) {
-      this.currentState = event.state.pageState;
+    if (params.has('service') && !params.has('route')) {
+      return { type: 'service', service_id: params.get('service')! };
+    }
 
-      // Trigger navigation event without adding to history (to avoid loops)
-      const navigationEvent: NavigationEvent = {
-        from: this.currentState, // This is a limitation - we don't know the previous state
-        to: event.state.pageState,
-        timestamp: Date.now(),
+    if (params.has('route') && params.has('service')) {
+      const direction_id = params.get('direction') ?? undefined;
+      return {
+        type: 'timetable',
+        route_id: params.get('route')!,
+        service_id: params.get('service')!,
+        ...(direction_id !== undefined && { direction_id }),
       };
+    }
 
-      this.eventHandlers.forEach((handler) => {
-        try {
-          handler(navigationEvent);
-        } catch (error) {
-          console.error('Error in navigation event handler:', error);
-        }
-      });
-    } else {
-      // Fallback to URL parsing
-      const pageState = this.urlToPageState(
-        window.location.pathname + window.location.search
-      );
-      if (pageState) {
-        this.currentState = pageState;
+    if (params.has('route')) {
+      return { type: 'route', route_id: params.get('route')! };
+    }
+
+    if (params.has('agency')) {
+      return { type: 'agency', agency_id: params.get('agency')! };
+    }
+
+    return { type: 'home' };
+  }
+
+  /**
+   * Handle browser hashchange event (user navigated back/forward or changed hash manually).
+   * Ignored when the change was triggered programmatically by setPageState.
+   */
+  private async handleHashChange(): Promise<void> {
+    if (this.suppressHashUpdate) {
+      this.suppressHashUpdate = false;
+      return;
+    }
+
+    const rawHash = window.location.hash.slice(1);
+    const params = new URLSearchParams(rawHash);
+    params.delete('load');
+    const cleanHash = params.toString();
+
+    let newState = this.urlToPageState(cleanHash);
+
+    if (newState.type !== 'home' && this.stateValidator) {
+      const valid = await this.stateValidator(newState);
+      if (!valid) {
+        console.warn(
+          '[PageStateManager] hashchange: object not found, falling back to home'
+        );
+        newState = { type: 'home' };
       }
     }
+
+    const previousState = this.currentState;
+    this.currentState = { ...newState };
+
+    const navigationEvent: NavigationEvent = {
+      from: previousState,
+      to: newState,
+      timestamp: Date.now(),
+    };
+
+    if (this.config.enableHistory) {
+      this.navigationHistory.push(navigationEvent);
+      if (this.navigationHistory.length > this.config.maxHistoryLength) {
+        this.navigationHistory = this.navigationHistory.slice(
+          -this.config.maxHistoryLength
+        );
+      }
+    }
+
+    this.eventHandlers.forEach((handler) => {
+      try {
+        handler(navigationEvent);
+      } catch (error) {
+        console.error('Error in navigation event handler:', error);
+      }
+    });
   }
 }
 
