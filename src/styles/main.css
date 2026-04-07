@@ -17,6 +17,10 @@
   }
 }
 
+.app-container {
+  grid-template-columns: 1fr var(--panel-width, 650px);
+}
+
 @layer components {
   /* File list styles using DaisyUI menu */
   .file-required {
