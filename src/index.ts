@@ -22,6 +22,7 @@ import { PageStateManager } from './modules/page-state-manager';
 import { navigateToTimetable } from './modules/navigation-actions';
 import { PatchManager } from './modules/patch-manager';
 import { HistoryController } from './modules/history-controller';
+import { TabLockController } from './modules/tab-lock';
 import { humanLabel } from './utils/patch-label';
 import './styles/main.css';
 
@@ -51,6 +52,7 @@ export class GTFSEditor {
   public pageStateManager: PageStateManager;
   public patchManager: PatchManager;
   public historyController: HistoryController;
+  public tabLock: TabLockController;
 
   constructor() {
     this.gtfsParser = new GTFSParser();
@@ -89,6 +91,7 @@ export class GTFSEditor {
       this.gtfsParser
     );
     this.historyController = new HistoryController();
+    this.tabLock = new TabLockController();
 
     // Inject patchManager so edit operations are recorded
     this.gtfsParser.setPatchManager(this.patchManager);
@@ -107,6 +110,9 @@ export class GTFSEditor {
 
   private async init(): Promise<void> {
     try {
+      // Claim tab lock before any module initialization
+      this.tabLock.init();
+
       // Display version in header
       this.displayVersion();
 
