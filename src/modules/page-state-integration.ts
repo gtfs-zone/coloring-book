@@ -15,6 +15,7 @@ import {
 } from './gtfs-breadcrumb-lookup.js';
 import { GTFSParser } from './gtfs-parser.js';
 import { GTFSRelationships } from './gtfs-relationships.js';
+import { UIController } from './ui.js';
 
 let globalBreadcrumbLookup: GTFSBreadcrumbLookup | null = null;
 
@@ -62,6 +63,27 @@ export function initializePageStateWithGTFS(
   });
 
   return pageStateManager;
+}
+
+/**
+ * Process URL commands (e.g. #load=<url>) after initializeFromURL().
+ * Consumes recognized commands by removing them from the hash.
+ */
+export function processURLCommands(uiController: UIController): void {
+  const rawHash = window.location.hash.slice(1);
+  const params = new URLSearchParams(rawHash);
+  const loadUrl = params.get('load');
+
+  if (loadUrl) {
+    params.delete('load');
+    const remaining = params.toString();
+    window.location.hash = remaining; // suppress normal hash-change nav; guard in PSM handles it
+    console.log(
+      '[page-state-integration] processURLCommands: showing load modal for',
+      loadUrl
+    );
+    uiController.showFromURLModal(loadUrl);
+  }
 }
 
 /**
