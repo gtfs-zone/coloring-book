@@ -1,7 +1,7 @@
 import { MapController } from './map-controller';
 
 const MIN_WIDTH = 300;
-const MAX_WIDTH = 900;
+const MAX_WIDTH = 1500;
 const DEFAULT_WIDTH = 650;
 
 export class PanelResizer {
