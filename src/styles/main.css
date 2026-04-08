@@ -10,6 +10,11 @@
     night;
 }
 
+html,
+body {
+  overscroll-behavior: none;
+}
+
 /* Minimal custom utilities */
 @layer utilities {
   .h-15 {
