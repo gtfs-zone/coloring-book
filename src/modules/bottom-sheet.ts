@@ -22,7 +22,16 @@ export class BottomSheetController {
     this.setupDragHandle();
     this.setupDock(tabManager);
     this.setSnap('closed', false);
-    this.syncDockHeight();
+
+    const dock = document.getElementById('mobile-dock');
+    if (dock) {
+      new ResizeObserver(() => {
+        const h = dock.getBoundingClientRect().height;
+        if (h > 0) {
+          document.documentElement.style.setProperty('--dock-height', `${h}px`);
+        }
+      }).observe(dock);
+    }
 
     // Re-check on resize (e.g. orientation change)
     window.addEventListener('resize', () => {
@@ -30,21 +39,9 @@ export class BottomSheetController {
         panel.style.removeProperty('height');
         panel.classList.remove('sheet-full', 'sheet-half');
       } else {
-        this.syncDockHeight();
         this.setSnap(this.snap, false);
       }
     });
-  }
-
-  private syncDockHeight(): void {
-    const dock = document.getElementById('mobile-dock');
-    if (!dock) {
-      return;
-    }
-    const h = dock.getBoundingClientRect().height;
-    if (h > 0) {
-      document.documentElement.style.setProperty('--dock-height', `${h}px`);
-    }
   }
 
   private setupDragHandle(): void {
@@ -84,8 +81,10 @@ export class BottomSheetController {
       lastTime = now;
 
       const delta = startY - clientY; // positive = dragging up
+      const maxH =
+        (window.visualViewport?.height ?? window.innerHeight) * FULL_VH;
       const newHeight = Math.min(
-        window.innerHeight * FULL_VH,
+        maxH,
         Math.max(CLOSED_PX, startHeight + delta)
       );
       this.panel.style.height = `${newHeight}px`;
@@ -136,8 +135,9 @@ export class BottomSheetController {
   private resolveSnap(velocity: number): Snap {
     const VELOCITY_THRESHOLD = 0.4; // px/ms
     const h = this.panel.getBoundingClientRect().height;
-    const halfH = window.innerHeight * HALF_VH;
-    const fullH = window.innerHeight * FULL_VH;
+    const vph = window.visualViewport?.height ?? window.innerHeight;
+    const halfH = vph * HALF_VH;
+    const fullH = vph * FULL_VH;
 
     if (velocity < -VELOCITY_THRESHOLD || h < halfH / 2) {
       // Strongly downward or very low — dismiss
@@ -167,11 +167,11 @@ export class BottomSheetController {
     }
     const h =
       snap === 'closed'
-        ? CLOSED_PX
+        ? '0px'
         : snap === 'half'
-          ? window.innerHeight * HALF_VH
-          : window.innerHeight * FULL_VH;
-    this.panel.style.height = `${h}px`;
+          ? `${HALF_VH * 100}dvh`
+          : `${FULL_VH * 100}dvh`;
+    this.panel.style.height = h;
     this.panel.classList.toggle('sheet-full', snap === 'full');
     this.panel.classList.toggle('sheet-half', snap === 'half');
     if (snap === 'closed') {
