@@ -340,10 +340,17 @@ export class StopViewController {
       });
     });
 
-    // Delete stop button
-    const deleteBtn = container.querySelector('.delete-stop-btn');
-    deleteBtn?.addEventListener('click', async () => {
-      const stop_id = deleteBtn.getAttribute('data-stop-id');
+    // Delete stop button — use event delegation so clicks on the SVG child
+    // element are caught correctly and the listener doesn't depend on the
+    // button being present at attach time.
+    container.addEventListener('click', async (e) => {
+      const btn = (e.target as Element).closest('.delete-stop-btn');
+      if (!btn) {
+        return;
+      }
+      console.log('[StopViewController] Delete button clicked');
+      const stop_id = btn.getAttribute('data-stop-id');
+      console.log('[StopViewController] stop_id from button:', stop_id);
       if (stop_id) {
         await this.dependencies.onDeleteStop(stop_id);
       }
