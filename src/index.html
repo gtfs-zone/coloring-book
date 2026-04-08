@@ -2,7 +2,10 @@
 <html lang="en" data-theme="dark">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover"
+    />
     <title>edit.gtfs.zone - GTFS Transit Data Editor</title>
     <link rel="icon" type="image/x-icon" href="icons/favicon.ico" />
     <link
@@ -44,7 +47,7 @@
                 <img src="logo.svg" alt="edit.gtfs.zone logo" />
               </div>
             </div>
-            <div class="flex flex-col">
+            <div class="flex flex-col hidden md:flex">
               <h1 class="text-xl font-bold">
                 <span class="text-primary">edit</span>.gtfs.zone<sup
                   id="app-version"
@@ -175,15 +178,15 @@
                     stroke-linecap="round"
                     stroke-linejoin="round"
                     stroke-width="2"
-                    d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10"
+                    d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
                   />
                 </svg>
-                Load
+                <span class="hidden md:inline">Load</span>
               </div>
               <ul
                 id="load-dropdown"
                 tabindex="0"
-                class="dropdown-content z-[1] menu p-2 shadow bg-base-100 rounded-box w-52"
+                class="dropdown-content z-[50] menu p-2 shadow bg-base-100 rounded-box w-52"
               >
                 <li>
                   <a id="empty-btn" class="flex items-center gap-2">
@@ -319,7 +322,7 @@
                   d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10"
                 />
               </svg>
-              Export
+              <span class="hidden md:inline">Export</span>
             </button>
           </div>
         </div>
@@ -332,20 +335,24 @@
         <!-- Map Controls -->
         <div
           id="map-controls"
-          class="absolute top-4 right-4 z-40 flex flex-col items-end space-y-2"
+          class="absolute top-2 left-2 right-2 z-40 flex flex-row items-start gap-2"
         >
-          <!-- Search Control -->
-          <div class="card card-bordered bg-base-100 shadow-lg p-2">
+          <!-- Search -->
+          <div
+            class="flex-1 max-w-sm card card-bordered bg-base-100 shadow-lg p-2"
+          >
             <input
               type="text"
               id="map-search"
               placeholder="Search"
-              class="input input-sm w-48"
+              class="input input-sm w-full"
             />
           </div>
 
           <!-- Map Tools -->
-          <div class="card card-bordered bg-base-100 shadow-lg p-1">
+          <div
+            class="card card-bordered bg-base-100 shadow-lg p-1 flex-shrink-0"
+          >
             <div class="join">
               <button
                 id="pointer-btn"
@@ -394,11 +401,18 @@
 
       <!-- Right Panel -->
       <div
+        id="right-panel"
         class="right-panel relative bg-base-200 border-l border-base-300 flex flex-col overflow-hidden min-h-0"
       >
         <div
+          id="sheet-top-handle"
+          class="md:hidden flex justify-center items-center py-2 cursor-grab active:cursor-grabbing flex-shrink-0"
+        >
+          <div class="w-10 h-1 rounded-full bg-base-content/20"></div>
+        </div>
+        <div
           id="panel-resizer"
-          class="absolute left-0 top-0 bottom-0 w-2 cursor-col-resize z-10 group"
+          class="hidden md:block absolute left-0 top-0 bottom-0 w-2 cursor-col-resize z-10 group"
         >
           <div
             class="absolute inset-y-0 left-0.5 w-px bg-base-300 group-hover:bg-primary/50 transition-colors"
@@ -411,7 +425,7 @@
             type="radio"
             name="main_tabs"
             id="browse-tab-radio"
-            class="tab"
+            class="tab hidden md:flex"
             aria-label="Browse"
             checked="checked"
           />
@@ -493,7 +507,7 @@
             type="radio"
             name="main_tabs"
             id="files-tab-radio"
-            class="tab"
+            class="tab hidden md:flex"
             aria-label="Files"
           />
           <div
@@ -539,7 +553,7 @@
             type="radio"
             name="main_tabs"
             id="changes-tab-radio"
-            class="tab"
+            class="tab hidden md:flex"
             aria-label="Changes"
           />
           <div
@@ -553,6 +567,69 @@
 
     <!-- Hidden File Input -->
     <input type="file" id="file-input" accept=".zip" style="display: none" />
+
+    <!-- Mobile Dock Navigation -->
+    <nav
+      id="mobile-dock"
+      class="dock dock-sm md:hidden z-50 bg-base-200 border-t border-base-300 pb-[env(safe-area-inset-bottom)]"
+    >
+      <button id="dock-browse" class="dock-active" aria-label="Browse">
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke-width="1.5"
+          stroke="currentColor"
+          class="size-5"
+        >
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            d="M15 10.5a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"
+          />
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1 1 15 0Z"
+          />
+        </svg>
+        <span class="dock-label">Browse</span>
+      </button>
+      <button id="dock-files" aria-label="Files">
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke-width="1.5"
+          stroke="currentColor"
+          class="size-5"
+        >
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            d="M2.25 12.75V12A2.25 2.25 0 0 1 4.5 9.75h15A2.25 2.25 0 0 1 21.75 12v.75m-8.69-6.44-2.12-2.12a1.5 1.5 0 0 0-1.061-.44H4.5A2.25 2.25 0 0 0 2.25 6v12a2.25 2.25 0 0 0 2.25 2.25h15A2.25 2.25 0 0 0 21.75 18V9a2.25 2.25 0 0 0-2.25-2.25h-5.379a1.5 1.5 0 0 1-1.06-.44Z"
+          />
+        </svg>
+        <span class="dock-label">Files</span>
+      </button>
+      <button id="dock-changes" aria-label="Changes">
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke-width="1.5"
+          stroke="currentColor"
+          class="size-5"
+        >
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"
+          />
+        </svg>
+        <span class="dock-label">Changes</span>
+      </button>
+    </nav>
 
     <!-- Scripts -->
     <script type="module" src="./index.ts"></script>

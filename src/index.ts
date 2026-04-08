@@ -3,6 +3,7 @@ import { MapController } from './modules/map-controller';
 import { Editor } from './modules/editor';
 import { UIController } from './modules/ui';
 import { TabManager } from './modules/tab-manager';
+import { BottomSheetController } from './modules/bottom-sheet';
 import { GTFSRelationships } from './modules/gtfs-relationships';
 import { BrowseNavigation } from './modules/browse-navigation';
 import { InfoDisplay } from './modules/info-display';
@@ -230,8 +231,26 @@ export class GTFSEditor {
       // Initialize tab manager
       this.tabManager.initialize();
 
+      // Initialize bottom sheet controller (mobile only)
+      const rightPanel = document.getElementById('right-panel');
+      const bottomSheet = rightPanel
+        ? new BottomSheetController(rightPanel, this.tabManager)
+        : null;
+
+      if (bottomSheet) {
+        bottomSheet.onDismiss(
+          () => void this.pageStateManager.setPageState({ type: 'home' })
+        );
+      }
+
+      if (window.innerWidth < 768) {
+        this.mapController.setBottomPadding(
+          Math.round(window.innerHeight * 0.45)
+        );
+      }
+
       // Set up navigation event listener for automatic tab switching
-      this.setupNavigationTabSwitching();
+      this.setupNavigationTabSwitching(bottomSheet);
 
       // Run initial validation and update InfoDisplay
       this.validateAndUpdateInfo();
@@ -288,7 +307,9 @@ export class GTFSEditor {
   /**
    * Set up navigation event listener to automatically switch tabs based on PageState changes
    */
-  private setupNavigationTabSwitching(): void {
+  private setupNavigationTabSwitching(
+    bottomSheet: BottomSheetController | null
+  ): void {
     this.pageStateManager.addNavigationHandler((event) => {
       const { to } = event;
 
@@ -299,10 +320,14 @@ export class GTFSEditor {
         to.type === 'timetable'
       ) {
         this.tabManager.switchToTab('browse');
+        bottomSheet?.open('half');
       }
-      // Add other tab switching logic here if needed
-      // For example:
-      // - 'home' might switch to 'files' tab
+    });
+
+    this.tabManager.onTabChange((tabName) => {
+      if (tabName === 'files' || tabName === 'changes') {
+        void this.pageStateManager.setPageState({ type: 'home' });
+      }
     });
   }
 

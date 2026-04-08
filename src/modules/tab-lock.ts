@@ -1,3 +1,5 @@
+import { generateId } from '../utils/uuid';
+
 interface TabLockMessage {
   type: string;
   tabId: string;
@@ -5,7 +7,7 @@ interface TabLockMessage {
 }
 
 export class TabLockController {
-  private tabId: string = crypto.randomUUID();
+  private tabId: string = generateId();
   private claimedAt: number = Date.now();
   private active = true;
   private channel: BroadcastChannel | null = null;
