@@ -79,6 +79,9 @@ export class BrowseNavigation {
       service_id: string,
       direction_id?: string
     ) => Promise<string>;
+    timetableScrollLeft: number;
+    timetableScrollTop: number;
+    resetTimetableScroll: () => void;
   } | null = null; // Will be set after initialization
   public serviceDaysController: {
     renderServiceEditor: (service_id: string) => Promise<string>;
@@ -167,6 +170,9 @@ export class BrowseNavigation {
         service_id: string,
         direction_id?: string
       ) => Promise<string>;
+      timetableScrollLeft: number;
+      timetableScrollTop: number;
+      resetTimetableScroll: () => void;
     },
     serviceDaysController?: {
       renderServiceEditor: (service_id: string) => Promise<string>;
@@ -312,9 +318,13 @@ export class BrowseNavigation {
       // Capture scroll position before rebuild
       const contentDiv = this.container.querySelector<HTMLElement>('.content');
       const savedScrollTop = contentDiv?.scrollTop ?? 0;
-      const scrollXDiv =
-        this.container.querySelector<HTMLElement>('.overflow-x-auto');
-      const savedScrollLeft = scrollXDiv?.scrollLeft ?? 0;
+
+      // For the timetable, .overflow-x-auto scrolls both axes (CSS forces
+      // overflow-y to auto when overflow-x is non-visible).  The DOM values
+      // are unreliable at this point — read from the controller's listener.
+      const savedScrollLeft = this.scheduleController?.timetableScrollLeft ?? 0;
+      const savedTimetableScrollTop =
+        this.scheduleController?.timetableScrollTop ?? 0;
 
       // Get current page state from PageStateManager
       const pageState = getCurrentPageState();
@@ -324,19 +334,11 @@ export class BrowseNavigation {
         JSON.stringify(this.lastRenderedPageState) ===
           JSON.stringify(pageState);
 
-      console.log(
-        '[BrowseNav:render] ENTER',
-        'pageState:',
-        JSON.stringify(pageState),
-        'isSamePage:',
-        isSamePage,
-        'scrollXDiv:',
-        !!scrollXDiv,
-        'savedScrollLeft:',
-        savedScrollLeft,
-        'savedScrollTop:',
-        savedScrollTop
-      );
+      if (!isSamePage) {
+        // Navigation to a new page — reset tracked timetable scroll so the
+        // next timetable opens at the top-left.
+        this.scheduleController?.resetTimetableScroll();
+      }
 
       // Get breadcrumbs from PageStateManager
       const breadcrumbs = await getPageStateManager().getBreadcrumbs();
@@ -357,31 +359,24 @@ export class BrowseNavigation {
 
       this.lastRenderedPageState = pageState;
       if (isSamePage) {
+        // Restore .content vertical scroll (non-timetable pages)
         const newContent =
           this.container.querySelector<HTMLElement>('.content');
-        if (newContent) {
+        if (newContent && savedScrollTop > 0) {
           newContent.scrollTop = savedScrollTop;
         }
-        if (savedScrollLeft > 0) {
+        // Restore timetable scroll (.overflow-x-auto scrolls both axes)
+        if (savedScrollLeft > 0 || savedTimetableScrollTop > 0) {
           const newScrollXDiv =
             this.container.querySelector<HTMLElement>('.overflow-x-auto');
-          console.log(
-            '[BrowseNav:render] restoring scrollLeft:',
-            savedScrollLeft,
-            'newScrollXDiv found:',
-            !!newScrollXDiv
-          );
           if (newScrollXDiv) {
-            newScrollXDiv.scrollLeft = savedScrollLeft;
-            console.log(
-              '[BrowseNav:render] scrollLeft after restore:',
-              newScrollXDiv.scrollLeft
-            );
+            if (savedScrollLeft > 0) {
+              newScrollXDiv.scrollLeft = savedScrollLeft;
+            }
+            if (savedTimetableScrollTop > 0) {
+              newScrollXDiv.scrollTop = savedTimetableScrollTop;
+            }
           }
-        } else {
-          console.log(
-            '[BrowseNav:render] NOT restoring scrollLeft (savedScrollLeft=0 or not isSamePage)'
-          );
         }
       }
     } catch (error) {
