@@ -36,7 +36,9 @@ body {
   }
 
   .basemap-control {
+    position: fixed !important;
     bottom: calc(var(--dock-height) + 10px) !important;
+    right: 10px !important;
     z-index: 40 !important;
   }
 
