@@ -22,6 +22,7 @@ export class BottomSheetController {
     this.setupDragHandle();
     this.setupDock(tabManager);
     this.setSnap('closed', false);
+    this.syncDockHeight();
 
     // Re-check on resize (e.g. orientation change)
     window.addEventListener('resize', () => {
@@ -29,9 +30,21 @@ export class BottomSheetController {
         panel.style.removeProperty('height');
         panel.classList.remove('sheet-full', 'sheet-half');
       } else {
+        this.syncDockHeight();
         this.setSnap(this.snap, false);
       }
     });
+  }
+
+  private syncDockHeight(): void {
+    const dock = document.getElementById('mobile-dock');
+    if (!dock) {
+      return;
+    }
+    const h = dock.getBoundingClientRect().height;
+    if (h > 0) {
+      document.documentElement.style.setProperty('--dock-height', `${h}px`);
+    }
   }
 
   private setupDragHandle(): void {
