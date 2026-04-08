@@ -21,6 +21,35 @@
   grid-template-columns: 1fr var(--panel-width, 650px);
 }
 
+@media (max-width: 767px) {
+  .app-container {
+    grid-template-columns: 1fr;
+  }
+
+  #right-panel {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: var(--sheet-height, 56px);
+    z-index: 50;
+    border-left: none;
+    border-top: 1px solid oklch(var(--b3));
+    border-radius: 1rem 1rem 0 0;
+    transition: height 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    overflow: hidden;
+  }
+
+  /* Only allow content scroll in full-screen state */
+  #right-panel .tab-content {
+    overflow-y: hidden;
+  }
+
+  #right-panel.sheet-full .tab-content {
+    overflow-y: auto;
+  }
+}
+
 @layer components {
   /* File list styles using DaisyUI menu */
   .file-required {

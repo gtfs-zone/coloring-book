@@ -44,7 +44,7 @@
                 <img src="logo.svg" alt="edit.gtfs.zone logo" />
               </div>
             </div>
-            <div class="flex flex-col">
+            <div class="flex flex-col hidden md:flex">
               <h1 class="text-xl font-bold">
                 <span class="text-primary">edit</span>.gtfs.zone<sup
                   id="app-version"
@@ -56,6 +56,15 @@
               </span>
             </div>
           </div>
+        </div>
+
+        <div class="navbar-center flex md:hidden flex-1 px-2">
+          <input
+            type="text"
+            id="mobile-search"
+            placeholder="Search"
+            class="input input-sm w-full"
+          />
         </div>
 
         <div class="navbar-end">
@@ -178,7 +187,7 @@
                     d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10"
                   />
                 </svg>
-                Load
+                <span class="hidden md:inline">Load</span>
               </div>
               <ul
                 id="load-dropdown"
@@ -319,7 +328,7 @@
                   d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10"
                 />
               </svg>
-              Export
+              <span class="hidden md:inline">Export</span>
             </button>
           </div>
         </div>
@@ -332,10 +341,12 @@
         <!-- Map Controls -->
         <div
           id="map-controls"
-          class="absolute top-4 right-4 z-40 flex flex-col items-end space-y-2"
+          class="absolute top-2 right-2 md:top-4 md:right-4 z-40 flex flex-row md:flex-col items-center md:items-end gap-2 md:space-y-2"
         >
           <!-- Search Control -->
-          <div class="card card-bordered bg-base-100 shadow-lg p-2">
+          <div
+            class="hidden md:block card card-bordered bg-base-100 shadow-lg p-2"
+          >
             <input
               type="text"
               id="map-search"
@@ -394,11 +405,18 @@
 
       <!-- Right Panel -->
       <div
+        id="right-panel"
         class="right-panel relative bg-base-200 border-l border-base-300 flex flex-col overflow-hidden min-h-0"
       >
         <div
+          id="sheet-drag-handle"
+          class="md:hidden flex justify-center items-center py-2 cursor-grab active:cursor-grabbing flex-shrink-0"
+        >
+          <div class="w-10 h-1 rounded-full bg-base-content/20"></div>
+        </div>
+        <div
           id="panel-resizer"
-          class="absolute left-0 top-0 bottom-0 w-2 cursor-col-resize z-10 group"
+          class="hidden md:block absolute left-0 top-0 bottom-0 w-2 cursor-col-resize z-10 group"
         >
           <div
             class="absolute inset-y-0 left-0.5 w-px bg-base-300 group-hover:bg-primary/50 transition-colors"
