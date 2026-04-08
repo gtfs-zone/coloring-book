@@ -35,6 +35,11 @@ body {
     grid-template-columns: 1fr;
   }
 
+  .basemap-control {
+    bottom: calc(var(--dock-height) + 10px) !important;
+    z-index: 40 !important;
+  }
+
   #right-panel {
     position: fixed;
     bottom: var(--dock-height);
