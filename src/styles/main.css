@@ -80,6 +80,10 @@ body {
   }
 }
 
+#right-panel .tabs {
+  height: 100%;
+}
+
 @layer components {
   /* DaisyUI Tooltip Enhancement - Handle long text with proper wrapping */
 
