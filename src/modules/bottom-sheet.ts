@@ -1,14 +1,15 @@
 import { TabManager } from './tab-manager';
 
-type Snap = 'peek' | 'half' | 'full';
+type Snap = 'closed' | 'half' | 'full';
 
-const PEEK_PX = 56;
+const CLOSED_PX = 0;
 const HALF_VH = 0.45;
 const FULL_VH = 0.92;
 
 export class BottomSheetController {
-  private snap: Snap = 'peek';
+  private snap: Snap = 'closed';
   private panel: HTMLElement;
+  private dismissCallbacks: Array<() => void> = [];
 
   constructor(panel: HTMLElement, tabManager: TabManager) {
     this.panel = panel;
@@ -19,14 +20,14 @@ export class BottomSheetController {
     }
 
     this.setupDragHandle();
-    this.setupTabExpansion(tabManager);
-    this.setSnap('peek', false);
+    this.setupDock(tabManager);
+    this.setSnap('closed', false);
 
     // Re-check on resize (e.g. orientation change)
     window.addEventListener('resize', () => {
       if (window.innerWidth >= 768) {
         panel.style.removeProperty('height');
-        panel.classList.remove('sheet-full');
+        panel.classList.remove('sheet-full', 'sheet-half');
       } else {
         this.setSnap(this.snap, false);
       }
@@ -34,7 +35,7 @@ export class BottomSheetController {
   }
 
   private setupDragHandle(): void {
-    const handle = document.getElementById('sheet-drag-handle');
+    const handle = document.getElementById('sheet-top-handle');
     if (!handle) {
       return;
     }
@@ -72,7 +73,7 @@ export class BottomSheetController {
       const delta = startY - clientY; // positive = dragging up
       const newHeight = Math.min(
         window.innerHeight * FULL_VH,
-        Math.max(PEEK_PX, startHeight + delta)
+        Math.max(CLOSED_PX, startHeight + delta)
       );
       this.panel.style.height = `${newHeight}px`;
     };
@@ -121,23 +122,29 @@ export class BottomSheetController {
 
   private resolveSnap(velocity: number): Snap {
     const VELOCITY_THRESHOLD = 0.4; // px/ms
-    if (velocity > VELOCITY_THRESHOLD) {
-      return this.snap === 'peek' ? 'half' : 'full';
-    }
-    if (velocity < -VELOCITY_THRESHOLD) {
-      return this.snap === 'full' ? 'half' : 'peek';
-    }
-    // Snap to nearest based on current height
     const h = this.panel.getBoundingClientRect().height;
     const halfH = window.innerHeight * HALF_VH;
     const fullH = window.innerHeight * FULL_VH;
-    if (h < (PEEK_PX + halfH) / 2) {
-      return 'peek';
+
+    if (velocity < -VELOCITY_THRESHOLD || h < halfH / 2) {
+      // Strongly downward or very low — dismiss
+      this.fireDismissCallbacks();
+      return 'closed';
     }
+    if (velocity > VELOCITY_THRESHOLD) {
+      return this.snap === 'half' ? 'full' : 'half';
+    }
+    // Snap to nearest based on current height
     if (h < (halfH + fullH) / 2) {
       return 'half';
     }
     return 'full';
+  }
+
+  private fireDismissCallbacks(): void {
+    for (const cb of this.dismissCallbacks) {
+      cb();
+    }
   }
 
   private setSnap(snap: Snap, animate: boolean): void {
@@ -146,14 +153,19 @@ export class BottomSheetController {
       this.panel.style.transition = 'none';
     }
     const h =
-      snap === 'peek'
-        ? PEEK_PX
+      snap === 'closed'
+        ? CLOSED_PX
         : snap === 'half'
           ? window.innerHeight * HALF_VH
           : window.innerHeight * FULL_VH;
-    this.panel.style.setProperty('--sheet-height', `${h}px`);
     this.panel.style.height = `${h}px`;
     this.panel.classList.toggle('sheet-full', snap === 'full');
+    this.panel.classList.toggle('sheet-half', snap === 'half');
+    if (snap === 'closed') {
+      this.panel.style.overflow = 'hidden';
+    } else {
+      this.panel.style.removeProperty('overflow');
+    }
     if (!animate) {
       // Re-enable transition after layout settles
       requestAnimationFrame(() => {
@@ -162,16 +174,48 @@ export class BottomSheetController {
     }
   }
 
-  private setupTabExpansion(tabManager: TabManager): void {
-    // When a tab is activated while the sheet is at peek, expand to half
-    tabManager.onTabChange(() => {
-      if (this.snap === 'peek') {
-        this.setSnap('half', true);
-      }
+  private setupDock(tabManager: TabManager): void {
+    const dockBrowse = document.getElementById('dock-browse');
+    const dockFiles = document.getElementById('dock-files');
+    const dockChanges = document.getElementById('dock-changes');
+
+    const updateDockActive = (tabName: string) => {
+      dockBrowse?.classList.toggle('dock-active', tabName === 'browse');
+      dockFiles?.classList.toggle('dock-active', tabName === 'files');
+      dockChanges?.classList.toggle('dock-active', tabName === 'changes');
+    };
+
+    dockBrowse?.addEventListener('click', () => {
+      tabManager.switchToTab('browse');
+      this.open('half');
+    });
+
+    dockFiles?.addEventListener('click', () => {
+      tabManager.switchToTab('files');
+      this.open('half');
+    });
+
+    dockChanges?.addEventListener('click', () => {
+      tabManager.switchToTab('changes');
+      this.open('half');
+    });
+
+    // Keep dock-active in sync when tabs switch programmatically
+    tabManager.onTabChange((tabName) => {
+      updateDockActive(tabName);
     });
   }
 
-  public expandTo(snap: 'half' | 'full'): void {
+  public onDismiss(cb: () => void): void {
+    this.dismissCallbacks.push(cb);
+  }
+
+  public open(snap: 'half' | 'full' = 'half'): void {
     this.setSnap(snap, true);
+  }
+
+  public close(): void {
+    // Programmatic close — does not fire dismiss callbacks
+    this.setSnap('closed', true);
   }
 }
