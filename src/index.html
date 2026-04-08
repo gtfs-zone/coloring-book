@@ -61,15 +61,6 @@
           </div>
         </div>
 
-        <div class="navbar-center flex md:hidden flex-1 px-2">
-          <input
-            type="text"
-            id="mobile-search"
-            placeholder="Search"
-            class="input input-sm w-full"
-          />
-        </div>
-
         <div class="navbar-end">
           <div class="flex items-center gap-2">
             <!-- Theme Toggle -->
@@ -344,22 +335,24 @@
         <!-- Map Controls -->
         <div
           id="map-controls"
-          class="absolute top-2 right-2 md:top-4 md:right-4 z-40 flex flex-row md:flex-col items-center md:items-end gap-2 md:space-y-2"
+          class="absolute top-2 left-2 right-2 z-40 flex flex-row items-start gap-2"
         >
-          <!-- Search Control -->
+          <!-- Search -->
           <div
-            class="hidden md:block card card-bordered bg-base-100 shadow-lg p-2"
+            class="flex-1 max-w-sm card card-bordered bg-base-100 shadow-lg p-2"
           >
             <input
               type="text"
               id="map-search"
               placeholder="Search"
-              class="input input-sm w-48"
+              class="input input-sm w-full"
             />
           </div>
 
           <!-- Map Tools -->
-          <div class="card card-bordered bg-base-100 shadow-lg p-1">
+          <div
+            class="card card-bordered bg-base-100 shadow-lg p-1 flex-shrink-0"
+          >
             <div class="join">
               <button
                 id="pointer-btn"

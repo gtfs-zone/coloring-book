@@ -30,36 +30,20 @@ export class SearchController {
   }
 
   initialize(): void {
-    const desktopInput = document.getElementById(
+    const input = document.getElementById(
       'map-search'
     ) as HTMLInputElement | null;
-    const mobileInput = document.getElementById(
-      'mobile-search'
-    ) as HTMLInputElement | null;
-
-    if (!desktopInput && !mobileInput) {
+    if (!input) {
       return;
     }
 
-    if (desktopInput) {
-      this.inputs.push(desktopInput);
-    }
-    if (mobileInput) {
-      this.inputs.push(mobileInput);
-    }
-
+    this.inputs = [input];
     this.createSearchResults();
-    for (const input of this.inputs) {
-      this.wireInput(input);
-    }
+    this.wireInput(input);
 
     // Hide results when clicking outside
     document.addEventListener('click', (e) => {
-      const target = e.target as Element;
-      if (
-        !target?.closest('#map-controls') &&
-        !target?.closest('#mobile-search')
-      ) {
+      if (!(e.target as Element)?.closest('#map-controls')) {
         this.hideResults();
       }
     });
@@ -84,7 +68,6 @@ export class SearchController {
     // Search on input with debounce
     input.addEventListener('input', (e) => {
       const query = (e.target as HTMLInputElement).value.trim();
-      this.syncInputs(input, query);
 
       if (this.searchTimeout) {
         clearTimeout(this.searchTimeout);
@@ -117,14 +100,6 @@ export class SearchController {
         this.performSearch(input.value.trim());
       }
     });
-  }
-
-  private syncInputs(source: HTMLInputElement, value: string): void {
-    for (const input of this.inputs) {
-      if (input !== source) {
-        input.value = value;
-      }
-    }
   }
 
   private async performSearch(query: string): Promise<void> {
