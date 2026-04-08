@@ -127,6 +127,11 @@ export interface ContentRendererDependencies {
       id: string,
       record: Record<string, unknown>
     ) => Promise<void>;
+    recordDelete: (
+      table: string,
+      id: string,
+      record: Record<string, unknown>
+    ) => Promise<void>;
   };
 
   // Parser for reading in-memory GTFS data (used by patch bridge)
@@ -153,6 +158,7 @@ export class PageContentRenderer {
       gtfsRelationships: dependencies.gtfsRelationships || {},
       onAgencyClick: dependencies.onAgencyClick,
       onRouteClick: dependencies.onRouteClick,
+      onDeleteStop: (stop_id) => this.handleDeleteStop(stop_id),
     };
     this.stopViewController = new StopViewController(stopViewDependencies);
 
@@ -798,5 +804,9 @@ export class PageContentRenderer {
       // Reset the dropdown
       serviceSelect.value = '';
     });
+  }
+
+  private async handleDeleteStop(_stop_id: string): Promise<void> {
+    // Implemented in phase 2
   }
 }
