@@ -311,6 +311,12 @@ export class GTFSEditor {
       // For example:
       // - 'home' might switch to 'files' tab
     });
+
+    this.tabManager.onTabChange((tabName) => {
+      if (tabName === 'files' || tabName === 'changes') {
+        void this.pageStateManager.setPageState({ type: 'home' });
+      }
+    });
   }
 
   /**
