@@ -20,7 +20,7 @@ interface MapController {
 export class SearchController {
   private gtfsParser: GTFSParser;
   private mapController: MapController;
-  private searchInput: HTMLInputElement | null = null;
+  private inputs: HTMLInputElement[] = [];
   private searchResults: HTMLElement | null = null;
   private searchTimeout: NodeJS.Timeout | null = null;
 
@@ -30,15 +30,39 @@ export class SearchController {
   }
 
   initialize(): void {
-    this.searchInput = document.getElementById(
+    const desktopInput = document.getElementById(
       'map-search'
-    ) as HTMLInputElement;
-    if (!this.searchInput) {
+    ) as HTMLInputElement | null;
+    const mobileInput = document.getElementById(
+      'mobile-search'
+    ) as HTMLInputElement | null;
+
+    if (!desktopInput && !mobileInput) {
       return;
     }
 
+    if (desktopInput) {
+      this.inputs.push(desktopInput);
+    }
+    if (mobileInput) {
+      this.inputs.push(mobileInput);
+    }
+
     this.createSearchResults();
-    this.setupEventListeners();
+    for (const input of this.inputs) {
+      this.wireInput(input);
+    }
+
+    // Hide results when clicking outside
+    document.addEventListener('click', (e) => {
+      const target = e.target as Element;
+      if (
+        !target?.closest('#map-controls') &&
+        !target?.closest('#mobile-search')
+      ) {
+        this.hideResults();
+      }
+    });
   }
 
   private createSearchResults(): void {
@@ -56,14 +80,11 @@ export class SearchController {
     controlsContainer.appendChild(this.searchResults);
   }
 
-  private setupEventListeners(): void {
-    if (!this.searchInput) {
-      return;
-    }
-
+  private wireInput(input: HTMLInputElement): void {
     // Search on input with debounce
-    this.searchInput.addEventListener('input', (e) => {
+    input.addEventListener('input', (e) => {
       const query = (e.target as HTMLInputElement).value.trim();
+      this.syncInputs(input, query);
 
       if (this.searchTimeout) {
         clearTimeout(this.searchTimeout);
@@ -75,10 +96,10 @@ export class SearchController {
     });
 
     // Handle keyboard navigation
-    this.searchInput.addEventListener('keydown', (e) => {
+    input.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') {
         this.hideResults();
-        this.searchInput!.blur();
+        input.blur();
       } else if (e.key === 'Enter') {
         e.preventDefault();
         const firstResult = this.searchResults?.querySelector(
@@ -90,19 +111,20 @@ export class SearchController {
       }
     });
 
-    // Hide results when clicking outside
-    document.addEventListener('click', (e) => {
-      if (!(e.target as Element)?.closest('#map-controls')) {
-        this.hideResults();
-      }
-    });
-
     // Show results when focusing on search input (if has content)
-    this.searchInput.addEventListener('focus', () => {
-      if (this.searchInput!.value.trim().length >= 2) {
-        this.performSearch(this.searchInput!.value.trim());
+    input.addEventListener('focus', () => {
+      if (input.value.trim().length >= 2) {
+        this.performSearch(input.value.trim());
       }
     });
+  }
+
+  private syncInputs(source: HTMLInputElement, value: string): void {
+    for (const input of this.inputs) {
+      if (input !== source) {
+        input.value = value;
+      }
+    }
   }
 
   private async performSearch(query: string): Promise<void> {
@@ -234,7 +256,9 @@ export class SearchController {
 
         this.selectResult(type, id);
         this.hideResults();
-        this.searchInput!.blur();
+        for (const input of this.inputs) {
+          input.blur();
+        }
       });
     });
   }
@@ -302,8 +326,8 @@ export class SearchController {
   }
 
   clearSearch(): void {
-    if (this.searchInput) {
-      this.searchInput.value = '';
+    for (const input of this.inputs) {
+      input.value = '';
     }
     this.hideResults();
     this.mapController.clearHighlights();

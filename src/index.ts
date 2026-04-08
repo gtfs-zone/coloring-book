@@ -3,6 +3,7 @@ import { MapController } from './modules/map-controller';
 import { Editor } from './modules/editor';
 import { UIController } from './modules/ui';
 import { TabManager } from './modules/tab-manager';
+import { BottomSheetController } from './modules/bottom-sheet';
 import { GTFSRelationships } from './modules/gtfs-relationships';
 import { BrowseNavigation } from './modules/browse-navigation';
 import { InfoDisplay } from './modules/info-display';
@@ -229,6 +230,12 @@ export class GTFSEditor {
 
       // Initialize tab manager
       this.tabManager.initialize();
+
+      // Initialize bottom sheet controller (mobile only)
+      const rightPanel = document.getElementById('right-panel');
+      if (rightPanel) {
+        new BottomSheetController(rightPanel, this.tabManager);
+      }
 
       // Set up navigation event listener for automatic tab switching
       this.setupNavigationTabSwitching();
