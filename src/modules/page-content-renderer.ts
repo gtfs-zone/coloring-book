@@ -39,6 +39,9 @@ import {
   renderCardLabel,
   renderOptionLabel,
 } from '../utils/entity-display.js';
+import { showModal } from './modal-utils.js';
+import { navigateToHome } from './navigation-actions.js';
+import { generateCompositeKeyFromRecord } from '../utils/gtfs-primary-keys.js';
 
 /**
  * Interface for injected dependencies
@@ -806,7 +809,61 @@ export class PageContentRenderer {
     });
   }
 
-  private async handleDeleteStop(_stop_id: string): Promise<void> {
-    // Implemented in phase 2
+  private async handleDeleteStop(stop_id: string): Promise<void> {
+    const db = this.dependencies.gtfsDatabase;
+    const pm = this.dependencies.patchManager;
+    if (!db || !pm || !db.deleteRow) {
+      return;
+    }
+
+    const stops = await db.queryRows('stops', { stop_id });
+    const stop = stops[0] as Record<string, unknown> | undefined;
+    if (!stop) {
+      return;
+    }
+
+    const stopTimes = (await db.queryRows('stop_times', {
+      stop_id,
+    })) as Record<string, unknown>[];
+
+    const doDelete = async (cascade: boolean) => {
+      if (cascade) {
+        for (const st of stopTimes) {
+          const key = generateCompositeKeyFromRecord('stop_times', st);
+          await db.deleteRow!('stop_times', key);
+          await pm.recordDelete('stop_times', key, st);
+        }
+      }
+      await db.deleteRow!('stops', stop_id);
+      await pm.recordDelete('stops', stop_id, stop);
+      console.log(
+        `[PageContentRenderer] Deleted stop ${stop_id}${cascade ? ` and ${stopTimes.length} stop_times` : ''}`
+      );
+      await navigateToHome();
+    };
+
+    if (stopTimes.length === 0) {
+      await doDelete(false);
+      return;
+    }
+
+    const tripIds = [...new Set(stopTimes.map((st) => st.trip_id as string))];
+    const tripSummary =
+      tripIds.slice(0, 5).join(', ') +
+      (tripIds.length > 5 ? ` … and ${tripIds.length - 5} more` : '');
+    await showModal({
+      title: 'Stop has scheduled visits',
+      body: `<p>This stop is referenced by <strong>${stopTimes.length} stop_time${stopTimes.length !== 1 ? 's' : ''}</strong> across ${tripIds.length} trip${tripIds.length !== 1 ? 's' : ''}:</p>
+             <p class="text-sm opacity-70 mt-1">${tripSummary}</p>
+             <p class="mt-3">You can cascade-delete the stop and all its stop_times (reversible via undo), or cancel.</p>`,
+      actions: [
+        { label: 'Cancel', className: 'btn-ghost', onClick: () => {} },
+        {
+          label: `Delete stop + ${stopTimes.length} stop_times`,
+          className: 'btn-error',
+          onClick: () => doDelete(true),
+        },
+      ],
+    });
   }
 }
