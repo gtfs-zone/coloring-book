@@ -10,6 +10,12 @@
     night;
 }
 
+html,
+body {
+  overscroll-behavior: none;
+  overflow: hidden;
+}
+
 /* Minimal custom utilities */
 @layer utilities {
   .h-15 {
@@ -19,6 +25,48 @@
 
 .app-container {
   grid-template-columns: 1fr var(--panel-width, 650px);
+}
+
+@media (max-width: 767px) {
+  :root {
+    --dock-height: 4rem;
+  }
+
+  .app-container {
+    grid-template-columns: 1fr;
+  }
+
+  .basemap-control {
+    position: fixed !important;
+    bottom: calc(var(--dock-height) + 10px) !important;
+    right: 10px !important;
+    z-index: 40 !important;
+  }
+
+  #right-panel {
+    position: fixed;
+    bottom: var(--dock-height);
+    left: 0;
+    right: 0;
+    height: 0;
+    z-index: 50;
+    border-left: none;
+    border-top: 1px solid oklch(var(--b3));
+    border-radius: 1rem 1rem 0 0;
+    transition: height 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    overflow: hidden;
+  }
+
+  #right-panel .tab-content {
+    height: 100%;
+    /* Only allow content scroll in half/full states */
+    overflow-y: hidden;
+  }
+
+  #right-panel.sheet-half .tab-content,
+  #right-panel.sheet-full .tab-content {
+    overflow-y: auto;
+  }
 }
 
 @layer components {

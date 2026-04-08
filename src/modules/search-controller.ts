@@ -20,7 +20,7 @@ interface MapController {
 export class SearchController {
   private gtfsParser: GTFSParser;
   private mapController: MapController;
-  private searchInput: HTMLInputElement | null = null;
+  private inputs: HTMLInputElement[] = [];
   private searchResults: HTMLElement | null = null;
   private searchTimeout: NodeJS.Timeout | null = null;
 
@@ -30,15 +30,23 @@ export class SearchController {
   }
 
   initialize(): void {
-    this.searchInput = document.getElementById(
+    const input = document.getElementById(
       'map-search'
-    ) as HTMLInputElement;
-    if (!this.searchInput) {
+    ) as HTMLInputElement | null;
+    if (!input) {
       return;
     }
 
+    this.inputs = [input];
     this.createSearchResults();
-    this.setupEventListeners();
+    this.wireInput(input);
+
+    // Hide results when clicking outside
+    document.addEventListener('click', (e) => {
+      if (!(e.target as Element)?.closest('#map-controls')) {
+        this.hideResults();
+      }
+    });
   }
 
   private createSearchResults(): void {
@@ -56,13 +64,9 @@ export class SearchController {
     controlsContainer.appendChild(this.searchResults);
   }
 
-  private setupEventListeners(): void {
-    if (!this.searchInput) {
-      return;
-    }
-
+  private wireInput(input: HTMLInputElement): void {
     // Search on input with debounce
-    this.searchInput.addEventListener('input', (e) => {
+    input.addEventListener('input', (e) => {
       const query = (e.target as HTMLInputElement).value.trim();
 
       if (this.searchTimeout) {
@@ -75,10 +79,10 @@ export class SearchController {
     });
 
     // Handle keyboard navigation
-    this.searchInput.addEventListener('keydown', (e) => {
+    input.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') {
         this.hideResults();
-        this.searchInput!.blur();
+        input.blur();
       } else if (e.key === 'Enter') {
         e.preventDefault();
         const firstResult = this.searchResults?.querySelector(
@@ -90,17 +94,10 @@ export class SearchController {
       }
     });
 
-    // Hide results when clicking outside
-    document.addEventListener('click', (e) => {
-      if (!(e.target as Element)?.closest('#map-controls')) {
-        this.hideResults();
-      }
-    });
-
     // Show results when focusing on search input (if has content)
-    this.searchInput.addEventListener('focus', () => {
-      if (this.searchInput!.value.trim().length >= 2) {
-        this.performSearch(this.searchInput!.value.trim());
+    input.addEventListener('focus', () => {
+      if (input.value.trim().length >= 2) {
+        this.performSearch(input.value.trim());
       }
     });
   }
@@ -234,7 +231,9 @@ export class SearchController {
 
         this.selectResult(type, id);
         this.hideResults();
-        this.searchInput!.blur();
+        for (const input of this.inputs) {
+          input.blur();
+        }
       });
     });
   }
@@ -302,8 +301,8 @@ export class SearchController {
   }
 
   clearSearch(): void {
-    if (this.searchInput) {
-      this.searchInput.value = '';
+    for (const input of this.inputs) {
+      input.value = '';
     }
     this.hideResults();
     this.mapController.clearHighlights();
