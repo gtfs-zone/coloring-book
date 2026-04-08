@@ -233,12 +233,18 @@ export class GTFSEditor {
 
       // Initialize bottom sheet controller (mobile only)
       const rightPanel = document.getElementById('right-panel');
-      if (rightPanel) {
-        new BottomSheetController(rightPanel, this.tabManager);
+      const bottomSheet = rightPanel
+        ? new BottomSheetController(rightPanel, this.tabManager)
+        : null;
+
+      if (bottomSheet) {
+        bottomSheet.onDismiss(
+          () => void this.pageStateManager.setPageState({ type: 'home' })
+        );
       }
 
       // Set up navigation event listener for automatic tab switching
-      this.setupNavigationTabSwitching();
+      this.setupNavigationTabSwitching(bottomSheet);
 
       // Run initial validation and update InfoDisplay
       this.validateAndUpdateInfo();
@@ -295,7 +301,9 @@ export class GTFSEditor {
   /**
    * Set up navigation event listener to automatically switch tabs based on PageState changes
    */
-  private setupNavigationTabSwitching(): void {
+  private setupNavigationTabSwitching(
+    bottomSheet: BottomSheetController | null
+  ): void {
     this.pageStateManager.addNavigationHandler((event) => {
       const { to } = event;
 
@@ -306,10 +314,8 @@ export class GTFSEditor {
         to.type === 'timetable'
       ) {
         this.tabManager.switchToTab('browse');
+        bottomSheet?.open('half');
       }
-      // Add other tab switching logic here if needed
-      // For example:
-      // - 'home' might switch to 'files' tab
     });
 
     this.tabManager.onTabChange((tabName) => {

@@ -22,16 +22,20 @@
 }
 
 @media (max-width: 767px) {
+  :root {
+    --dock-height: 4rem;
+  }
+
   .app-container {
     grid-template-columns: 1fr;
   }
 
   #right-panel {
     position: fixed;
-    bottom: 0;
+    bottom: var(--dock-height);
     left: 0;
     right: 0;
-    height: var(--sheet-height, 56px);
+    height: 0;
     z-index: 50;
     border-left: none;
     border-top: 1px solid oklch(var(--b3));
@@ -40,9 +44,13 @@
     overflow: hidden;
   }
 
-  /* Only allow content scroll in full-screen state */
+  /* Only allow content scroll in half/full states */
   #right-panel .tab-content {
     overflow-y: hidden;
+  }
+
+  #right-panel.sheet-half .tab-content {
+    overflow-y: auto;
   }
 
   #right-panel.sheet-full .tab-content {
