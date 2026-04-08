@@ -103,6 +103,11 @@ export class BrowseNavigation {
       id: string,
       record: Record<string, unknown>
     ) => Promise<void>;
+    recordDelete: (
+      table: string,
+      id: string,
+      record: Record<string, unknown>
+    ) => Promise<void>;
   } | null = null;
 
   setPatchManager(pm: {
@@ -113,6 +118,11 @@ export class BrowseNavigation {
       after: Record<string, unknown>
     ) => Promise<void>;
     recordInsert: (
+      table: string,
+      id: string,
+      record: Record<string, unknown>
+    ) => Promise<void>;
+    recordDelete: (
       table: string,
       id: string,
       record: Record<string, unknown>
