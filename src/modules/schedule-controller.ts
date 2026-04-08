@@ -121,6 +121,13 @@ export class ScheduleController {
   private currentServiceId?: string;
   private currentDirectionId?: string;
 
+  // Tracks the last scroll position on the timetable's scroll container.
+  // overflow-x-auto scrolls BOTH axes (CSS forces overflow-y to auto when
+  // overflow-x is non-visible).  We cannot read from the DOM at edit time
+  // because the browser resets both values during async DB awaits.
+  public timetableScrollLeft = 0;
+  public timetableScrollTop = 0;
+
   /**
    * Initialize ScheduleController with required dependencies
    *
@@ -139,6 +146,30 @@ export class ScheduleController {
     this.renderer = new TimetableRenderer();
     this.cellRenderer = new TimetableCellRenderer();
     this.database = new TimetableDatabase(gtfsParser);
+
+    // Capture-phase scroll listener: fires synchronously when the user scrolls
+    // the timetable, before any edit handlers run.  This is the only reliable
+    // way to read scrollLeft — DOM reads inside async handlers always see 0.
+    document.addEventListener(
+      'scroll',
+      (e) => {
+        const target = e.target as HTMLElement;
+        if (
+          target?.classList.contains('overflow-x-auto') &&
+          target.closest('#schedule-view')
+        ) {
+          this.timetableScrollLeft = target.scrollLeft;
+          this.timetableScrollTop = target.scrollTop;
+        }
+      },
+      { capture: true, passive: true }
+    );
+  }
+
+  /** Reset tracked scroll when navigating to a different timetable. */
+  resetTimetableScroll(): void {
+    this.timetableScrollLeft = 0;
+    this.timetableScrollTop = 0;
   }
 
   setPatchManager(pm: PatchManagerInterface): void {
@@ -939,17 +970,10 @@ export class ScheduleController {
       direction_id: this.currentDirectionId,
     });
 
-    // Save scroll position BEFORE the async renderSchedule call.
-    // Reading it after the await is too late — the browser resets scrollLeft
-    // to 0 during the DB round-trips (focus/layout events fire during yields).
-    const containerBefore = document.getElementById('schedule-view');
-    const scrollDivBefore =
-      containerBefore?.querySelector<HTMLElement>('.overflow-x-auto');
-    const savedScrollLeft = scrollDivBefore?.scrollLeft ?? 0;
-    console.log(
-      '[Schedule:refresh] savedScrollLeft (before async):',
-      savedScrollLeft
-    );
+    // Use the value tracked by the scroll listener — the DOM is unreliable here
+    // because the browser resets scrollLeft during every async DB await.
+    const savedScrollLeft = this.timetableScrollLeft;
+    const savedScrollTop = this.timetableScrollTop;
 
     const html = await this.renderSchedule(
       this.currentRouteId,
@@ -963,12 +987,13 @@ export class ScheduleController {
       container.innerHTML = html;
       const newScrollDiv =
         container.querySelector<HTMLElement>('.overflow-x-auto');
-      if (newScrollDiv && savedScrollLeft > 0) {
-        newScrollDiv.scrollLeft = savedScrollLeft;
-        console.log(
-          '[Schedule:refresh] scrollLeft after restore:',
-          newScrollDiv.scrollLeft
-        );
+      if (newScrollDiv) {
+        if (savedScrollLeft > 0) {
+          newScrollDiv.scrollLeft = savedScrollLeft;
+        }
+        if (savedScrollTop > 0) {
+          newScrollDiv.scrollTop = savedScrollTop;
+        }
       }
     }
   }
