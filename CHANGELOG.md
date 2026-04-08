@@ -1,3 +1,47 @@
+## v0.11.0 (2026-04-08)
+
+### Feat
+
+- **mobile**: add bottom-sheet padding to all map auto-zoom operations
+- **mobile**: move search to map overlay, unify desktop/mobile search, reposition notifications
+- **mobile**: phase 3 DaisyUI dock + BottomSheetController v2
+- **mobile**: clear page state when switching to Files or Changes tab
+- **mobile**: phase 2 BottomSheetController and dual search input
+- **mobile**: phase 1 HTML/CSS skeleton for mobile layout
+- **layout**: add adjustable panel resizer with drag handle
+- **layout**: replace hardcoded 650px grid column with CSS variable
+- **url**: add #load= command and remove legacy URL handling
+- **page-state**: enable hash-based URL sync for focused object
+- **about-modal**: wire up about button, remove help tab, add dismissable to modals
+- **about-modal**: add showAboutModal module with shortcuts table and resource links
+- **modal**: add dismissable + scrollable modal support
+- **tab-lock**: block keyboard shortcuts in inactive tabs
+- **tab-lock**: add TabLockController with BroadcastChannel coordination and blocking overlay
+
+### Fix
+
+- fix web scrollbox size
+- **mobile**: add overflow: hidden to html element to eliminate micro-scroll
+- **mobile**: switch basemap controls to position: fixed above dock
+- **mobile**: give #right-panel .tabs a definite height to unblock scroll container
+- **mobile**: fix load button icon and raise dropdown z-index above map controls
+- **mobile**: set height 100% on right-panel tab-content to fix scroll collapse
+- **mobile**: use dvh units and ResizeObserver for dock height
+- **mobile**: position basemap control above dock on mobile
+- **mobile**: sync --dock-height from actual dock measured height
+- **mobile**: disable overscroll bounce on html and body
+- polyfill crypto.randomUUID for non-HTTPS mobile browsers
+- preserve timetable scroll using capture-phase listener
+- capture timetable scrollLeft before async renderSchedule call
+- preserve timetable horizontal scroll in browse-navigation re-render
+- preserve timetable horizontal scroll on in-place re-render
+- preserve browse panel scroll position on in-place re-render
+- allow bigger side panel
+
+### Refactor
+
+- rm improper prior fixes
+
 ## v0.10.0 (2026-04-06)
 
 ### Feat
