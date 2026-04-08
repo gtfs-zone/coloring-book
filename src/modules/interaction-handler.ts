@@ -3,6 +3,7 @@ import { Stops } from '../types/gtfs-entities.js';
 import { MapMode } from './map-controller.js';
 import type { GTFSParser } from './gtfs-parser.js';
 import { showModal } from './modal-utils.js';
+import { generateId } from '../utils/uuid.js';
 
 export interface InteractionCallbacks {
   onRouteClick?: (route_id: string) => void;
@@ -185,7 +186,7 @@ export class InteractionHandler {
     }
 
     const { lng, lat } = e.lngLat;
-    const suggestedId = crypto.randomUUID();
+    const suggestedId = generateId();
 
     const bodyHtml = `
       <label class="label"><span class="label-text">Stop ID</span></label>
