@@ -810,15 +810,27 @@ export class PageContentRenderer {
   }
 
   private async handleDeleteStop(stop_id: string): Promise<void> {
+    console.log(
+      '[PageContentRenderer] handleDeleteStop called, stop_id:',
+      stop_id
+    );
     const db = this.dependencies.gtfsDatabase;
     const pm = this.dependencies.patchManager;
     if (!db || !pm || !db.deleteRow) {
+      console.warn(
+        '[PageContentRenderer] handleDeleteStop: missing db/pm/deleteRow',
+        { db: !!db, pm: !!pm, deleteRow: !!db?.deleteRow }
+      );
       return;
     }
 
     const stops = await db.queryRows('stops', { stop_id });
     const stop = stops[0] as Record<string, unknown> | undefined;
     if (!stop) {
+      console.warn(
+        '[PageContentRenderer] handleDeleteStop: stop not found for id',
+        stop_id
+      );
       return;
     }
 
