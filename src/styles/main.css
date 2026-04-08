@@ -70,6 +70,10 @@ body {
 
 @layer components {
   /* File list styles using DaisyUI menu */
+  #right-panel .tab-content {
+    height: 100%;
+  }
+
   .file-required {
     border-left: 3px solid oklch(var(--p));
     padding-left: 0.75rem;
