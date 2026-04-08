@@ -10,6 +10,7 @@ export class BottomSheetController {
   private snap: Snap = 'closed';
   private panel: HTMLElement;
   private dismissCallbacks: Array<() => void> = [];
+  private active = false;
 
   constructor(panel: HTMLElement, tabManager: TabManager) {
     this.panel = panel;
@@ -19,6 +20,7 @@ export class BottomSheetController {
       return;
     }
 
+    this.active = true;
     this.setupDragHandle();
     this.setupDock(tabManager);
     this.setSnap('closed', false);
@@ -224,10 +226,16 @@ export class BottomSheetController {
   }
 
   public open(snap: 'half' | 'full' = 'half'): void {
+    if (!this.active) {
+      return;
+    }
     this.setSnap(snap, true);
   }
 
   public close(): void {
+    if (!this.active) {
+      return;
+    }
     // Programmatic close — does not fire dismiss callbacks
     this.setSnap('closed', true);
   }
