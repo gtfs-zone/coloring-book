@@ -57,15 +57,13 @@ body {
     overflow: hidden;
   }
 
-  /* Only allow content scroll in half/full states */
   #right-panel .tab-content {
+    height: 100%;
+    /* Only allow content scroll in half/full states */
     overflow-y: hidden;
   }
 
-  #right-panel.sheet-half .tab-content {
-    overflow-y: auto;
-  }
-
+  #right-panel.sheet-half .tab-content,
   #right-panel.sheet-full .tab-content {
     overflow-y: auto;
   }
@@ -73,18 +71,10 @@ body {
 
 @layer components {
   /* File list styles using DaisyUI menu */
-  #right-panel .tab-content {
-    height: 100%;
-  }
-
   .file-required {
     border-left: 3px solid oklch(var(--p));
     padding-left: 0.75rem;
   }
-}
-
-#right-panel .tabs {
-  height: 100%;
 }
 
 @layer components {
