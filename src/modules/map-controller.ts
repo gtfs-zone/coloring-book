@@ -844,6 +844,10 @@ export class MapController {
     this.callbacks.onStopSelect = callback;
   }
 
+  public refreshStops(): void {
+    this.layerManager?.updateStopsData();
+  }
+
   public setModeChangeCallback(callback: (mode: MapMode) => void): void {
     this.callbacks.onModeChange = callback;
   }
