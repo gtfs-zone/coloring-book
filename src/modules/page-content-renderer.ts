@@ -103,6 +103,7 @@ export interface ContentRendererDependencies {
     highlightStop: (stop_id: string) => void;
     clearHighlights: () => void;
     focusOnAgency: (agency_id: string) => void;
+    refreshStops: () => void;
   };
 
   // Navigation callbacks
@@ -851,6 +852,7 @@ export class PageContentRenderer {
       console.log(
         `[PageContentRenderer] Deleted stop ${stop_id}${cascade ? ` and ${stopTimes.length} stop_times` : ''}`
       );
+      this.dependencies.mapController.refreshStops();
       await navigateToHome();
     };
 
