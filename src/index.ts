@@ -243,6 +243,12 @@ export class GTFSEditor {
         );
       }
 
+      if (window.innerWidth < 768) {
+        this.mapController.setBottomPadding(
+          Math.round(window.innerHeight * 0.45)
+        );
+      }
+
       // Set up navigation event listener for automatic tab switching
       this.setupNavigationTabSwitching(bottomSheet);
 

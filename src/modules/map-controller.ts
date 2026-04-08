@@ -63,8 +63,14 @@ export class MapController {
     id: string | null;
   } = { type: 'none', id: null };
 
+  private bottomPadding = 0;
+
   constructor(mapElementId = 'map') {
     this.mapElementId = mapElementId;
+  }
+
+  public setBottomPadding(px: number): void {
+    this.bottomPadding = px;
   }
 
   /**
@@ -330,7 +336,14 @@ export class MapController {
       new LngLatBounds(coordinates[0], coordinates[0])
     );
 
-    this.map!.fitBounds(bounds, { padding: 50 });
+    this.map!.fitBounds(bounds, {
+      padding: {
+        top: 50,
+        bottom: 50 + this.bottomPadding,
+        left: 50,
+        right: 50,
+      },
+    });
   }
 
   // ========================================
@@ -390,6 +403,12 @@ export class MapController {
         zoom: Math.max(this.map!.getZoom(), 13), // Reduced from 15 to 13
         duration: 1500, // 1.5 second animation
         essential: true, // Ensure animation completes even if user interacts
+        padding: {
+          top: 50,
+          bottom: 50 + this.bottomPadding,
+          left: 50,
+          right: 50,
+        },
       });
     }
     console.log(`🎯 Highlighted stop: ${stop_id}`);
@@ -450,7 +469,14 @@ export class MapController {
         new LngLatBounds(coordinates[0], coordinates[0])
       );
 
-      this.map!.fitBounds(bounds, { padding: 50 });
+      this.map!.fitBounds(bounds, {
+        padding: {
+          top: 50,
+          bottom: 50 + this.bottomPadding,
+          left: 50,
+          right: 50,
+        },
+      });
     }
   }
 
@@ -513,7 +539,12 @@ export class MapController {
 
       // Use flyTo for smooth animation to route bounds
       this.map!.fitBounds(bounds, {
-        padding: 80,
+        padding: {
+          top: 80,
+          bottom: 80 + this.bottomPadding,
+          left: 80,
+          right: 80,
+        },
         duration: 2000, // 2 second animation for routes (longer than stops)
         essential: true, // Ensure animation completes even if user interacts
       });
@@ -558,7 +589,14 @@ export class MapController {
         new LngLatBounds(coordinates[0], coordinates[0])
       );
 
-      this.map!.fitBounds(bounds, { padding: 50 });
+      this.map!.fitBounds(bounds, {
+        padding: {
+          top: 50,
+          bottom: 50 + this.bottomPadding,
+          left: 50,
+          right: 50,
+        },
+      });
     }
   }
 
