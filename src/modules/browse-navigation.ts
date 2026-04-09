@@ -109,6 +109,14 @@ export class BrowseNavigation {
       id: string,
       record: Record<string, unknown>
     ) => Promise<void>;
+    recordBatchDelete: (
+      ops: Array<{
+        table: string;
+        id: string;
+        record: Record<string, unknown>;
+      }>,
+      label?: string
+    ) => Promise<void>;
   } | null = null;
 
   setPatchManager(pm: {
@@ -127,6 +135,14 @@ export class BrowseNavigation {
       table: string,
       id: string,
       record: Record<string, unknown>
+    ) => Promise<void>;
+    recordBatchDelete: (
+      ops: Array<{
+        table: string;
+        id: string;
+        record: Record<string, unknown>;
+      }>,
+      label?: string
     ) => Promise<void>;
   }): void {
     this.patchManager = pm;
