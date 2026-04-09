@@ -136,6 +136,14 @@ export interface ContentRendererDependencies {
       id: string,
       record: Record<string, unknown>
     ) => Promise<void>;
+    recordBatchDelete: (
+      ops: Array<{
+        table: string;
+        id: string;
+        record: Record<string, unknown>;
+      }>,
+      label?: string
+    ) => Promise<void>;
   };
 
   // Parser for reading in-memory GTFS data (used by patch bridge)
@@ -840,15 +848,31 @@ export class PageContentRenderer {
     })) as Record<string, unknown>[];
 
     const doDelete = async (cascade: boolean) => {
+      // Do all DB deletions first — no 'change' events fire during this phase
       if (cascade) {
         for (const st of stopTimes) {
           const key = generateCompositeKeyFromRecord('stop_times', st);
           await db.deleteRow!('stop_times', key);
-          await pm.recordDelete('stop_times', key, st);
         }
       }
       await db.deleteRow!('stops', stop_id);
-      await pm.recordDelete('stops', stop_id, stop);
+
+      // Record as one atomic batch patch → one 'change' event, one notification
+      const deleteOps = [
+        ...(cascade
+          ? stopTimes.map((st) => ({
+              table: 'stop_times',
+              id: generateCompositeKeyFromRecord('stop_times', st),
+              record: st,
+            }))
+          : []),
+        { table: 'stops', id: stop_id, record: stop },
+      ];
+      const label = cascade
+        ? `Delete stop + ${stopTimes.length} stop_time${stopTimes.length !== 1 ? 's' : ''}`
+        : 'Delete stop';
+      await pm.recordBatchDelete(deleteOps, label);
+
       console.log(
         `[PageContentRenderer] Deleted stop ${stop_id}${cascade ? ` and ${stopTimes.length} stop_times` : ''}`
       );
