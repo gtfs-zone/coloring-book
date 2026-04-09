@@ -69,6 +69,7 @@ export class BrowseNavigation {
     clearFocus: () => void;
     setRouteSelectCallback: (callback: (route_id: string) => void) => void;
     setStopSelectCallback: (callback: (stop_id: string) => void) => void;
+    refreshStops: () => void;
   };
   public uiController: {
     showFileInEditor: (filename: string, rowId?: string) => void;
@@ -103,6 +104,19 @@ export class BrowseNavigation {
       id: string,
       record: Record<string, unknown>
     ) => Promise<void>;
+    recordDelete: (
+      table: string,
+      id: string,
+      record: Record<string, unknown>
+    ) => Promise<void>;
+    recordBatchDelete: (
+      ops: Array<{
+        table: string;
+        id: string;
+        record: Record<string, unknown>;
+      }>,
+      label?: string
+    ) => Promise<void>;
   } | null = null;
 
   setPatchManager(pm: {
@@ -116,6 +130,19 @@ export class BrowseNavigation {
       table: string,
       id: string,
       record: Record<string, unknown>
+    ) => Promise<void>;
+    recordDelete: (
+      table: string,
+      id: string,
+      record: Record<string, unknown>
+    ) => Promise<void>;
+    recordBatchDelete: (
+      ops: Array<{
+        table: string;
+        id: string;
+        record: Record<string, unknown>;
+      }>,
+      label?: string
     ) => Promise<void>;
   }): void {
     this.patchManager = pm;
@@ -163,6 +190,7 @@ export class BrowseNavigation {
       clearFocus: () => void;
       setRouteSelectCallback: (callback: (route_id: string) => void) => void;
       setStopSelectCallback: (callback: (stop_id: string) => void) => void;
+      refreshStops: () => void;
     },
     scheduleController?: {
       renderSchedule: (
@@ -251,6 +279,8 @@ export class BrowseNavigation {
             tableName,
             rows as import('./gtfs-database.js').GTFSDatabaseRecord[]
           ),
+        deleteRow: (tableName: string, key: string) =>
+          this.gtfsRelationshipsInstance.gtfsDatabase.deleteRow(tableName, key),
       },
       gtfsRelationships: {
         getRoutesForService: (service_id: string) =>
@@ -276,6 +306,7 @@ export class BrowseNavigation {
         clearHighlights: () => this.mapController.clearHighlights(),
         focusOnAgency: (agency_id: string) =>
           this.highlightAgencyOnMap(agency_id),
+        refreshStops: () => this.mapController.refreshStops(),
       },
       onAgencyClick: (agency_id: string) => navigateToAgency(agency_id),
       onRouteClick: (route_id: string) => navigateToRoute(route_id),

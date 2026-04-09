@@ -21,11 +21,13 @@ export interface StopViewDependencies {
   };
   onAgencyClick: (agency_id: string) => void;
   onRouteClick: (route_id: string) => void;
+  onDeleteStop: (stop_id: string) => Promise<void>;
 }
 
 export class StopViewController {
   private dependencies: StopViewDependencies;
   private currentStopId: string | null = null;
+  private deleteListenerAbortController: AbortController | null = null;
 
   constructor(dependencies: StopViewDependencies) {
     this.dependencies = dependencies;
@@ -79,7 +81,14 @@ export class StopViewController {
 
     return `
       <div class="space-y-4">
-        <h2 class="text-lg font-semibold">${renderCardLabel(getStopDisplay(stop as unknown as Record<string, string>))}</h2>
+        <div class="flex items-center justify-between">
+          <h2 class="text-lg font-semibold">${renderCardLabel(getStopDisplay(stop as unknown as Record<string, string>))}</h2>
+          <button class="btn btn-sm btn-error btn-outline delete-stop-btn" data-stop-id="${stop.stop_id}">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+            </svg>
+          </button>
+        </div>
         <div class="card bg-base-100 shadow-lg">
           <div class="card-body p-4">
             <div class="max-w-md">
@@ -331,6 +340,30 @@ export class StopViewController {
         }
       });
     });
+
+    // Delete stop button — use event delegation so clicks on the SVG child
+    // element are caught correctly. Use an AbortController to prevent the
+    // listener from accumulating across re-renders of the same container.
+    if (this.deleteListenerAbortController) {
+      this.deleteListenerAbortController.abort();
+    }
+    this.deleteListenerAbortController = new AbortController();
+    container.addEventListener(
+      'click',
+      async (e) => {
+        const btn = (e.target as Element).closest('.delete-stop-btn');
+        if (!btn) {
+          return;
+        }
+        console.log('[StopViewController] Delete button clicked');
+        const stop_id = btn.getAttribute('data-stop-id');
+        console.log('[StopViewController] stop_id from button:', stop_id);
+        if (stop_id) {
+          await this.dependencies.onDeleteStop(stop_id);
+        }
+      },
+      { signal: this.deleteListenerAbortController.signal }
+    );
   }
 
   /**

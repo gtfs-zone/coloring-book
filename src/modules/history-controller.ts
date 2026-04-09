@@ -42,7 +42,16 @@ function opBadgeClass(op: GTFSPatch['op']): string {
 
 function renderFieldDiffs(patch: GTFSPatch): string {
   if (patch.op === 'batch') {
-    return `<div class="text-xs mt-0.5">${patch.ops.length} rows updated</div>`;
+    const opTypes = new Set(patch.ops.map((op) => op.op));
+    let verb: string;
+    if (opTypes.size === 1) {
+      const t = opTypes.values().next().value;
+      verb =
+        t === 'insert' ? 'inserted' : t === 'delete' ? 'deleted' : 'updated';
+    } else {
+      verb = 'changed';
+    }
+    return `<div class="text-xs mt-0.5">${patch.ops.length} rows ${verb}</div>`;
   }
   if (patch.op === 'update') {
     const before = (patch.inverse as { changes: Record<string, unknown> })
