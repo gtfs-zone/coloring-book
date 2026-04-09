@@ -205,6 +205,33 @@ export class PatchManager {
     await this.appendAndPush(patch);
   }
 
+  async recordBatchDelete(
+    ops: Array<{ table: string; id: string; record: Record<string, unknown> }>,
+    label?: string
+  ): Promise<void> {
+    if (ops.length === 0) {
+      return;
+    }
+    const singlePatches: SingleGTFSPatch[] = ops.map(
+      ({ table, id, record }) => ({
+        op: 'delete' as const,
+        source: { table, id },
+        forward: { id },
+        inverse: { record },
+      })
+    );
+    if (singlePatches.length === 1) {
+      await this.appendAndPush(singlePatches[0]);
+      return;
+    }
+    const batchPatch: BatchGTFSPatch = {
+      op: 'batch',
+      ops: singlePatches,
+      label,
+    };
+    await this.appendAndPush(batchPatch);
+  }
+
   async recordBatch(
     ops: Array<{
       table: string;
@@ -307,12 +334,30 @@ export class PatchManager {
     if (patch.op === 'batch') {
       const invertedBatch: BatchGTFSPatch = {
         op: 'batch',
-        ops: patch.ops.map((op) => ({
-          op: 'update' as const,
-          source: op.source,
-          forward: op.inverse,
-          inverse: op.forward,
-        })),
+        ops: patch.ops.map((op) => {
+          if (op.op === 'delete') {
+            return {
+              op: 'insert' as const,
+              source: op.source,
+              forward: op.inverse,
+              inverse: op.forward,
+            };
+          } else if (op.op === 'insert') {
+            return {
+              op: 'delete' as const,
+              source: op.source,
+              forward: op.inverse,
+              inverse: op.forward,
+            };
+          } else {
+            return {
+              op: 'update' as const,
+              source: op.source,
+              forward: op.inverse,
+              inverse: op.forward,
+            };
+          }
+        }),
         label: patch.label,
       };
       await this.applyPatchForward(invertedBatch);
