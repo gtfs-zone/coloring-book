@@ -74,6 +74,24 @@ interface PatchManagerInterface {
     ops: Array<{ table: string; id: string; record: Record<string, unknown> }>,
     label?: string
   ): Promise<void>;
+  recordBatchMixed(
+    ops: Array<
+      | {
+          op: 'insert';
+          table: string;
+          id: string;
+          record: Record<string, unknown>;
+        }
+      | {
+          op: 'update';
+          table: string;
+          id: string;
+          before: Record<string, unknown>;
+          after: Record<string, unknown>;
+        }
+    >,
+    label?: string
+  ): Promise<void>;
 }
 
 /**
@@ -301,25 +319,55 @@ export class ServiceDaysController {
 
       const gtfsDate = this.formatDateToGTFS(new Date(date));
 
-      const exceptionData: CalendarDates = {
-        service_id,
-        date: gtfsDate,
-        exception_type,
-      };
-
-      await this.gtfsParser.gtfsDatabase.insertRows('calendar_dates', [
-        exceptionData,
-      ]);
-      await this.patchManager?.recordInsert(
+      const existing = await this.gtfsParser.gtfsDatabase.queryRows(
         'calendar_dates',
-        `${service_id}:${gtfsDate}`,
-        exceptionData as Record<string, unknown>
+        { service_id, date: gtfsDate }
       );
+      const existingRecord = existing[0] ?? null;
 
-      this.showSaveSuccess('exceptions');
-      console.log(
-        `Added exception for service ${service_id} on ${gtfsDate} (type ${exception_type})`
-      );
+      if (existingRecord) {
+        if (existingRecord.exception_type === exception_type) {
+          // Already the correct type — no-op
+          this.showSaveSuccess('exceptions');
+          return;
+        }
+        // Different type — update in place
+        const key = `${service_id}:${gtfsDate}`;
+        await this.gtfsParser.gtfsDatabase.updateRow('calendar_dates', key, {
+          exception_type,
+        });
+        await this.patchManager?.recordBatchMixed([
+          {
+            op: 'update',
+            table: 'calendar_dates',
+            id: key,
+            before: { exception_type: existingRecord.exception_type },
+            after: { exception_type },
+          },
+        ]);
+        this.showSaveSuccess('exceptions');
+        console.log(
+          `[ServiceDaysController] Updated exception for service ${service_id} on ${gtfsDate} (type ${existingRecord.exception_type} → ${exception_type})`
+        );
+      } else {
+        const exceptionData: CalendarDates = {
+          service_id,
+          date: gtfsDate,
+          exception_type,
+        };
+        await this.gtfsParser.gtfsDatabase.insertRows('calendar_dates', [
+          exceptionData,
+        ]);
+        await this.patchManager?.recordInsert(
+          'calendar_dates',
+          `${service_id}:${gtfsDate}`,
+          exceptionData as Record<string, unknown>
+        );
+        this.showSaveSuccess('exceptions');
+        console.log(
+          `[ServiceDaysController] Added exception for service ${service_id} on ${gtfsDate} (type ${exception_type})`
+        );
+      }
     } catch (error) {
       console.error('Failed to add exception:', error);
       this.showSaveError('exceptions', 'Failed to add exception');
@@ -757,36 +805,69 @@ export class ServiceDaysController {
         .filter((e) => e.exception_type === exception_type)
         .map((e) => e.date)
     );
+    // Track dates that exist with the opposite exception_type (need a type flip)
+    const wrongTypeMap = new Map<string, CalendarDates>(
+      existingExceptions
+        .filter((e) => e.exception_type !== exception_type)
+        .map((e) => [e.date, e])
+    );
 
     const rowsToInsert: CalendarDates[] = [];
+    const rowsToUpdate: CalendarDates[] = [];
     for (let year = startYear; year <= endYear; year++) {
       for (const date of pattern.getDates(year)) {
         if (date < startDate || date > endDate) {
           continue;
         }
         if (existingSet.has(date)) {
-          continue;
+          continue; // already correct type
         }
-        rowsToInsert.push({ service_id, date, exception_type });
+        if (wrongTypeMap.has(date)) {
+          rowsToUpdate.push(wrongTypeMap.get(date)!);
+        } else {
+          rowsToInsert.push({ service_id, date, exception_type });
+        }
       }
     }
 
-    if (rowsToInsert.length > 0) {
-      await this.gtfsParser.gtfsDatabase.insertRows(
-        'calendar_dates',
-        rowsToInsert
-      );
+    if (rowsToInsert.length > 0 || rowsToUpdate.length > 0) {
+      if (rowsToInsert.length > 0) {
+        await this.gtfsParser.gtfsDatabase.insertRows(
+          'calendar_dates',
+          rowsToInsert
+        );
+      }
+      for (const row of rowsToUpdate) {
+        await this.gtfsParser.gtfsDatabase.updateRow(
+          'calendar_dates',
+          `${row.service_id}:${row.date}`,
+          { exception_type }
+        );
+      }
+
       const label = `Add ${pattern.name} (${exception_type === 1 ? 'Add Service' : 'Remove Service'})`;
-      await this.patchManager?.recordBatchInsert(
-        rowsToInsert.map((row) => ({
-          table: 'calendar_dates',
-          id: `${row.service_id}:${row.date}`,
-          record: row as Record<string, unknown>,
-        })),
-        label
-      );
+      const mixedOps: Parameters<PatchManagerInterface['recordBatchMixed']>[0] =
+        [
+          ...rowsToInsert.map((row) => ({
+            op: 'insert' as const,
+            table: 'calendar_dates',
+            id: `${row.service_id}:${row.date}`,
+            record: row as Record<string, unknown>,
+          })),
+          ...rowsToUpdate.map((row) => ({
+            op: 'update' as const,
+            table: 'calendar_dates',
+            id: `${row.service_id}:${row.date}`,
+            before: { exception_type: row.exception_type } as Record<
+              string,
+              unknown
+            >,
+            after: { exception_type } as Record<string, unknown>,
+          })),
+        ];
+      await this.patchManager?.recordBatchMixed(mixedOps, label);
       console.log(
-        `[ServiceDaysController] Added ${rowsToInsert.length} pattern dates for ${service_id} (${pattern.name})`
+        `[ServiceDaysController] Added ${rowsToInsert.length} pattern dates, updated ${rowsToUpdate.length} for ${service_id} (${pattern.name})`
       );
     }
 
