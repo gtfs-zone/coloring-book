@@ -1,4 +1,9 @@
-import { Map as MapLibreMap, GeoJSONSource, MapMouseEvent } from 'maplibre-gl';
+import {
+  Map as MapLibreMap,
+  GeoJSONSource,
+  MapMouseEvent,
+  MapTouchEvent,
+} from 'maplibre-gl';
 import { Stops } from '../types/gtfs-entities.js';
 import { MapMode } from './map-controller.js';
 import type { GTFSParser } from './gtfs-parser.js';
@@ -92,6 +97,11 @@ export class InteractionHandler {
     this.map.on('mousedown', this.handleMouseDown.bind(this));
     this.map.on('mousemove', this.handleMouseMove.bind(this));
     this.map.on('mouseup', this.handleMouseUp.bind(this));
+
+    // Touch events for dragging (mobile)
+    this.map.on('touchstart', this.handleTouchStart.bind(this));
+    this.map.on('touchmove', this.handleTouchMove.bind(this));
+    this.map.on('touchend', this.handleTouchEnd.bind(this));
 
     // Always-on hover handlers for stop layers — show grab cursor on highlighted stop
     ['stops-background', 'stops-clickarea'].forEach((layerId) => {
@@ -389,6 +399,100 @@ export class InteractionHandler {
   }
 
   /**
+   * Handle touch start events (for dragging on mobile)
+   */
+  private handleTouchStart(e: MapTouchEvent): void {
+    if (e.points.length !== 1) {
+      return;
+    }
+    if (this.currentMode !== MapMode.NAVIGATE) {
+      return;
+    }
+
+    const features = this.map.queryRenderedFeatures(e.point, {
+      layers: ['stops-clickarea', 'stops-background'],
+    });
+
+    if (features.length === 0) {
+      return;
+    }
+
+    const stop_id = features[0].properties?.stop_id;
+    if (!stop_id || stop_id !== this.highlightedStopId) {
+      return;
+    }
+
+    e.preventDefault();
+    this.draggedStopId = stop_id;
+    this.isDragging = true;
+    this.map.getCanvas().style.cursor = 'grabbing';
+
+    this.setStopDragState(stop_id, true);
+  }
+
+  /**
+   * Handle touch move events (for dragging on mobile)
+   */
+  private handleTouchMove(e: MapTouchEvent): void {
+    if (e.points.length !== 1) {
+      return;
+    }
+    if (!this.isDragging || !this.draggedStopId) {
+      return;
+    }
+
+    e.preventDefault();
+
+    const source = this.map.getSource('stops') as GeoJSONSource;
+    if (!source || !this.stopsGeoJSON) {
+      return;
+    }
+
+    const data = this.stopsGeoJSON;
+
+    const featureIndex = data.features.findIndex(
+      (f) => f.properties && f.properties.stop_id === this.draggedStopId
+    );
+
+    if (featureIndex !== -1) {
+      (data.features[featureIndex].geometry as GeoJSON.Point).coordinates = [
+        e.lngLat.lng,
+        e.lngLat.lat,
+      ];
+      source.setData(data);
+
+      const highlightSource = this.map.getSource('stops-highlight') as
+        | GeoJSONSource
+        | undefined;
+      if (highlightSource) {
+        const existingProps =
+          (highlightSource as unknown as { _data: GeoJSON.FeatureCollection })
+            ._data?.features?.[0]?.properties ?? {};
+        highlightSource.setData({
+          type: 'FeatureCollection',
+          features: [
+            {
+              type: 'Feature',
+              geometry: {
+                type: 'Point',
+                coordinates: [e.lngLat.lng, e.lngLat.lat],
+              },
+              properties: existingProps,
+            },
+          ],
+        });
+      }
+    }
+  }
+
+  /**
+   * Handle touch end events (finish dragging on mobile)
+   */
+  private handleTouchEnd(_e: MapTouchEvent): void {
+    this.handleMouseUp();
+  }
+
+  /**
    * Set visual feedback for stop dragging
    */
   private setStopDragState(stop_id: string, isDragging: boolean): void {
@@ -486,6 +590,9 @@ export class InteractionHandler {
     this.map.off('mousedown', this.handleMouseDown);
     this.map.off('mousemove', this.handleMouseMove);
     this.map.off('mouseup', this.handleMouseUp);
+    this.map.off('touchstart', this.handleTouchStart);
+    this.map.off('touchmove', this.handleTouchMove);
+    this.map.off('touchend', this.handleTouchEnd);
 
     console.log('🧹 Interaction handler destroyed');
   }
