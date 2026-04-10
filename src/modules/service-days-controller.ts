@@ -707,6 +707,162 @@ export class ServiceDaysController {
   }
 
   /**
+   * Add all dates for a holiday pattern group to calendar_dates
+   */
+  async addPatternGroup(
+    service_id: string,
+    patternId: string,
+    exception_type: 1 | 2
+  ): Promise<void> {
+    const pattern = HOLIDAY_PATTERNS.find((p) => p.id === patternId);
+    if (!pattern) {
+      throw new Error(`Unknown holiday pattern: ${patternId}`);
+    }
+
+    const [calendarRows, existingExceptions] = await Promise.all([
+      this.gtfsParser.gtfsDatabase.queryRows('calendar', { service_id }),
+      this.gtfsParser.gtfsDatabase.queryRows('calendar_dates', { service_id }),
+    ]);
+    const calendar = calendarRows[0] ?? null;
+    const { startYear, endYear } = this.getYearsRange(
+      calendar,
+      existingExceptions
+    );
+
+    const startDate =
+      calendar?.start_date ??
+      (existingExceptions.length > 0
+        ? existingExceptions.map((e) => e.date).sort()[0]
+        : '00000000');
+    const endDate =
+      calendar?.end_date ??
+      (existingExceptions.length > 0
+        ? existingExceptions
+            .map((e) => e.date)
+            .sort()
+            .slice(-1)[0]
+        : '99999999');
+
+    // Build set of existing dates with this exception_type
+    const existingSet = new Set(
+      existingExceptions
+        .filter((e) => e.exception_type === exception_type)
+        .map((e) => e.date)
+    );
+
+    for (let year = startYear; year <= endYear; year++) {
+      for (const date of pattern.getDates(year)) {
+        if (date < startDate || date > endDate) {
+          continue;
+        }
+        if (existingSet.has(date)) {
+          continue;
+        }
+
+        const row: CalendarDates = { service_id, date, exception_type };
+        await this.gtfsParser.gtfsDatabase.insertRows('calendar_dates', [row]);
+        await this.patchManager?.recordInsert(
+          'calendar_dates',
+          `${service_id}:${date}`,
+          row as Record<string, unknown>
+        );
+        console.log(
+          `[ServiceDaysController] Added pattern date ${date} (type ${exception_type}) for ${service_id}`
+        );
+      }
+    }
+
+    await this.refreshExceptionsDisplay(service_id);
+  }
+
+  /**
+   * Remove all dates for a holiday pattern group from calendar_dates
+   */
+  async removePatternGroup(
+    service_id: string,
+    patternId: string,
+    exception_type: 1 | 2
+  ): Promise<void> {
+    const pattern = HOLIDAY_PATTERNS.find((p) => p.id === patternId);
+    if (!pattern) {
+      throw new Error(`Unknown holiday pattern: ${patternId}`);
+    }
+
+    const [calendarRows, existingExceptions] = await Promise.all([
+      this.gtfsParser.gtfsDatabase.queryRows('calendar', { service_id }),
+      this.gtfsParser.gtfsDatabase.queryRows('calendar_dates', { service_id }),
+    ]);
+    const calendar = calendarRows[0] ?? null;
+    const { startYear, endYear } = this.getYearsRange(
+      calendar,
+      existingExceptions
+    );
+
+    const startDate =
+      calendar?.start_date ??
+      (existingExceptions.length > 0
+        ? existingExceptions.map((e) => e.date).sort()[0]
+        : '00000000');
+    const endDate =
+      calendar?.end_date ??
+      (existingExceptions.length > 0
+        ? existingExceptions
+            .map((e) => e.date)
+            .sort()
+            .slice(-1)[0]
+        : '99999999');
+
+    // Build lookup of existing exceptions with matching type
+    const existingMap = new Map<string, CalendarDates>();
+    for (const ex of existingExceptions) {
+      if (ex.exception_type === exception_type) {
+        existingMap.set(ex.date, ex);
+      }
+    }
+
+    for (let year = startYear; year <= endYear; year++) {
+      for (const date of pattern.getDates(year)) {
+        if (date < startDate || date > endDate) {
+          continue;
+        }
+        const existing = existingMap.get(date);
+        if (!existing) {
+          continue;
+        }
+
+        const key = `${service_id}:${date}`;
+        await this.gtfsParser.gtfsDatabase.deleteRow('calendar_dates', key);
+        await this.patchManager?.recordDelete(
+          'calendar_dates',
+          key,
+          existing as Record<string, unknown>
+        );
+        console.log(
+          `[ServiceDaysController] Removed pattern date ${date} (type ${exception_type}) for ${service_id}`
+        );
+      }
+    }
+
+    await this.refreshExceptionsDisplay(service_id);
+  }
+
+  /**
+   * Add pattern group from form (DOM-facing)
+   */
+  async addPatternGroupFromForm(service_id: string): Promise<void> {
+    const patternSelect = document.getElementById(
+      `pattern-select-${service_id}`
+    ) as HTMLSelectElement;
+    const typeSelect = document.getElementById(
+      `pattern-type-${service_id}`
+    ) as HTMLSelectElement;
+
+    const patternId = patternSelect.value;
+    const exception_type = parseInt(typeSelect.value) as 1 | 2;
+    await this.addPatternGroup(service_id, patternId, exception_type);
+  }
+
+  /**
    * Toggle raw mode for a service's exceptions display
    */
   toggleRawMode(service_id: string): void {
