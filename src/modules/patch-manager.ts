@@ -205,6 +205,33 @@ export class PatchManager {
     await this.appendAndPush(patch);
   }
 
+  async recordBatchInsert(
+    ops: Array<{ table: string; id: string; record: Record<string, unknown> }>,
+    label?: string
+  ): Promise<void> {
+    if (ops.length === 0) {
+      return;
+    }
+    const singlePatches: SingleGTFSPatch[] = ops.map(
+      ({ table, id, record }) => ({
+        op: 'insert' as const,
+        source: { table, id },
+        forward: { record },
+        inverse: { id },
+      })
+    );
+    if (singlePatches.length === 1) {
+      await this.appendAndPush(singlePatches[0]);
+      return;
+    }
+    const batchPatch: BatchGTFSPatch = {
+      op: 'batch',
+      ops: singlePatches,
+      label,
+    };
+    await this.appendAndPush(batchPatch);
+  }
+
   async recordBatchDelete(
     ops: Array<{ table: string; id: string; record: Record<string, unknown> }>,
     label?: string

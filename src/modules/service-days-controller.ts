@@ -66,6 +66,14 @@ interface PatchManagerInterface {
     id: string,
     record: Record<string, unknown>
   ): Promise<void>;
+  recordBatchInsert(
+    ops: Array<{ table: string; id: string; record: Record<string, unknown> }>,
+    label?: string
+  ): Promise<void>;
+  recordBatchDelete(
+    ops: Array<{ table: string; id: string; record: Record<string, unknown> }>,
+    label?: string
+  ): Promise<void>;
 }
 
 /**
@@ -750,6 +758,7 @@ export class ServiceDaysController {
         .map((e) => e.date)
     );
 
+    const rowsToInsert: CalendarDates[] = [];
     for (let year = startYear; year <= endYear; year++) {
       for (const date of pattern.getDates(year)) {
         if (date < startDate || date > endDate) {
@@ -758,18 +767,27 @@ export class ServiceDaysController {
         if (existingSet.has(date)) {
           continue;
         }
-
-        const row: CalendarDates = { service_id, date, exception_type };
-        await this.gtfsParser.gtfsDatabase.insertRows('calendar_dates', [row]);
-        await this.patchManager?.recordInsert(
-          'calendar_dates',
-          `${service_id}:${date}`,
-          row as Record<string, unknown>
-        );
-        console.log(
-          `[ServiceDaysController] Added pattern date ${date} (type ${exception_type}) for ${service_id}`
-        );
+        rowsToInsert.push({ service_id, date, exception_type });
       }
+    }
+
+    if (rowsToInsert.length > 0) {
+      await this.gtfsParser.gtfsDatabase.insertRows(
+        'calendar_dates',
+        rowsToInsert
+      );
+      const label = `Add ${pattern.name} (${exception_type === 1 ? 'Add Service' : 'Remove Service'})`;
+      await this.patchManager?.recordBatchInsert(
+        rowsToInsert.map((row) => ({
+          table: 'calendar_dates',
+          id: `${row.service_id}:${row.date}`,
+          record: row as Record<string, unknown>,
+        })),
+        label
+      );
+      console.log(
+        `[ServiceDaysController] Added ${rowsToInsert.length} pattern dates for ${service_id} (${pattern.name})`
+      );
     }
 
     await this.refreshExceptionsDisplay(service_id);
@@ -820,6 +838,11 @@ export class ServiceDaysController {
       }
     }
 
+    const deleteOps: Array<{
+      table: string;
+      id: string;
+      record: Record<string, unknown>;
+    }> = [];
     for (let year = startYear; year <= endYear; year++) {
       for (const date of pattern.getDates(year)) {
         if (date < startDate || date > endDate) {
@@ -829,18 +852,23 @@ export class ServiceDaysController {
         if (!existing) {
           continue;
         }
-
-        const key = `${service_id}:${date}`;
-        await this.gtfsParser.gtfsDatabase.deleteRow('calendar_dates', key);
-        await this.patchManager?.recordDelete(
-          'calendar_dates',
-          key,
-          existing as Record<string, unknown>
-        );
-        console.log(
-          `[ServiceDaysController] Removed pattern date ${date} (type ${exception_type}) for ${service_id}`
-        );
+        deleteOps.push({
+          table: 'calendar_dates',
+          id: `${service_id}:${date}`,
+          record: existing as Record<string, unknown>,
+        });
       }
+    }
+
+    if (deleteOps.length > 0) {
+      for (const op of deleteOps) {
+        await this.gtfsParser.gtfsDatabase.deleteRow('calendar_dates', op.id);
+      }
+      const label = `Remove ${pattern.name} (${exception_type === 1 ? 'Add Service' : 'Remove Service'})`;
+      await this.patchManager?.recordBatchDelete(deleteOps, label);
+      console.log(
+        `[ServiceDaysController] Removed ${deleteOps.length} pattern dates for ${service_id} (${pattern.name})`
+      );
     }
 
     await this.refreshExceptionsDisplay(service_id);
