@@ -205,6 +205,33 @@ export class PatchManager {
     await this.appendAndPush(patch);
   }
 
+  async recordBatchInsert(
+    ops: Array<{ table: string; id: string; record: Record<string, unknown> }>,
+    label?: string
+  ): Promise<void> {
+    if (ops.length === 0) {
+      return;
+    }
+    const singlePatches: SingleGTFSPatch[] = ops.map(
+      ({ table, id, record }) => ({
+        op: 'insert' as const,
+        source: { table, id },
+        forward: { record },
+        inverse: { id },
+      })
+    );
+    if (singlePatches.length === 1) {
+      await this.appendAndPush(singlePatches[0]);
+      return;
+    }
+    const batchPatch: BatchGTFSPatch = {
+      op: 'batch',
+      ops: singlePatches,
+      label,
+    };
+    await this.appendAndPush(batchPatch);
+  }
+
   async recordBatchDelete(
     ops: Array<{ table: string; id: string; record: Record<string, unknown> }>,
     label?: string
@@ -220,6 +247,70 @@ export class PatchManager {
         inverse: { record },
       })
     );
+    if (singlePatches.length === 1) {
+      await this.appendAndPush(singlePatches[0]);
+      return;
+    }
+    const batchPatch: BatchGTFSPatch = {
+      op: 'batch',
+      ops: singlePatches,
+      label,
+    };
+    await this.appendAndPush(batchPatch);
+  }
+
+  async recordBatchMixed(
+    ops: Array<
+      | {
+          op: 'insert';
+          table: string;
+          id: string;
+          record: Record<string, unknown>;
+        }
+      | {
+          op: 'update';
+          table: string;
+          id: string;
+          before: Record<string, unknown>;
+          after: Record<string, unknown>;
+        }
+    >,
+    label?: string
+  ): Promise<void> {
+    if (ops.length === 0) {
+      return;
+    }
+    const singlePatches: SingleGTFSPatch[] = [];
+    for (const op of ops) {
+      if (op.op === 'insert') {
+        singlePatches.push({
+          op: 'insert',
+          source: { table: op.table, id: op.id },
+          forward: { record: op.record },
+          inverse: { id: op.id },
+        });
+      } else {
+        const forwardChanges: Record<string, unknown> = {};
+        const inverseChanges: Record<string, unknown> = {};
+        for (const key of Object.keys(op.after)) {
+          if (op.before[key] !== op.after[key]) {
+            forwardChanges[key] = op.after[key];
+            inverseChanges[key] = op.before[key];
+          }
+        }
+        if (Object.keys(forwardChanges).length > 0) {
+          singlePatches.push({
+            op: 'update',
+            source: { table: op.table, id: op.id },
+            forward: { changes: forwardChanges },
+            inverse: { changes: inverseChanges },
+          });
+        }
+      }
+    }
+    if (singlePatches.length === 0) {
+      return;
+    }
     if (singlePatches.length === 1) {
       await this.appendAndPush(singlePatches[0]);
       return;
