@@ -11,6 +11,10 @@ import {
 } from '../types/gtfs-entities.js';
 import { notifications } from './notification-system';
 import { patchUpdate } from '../utils/patch-utils.js';
+import {
+  HOLIDAY_PATTERNS,
+  HolidayPattern,
+} from '../calendar-patterns/index.js';
 
 // Days of the week in US format (Sunday first)
 const DAYS_OF_WEEK = [
@@ -62,6 +66,32 @@ interface PatchManagerInterface {
     id: string,
     record: Record<string, unknown>
   ): Promise<void>;
+  recordBatchInsert(
+    ops: Array<{ table: string; id: string; record: Record<string, unknown> }>,
+    label?: string
+  ): Promise<void>;
+  recordBatchDelete(
+    ops: Array<{ table: string; id: string; record: Record<string, unknown> }>,
+    label?: string
+  ): Promise<void>;
+  recordBatchMixed(
+    ops: Array<
+      | {
+          op: 'insert';
+          table: string;
+          id: string;
+          record: Record<string, unknown>;
+        }
+      | {
+          op: 'update';
+          table: string;
+          id: string;
+          before: Record<string, unknown>;
+          after: Record<string, unknown>;
+        }
+    >,
+    label?: string
+  ): Promise<void>;
 }
 
 /**
@@ -74,10 +104,16 @@ interface PatchManagerInterface {
  *
  * Follows the Enhanced GTFS Object pattern and FAIL HARD error handling policy.
  */
+interface MatchedPattern {
+  pattern: HolidayPattern;
+  exception_type: 1 | 2;
+}
+
 export class ServiceDaysController {
   private gtfsParser: GTFSParserInterface;
   private patchManager: PatchManagerInterface | null = null;
   private savingIndicators: Set<string> = new Set();
+  private rawModeServices: Set<string> = new Set();
 
   /**
    * Initialize ServiceDaysController with required dependencies
@@ -283,25 +319,55 @@ export class ServiceDaysController {
 
       const gtfsDate = this.formatDateToGTFS(new Date(date));
 
-      const exceptionData: CalendarDates = {
-        service_id,
-        date: gtfsDate,
-        exception_type,
-      };
-
-      await this.gtfsParser.gtfsDatabase.insertRows('calendar_dates', [
-        exceptionData,
-      ]);
-      await this.patchManager?.recordInsert(
+      const existing = await this.gtfsParser.gtfsDatabase.queryRows(
         'calendar_dates',
-        `${service_id}:${gtfsDate}`,
-        exceptionData as Record<string, unknown>
+        { service_id, date: gtfsDate }
       );
+      const existingRecord = existing[0] ?? null;
 
-      this.showSaveSuccess('exceptions');
-      console.log(
-        `Added exception for service ${service_id} on ${gtfsDate} (type ${exception_type})`
-      );
+      if (existingRecord) {
+        if (existingRecord.exception_type === exception_type) {
+          // Already the correct type — no-op
+          this.showSaveSuccess('exceptions');
+          return;
+        }
+        // Different type — update in place
+        const key = `${service_id}:${gtfsDate}`;
+        await this.gtfsParser.gtfsDatabase.updateRow('calendar_dates', key, {
+          exception_type,
+        });
+        await this.patchManager?.recordBatchMixed([
+          {
+            op: 'update',
+            table: 'calendar_dates',
+            id: key,
+            before: { exception_type: existingRecord.exception_type },
+            after: { exception_type },
+          },
+        ]);
+        this.showSaveSuccess('exceptions');
+        console.log(
+          `[ServiceDaysController] Updated exception for service ${service_id} on ${gtfsDate} (type ${existingRecord.exception_type} → ${exception_type})`
+        );
+      } else {
+        const exceptionData: CalendarDates = {
+          service_id,
+          date: gtfsDate,
+          exception_type,
+        };
+        await this.gtfsParser.gtfsDatabase.insertRows('calendar_dates', [
+          exceptionData,
+        ]);
+        await this.patchManager?.recordInsert(
+          'calendar_dates',
+          `${service_id}:${gtfsDate}`,
+          exceptionData as Record<string, unknown>
+        );
+        this.showSaveSuccess('exceptions');
+        console.log(
+          `[ServiceDaysController] Added exception for service ${service_id} on ${gtfsDate} (type ${exception_type})`
+        );
+      }
     } catch (error) {
       console.error('Failed to add exception:', error);
       this.showSaveError('exceptions', 'Failed to add exception');
@@ -353,7 +419,11 @@ export class ServiceDaysController {
   ): string {
     const weeklyPatternHTML = this.renderWeeklyPattern(service_id, calendar);
     const dateRangeHTML = this.renderDateRange(service_id, calendar);
-    const exceptionsHTML = this.renderExceptions(service_id, exceptions);
+    const exceptionsHTML = this.renderExceptions(
+      service_id,
+      calendar,
+      exceptions
+    );
 
     return `
       <div class="service-days-editor bg-base-200/50 p-4 rounded-lg">
@@ -465,66 +535,452 @@ export class ServiceDaysController {
   }
 
   /**
-   * Render exceptions list and add form
+   * Render exceptions section with pattern groups + individual exceptions
    */
   private renderExceptions(
     service_id: string,
+    calendar: Calendar | null,
     exceptions: CalendarDates[]
   ): string {
-    const exceptionsList = exceptions
+    const { matched, individual } = this.matchPatterns(exceptions, calendar);
+    const isRawMode = this.rawModeServices.has(service_id);
+
+    // Pattern groups section
+    const patternGroupsHTML =
+      matched.length === 0
+        ? '<div class="text-xs text-base-content/60 py-1">No pattern groups recognized</div>'
+        : matched
+            .map(({ pattern, exception_type }) => {
+              const typeText =
+                exception_type === 1 ? 'Add Service' : 'Remove Service';
+              const typeClass =
+                exception_type === 1 ? 'badge-success' : 'badge-error';
+              return `
+            <div class="exception-item flex items-center justify-between p-1 text-xs">
+              <div class="flex items-center gap-2">
+                <span class="font-medium">${pattern.name}</span>
+                <span class="badge ${typeClass} badge-xs">${typeText}</span>
+              </div>
+              <button
+                class="btn btn-ghost btn-xs"
+                onclick="window.gtfsEditor.serviceDaysController.removePatternGroup('${service_id}', '${pattern.id}', ${exception_type})"
+              >
+                ✕
+              </button>
+            </div>
+          `;
+            })
+            .join('');
+
+    // Add pattern form
+    const patternOptions = HOLIDAY_PATTERNS.map(
+      (p) => `<option value="${p.id}">${p.name}</option>`
+    ).join('');
+
+    const addPatternFormHTML = `
+      <div class="add-exception-form bg-base-100 border border-base-300 p-2 rounded mb-2">
+        <div class="grid grid-cols-3 gap-1 items-end">
+          <select id="pattern-select-${service_id}" class="select select-bordered select-xs text-xs col-span-1">
+            ${patternOptions}
+          </select>
+          <select id="pattern-type-${service_id}" class="select select-bordered select-xs text-xs">
+            <option value="1">Add Service</option>
+            <option value="2">Remove Service</option>
+          </select>
+          <button
+            class="btn btn-primary btn-xs text-xs"
+            onclick="window.gtfsEditor.serviceDaysController.addPatternGroupFromForm('${service_id}')"
+          >
+            Add Pattern
+          </button>
+        </div>
+      </div>
+    `;
+
+    // Raw toggle
+    const rawToggleLabel = isRawMode ? 'Hide raw dates' : 'Show raw dates';
+    const rawToggleHTML = `
+      <button
+        class="btn btn-ghost btn-xs text-xs mt-1"
+        onclick="window.gtfsEditor.serviceDaysController.toggleRawMode('${service_id}')"
+      >${rawToggleLabel}</button>
+    `;
+
+    // Individual exceptions section
+    const displayExceptions = isRawMode ? exceptions : individual;
+    const individualLabel = isRawMode
+      ? 'All dates (raw)'
+      : 'Individual exceptions';
+    const individualsHTML = displayExceptions
       .map((exception) => {
         const formattedDate = this.parseGTFSDate(exception.date);
         const typeText =
           exception.exception_type === 1 ? 'Add Service' : 'Remove Service';
         const typeClass =
           exception.exception_type === 1 ? 'badge-success' : 'badge-error';
-
         return `
-        <div class="exception-item flex items-center justify-between p-1 text-xs">
-          <div class="flex items-center gap-2">
-            <span class="font-mono text-xs">${formattedDate}</span>
-            <span class="badge ${typeClass} badge-xs">${typeText}</span>
+          <div class="exception-item flex items-center justify-between p-1 text-xs">
+            <div class="flex items-center gap-2">
+              <span class="font-mono text-xs">${formattedDate}</span>
+              <span class="badge ${typeClass} badge-xs">${typeText}</span>
+            </div>
+            <button
+              class="btn btn-ghost btn-xs"
+              onclick="window.gtfsEditor.serviceDaysController.removeException('${service_id}', '${exception.date}')"
+            >
+              ✕
+            </button>
           </div>
-          <button
-            class="btn btn-ghost btn-xs"
-            onclick="window.gtfsEditor.serviceDaysController.removeException('${service_id}', '${exception.date}')"
-          >
-            ✕
-          </button>
-        </div>
-      `;
+        `;
       })
       .join('');
 
+    const addIndividualFormHTML = `
+      <div class="add-exception-form bg-base-100 border border-base-300 p-2 rounded mb-2">
+        <div class="grid grid-cols-3 gap-1 items-end">
+          <input type="date" id="exception-date-${service_id}" class="input input-bordered input-xs text-xs" />
+          <select id="exception-type-${service_id}" class="select select-bordered select-xs text-xs">
+            <option value="1">Add Service</option>
+            <option value="2">Remove Service</option>
+          </select>
+          <button
+            class="btn btn-primary btn-xs text-xs"
+            onclick="window.gtfsEditor.serviceDaysController.addExceptionFromForm('${service_id}')"
+          >
+            Add
+          </button>
+        </div>
+      </div>
+    `;
+
     return `
-      <div class="exceptions-container">
+      <div id="service-exceptions-${service_id}">
         <div class="saving-indicator" id="saving-exceptions" style="display: none;">
           <span class="loading loading-spinner loading-xs"></span>
         </div>
 
-        <!-- Add Exception Form -->
-        <div class="add-exception-form bg-base-100 border border-base-300 p-2 rounded mb-2">
-          <div class="grid grid-cols-3 gap-1 items-end">
-            <input type="date" id="exception-date-${service_id}" class="input input-bordered input-xs text-xs" />
-            <select id="exception-type-${service_id}" class="select select-bordered select-xs text-xs">
-              <option value="1">Add Service</option>
-              <option value="2">Remove Service</option>
-            </select>
-            <button
-              class="btn btn-primary btn-xs text-xs"
-              onclick="window.gtfsEditor.serviceDaysController.addExceptionFromForm('${service_id}')"
-            >
-              Add
-            </button>
-          </div>
+        <!-- Pattern Groups -->
+        <h5 class="text-xs font-semibold mb-1 text-base-content/70">Pattern Groups</h5>
+        <div class="space-y-1 bg-base-100 border border-base-300 rounded p-2 mb-2">
+          ${patternGroupsHTML}
         </div>
+        ${addPatternFormHTML}
 
-        <!-- Exceptions List -->
-        <div class="exceptions-list max-h-32 overflow-y-auto space-y-1 bg-base-100 border border-base-300 rounded p-2">
-          ${exceptionsList || '<div class="text-xs text-base-content/60 p-2">No exceptions defined</div>'}
+        <!-- Individual Exceptions -->
+        <div class="flex items-center justify-between mb-1">
+          <h5 class="text-xs font-semibold text-base-content/70">${individualLabel}</h5>
+          ${rawToggleHTML}
         </div>
+        <div class="max-h-32 overflow-y-auto space-y-1 bg-base-100 border border-base-300 rounded p-2 mb-2">
+          ${individualsHTML || '<div class="text-xs text-base-content/60 p-2">No individual exceptions</div>'}
+        </div>
+        ${addIndividualFormHTML}
       </div>
     `;
+  }
+
+  /**
+   * Derive year range from calendar dates or exception dates
+   */
+  private getYearsRange(
+    calendar: Calendar | null,
+    exceptions: CalendarDates[]
+  ): { startYear: number; endYear: number } {
+    if (calendar?.start_date && calendar?.end_date) {
+      return {
+        startYear: parseInt(calendar.start_date.substring(0, 4)),
+        endYear: parseInt(calendar.end_date.substring(0, 4)),
+      };
+    }
+    if (exceptions.length === 0) {
+      const y = new Date().getFullYear();
+      return { startYear: y, endYear: y };
+    }
+    const years = exceptions.map((e) => parseInt(e.date.substring(0, 4)));
+    return { startYear: Math.min(...years), endYear: Math.max(...years) };
+  }
+
+  /**
+   * Match exceptions against known holiday patterns
+   */
+  private matchPatterns(
+    exceptions: CalendarDates[],
+    calendar: Calendar | null
+  ): { matched: MatchedPattern[]; individual: CalendarDates[] } {
+    const { startYear, endYear } = this.getYearsRange(calendar, exceptions);
+    const sortedDates = exceptions.map((e) => e.date).sort();
+    const startDate =
+      calendar?.start_date ??
+      (sortedDates.length > 0 ? sortedDates[0] : '00000000');
+    const endDate =
+      calendar?.end_date ??
+      (sortedDates.length > 0
+        ? sortedDates[sortedDates.length - 1]
+        : '99999999');
+
+    // Build lookup: date -> set of exception_types
+    const exceptionMap = new Map<string, Set<number>>();
+    for (const ex of exceptions) {
+      if (!exceptionMap.has(ex.date)) {
+        exceptionMap.set(ex.date, new Set());
+      }
+      exceptionMap.get(ex.date)!.add(ex.exception_type);
+    }
+
+    const matched: MatchedPattern[] = [];
+    const claimedDates = new Set<string>();
+
+    for (const pattern of HOLIDAY_PATTERNS) {
+      for (const exception_type of [1, 2] as const) {
+        // Collect all pattern dates in the calendar's date range
+        const patternDates: string[] = [];
+        for (let year = startYear; year <= endYear; year++) {
+          for (const date of pattern.getDates(year)) {
+            if (date >= startDate && date <= endDate) {
+              patternDates.push(date);
+            }
+          }
+        }
+        if (patternDates.length === 0) {
+          continue;
+        }
+
+        // Check if every pattern date is present with this exception_type
+        const allPresent = patternDates.every(
+          (d) => exceptionMap.get(d)?.has(exception_type) ?? false
+        );
+        if (allPresent) {
+          matched.push({ pattern, exception_type });
+          for (const d of patternDates) {
+            claimedDates.add(d);
+          }
+        }
+      }
+    }
+
+    const individual = exceptions.filter((ex) => !claimedDates.has(ex.date));
+    return { matched, individual };
+  }
+
+  /**
+   * Add all dates for a holiday pattern group to calendar_dates
+   */
+  async addPatternGroup(
+    service_id: string,
+    patternId: string,
+    exception_type: 1 | 2
+  ): Promise<void> {
+    const pattern = HOLIDAY_PATTERNS.find((p) => p.id === patternId);
+    if (!pattern) {
+      throw new Error(`Unknown holiday pattern: ${patternId}`);
+    }
+
+    const [calendarRows, existingExceptions] = await Promise.all([
+      this.gtfsParser.gtfsDatabase.queryRows('calendar', { service_id }),
+      this.gtfsParser.gtfsDatabase.queryRows('calendar_dates', { service_id }),
+    ]);
+    const calendar = calendarRows[0] ?? null;
+    const { startYear, endYear } = this.getYearsRange(
+      calendar,
+      existingExceptions
+    );
+
+    const startDate =
+      calendar?.start_date ??
+      (existingExceptions.length > 0
+        ? existingExceptions.map((e) => e.date).sort()[0]
+        : '00000000');
+    const endDate =
+      calendar?.end_date ??
+      (existingExceptions.length > 0
+        ? existingExceptions
+            .map((e) => e.date)
+            .sort()
+            .slice(-1)[0]
+        : '99999999');
+
+    // Build set of existing dates with this exception_type
+    const existingSet = new Set(
+      existingExceptions
+        .filter((e) => e.exception_type === exception_type)
+        .map((e) => e.date)
+    );
+    // Track dates that exist with the opposite exception_type (need a type flip)
+    const wrongTypeMap = new Map<string, CalendarDates>(
+      existingExceptions
+        .filter((e) => e.exception_type !== exception_type)
+        .map((e) => [e.date, e])
+    );
+
+    const rowsToInsert: CalendarDates[] = [];
+    const rowsToUpdate: CalendarDates[] = [];
+    for (let year = startYear; year <= endYear; year++) {
+      for (const date of pattern.getDates(year)) {
+        if (date < startDate || date > endDate) {
+          continue;
+        }
+        if (existingSet.has(date)) {
+          continue; // already correct type
+        }
+        if (wrongTypeMap.has(date)) {
+          rowsToUpdate.push(wrongTypeMap.get(date)!);
+        } else {
+          rowsToInsert.push({ service_id, date, exception_type });
+        }
+      }
+    }
+
+    if (rowsToInsert.length > 0 || rowsToUpdate.length > 0) {
+      if (rowsToInsert.length > 0) {
+        await this.gtfsParser.gtfsDatabase.insertRows(
+          'calendar_dates',
+          rowsToInsert
+        );
+      }
+      for (const row of rowsToUpdate) {
+        await this.gtfsParser.gtfsDatabase.updateRow(
+          'calendar_dates',
+          `${row.service_id}:${row.date}`,
+          { exception_type }
+        );
+      }
+
+      const label = `Add ${pattern.name} (${exception_type === 1 ? 'Add Service' : 'Remove Service'})`;
+      const mixedOps: Parameters<PatchManagerInterface['recordBatchMixed']>[0] =
+        [
+          ...rowsToInsert.map((row) => ({
+            op: 'insert' as const,
+            table: 'calendar_dates',
+            id: `${row.service_id}:${row.date}`,
+            record: row as Record<string, unknown>,
+          })),
+          ...rowsToUpdate.map((row) => ({
+            op: 'update' as const,
+            table: 'calendar_dates',
+            id: `${row.service_id}:${row.date}`,
+            before: { exception_type: row.exception_type } as Record<
+              string,
+              unknown
+            >,
+            after: { exception_type } as Record<string, unknown>,
+          })),
+        ];
+      await this.patchManager?.recordBatchMixed(mixedOps, label);
+      console.log(
+        `[ServiceDaysController] Added ${rowsToInsert.length} pattern dates, updated ${rowsToUpdate.length} for ${service_id} (${pattern.name})`
+      );
+    }
+
+    await this.refreshExceptionsDisplay(service_id);
+  }
+
+  /**
+   * Remove all dates for a holiday pattern group from calendar_dates
+   */
+  async removePatternGroup(
+    service_id: string,
+    patternId: string,
+    exception_type: 1 | 2
+  ): Promise<void> {
+    const pattern = HOLIDAY_PATTERNS.find((p) => p.id === patternId);
+    if (!pattern) {
+      throw new Error(`Unknown holiday pattern: ${patternId}`);
+    }
+
+    const [calendarRows, existingExceptions] = await Promise.all([
+      this.gtfsParser.gtfsDatabase.queryRows('calendar', { service_id }),
+      this.gtfsParser.gtfsDatabase.queryRows('calendar_dates', { service_id }),
+    ]);
+    const calendar = calendarRows[0] ?? null;
+    const { startYear, endYear } = this.getYearsRange(
+      calendar,
+      existingExceptions
+    );
+
+    const startDate =
+      calendar?.start_date ??
+      (existingExceptions.length > 0
+        ? existingExceptions.map((e) => e.date).sort()[0]
+        : '00000000');
+    const endDate =
+      calendar?.end_date ??
+      (existingExceptions.length > 0
+        ? existingExceptions
+            .map((e) => e.date)
+            .sort()
+            .slice(-1)[0]
+        : '99999999');
+
+    // Build lookup of existing exceptions with matching type
+    const existingMap = new Map<string, CalendarDates>();
+    for (const ex of existingExceptions) {
+      if (ex.exception_type === exception_type) {
+        existingMap.set(ex.date, ex);
+      }
+    }
+
+    const deleteOps: Array<{
+      table: string;
+      id: string;
+      record: Record<string, unknown>;
+    }> = [];
+    for (let year = startYear; year <= endYear; year++) {
+      for (const date of pattern.getDates(year)) {
+        if (date < startDate || date > endDate) {
+          continue;
+        }
+        const existing = existingMap.get(date);
+        if (!existing) {
+          continue;
+        }
+        deleteOps.push({
+          table: 'calendar_dates',
+          id: `${service_id}:${date}`,
+          record: existing as Record<string, unknown>,
+        });
+      }
+    }
+
+    if (deleteOps.length > 0) {
+      for (const op of deleteOps) {
+        await this.gtfsParser.gtfsDatabase.deleteRow('calendar_dates', op.id);
+      }
+      const label = `Remove ${pattern.name} (${exception_type === 1 ? 'Add Service' : 'Remove Service'})`;
+      await this.patchManager?.recordBatchDelete(deleteOps, label);
+      console.log(
+        `[ServiceDaysController] Removed ${deleteOps.length} pattern dates for ${service_id} (${pattern.name})`
+      );
+    }
+
+    await this.refreshExceptionsDisplay(service_id);
+  }
+
+  /**
+   * Add pattern group from form (DOM-facing)
+   */
+  async addPatternGroupFromForm(service_id: string): Promise<void> {
+    const patternSelect = document.getElementById(
+      `pattern-select-${service_id}`
+    ) as HTMLSelectElement;
+    const typeSelect = document.getElementById(
+      `pattern-type-${service_id}`
+    ) as HTMLSelectElement;
+
+    const patternId = patternSelect.value;
+    const exception_type = parseInt(typeSelect.value) as 1 | 2;
+    await this.addPatternGroup(service_id, patternId, exception_type);
+  }
+
+  /**
+   * Toggle raw mode for a service's exceptions display
+   */
+  toggleRawMode(service_id: string): void {
+    if (this.rawModeServices.has(service_id)) {
+      this.rawModeServices.delete(service_id);
+    } else {
+      this.rawModeServices.add(service_id);
+    }
+    this.refreshExceptionsDisplay(service_id);
   }
 
   /**
@@ -557,55 +1013,31 @@ export class ServiceDaysController {
   /**
    * Refresh exceptions display after changes
    */
-  private async refreshExceptionsDisplay(service_id: string): Promise<void> {
+  async refreshExceptionsDisplay(service_id: string): Promise<void> {
     try {
-      const exceptions = await this.gtfsParser.gtfsDatabase.queryRows(
-        'calendar_dates',
-        { service_id }
-      );
-      const exceptionsContainer = document.querySelector('.exceptions-list');
-      if (exceptionsContainer) {
-        exceptionsContainer.innerHTML = this.renderExceptionsList(
+      const [calendarRows, exceptions] = await Promise.all([
+        this.gtfsParser.gtfsDatabase.queryRows('calendar', { service_id }),
+        this.gtfsParser.gtfsDatabase.queryRows('calendar_dates', {
           service_id,
+        }),
+      ]);
+      const calendar = calendarRows[0] ?? null;
+      const container = document.getElementById(
+        `service-exceptions-${service_id}`
+      );
+      if (container) {
+        container.outerHTML = this.renderExceptions(
+          service_id,
+          calendar,
           exceptions
         );
       }
     } catch (error) {
-      console.error('Failed to refresh exceptions display:', error);
+      console.error(
+        '[ServiceDaysController] Failed to refresh exceptions display:',
+        error
+      );
     }
-  }
-
-  /**
-   * Render just the exceptions list (for refreshing)
-   */
-  private renderExceptionsList(
-    service_id: string,
-    exceptions: CalendarDates[]
-  ): string {
-    return exceptions
-      .map((exception) => {
-        const formattedDate = this.parseGTFSDate(exception.date);
-        const typeText =
-          exception.exception_type === 1 ? 'Add Service' : 'Remove Service';
-        const typeClass =
-          exception.exception_type === 1 ? 'badge-success' : 'badge-error';
-
-        return `
-        <div class="exception-item flex items-center justify-between p-1 text-xs">
-          <div class="flex items-center gap-2">
-            <span class="font-mono text-xs">${formattedDate}</span>
-            <span class="badge ${typeClass} badge-xs">${typeText}</span>
-          </div>
-          <button
-            class="btn btn-ghost btn-xs"
-            onclick="window.gtfsEditor.serviceDaysController.removeException('${service_id}', '${exception.date}')"
-          >
-            ✕
-          </button>
-        </div>
-      `;
-      })
-      .join('');
   }
 
   /**
