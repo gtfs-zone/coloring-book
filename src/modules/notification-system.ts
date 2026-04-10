@@ -33,7 +33,7 @@ export class NotificationSystem {
     // Create notification container
     this.container = document.createElement('div');
     this.container.id = 'notification-container';
-    this.container.className = 'fixed top-28 left-2 z-[100] space-y-2 max-w-xs';
+    this.container.className = 'fixed top-32 left-2 z-[100] space-y-2 max-w-xs';
     document.body.appendChild(this.container);
   }
 
