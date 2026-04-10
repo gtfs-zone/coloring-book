@@ -1,3 +1,25 @@
+## v0.12.0 (2026-04-11)
+
+### Feat
+
+- force-update exception_type on duplicate date (phase 5)
+- batch patch recording for add/remove pattern group
+- add addPatternGroup, removePatternGroup, addPatternGroupFromForm methods
+- add pattern matching and updated renderExceptions for holiday groups
+- add holiday pattern infrastructure (us-federal)
+- add touch event handlers for mobile stop drag
+- wire deleteRow proxy and refresh map after stop deletion (#48 phase 4)
+- implement handleDeleteStop with FK-aware cascade modal (#48 phase 2)
+- add delete stop button to stop view UI (#48 phase 1)
+
+### Fix
+
+- remove duplicate stop creation/move notifications from map-controller
+- move notification container down to clear search card overlap
+- prevent delete listener accumulation with AbortController
+- group cascade delete into one batch patch, fix revertPatch inversion for batch ops
+- use event delegation for delete stop button and add debug logs (#48 phase 3)
+
 ## v0.11.0 (2026-04-08)
 
 ### Feat
