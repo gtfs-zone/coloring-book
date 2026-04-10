@@ -136,6 +136,14 @@ export interface ContentRendererDependencies {
       id: string,
       record: Record<string, unknown>
     ) => Promise<void>;
+    recordBatchInsert: (
+      ops: Array<{
+        table: string;
+        id: string;
+        record: Record<string, unknown>;
+      }>,
+      label?: string
+    ) => Promise<void>;
     recordBatchDelete: (
       ops: Array<{
         table: string;
