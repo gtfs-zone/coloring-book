@@ -761,9 +761,6 @@ export class MapController {
 
         // Update layer data
         this.layerManager?.updateStopsData();
-
-        // Show success notification
-        this.showNotification(`Stop ${stop_id} coordinates updated`, 'success');
       }
     } catch (error) {
       console.error(`Failed to update coordinates for stop ${stop_id}:`, error);
@@ -789,9 +786,6 @@ export class MapController {
 
     // Update layer data to show the new stop
     this.layerManager?.updateStopsData();
-
-    // Show success notification
-    this.showNotification(`Stop ${stop_id} created`, 'success');
   }
 
   /**
