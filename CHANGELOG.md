@@ -1,3 +1,17 @@
+## v0.13.0 (2026-04-11)
+
+### Feat
+
+- grey-out undo/redo buttons and show descriptive hover tooltips
+- wire Files and History modals in TypeScript (#82 phase 2)
+- replace right-panel tabs with persistent modals (HTML only)
+- redesign Feed loaded baseline as a clickable change card
+- remove per-patch revert buttons and dead revertPatch method
+
+### Fix
+
+- use history icon and fix tooltip dir
+
 ## v0.12.0 (2026-04-11)
 
 ### Feat
