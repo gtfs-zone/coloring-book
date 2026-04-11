@@ -136,6 +136,10 @@ export class HistoryController {
 
     panel.innerHTML = '';
 
+    // Patch list — newest first, with baseline row at the bottom
+    const ul = document.createElement('ul');
+    ul.className = 'divide-y divide-base-300';
+
     if (history.length === 0) {
       const emptyDiv = document.createElement('div');
       emptyDiv.className =
@@ -147,10 +151,6 @@ export class HistoryController {
         <span class="text-sm">No changes yet</span>`;
       panel.appendChild(emptyDiv);
     } else {
-      // Patch list — newest first
-      const ul = document.createElement('ul');
-      ul.className = 'divide-y divide-base-300';
-
       for (let i = history.length - 1; i >= 0; i--) {
         const record = history[i];
         const { patch, timestamp, version, applied } = record;
@@ -185,29 +185,29 @@ export class HistoryController {
 
         ul.appendChild(li);
       }
-
-      panel.appendChild(ul);
     }
 
-    // Feed loaded baseline — always shown at the bottom
-    const baselineUl = document.createElement('ul');
+    // Baseline row — always shown at the bottom, styled as a peer of patch cards
+    const isOrigin = currentVersion === 0;
     const baselineLi = document.createElement('li');
-    baselineLi.className =
-      'flex items-center gap-2 px-3 py-2 opacity-50 border-t border-base-300';
+    baselineLi.className = [
+      'flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-base-200 transition-colors',
+      isOrigin ? 'bg-base-200 border-l-2 border-primary' : '',
+    ].join(' ');
     baselineLi.innerHTML = `
-      <span class="badge badge-ghost badge-sm">origin</span>
-      <span class="flex-1 text-sm">Feed loaded</span>`;
-    const revertBtn = document.createElement('button');
-    revertBtn.id = 'revert-all-btn';
-    revertBtn.className = 'btn btn-xs btn-ghost';
-    revertBtn.textContent = 'Revert all';
-    revertBtn.addEventListener('click', () => {
+      <div class="flex flex-col gap-1 min-w-0 flex-1">
+        <div class="flex items-center gap-2 flex-wrap">
+          <span class="badge badge-ghost badge-sm">origin</span>
+          <span class="text-xs">Feed loaded</span>
+        </div>
+      </div>`;
+    baselineLi.addEventListener('click', () => {
       this.patchManager
         .jumpToVersion(0)
         .catch((e: unknown) => console.error('jumpToVersion(0) failed:', e));
     });
-    baselineLi.appendChild(revertBtn);
-    baselineUl.appendChild(baselineLi);
-    panel.appendChild(baselineUl);
+    ul.appendChild(baselineLi);
+
+    panel.appendChild(ul);
   }
 }
