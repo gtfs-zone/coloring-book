@@ -162,7 +162,7 @@ export class HistoryController {
           isCurrent ? 'bg-base-200 border-l-2 border-primary' : '',
         ].join(' ');
 
-        const textClass = applied ? '' : 'opacity-50 line-through';
+        const textClass = applied ? '' : 'opacity-50';
 
         li.innerHTML = `
           <div class="flex flex-col gap-1 min-w-0 flex-1">
@@ -173,22 +173,6 @@ export class HistoryController {
             <div class="text-base-content/70">${renderFieldDiffs(patch)}</div>
             <span class="text-xs text-base-content/40">${relativeTime(timestamp)}</span>
           </div>`;
-
-        if (applied) {
-          const revertBtn = document.createElement('button');
-          revertBtn.className = 'btn btn-xs btn-ghost self-center shrink-0';
-          revertBtn.textContent = 'Revert';
-          revertBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            if (version === undefined || version === null) {
-              return;
-            }
-            this.patchManager
-              .revertPatch(version)
-              .catch((e: unknown) => console.error('revertPatch failed:', e));
-          });
-          li.appendChild(revertBtn);
-        }
 
         li.addEventListener('click', () => {
           if (version === undefined || version === null) {
