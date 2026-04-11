@@ -9,6 +9,7 @@ import { TimetableCellRenderer } from './timetable-cell-renderer.js';
 import {
   generateFieldConfigsFromSchema,
   FieldConfig,
+  getSpecUrl,
 } from '../utils/field-component.js';
 import { TripsSchema, GTFS_TABLES } from '../types/gtfs.js';
 import { getGTFSFieldDescription } from '../utils/zod-tooltip-helper.js';
@@ -241,17 +242,27 @@ export class TimetableRenderer {
         // Get human-readable label (without field name in parentheses)
         const humanLabel = this.generateHumanLabel(config.field);
 
-        // Get tooltip description from GTFS schema
+        // Build rich tooltip: description + presence + field name
         const description = getGTFSFieldDescription(
           GTFS_TABLES.TRIPS,
           config.field
         );
-        const escapedDescription = description
-          ? this.escapeHtml(description)
-          : '';
-        const tooltipAttr = escapedDescription
-          ? ` data-tip='${escapedDescription}'`
-          : '';
+        const tipParts: string[] = [];
+        if (description) {
+          tipParts.push(description);
+        }
+        if (config.presence && config.presence !== 'Optional') {
+          tipParts.push(config.presence);
+          if (config.presenceCondition) {
+            tipParts.push(config.presenceCondition);
+          }
+        }
+        tipParts.push(config.field);
+        const tipContent = tipParts.join('\n\n');
+        const escapedTip = this.escapeHtml(tipContent);
+        const tooltipAttrs = escapedTip
+          ? ` class="stop-name-text tooltip tooltip-right" data-tip='${escapedTip}'`
+          : ' class="stop-name-text"';
 
         // Presence mark — colored * matching field-component.ts color map
         const presenceColors: Record<string, string> = {
@@ -265,11 +276,16 @@ export class TimetableRenderer {
             ? ` <span class="${presenceColors[config.presence] ?? ''}">*</span>`
             : '';
 
+        // Spec link for the label
+        const specUrl = getSpecUrl(GTFS_TABLES.TRIPS);
+        const labelContent = specUrl
+          ? `<a href="${specUrl}" target="_blank" rel="noopener noreferrer">${this.escapeHtml(humanLabel)}</a>${presenceMark}`
+          : `${this.escapeHtml(humanLabel)}${presenceMark}`;
+
         return `
         <tr class="trip-property-row" data-property="${config.field}">
-          <th class="stop-name p-2 font-medium border-r border-base-300 bg-base-100 tooltip tooltip-right"${tooltipAttr}>
-            <div class="stop-name-text">${this.escapeHtml(humanLabel)}${presenceMark}</div>
-            <div class="stop-id text-xs opacity-70">${this.escapeHtml(config.field)}</div>
+          <th class="stop-name min-w-[200px] p-2 font-medium border-r border-base-300 bg-base-100">
+            <div${tooltipAttrs}>${labelContent}</div>
           </th>
           ${cells}
           ${newTripCell}
