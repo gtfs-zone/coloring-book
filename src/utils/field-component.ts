@@ -185,7 +185,7 @@ export function renderFieldLabelContent(config: FieldConfig): string {
   const presenceMark = renderPresenceMark(config);
 
   if (tipContent) {
-    return `<span class="tooltip tooltip-right cursor-help" data-tip="${escapeAttr(tipContent)}">${linkContent}${presenceMark}</span>`;
+    return `<span class="tooltip tooltip-right" data-tip="${escapeAttr(tipContent)}">${linkContent}${presenceMark}</span>`;
   }
   return `${linkContent}${presenceMark}`;
 }
@@ -602,7 +602,7 @@ export function generateFieldConfigsFromSchema(
 
     configs.push({
       field: fieldName,
-      label: `${label} (${fieldName})`,
+      label: label,
       type: fieldType,
       value: data[fieldName],
       placeholder: isOptional
