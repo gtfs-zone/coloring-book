@@ -63,6 +63,28 @@
 
         <div class="navbar-end">
           <div class="flex items-center gap-2">
+            <!-- Files Button -->
+            <button
+              id="files-btn"
+              class="btn btn-ghost btn-sm btn-square hidden md:flex"
+              title="Files"
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                class="h-5 w-5"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  d="M2.25 12.75V12A2.25 2.25 0 0 1 4.5 9.75h15A2.25 2.25 0 0 1 21.75 12v.75m-8.69-6.44-2.12-2.12a1.5 1.5 0 0 0-1.061-.44H4.5A2.25 2.25 0 0 0 2.25 6v12a2.25 2.25 0 0 0 2.25 2.25h15A2.25 2.25 0 0 0 21.75 18V9a2.25 2.25 0 0 0-2.25-2.25h-5.379a1.5 1.5 0 0 1-1.06-.44Z"
+                />
+              </svg>
+            </button>
+
             <!-- Theme Toggle -->
             <label class="swap swap-rotate">
               <!-- this hidden checkbox controls the state -->
@@ -113,50 +135,61 @@
               </svg>
             </button>
 
-            <!-- Undo / Redo -->
+            <!-- Undo / History / Redo -->
             <div class="flex items-center gap-1">
-              <button
-                id="undo-btn"
-                class="btn btn-ghost btn-sm btn-square"
-                title="Undo (Ctrl+Z)"
-                onclick="window.gtfsEditor?.undoEdit()"
-              >
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  class="h-5 w-5"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                  stroke-width="2"
+              <div class="tooltip" id="undo-tooltip" data-tip="Nothing to undo">
+                <button
+                  id="undo-btn"
+                  class="btn btn-ghost btn-sm btn-square"
+                  onclick="window.gtfsEditor?.undoEdit()"
+                  disabled
                 >
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    d="M3 10h10a5 5 0 0 1 0 10H9M3 10l4-4M3 10l4 4"
-                  />
-                </svg>
-              </button>
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    class="h-5 w-5"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    stroke-width="2"
+                  >
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      d="M3 10h10a5 5 0 0 1 0 10H9M3 10l4-4M3 10l4 4"
+                    />
+                  </svg>
+                </button>
+              </div>
               <button
-                id="redo-btn"
-                class="btn btn-ghost btn-sm btn-square"
-                title="Redo (Ctrl+Shift+Z)"
-                onclick="window.gtfsEditor?.redoEdit()"
+                id="history-btn"
+                class="btn btn-ghost btn-sm hidden md:flex"
+                title="History"
               >
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  class="h-5 w-5"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                  stroke-width="2"
-                >
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    d="M21 10H11a5 5 0 0 0 0 10h4M21 10l-4-4M21 10l-4 4"
-                  />
-                </svg>
+                History
               </button>
+              <div class="tooltip" id="redo-tooltip" data-tip="Nothing to redo">
+                <button
+                  id="redo-btn"
+                  class="btn btn-ghost btn-sm btn-square"
+                  onclick="window.gtfsEditor?.redoEdit()"
+                  disabled
+                >
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    class="h-5 w-5"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    stroke-width="2"
+                  >
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      d="M21 10H11a5 5 0 0 0 0 10h4M21 10l-4-4M21 10l-4 4"
+                    />
+                  </svg>
+                </button>
+              </div>
             </div>
 
             <!-- Load Dropdown -->
@@ -418,152 +451,183 @@
             class="absolute inset-y-0 left-0.5 w-px bg-base-300 group-hover:bg-primary/50 transition-colors"
           ></div>
         </div>
-        <!-- Right Panel Tabs with DaisyUI -->
-        <div class="tabs tabs-bordered flex-1 min-h-0 overflow-hidden">
-          <!-- Browse Tab -->
-          <input
-            type="radio"
-            name="main_tabs"
-            id="browse-tab-radio"
-            class="tab hidden md:flex"
-            aria-label="Browse"
-            checked="checked"
-          />
-          <div
-            class="tab-content overflow-y-auto bg-base-100 border-base-300 p-0"
-          >
-            <!-- Objects List View -->
-            <div id="browse-list-view" class="h-full">
-              <div id="browse-navigation" class="p-4 overflow-y-auto h-full">
-                <div class="text-base-content/50 text-sm text-center py-8">
-                  No GTFS data to explore
-                </div>
-              </div>
-            </div>
-
-            <!-- Object Details View -->
-            <div id="object-details-view" class="h-full hidden">
-              <div class="h-full flex flex-col">
-                <!-- Object Header with Breadcrumbs -->
-                <div class="border-b border-base-300">
-                  <div id="object-breadcrumbs" class="p-3 bg-base-200">
-                    <div class="breadcrumbs text-sm">
-                      <ul id="breadcrumb-list">
-                        <li>
-                          <a id="breadcrumb-browse">
-                            <svg
-                              xmlns="http://www.w3.org/2000/svg"
-                              fill="none"
-                              viewBox="0 0 24 24"
-                              class="h-4 w-4 stroke-current"
-                            >
-                              <path
-                                stroke-linecap="round"
-                                stroke-linejoin="round"
-                                stroke-width="2"
-                                d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"
-                              ></path>
-                            </svg>
-                          </a>
-                        </li>
-                      </ul>
-                    </div>
-                  </div>
-                  <div class="flex items-center gap-2 p-4">
-                    <span
-                      id="object-type"
-                      class="text-sm font-medium opacity-70"
-                      >Agency</span
-                    >
-                    <span id="object-name" class="text-sm font-medium"
-                      >None</span
-                    >
-                  </div>
-                </div>
-
-                <!-- Object Properties -->
-                <div class="flex-1 overflow-y-auto">
-                  <div class="p-4">
-                    <h3 class="text-sm font-semibold mb-3">Properties</h3>
-                    <div id="object-properties" class="space-y-3">
-                      <!-- Properties will be populated here -->
-                    </div>
-                  </div>
-
-                  <!-- Related Objects -->
-                  <div class="border-t border-base-300 p-4">
-                    <h3 class="text-sm font-semibold mb-3">Related Objects</h3>
-                    <div id="related-browse" class="space-y-2">
-                      <!-- Related objects will be populated here -->
-                    </div>
-                  </div>
-                </div>
+        <!-- Browse Content -->
+        <div class="flex-1 overflow-hidden h-full bg-base-100">
+          <!-- Objects List View -->
+          <div id="browse-list-view" class="h-full">
+            <div id="browse-navigation" class="p-4 overflow-y-auto h-full">
+              <div class="text-base-content/50 text-sm text-center py-8">
+                No GTFS data to explore
               </div>
             </div>
           </div>
 
-          <!-- Files Tab -->
-          <input
-            type="radio"
-            name="main_tabs"
-            id="files-tab-radio"
-            class="tab hidden md:flex"
-            aria-label="Files"
-          />
-          <div
-            class="tab-content overflow-y-auto bg-base-100 border-base-300 p-0"
-          >
-            <!-- File List View -->
-            <div id="file-list-view" class="h-full">
-              <div id="file-list" class="p-4 overflow-y-auto h-full"></div>
-            </div>
+          <!-- Object Details View -->
+          <div id="object-details-view" class="h-full hidden">
+            <div class="h-full flex flex-col">
+              <!-- Object Header with Breadcrumbs -->
+              <div class="border-b border-base-300">
+                <div id="object-breadcrumbs" class="p-3 bg-base-200">
+                  <div class="breadcrumbs text-sm">
+                    <ul id="breadcrumb-list">
+                      <li>
+                        <a id="breadcrumb-browse">
+                          <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            fill="none"
+                            viewBox="0 0 24 24"
+                            class="h-4 w-4 stroke-current"
+                          >
+                            <path
+                              stroke-linecap="round"
+                              stroke-linejoin="round"
+                              stroke-width="2"
+                              d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"
+                            ></path>
+                          </svg>
+                        </a>
+                      </li>
+                    </ul>
+                  </div>
+                </div>
+                <div class="flex items-center gap-2 p-4">
+                  <span id="object-type" class="text-sm font-medium opacity-70"
+                    >Agency</span
+                  >
+                  <span id="object-name" class="text-sm font-medium">None</span>
+                </div>
+              </div>
 
-            <!-- File Editor View -->
-            <div id="file-editor-view" class="h-full hidden">
-              <div class="h-full flex flex-col">
-                <!-- Editor Header -->
-                <div
-                  class="flex items-center gap-4 p-4 border-b border-base-300"
-                >
-                  <button id="back-to-files" class="btn btn-ghost btn-sm">
-                    ← Back to Files
-                  </button>
-                  <div class="flex items-center gap-2">
-                    <span class="text-sm font-medium opacity-70">Editing:</span>
-                    <span id="current-file-name" class="text-sm font-medium"
-                      >None</span
-                    >
+              <!-- Object Properties -->
+              <div class="flex-1 overflow-y-auto">
+                <div class="p-4">
+                  <h3 class="text-sm font-semibold mb-3">Properties</h3>
+                  <div id="object-properties" class="space-y-3">
+                    <!-- Properties will be populated here -->
                   </div>
                 </div>
 
-                <!-- Editor Content -->
-                <div class="flex-1 overflow-hidden">
-                  <div id="table-editor-view" class="h-full hidden">
-                    <div id="table-container" class="h-full overflow-auto">
-                      <div id="table-editor" class="h-full"></div>
-                    </div>
+                <!-- Related Objects -->
+                <div class="border-t border-base-300 p-4">
+                  <h3 class="text-sm font-semibold mb-3">Related Objects</h3>
+                  <div id="related-browse" class="space-y-2">
+                    <!-- Related objects will be populated here -->
                   </div>
                 </div>
               </div>
             </div>
-          </div>
-
-          <!-- Changes Tab -->
-          <input
-            type="radio"
-            name="main_tabs"
-            id="changes-tab-radio"
-            class="tab hidden md:flex"
-            aria-label="Changes"
-          />
-          <div
-            class="tab-content overflow-y-auto bg-base-100 border-base-300 p-0"
-          >
-            <div id="changes-panel"></div>
           </div>
         </div>
       </div>
     </div>
+
+    <!-- Files Modal -->
+    <dialog id="files-modal" class="modal">
+      <div class="modal-box w-11/12 max-w-2xl max-h-[90vh] flex flex-col p-0">
+        <!-- Modal Header -->
+        <div
+          class="flex items-center justify-between px-4 py-3 border-b border-base-300 flex-shrink-0"
+        >
+          <h3 class="text-base font-semibold">Files</h3>
+          <button
+            id="files-modal-close"
+            class="btn btn-ghost btn-sm btn-square"
+            onclick="document.getElementById('files-modal').close()"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              class="h-4 w-4"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M6 18L18 6M6 6l12 12"
+              />
+            </svg>
+          </button>
+        </div>
+        <!-- Modal Body -->
+        <div class="flex-1 overflow-hidden min-h-0">
+          <!-- File List View -->
+          <div id="file-list-view" class="h-full">
+            <div id="file-list" class="p-4 overflow-y-auto h-full"></div>
+          </div>
+
+          <!-- File Editor View -->
+          <div id="file-editor-view" class="h-full hidden">
+            <div class="h-full flex flex-col">
+              <!-- Editor Header -->
+              <div class="flex items-center gap-4 p-4 border-b border-base-300">
+                <button id="back-to-files" class="btn btn-ghost btn-sm">
+                  ← Back to Files
+                </button>
+                <div class="flex items-center gap-2">
+                  <span class="text-sm font-medium opacity-70">Editing:</span>
+                  <span id="current-file-name" class="text-sm font-medium"
+                    >None</span
+                  >
+                </div>
+              </div>
+
+              <!-- Editor Content -->
+              <div class="flex-1 overflow-hidden">
+                <div id="table-editor-view" class="h-full hidden">
+                  <div id="table-container" class="h-full overflow-auto">
+                    <div id="table-editor" class="h-full"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <form method="dialog" class="modal-backdrop">
+        <button>close</button>
+      </form>
+    </dialog>
+
+    <!-- History Modal -->
+    <dialog id="history-modal" class="modal">
+      <div class="modal-box w-11/12 max-w-2xl max-h-[80vh] flex flex-col p-0">
+        <!-- Modal Header -->
+        <div
+          class="flex items-center justify-between px-4 py-3 border-b border-base-300 flex-shrink-0"
+        >
+          <h3 class="text-base font-semibold">History</h3>
+          <button
+            id="history-modal-close"
+            class="btn btn-ghost btn-sm btn-square"
+            onclick="document.getElementById('history-modal').close()"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              class="h-4 w-4"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M6 18L18 6M6 6l12 12"
+              />
+            </svg>
+          </button>
+        </div>
+        <!-- Modal Body -->
+        <div class="overflow-y-auto flex-1">
+          <div id="changes-panel"></div>
+        </div>
+      </div>
+      <form method="dialog" class="modal-backdrop">
+        <button>close</button>
+      </form>
+    </dialog>
 
     <!-- Hidden File Input -->
     <input type="file" id="file-input" accept=".zip" style="display: none" />
@@ -612,7 +676,7 @@
         </svg>
         <span class="dock-label">Files</span>
       </button>
-      <button id="dock-changes" aria-label="Changes">
+      <button id="dock-changes" aria-label="History">
         <svg
           xmlns="http://www.w3.org/2000/svg"
           fill="none"
@@ -627,7 +691,7 @@
             d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"
           />
         </svg>
-        <span class="dock-label">Changes</span>
+        <span class="dock-label">History</span>
       </button>
     </nav>
 
