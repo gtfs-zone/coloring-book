@@ -9,9 +9,9 @@ import { TimetableCellRenderer } from './timetable-cell-renderer.js';
 import {
   generateFieldConfigsFromSchema,
   FieldConfig,
+  renderFieldLabelContent,
 } from '../utils/field-component.js';
 import { TripsSchema, GTFS_TABLES } from '../types/gtfs.js';
-import { getGTFSFieldDescription } from '../utils/zod-tooltip-helper.js';
 import { getStopDisplay, renderOptionLabel } from '../utils/entity-display.js';
 
 /**
@@ -51,7 +51,6 @@ export class TimetableRenderer {
   ): string {
     return `
       <div id="schedule-view" class="h-full flex flex-col">
-        ${this.renderScheduleHeader(data.route, data.service)}
         ${this.renderDirectionTabs(data)}
         ${this.renderTimetableContent(data, pendingStopId)}
       </div>
@@ -126,7 +125,7 @@ export class TimetableRenderer {
 
     return `
       <div class="border-b border-base-300">
-        <div class="tabs tabs-bordered p-2">
+        <div class="tabs tabs-border p-2">
           ${tabsHTML}
         </div>
       </div>
@@ -239,26 +238,10 @@ export class TimetableRenderer {
         // Add empty cell for "New Trip" column
         const newTripCell = '<td class="text-center p-2"></td>';
 
-        // Get human-readable label (without field name in parentheses)
-        const humanLabel = this.generateHumanLabel(config.field);
-
-        // Get tooltip description from GTFS schema
-        const description = getGTFSFieldDescription(
-          GTFS_TABLES.TRIPS,
-          config.field
-        );
-        const tooltipHtml = this.renderTooltip(description);
-
-        // Required field indicator
-        const requiredMark = config.required
-          ? ' <span class="text-error">*</span>'
-          : '';
-
         return `
         <tr class="trip-property-row" data-property="${config.field}">
-          <th class="stop-name p-2 font-medium border-r border-base-300">
-            <div class="stop-name-text">${this.escapeHtml(humanLabel)}${requiredMark}${tooltipHtml}</div>
-            <div class="stop-id text-xs opacity-70">${this.escapeHtml(config.field)}</div>
+          <th class="stop-name min-w-[200px] p-2 font-medium border-r border-base-300 bg-base-100">
+            <div class="stop-name-text">${renderFieldLabelContent(config)}</div>
           </th>
           ${cells}
           ${newTripCell}
@@ -273,38 +256,6 @@ export class TimetableRenderer {
   /**
    * Generate human-readable label from snake_case field name
    */
-  private generateHumanLabel(fieldName: string): string {
-    return fieldName
-      .split('_')
-      .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-      .join(' ');
-  }
-
-  /**
-   * Render tooltip icon with GTFS description
-   */
-  private renderTooltip(description: string): string {
-    if (!description) {
-      return '';
-    }
-
-    const escapedDescription = this.escapeHtml(description);
-
-    return `
-      <div class="tooltip tooltip-right" data-tip='${escapedDescription}'>
-        <svg class="w-3 h-3 opacity-60 hover:opacity-100 cursor-help inline-block ml-1"
-             fill="none"
-             stroke="currentColor"
-             viewBox="0 0 24 24">
-          <path stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-        </svg>
-      </div>
-    `;
-  }
-
   /**
    * Render individual property cell with appropriate input type
    *
@@ -418,8 +369,8 @@ export class TimetableRenderer {
 
     return `
       <thead>
-        <tr>
-          <th class="stop-header min-w-[200px] p-2 text-left">
+        <tr class="z-[2]">
+          <th class="stop-header min-w-[200px] p-2 text-left bg-base-100">
             Stop
           </th>
           ${tripHeaders}
@@ -523,7 +474,7 @@ export class TimetableRenderer {
 
         return `
         <tr class="${rowClass}">
-          <th class="stop-name p-2 font-medium border-r border-base-300">
+          <th class="stop-name p-2 font-medium border-r border-base-300 bg-base-100">
             <select
               class="select select-xs w-full font-medium"
               data-old-stop-id="${this.escapeHtml(stop.stop_id)}"
@@ -545,7 +496,7 @@ export class TimetableRenderer {
       .join('');
     const newStopRow = `
       <tr>
-        <th class="stop-name p-2 border-r border-base-300">
+        <th class="stop-name p-2 border-r border-base-300 bg-base-100">
           <select class="select select-sm w-full" id="new-stop-select"
                   onchange="gtfsEditor.scheduleController.addStopFromSelector(this.value)">
             <option value="">Add stop...</option>
@@ -572,7 +523,13 @@ export class TimetableRenderer {
    * @returns Human-readable direction name for display
    */
   private getDirectionDisplayName(direction: DirectionInfo): string {
-    return `${direction.name} (${direction.tripCount})`;
+    if (direction.tripCount === 0) {
+      return `Direction ${direction.id}: No trips`;
+    }
+    if (direction.lastStopName) {
+      return `Direction ${direction.id}: To ${direction.lastStopName}`;
+    }
+    return `Direction ${direction.id}`;
   }
 
   /**
