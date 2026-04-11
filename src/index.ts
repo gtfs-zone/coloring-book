@@ -135,6 +135,7 @@ export class GTFSEditor {
       // Restore state from patch history (snapshot + subsequent patches)
       await this.patchManager.initialize();
       this.historyController.initialize(this.patchManager);
+      this.updateUndoRedoState();
 
       // Initialize all modules
       await this.mapController.initialize(this.gtfsParser);
@@ -197,18 +198,24 @@ export class GTFSEditor {
               `Failed to refresh after edit: ${e instanceof Error ? e.message : String(e)}`
             )
           );
+        this.updateUndoRedoState();
       });
       this.patchManager.on('undo', (r) => {
         console.log('[patch:undo]', r);
         notifications.showInfo(`Undone: ${humanLabel(r?.patch)}`, {
           duration: 3000,
         });
+        this.updateUndoRedoState();
       });
       this.patchManager.on('redo', (r) => {
         console.log('[patch:redo]', r);
         notifications.showInfo(`Redone: ${humanLabel(r?.patch)}`, {
           duration: 3000,
         });
+        this.updateUndoRedoState();
+      });
+      this.patchManager.on('jump', () => {
+        this.updateUndoRedoState();
       });
 
       // Initialize keyboard shortcuts
@@ -361,6 +368,70 @@ export class GTFSEditor {
    */
   public onGTFSDataReloaded(): void {
     updateBreadcrumbLookup(this.gtfsParser);
+  }
+
+  private updateUndoRedoState(): void {
+    const undoBtn = document.getElementById(
+      'undo-btn'
+    ) as HTMLButtonElement | null;
+    const redoBtn = document.getElementById(
+      'redo-btn'
+    ) as HTMLButtonElement | null;
+    const undoTooltip = document.getElementById('undo-tooltip');
+    const redoTooltip = document.getElementById('redo-tooltip');
+
+    const canUndo = this.patchManager.canUndo;
+    const canRedo = this.patchManager.canRedo;
+
+    if (undoBtn) {
+      undoBtn.disabled = !canUndo;
+    }
+    if (redoBtn) {
+      redoBtn.disabled = !canRedo;
+    }
+
+    if (!canUndo && !canRedo) {
+      if (undoTooltip) {
+        undoTooltip.dataset.tip = 'Nothing to undo';
+      }
+      if (redoTooltip) {
+        redoTooltip.dataset.tip = 'Nothing to redo';
+      }
+      return;
+    }
+
+    this.patchManager
+      .getHistory()
+      .then((history) => {
+        const currentVersion = this.patchManager.version;
+
+        if (undoTooltip) {
+          if (canUndo) {
+            const undoPatch = history.find((r) => r.version === currentVersion);
+            undoTooltip.dataset.tip = undoPatch
+              ? `Undo: ${humanLabel(undoPatch.patch)}`
+              : 'Nothing to undo';
+          } else {
+            undoTooltip.dataset.tip = 'Nothing to undo';
+          }
+        }
+
+        if (redoTooltip) {
+          if (canRedo) {
+            const redoPatch = history.find(
+              (r) => r.version === currentVersion + 1
+            );
+            redoTooltip.dataset.tip = redoPatch
+              ? `Redo: ${humanLabel(redoPatch.patch)}`
+              : 'Nothing to redo';
+          } else {
+            redoTooltip.dataset.tip = 'Nothing to redo';
+          }
+        }
+      })
+      .catch((e: unknown) =>
+        console.error('[undo/redo] Failed to get history for tooltip:', e)
+      );
   }
 
   public undoEdit(): void {
