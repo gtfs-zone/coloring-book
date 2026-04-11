@@ -58,6 +58,7 @@ export interface DirectionInfo {
   id: string;
   name: string;
   tripCount: number;
+  lastStopName?: string;
 }
 
 /**
@@ -588,14 +589,50 @@ export class TimetableDataProcessor {
       directionMap.set(dirId, (directionMap.get(dirId) || 0) + 1);
     });
 
+    // Group trips by direction for last-stop lookup
+    const directionTrips = new Map<string, EnhancedTrip[]>();
+    trips.forEach((trip: EnhancedTrip) => {
+      const dirId = String(trip.direction_id ?? '0');
+      const existing = directionTrips.get(dirId) || [];
+      existing.push(trip);
+      directionTrips.set(dirId, existing);
+    });
+
     // Convert to DirectionInfo array, sorted by direction ID
-    const directions: DirectionInfo[] = Array.from(directionMap.entries())
-      .map(([id, tripCount]) => ({
-        id,
-        name: this.getDirectionName(id),
-        tripCount,
-      }))
-      .sort((a, b) => a.id.localeCompare(b.id));
+    const directions: DirectionInfo[] = await Promise.all(
+      Array.from(directionMap.entries())
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(async ([id, tripCount]) => {
+          let lastStopName: string | undefined;
+          if (tripCount > 0) {
+            const dirTrips = directionTrips.get(id) || [];
+            if (dirTrips.length > 0) {
+              const representativeTrip = dirTrips[0];
+              const stopTimes = await this.getStopTimesFromDatabase(
+                representativeTrip.id
+              );
+              const sorted = stopTimes.sort(
+                (a: StopTimes, b: StopTimes) =>
+                  parseInt(String(a.stop_sequence)) -
+                  parseInt(String(b.stop_sequence))
+              );
+              const lastStopTime = sorted[sorted.length - 1];
+              if (lastStopTime) {
+                const stop = await this.relationships.getStopByIdAsync(
+                  lastStopTime.stop_id
+                );
+                lastStopName = stop?.stop_name as string | undefined;
+              }
+            }
+          }
+          return {
+            id,
+            name: this.getDirectionName(id),
+            tripCount,
+            lastStopName,
+          };
+        })
+    );
 
     return directions;
   }
