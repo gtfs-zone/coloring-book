@@ -74,7 +74,6 @@ export class UIController {
     this.scheduleController = scheduleController;
     this.validateCallback = validateCallback;
     this.setupEventListeners();
-    this.initializeTabs();
     this.setupMapCallbacks();
   }
 
@@ -201,6 +200,14 @@ export class UIController {
       });
     }
 
+    // Files modal button
+    document.getElementById('files-btn')?.addEventListener('click', () => {
+      this.updateFileList();
+      (
+        document.getElementById('files-modal') as HTMLDialogElement
+      )?.showModal();
+    });
+
     // Drag and drop
     const body = document.body;
     body.addEventListener('dragover', (e) => {
@@ -216,28 +223,6 @@ export class UIController {
         this.loadGTFSFile(files[0]);
       }
     });
-  }
-
-  initializeTabs() {
-    // Initialize DaisyUI tab functionality
-    // Listen for tab changes to handle special behaviors
-    const radioInputs = document.querySelectorAll('input[name="main_tabs"]');
-    radioInputs.forEach((radio) => {
-      radio.addEventListener('change', (e) => {
-        const target = e.target as HTMLInputElement;
-        if (target.checked) {
-          const tabName = target.id.replace('-tab-radio', '');
-          this.handleTabChange(tabName);
-        }
-      });
-    });
-  }
-
-  handleTabChange(tabName: string) {
-    // If switching to Objects tab, refresh the navigation
-    if (tabName === 'browse' && this.browseNavigation) {
-      this.browseNavigation.refresh();
-    }
   }
 
   toggleLeftPanel() {
@@ -292,8 +277,11 @@ export class UIController {
 
       console.timeEnd('[GTFS] updateMap');
 
-      // Show files tab
+      // Show file list and open Files modal
       this.showFileList();
+      (
+        document.getElementById('files-modal') as HTMLDialogElement
+      )?.showModal();
 
       // Refresh Objects navigation if available
       if (this.browseNavigation) {
@@ -541,17 +529,12 @@ export class UIController {
 
   // Method expected by Objects Navigation interface
   showFileInEditor(filename: string, rowId?: string): void {
-    // Switch to Files tab if not already active
-    const filesTab = document.querySelector('[data-tab-name="files"]');
-    if (filesTab) {
-      (filesTab as HTMLElement).click();
-    }
+    // Open the Files modal
+    (document.getElementById('files-modal') as HTMLDialogElement)?.showModal();
 
     // Open the file in the editor
     this.openFile(filename);
 
-    // If rowId is provided, we could potentially navigate to that specific row
-    // For now, just open the file
     console.log(
       `Opened ${filename} in editor${rowId ? ` for row ${rowId}` : ''}`
     );
