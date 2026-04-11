@@ -143,39 +143,6 @@ export class KeyboardShortcuts {
       'Clear searches and close dialogs'
     );
 
-    // Tab navigation
-    this.addShortcut(
-      'ctrl+1',
-      () => {
-        this.switchToTab('files');
-      },
-      'Switch to Files tab'
-    );
-
-    this.addShortcut(
-      'ctrl+2',
-      () => {
-        this.switchToTab('browse');
-      },
-      'Switch to Browse tab'
-    );
-
-    this.addShortcut(
-      'ctrl+3',
-      () => {
-        this.switchToTab('editor');
-      },
-      'Switch to Editor tab'
-    );
-
-    this.addShortcut(
-      'ctrl+4',
-      () => {
-        this.switchToTab('info');
-      },
-      'Switch to Info tab'
-    );
-
     // Undo / redo
     this.addShortcut(
       'ctrl+z',
