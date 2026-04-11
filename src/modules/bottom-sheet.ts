@@ -12,7 +12,11 @@ export class BottomSheetController {
   private dismissCallbacks: Array<() => void> = [];
   private active = false;
 
-  constructor(panel: HTMLElement, tabManager: TabManager) {
+  constructor(
+    panel: HTMLElement,
+    tabManager: TabManager,
+    openHistoryModal?: () => void
+  ) {
     this.panel = panel;
 
     // Only activate on mobile
@@ -22,7 +26,7 @@ export class BottomSheetController {
 
     this.active = true;
     this.setupDragHandle();
-    this.setupDock(tabManager);
+    this.setupDock(tabManager, openHistoryModal ?? null);
     this.setSnap('closed', false);
 
     const dock = document.getElementById('mobile-dock');
@@ -189,7 +193,10 @@ export class BottomSheetController {
     }
   }
 
-  private setupDock(tabManager: TabManager): void {
+  private setupDock(
+    tabManager: TabManager,
+    openHistoryModal: (() => void) | null
+  ): void {
     const dockBrowse = document.getElementById('dock-browse');
     const dockFiles = document.getElementById('dock-files');
     const dockChanges = document.getElementById('dock-changes');
@@ -201,24 +208,24 @@ export class BottomSheetController {
     };
 
     dockBrowse?.addEventListener('click', () => {
-      tabManager.switchToTab('browse');
+      updateDockActive('browse');
       this.open('half');
     });
 
     dockFiles?.addEventListener('click', () => {
-      tabManager.switchToTab('files');
+      updateDockActive('files');
       this.open('half');
+      (
+        document.getElementById('files-modal') as HTMLDialogElement
+      )?.showModal();
     });
 
     dockChanges?.addEventListener('click', () => {
-      tabManager.switchToTab('changes');
-      this.open('half');
+      updateDockActive('changes');
+      openHistoryModal?.();
     });
 
-    // Keep dock-active in sync when tabs switch programmatically
-    tabManager.onTabChange((tabName) => {
-      updateDockActive(tabName);
-    });
+    void tabManager; // retained for API compatibility, tabs removed
   }
 
   public onDismiss(cb: () => void): void {

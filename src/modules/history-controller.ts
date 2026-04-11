@@ -119,10 +119,7 @@ export class HistoryController {
     patchManager.on('jump', rerender);
     patchManager.on('change', rerender);
 
-    const radio = document.getElementById('changes-tab-radio');
-    if (radio) {
-      radio.addEventListener('change', rerender);
-    }
+    // History modal triggers render via index.ts (history-btn click listener)
   }
 
   async render(): Promise<void> {
