@@ -9,10 +9,9 @@ import { TimetableCellRenderer } from './timetable-cell-renderer.js';
 import {
   generateFieldConfigsFromSchema,
   FieldConfig,
-  getSpecUrl,
+  renderFieldLabelContent,
 } from '../utils/field-component.js';
 import { TripsSchema, GTFS_TABLES } from '../types/gtfs.js';
-import { getGTFSFieldDescription } from '../utils/zod-tooltip-helper.js';
 import { getStopDisplay, renderOptionLabel } from '../utils/entity-display.js';
 
 /**
@@ -239,53 +238,10 @@ export class TimetableRenderer {
         // Add empty cell for "New Trip" column
         const newTripCell = '<td class="text-center p-2"></td>';
 
-        // Get human-readable label (without field name in parentheses)
-        const humanLabel = this.generateHumanLabel(config.field);
-
-        // Build rich tooltip: description + presence + field name
-        const description = getGTFSFieldDescription(
-          GTFS_TABLES.TRIPS,
-          config.field
-        );
-        const tipParts: string[] = [];
-        if (description) {
-          tipParts.push(description);
-        }
-        if (config.presence && config.presence !== 'Optional') {
-          tipParts.push(config.presence);
-          if (config.presenceCondition) {
-            tipParts.push(config.presenceCondition);
-          }
-        }
-        tipParts.push(config.field);
-        const tipContent = tipParts.join('\n\n');
-        const escapedTip = this.escapeHtml(tipContent);
-        const tooltipAttrs = escapedTip
-          ? ` class="stop-name-text tooltip tooltip-right" data-tip='${escapedTip}'`
-          : ' class="stop-name-text"';
-
-        // Presence mark — colored * matching field-component.ts color map
-        const presenceColors: Record<string, string> = {
-          Required: 'text-error',
-          'Conditionally Required': 'text-warning',
-          Recommended: 'text-success',
-          'Conditionally Forbidden': 'text-base-content opacity-40',
-        };
-        const presenceMark =
-          config.presence && config.presence !== 'Optional'
-            ? ` <span class="${presenceColors[config.presence] ?? ''}">*</span>`
-            : '';
-
-        // Spec link for the label
-        const specUrl = getSpecUrl(GTFS_TABLES.TRIPS);
-        const labelContent = specUrl
-          ? `<a href="${specUrl}" target="_blank" rel="noopener noreferrer">${this.escapeHtml(humanLabel)}</a>${presenceMark}`
-          : `${this.escapeHtml(humanLabel)}${presenceMark}`;
-
         return `
         <tr class="trip-property-row" data-property="${config.field}">
           <th class="stop-name min-w-[200px] p-2 font-medium border-r border-base-300 bg-base-100">
-            <div${tooltipAttrs}>${labelContent}</div>
+            <div class="stop-name-text">${renderFieldLabelContent(config)}</div>
           </th>
           ${cells}
           ${newTripCell}
@@ -300,13 +256,6 @@ export class TimetableRenderer {
   /**
    * Generate human-readable label from snake_case field name
    */
-  private generateHumanLabel(fieldName: string): string {
-    return fieldName
-      .split('_')
-      .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-      .join(' ');
-  }
-
   /**
    * Render individual property cell with appropriate input type
    *
@@ -420,8 +369,8 @@ export class TimetableRenderer {
 
     return `
       <thead>
-        <tr>
-          <th class="stop-header min-w-[200px] p-2 text-left z-[2] bg-base-100">
+        <tr class="z-[2]">
+          <th class="stop-header min-w-[200px] p-2 text-left bg-base-100">
             Stop
           </th>
           ${tripHeaders}
