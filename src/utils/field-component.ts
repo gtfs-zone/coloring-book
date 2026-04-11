@@ -111,7 +111,7 @@ function getFieldTooltip(config: FieldConfig): string {
  * Build a GTFS reference URL for a given table name.
  * Returns empty string when tableName is undefined.
  */
-function getSpecUrl(tableName: string | undefined): string {
+export function getSpecUrl(tableName: string | undefined): string {
   if (!tableName) {
     return '';
   }
@@ -134,25 +134,11 @@ function renderTooltip(description: string, specUrl?: string): string {
   // Escape HTML but keep newlines - they'll be rendered via CSS white-space: pre-line
   const escapedDescription = escapeHtml(description);
 
-  const svgIcon = `<svg class="w-4 h-4 opacity-60 hover:opacity-100 cursor-help inline-block ml-1"
-           fill="none"
-           stroke="currentColor"
-           viewBox="0 0 24 24">
-        <path stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="2"
-              d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-      </svg>`;
-
   if (specUrl) {
-    return `
-    <a href="${specUrl}" target="_blank" rel="noopener noreferrer" class="tooltip tooltip-right" data-tip='${escapedDescription}'>${svgIcon}</a>
-  `;
+    return `<a href="${specUrl}" target="_blank" rel="noopener noreferrer" class="tooltip tooltip-right opacity-60 hover:opacity-100 cursor-help ml-1" data-tip='${escapedDescription}'>ⓘ</a>`;
   }
 
-  return `
-    <div class="tooltip tooltip-right" data-tip='${escapedDescription}'>${svgIcon}</div>
-  `;
+  return `<span class="tooltip tooltip-right opacity-60 hover:opacity-100 cursor-help ml-1" data-tip='${escapedDescription}'>ⓘ</span>`;
 }
 
 /**
