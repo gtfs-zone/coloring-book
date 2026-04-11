@@ -231,10 +231,32 @@ export class GTFSEditor {
       // Initialize tab manager
       this.tabManager.initialize();
 
+      // Wire history-btn to open History modal
+      document.getElementById('history-btn')?.addEventListener('click', () => {
+        (
+          document.getElementById('history-modal') as HTMLDialogElement
+        )?.showModal();
+        this.historyController
+          .render()
+          .catch((e: unknown) => console.error('[history] render failed:', e));
+      });
+
       // Initialize bottom sheet controller (mobile only)
       const rightPanel = document.getElementById('right-panel');
+      const openHistoryModal = () => {
+        (
+          document.getElementById('history-modal') as HTMLDialogElement
+        )?.showModal();
+        this.historyController
+          .render()
+          .catch((e: unknown) => console.error('[history] render failed:', e));
+      };
       const bottomSheet = rightPanel
-        ? new BottomSheetController(rightPanel, this.tabManager)
+        ? new BottomSheetController(
+            rightPanel,
+            this.tabManager,
+            openHistoryModal
+          )
         : null;
 
       if (bottomSheet) {
@@ -313,20 +335,13 @@ export class GTFSEditor {
     this.pageStateManager.addNavigationHandler((event) => {
       const { to } = event;
 
-      // Switch to Objects tab for route, stop, and timetable navigation
+      // Open the bottom sheet on mobile for route, stop, and timetable navigation
       if (
         to.type === 'route' ||
         to.type === 'stop' ||
         to.type === 'timetable'
       ) {
-        this.tabManager.switchToTab('browse');
         bottomSheet?.open('half');
-      }
-    });
-
-    this.tabManager.onTabChange((tabName) => {
-      if (tabName === 'files' || tabName === 'changes') {
-        void this.pageStateManager.setPageState({ type: 'home' });
       }
     });
   }
