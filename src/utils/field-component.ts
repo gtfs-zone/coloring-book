@@ -90,6 +90,16 @@ function escapeHtml(text: string | number | undefined): string {
 }
 
 /**
+ * Escape text for use inside HTML attribute values (double-quoted).
+ * Wraps escapeHtml then also escapes single quotes and double quotes.
+ */
+function escapeAttr(text: unknown): string {
+  return escapeHtml(text as string | number | undefined)
+    .replace(/'/g, '&#39;')
+    .replace(/"/g, '&quot;');
+}
+
+/**
  * Get tooltip description for a field
  */
 function getFieldTooltip(config: FieldConfig): string {
@@ -122,29 +132,9 @@ export function getSpecUrl(tableName: string | undefined): string {
 }
 
 /**
- * Render a tooltip icon with description using DaisyUI tooltip
- * Handles long text with proper wrapping and max-width
- * Preserves newlines using CSS white-space: pre-line
+ * Render presence indicator (*) with color coding
  */
-function renderTooltip(description: string, specUrl?: string): string {
-  if (!description) {
-    return '';
-  }
-
-  // Escape HTML but keep newlines - they'll be rendered via CSS white-space: pre-line
-  const escapedDescription = escapeHtml(description);
-
-  if (specUrl) {
-    return `<a href="${specUrl}" target="_blank" rel="noopener noreferrer" class="tooltip tooltip-right opacity-60 hover:opacity-100 cursor-help ml-1" data-tip='${escapedDescription}'>ⓘ</a>`;
-  }
-
-  return `<span class="tooltip tooltip-right opacity-60 hover:opacity-100 cursor-help ml-1" data-tip='${escapedDescription}'>ⓘ</span>`;
-}
-
-/**
- * Render presence indicator (*) with color coding and optional hover tooltip
- */
-function renderPresenceMark(config: FieldConfig, specUrl?: string): string {
+function renderPresenceMark(config: FieldConfig): string {
   if (!config.presence || config.presence === 'Optional') {
     return '';
   }
@@ -157,37 +147,58 @@ function renderPresenceMark(config: FieldConfig, specUrl?: string): string {
   };
   const colorClass = presenceColors[config.presence] ?? '';
 
-  const markSpan = `<span class="${colorClass}">*</span>`;
+  return ` <span class="${colorClass}">*</span>`;
+}
 
-  let inner: string;
-  if (config.presenceCondition) {
-    const escapedCondition = escapeHtml(config.presenceCondition);
-    inner = `<div class="tooltip tooltip-top inline-block" data-tip='${escapedCondition}'>${markSpan}</div>`;
-  } else {
-    inner = markSpan;
+/**
+ * Build structured tooltip content for a field.
+ * Returns a multi-part string with labeled sections joined by double newlines.
+ */
+export function buildFieldTooltipContent(config: FieldConfig): string {
+  const parts: string[] = [];
+  const description = getFieldTooltip(config);
+  if (description) {
+    parts.push(`Description: ${description}`);
   }
-
-  if (specUrl) {
-    return ` <a href="${specUrl}" target="_blank" rel="noopener noreferrer" class="no-underline">${inner}</a>`;
+  parts.push(`ID: ${config.field}`);
+  if (config.presence && config.presence !== 'Optional') {
+    parts.push(`Presence: ${config.presence}`);
+    if (config.presenceCondition) {
+      parts.push(`Condition: ${config.presenceCondition}`);
+    }
   }
+  return parts.join('\n\n');
+}
 
-  return ` ${inner}`;
+/**
+ * Render the shared label content pattern: label text (linked to spec) + presence mark,
+ * wrapped in a tooltip container showing structured field info on hover.
+ * Used by both form field labels and timetable trip property rows.
+ */
+export function renderFieldLabelContent(config: FieldConfig): string {
+  const specUrl = getSpecUrl(config.tableName);
+  const tipContent = buildFieldTooltipContent(config);
+  const labelText = escapeHtml(config.label);
+  const linkContent = specUrl
+    ? `<a href="${specUrl}" target="_blank" rel="noopener noreferrer">${labelText}</a>`
+    : labelText;
+  const presenceMark = renderPresenceMark(config);
+
+  if (tipContent) {
+    return `<span class="tooltip tooltip-right cursor-help" data-tip="${escapeAttr(tipContent)}">${linkContent}${presenceMark}</span>`;
+  }
+  return `${linkContent}${presenceMark}`;
 }
 
 /**
  * Render label using Pattern 4: Label with for attribute
  */
-function renderLabel(
-  config: FieldConfig,
-  tooltip: string,
-  inputId: string
-): string {
-  const specUrl = getSpecUrl(config.tableName);
-  const tooltipHtml = renderTooltip(tooltip, specUrl);
-  const presenceMark = renderPresenceMark(config, specUrl);
+function renderLabel(config: FieldConfig, inputId: string): string {
+  const labelContent = renderFieldLabelContent(config);
 
   let readonlyIcon = '';
   if (config.readonly) {
+    const specUrl = getSpecUrl(config.tableName);
     const lockSvg = `<svg class="w-3 h-3 inline-block opacity-60" fill="none" stroke="currentColor" viewBox="0 0 24 24">
          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
        </svg>`;
@@ -197,7 +208,7 @@ function renderLabel(
   }
 
   return `
-    <label class="label" for="${inputId}">${escapeHtml(config.label)}${presenceMark}${readonlyIcon}${tooltipHtml}</label>
+    <label class="label" for="${inputId}">${labelContent}${readonlyIcon}</label>
   `;
 }
 
@@ -359,9 +370,8 @@ function renderTextareaInput(config: FieldConfig, inputId: string): string {
  * ```
  */
 export function renderFormField(config: FieldConfig): string {
-  const tooltip = getFieldTooltip(config);
   const inputId = `field-${config.field}`;
-  const labelHtml = renderLabel(config, tooltip, inputId);
+  const labelHtml = renderLabel(config, inputId);
 
   let inputHtml: string;
   switch (config.type) {
