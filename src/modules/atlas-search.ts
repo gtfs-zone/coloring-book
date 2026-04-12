@@ -1,4 +1,5 @@
 import uFuzzy from '@leeoniya/ufuzzy';
+import { showModal } from './modal-utils';
 
 interface AtlasFeed {
   id: string;
@@ -100,12 +101,12 @@ function escapeHtml(str: string): string {
 }
 
 export async function showAtlasSearchModal(): Promise<string | null> {
-  return new Promise((resolve) => {
-    const modal = document.createElement('div');
-    modal.className = 'modal modal-open';
-    modal.innerHTML = `
-      <div class="modal-box max-w-2xl flex flex-col gap-3">
-        <h3 class="font-bold text-lg">From TransitLand Atlas</h3>
+  let selectedUrl: string | null = null;
+
+  await showModal({
+    title: 'From TransitLand Atlas',
+    body: `
+      <div class="flex flex-col gap-3">
         <input
           id="atlas-search-input"
           type="search"
@@ -119,58 +120,46 @@ export async function showAtlasSearchModal(): Promise<string | null> {
         >
           <div class="text-base-content/60 text-sm p-4 text-center">Loading…</div>
         </div>
-        <div class="modal-action">
-          <button id="atlas-cancel-btn" class="btn">Cancel</button>
-        </div>
       </div>
-    `;
-    document.body.appendChild(modal);
+    `,
+    actions: [{ label: 'Cancel', onClick: () => {} }],
+    escapeAction: 0,
+    onMount: (close) => {
+      const resultsEl = document.getElementById('atlas-results') as HTMLElement;
+      const searchInput = document.getElementById(
+        'atlas-search-input'
+      ) as HTMLInputElement;
 
-    const cleanup = (url: string | null) => {
-      document.body.removeChild(modal);
-      resolve(url);
-    };
+      const onSelect = (url: string) => {
+        selectedUrl = url;
+        close();
+      };
 
-    modal
-      .querySelector('#atlas-cancel-btn')!
-      .addEventListener('click', () => cleanup(null));
+      loadAtlasFeeds()
+        .then((feeds) => {
+          const haystack = cachedHaystack!;
+          filterAndRender('', feeds, haystack, resultsEl, onSelect);
 
-    // Close on backdrop click
-    modal.addEventListener('click', (e) => {
-      if (e.target === modal) {
-        cleanup(null);
-      }
-    });
+          searchInput.addEventListener('input', () => {
+            debounce(() => {
+              filterAndRender(
+                searchInput.value,
+                feeds,
+                haystack,
+                resultsEl,
+                onSelect
+              );
+            }, 200);
+          });
 
-    const resultsEl = modal.querySelector('#atlas-results') as HTMLElement;
-    const searchInput = modal.querySelector(
-      '#atlas-search-input'
-    ) as HTMLInputElement;
-
-    const onSelect = (url: string) => cleanup(url);
-
-    loadAtlasFeeds()
-      .then((feeds) => {
-        const haystack = cachedHaystack!;
-        filterAndRender('', feeds, haystack, resultsEl, onSelect);
-
-        searchInput.addEventListener('input', () => {
-          debounce(() => {
-            filterAndRender(
-              searchInput.value,
-              feeds,
-              haystack,
-              resultsEl,
-              onSelect
-            );
-          }, 200);
+          searchInput.focus();
+        })
+        .catch((err) => {
+          console.error('[AtlasSearch] Failed to load feeds:', err);
+          resultsEl.innerHTML = `<div class="text-error text-sm p-4 text-center">Failed to load atlas data</div>`;
         });
-
-        searchInput.focus();
-      })
-      .catch((err) => {
-        console.error('[AtlasSearch] Failed to load feeds:', err);
-        resultsEl.innerHTML = `<div class="text-error text-sm p-4 text-center">Failed to load atlas data</div>`;
-      });
+    },
   });
+
+  return selectedUrl;
 }
