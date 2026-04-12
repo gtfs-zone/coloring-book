@@ -48,6 +48,7 @@ export function showAboutModal(
     title: 'edit.gtfs.zone',
     body,
     actions: [{ label: 'Close', onClick: () => {} }],
-    dismissable: true,
+    enterAction: 0,
+    escapeAction: 0,
   });
 }

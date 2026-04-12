@@ -213,6 +213,7 @@ export class GTFSDatabase {
         await showModal({
           title: 'Database update required',
           body: 'GTFS.zone needs to update its local database schema. Export your saved feed first, or clear and continue.',
+          enterAction: 0,
           actions: [
             {
               label: 'Export & Continue',
