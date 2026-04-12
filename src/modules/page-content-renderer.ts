@@ -902,6 +902,8 @@ export class PageContentRenderer {
       body: `<p>This stop is referenced by <strong>${stopTimes.length} stop_time${stopTimes.length !== 1 ? 's' : ''}</strong> across ${tripIds.length} trip${tripIds.length !== 1 ? 's' : ''}:</p>
              <p class="text-sm opacity-70 mt-1">${tripSummary}</p>
              <p class="mt-3">You can cascade-delete the stop and all its stop_times (reversible via undo), or cancel.</p>`,
+      enterAction: 1,
+      escapeAction: 0,
       actions: [
         { label: 'Cancel', className: 'btn-ghost', onClick: () => {} },
         {
