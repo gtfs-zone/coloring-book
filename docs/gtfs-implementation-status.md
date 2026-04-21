@@ -17,7 +17,7 @@ UI support levels:
 | `calendar.txt` | Conditionally Required | Full | Service view with weekly pattern editor (Mon–Sun toggles) |
 | `calendar_dates.txt` | Conditionally Required | Full | Exception date editing within the service view |
 | `shapes.txt` | Optional | Full | Route shape polylines rendered on map |
-| `feed_info.txt` | Conditionally Required | Partial | Table editor only |
+| `feed_info.txt` | Conditionally Required | Full | Dedicated inline-editable properties panel on the home page |
 | `frequencies.txt` | Optional | Partial | Table editor only |
 | `transfers.txt` | Optional | Partial | Table editor only |
 | `pathways.txt` | Optional | Partial | Table editor only |
