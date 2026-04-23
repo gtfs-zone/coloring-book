@@ -5,7 +5,14 @@
  * Provides a single-column layout showing stop properties and related transit services.
  */
 
-import type { Agency, Routes, Stops, Trips, StopTimes } from '../types/gtfs.js';
+import type {
+  Agency,
+  Routes,
+  Stops,
+  Trips,
+  StopTimes,
+  Pathways,
+} from '../types/gtfs.js';
 import {
   renderEntityFields,
   type QueryOnlyDatabase,
@@ -27,6 +34,7 @@ export interface StopViewDependencies {
   onAgencyClick: (agency_id: string) => void;
   onRouteClick: (route_id: string) => void;
   onStopClick?: (stop_id: string) => void;
+  onPathwayClick?: (pathway_id: string) => void;
   onDeleteStop: (stop_id: string) => Promise<void>;
   getLevelOptions?: () => Promise<LevelOption[]>;
 }
@@ -60,19 +68,22 @@ export class StopViewController {
           : parseInt(stop.location_type ?? '0', 10) || 0;
       const isStation = locationType === 1;
 
-      // Get related transit data, level options, and (for stations) child stops in parallel
-      const [agencies, routes, levelOptions, childStops] = await Promise.all([
-        this.getAgenciesServingStop(stop_id),
-        this.getRoutesServingStop(stop_id),
-        this.dependencies.getLevelOptions?.() ?? Promise.resolve([]),
-        isStation ? this.getChildStops(stop_id) : Promise.resolve([]),
-      ]);
+      // Get related transit data, level options, child stops, and pathways in parallel
+      const [agencies, routes, levelOptions, childStops, connectedPathways] =
+        await Promise.all([
+          this.getAgenciesServingStop(stop_id),
+          this.getRoutesServingStop(stop_id),
+          this.dependencies.getLevelOptions?.() ?? Promise.resolve([]),
+          isStation ? this.getChildStops(stop_id) : Promise.resolve([]),
+          !isStation ? this.getConnectedPathways(stop_id) : Promise.resolve([]),
+        ]);
 
       // Render complete view - don't set height/overflow, let parent handle it
       const html = `
         <div class="p-4 space-y-4">
           ${this.renderStopProperties(stop, levelOptions)}
           ${isStation ? this.renderChildStopsSection(childStops) : ''}
+          ${!isStation ? this.renderPathwaysSection(connectedPathways, stop_id) : ''}
           ${this.renderTransitNetwork(agencies, routes)}
         </div>
       `;
@@ -248,12 +259,94 @@ export class StopViewController {
     }
   }
 
+  private readonly PATHWAY_MODE_LABELS: Record<number, string> = {
+    1: 'Walkway',
+    2: 'Stairs',
+    3: 'Moving Sidewalk',
+    4: 'Escalator',
+    5: 'Elevator',
+    6: 'Fare Gate',
+    7: 'Exit Gate',
+  };
+
   private readonly LOCATION_TYPE_LABELS: Record<number, string> = {
     0: 'Platform',
     2: 'Entrance/Exit',
     3: 'Generic Node',
     4: 'Boarding Area',
   };
+
+  /**
+   * Get all pathways connected to this stop (from or to)
+   */
+  private async getConnectedPathways(stop_id: string): Promise<Pathways[]> {
+    if (!this.dependencies.gtfsDatabase) {
+      return [];
+    }
+    try {
+      const [fromRows, toRows] = await Promise.all([
+        this.dependencies.gtfsDatabase.queryRows('pathways', {
+          from_stop_id: stop_id,
+        }),
+        this.dependencies.gtfsDatabase.queryRows('pathways', {
+          to_stop_id: stop_id,
+        }),
+      ]);
+      const seen = new Set<string>();
+      const all: Pathways[] = [];
+      for (const row of [...fromRows, ...toRows]) {
+        const p = row as Pathways;
+        if (!seen.has(String(p.pathway_id))) {
+          seen.add(String(p.pathway_id));
+          all.push(p);
+        }
+      }
+      return all;
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * Render pathways section for a non-station stop
+   */
+  private renderPathwaysSection(pathways: Pathways[], stop_id: string): string {
+    if (pathways.length === 0) {
+      return '';
+    }
+
+    const rows = pathways
+      .map((p) => {
+        const otherStopId =
+          String(p.from_stop_id) === stop_id
+            ? String(p.to_stop_id)
+            : String(p.from_stop_id);
+        const modeNum = Number(p.pathway_mode) || 0;
+        const modeLabel =
+          this.PATHWAY_MODE_LABELS[modeNum] ?? `Mode ${modeNum}`;
+        return `
+          <div class="flex items-center justify-between py-2 border-b last:border-b-0">
+            <div>
+              <span class="font-mono text-sm">${escapeAttr(otherStopId)}</span>
+              <span class="ml-2 badge badge-outline badge-sm">${escapeAttr(modeLabel)}</span>
+            </div>
+            <button class="btn btn-xs btn-ghost pathway-view-btn" data-pathway-id="${escapeAttr(String(p.pathway_id))}">View</button>
+          </div>
+        `;
+      })
+      .join('');
+
+    return `
+      <div class="space-y-4">
+        <h2 class="text-lg font-semibold">Pathways</h2>
+        <div class="card bg-base-100 shadow-lg">
+          <div class="card-body p-4">
+            ${rows}
+          </div>
+        </div>
+      </div>
+    `;
+  }
 
   /**
    * Render child stops section for a station
@@ -469,6 +562,19 @@ export class StopViewController {
           const stop_id = btn.getAttribute('data-stop-id');
           if (stop_id) {
             this.dependencies.onStopClick!(stop_id);
+          }
+        });
+      });
+    }
+
+    // Pathway links (non-station stop view)
+    if (this.dependencies.onPathwayClick) {
+      const pathwayBtns = container.querySelectorAll('.pathway-view-btn');
+      pathwayBtns.forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const pathway_id = btn.getAttribute('data-pathway-id');
+          if (pathway_id) {
+            this.dependencies.onPathwayClick!(pathway_id);
           }
         });
       });

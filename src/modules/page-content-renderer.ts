@@ -188,6 +188,7 @@ export class PageContentRenderer {
       onAgencyClick: dependencies.onAgencyClick,
       onRouteClick: dependencies.onRouteClick,
       onStopClick: dependencies.onStopClick,
+      onPathwayClick: dependencies.onPathwayClick,
       onDeleteStop: (stop_id) => this.handleDeleteStop(stop_id),
       getLevelOptions: dependencies.getLevelOptions,
     };

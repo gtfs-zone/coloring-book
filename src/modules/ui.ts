@@ -169,6 +169,13 @@ export class UIController {
       this.toggleAddStopMode();
     });
 
+    // Add Pathway button
+    document
+      .getElementById('add-pathway-btn')
+      ?.addEventListener('click', () => {
+        this.toggleAddPathwayMode();
+      });
+
     // Back to files button
     const backToFilesBtn = document.getElementById('back-to-files');
     if (backToFilesBtn) {
@@ -1233,6 +1240,12 @@ export class UIController {
       this.mapController.setModeChangeCallback(() => {
         this.updateMapToolButtonState();
       });
+      // Update pathway button when station expand state changes
+      this.mapController.setCallbacks({
+        onStationExpandChange: () => {
+          this.updateMapToolButtonState();
+        },
+      });
     }
   }
 
@@ -1253,6 +1266,18 @@ export class UIController {
   }
 
   /**
+   * Toggle add pathway mode on the map
+   */
+  toggleAddPathwayMode() {
+    if (!this.mapController) {
+      console.warn('Map controller not initialized');
+      return;
+    }
+    this.mapController.toggleAddPathwayMode();
+    this.updateMapToolButtonState();
+  }
+
+  /**
    * Update the map tool button states based on current map mode
    */
   updateMapToolButtonState() {
@@ -1262,7 +1287,18 @@ export class UIController {
     const mode = this.mapController.getCurrentMode();
     const pointerBtn = document.getElementById('pointer-btn');
     const addStopBtn = document.getElementById('add-stop-btn');
+    const addPathwayBtn = document.getElementById(
+      'add-pathway-btn'
+    ) as HTMLButtonElement | null;
     pointerBtn?.classList.toggle('btn-primary', mode === MapMode.NAVIGATE);
     addStopBtn?.classList.toggle('btn-primary', mode === MapMode.ADD_STOP);
+    if (addPathwayBtn) {
+      const hasExpandedStation = !!this.mapController.expandedStationId;
+      addPathwayBtn.disabled = !hasExpandedStation;
+      addPathwayBtn.classList.toggle(
+        'btn-primary',
+        mode === MapMode.ADD_PATHWAY
+      );
+    }
   }
 }
