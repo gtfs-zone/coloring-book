@@ -22,6 +22,7 @@ export enum MapMode {
 interface MapControllerCallbacks {
   onRouteSelect?: (route_id: string) => void;
   onStopSelect?: (stop_id: string) => void;
+  onPathwaySelect?: (pathway_id: string) => void;
   onModeChange?: (mode: MapMode) => void;
   onEmptyClick?: () => void;
 }
@@ -168,6 +169,7 @@ export class MapController {
     const interactionCallbacks: InteractionCallbacks = {
       onRouteClick: this.handleRouteClick.bind(this),
       onStopClick: this.handleStopClick.bind(this),
+      onPathwayClick: this.handlePathwayClick.bind(this),
       onModeChange: this.handleModeChange.bind(this),
       onStopDragComplete: this.handleStopDragComplete.bind(this),
       onStopCreated: this.handleStopCreated.bind(this),
@@ -825,6 +827,9 @@ export class MapController {
       });
     }
 
+    // Draw pathways between child stops
+    this.layerManager?.updatePathwaysLayer(stationId);
+
     console.log(`[MapController] Expanded station: ${stationId}`);
   }
 
@@ -837,6 +842,7 @@ export class MapController {
     }
     this.expandedStationId = null;
     this.layerManager?.setStopsFilter(null);
+    this.layerManager?.clearPathwaysLayer();
     console.log('[MapController] Collapsed station');
   }
 
@@ -848,6 +854,24 @@ export class MapController {
 
     if (this.callbacks.onModeChange) {
       this.callbacks.onModeChange(mode);
+    }
+  }
+
+  /**
+   * Handle pathway click events
+   */
+  private async handlePathwayClick(pathway_id: string): Promise<void> {
+    console.log('Pathway clicked:', pathway_id);
+
+    if (this.pageStateManager) {
+      await this.pageStateManager.setPageState({
+        type: 'pathway',
+        pathway_id,
+      });
+    }
+
+    if (this.callbacks.onPathwaySelect) {
+      this.callbacks.onPathwaySelect(pathway_id);
     }
   }
 
@@ -868,6 +892,11 @@ export class MapController {
 
         // Update layer data
         this.layerManager?.updateStopsData();
+
+        // Rebuild pathways if a station is expanded (stop drag may shift endpoints)
+        if (this.expandedStationId) {
+          this.layerManager?.rebuildPathwaysSource(this.expandedStationId);
+        }
       }
     } catch (error) {
       console.error(`Failed to update coordinates for stop ${stop_id}:`, error);
