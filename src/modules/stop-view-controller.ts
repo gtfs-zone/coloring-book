@@ -26,6 +26,7 @@ export interface StopViewDependencies {
   };
   onAgencyClick: (agency_id: string) => void;
   onRouteClick: (route_id: string) => void;
+  onStopClick?: (stop_id: string) => void;
   onDeleteStop: (stop_id: string) => Promise<void>;
   getLevelOptions?: () => Promise<LevelOption[]>;
 }
@@ -53,17 +54,25 @@ export class StopViewController {
         return this.renderError('Stop not found.');
       }
 
-      // Get related transit data and level options in parallel
-      const [agencies, routes, levelOptions] = await Promise.all([
+      const locationType =
+        typeof stop.location_type === 'number'
+          ? stop.location_type
+          : parseInt(stop.location_type ?? '0', 10) || 0;
+      const isStation = locationType === 1;
+
+      // Get related transit data, level options, and (for stations) child stops in parallel
+      const [agencies, routes, levelOptions, childStops] = await Promise.all([
         this.getAgenciesServingStop(stop_id),
         this.getRoutesServingStop(stop_id),
         this.dependencies.getLevelOptions?.() ?? Promise.resolve([]),
+        isStation ? this.getChildStops(stop_id) : Promise.resolve([]),
       ]);
 
       // Render complete view - don't set height/overflow, let parent handle it
       const html = `
         <div class="p-4 space-y-4">
           ${this.renderStopProperties(stop, levelOptions)}
+          ${isStation ? this.renderChildStopsSection(childStops) : ''}
           ${this.renderTransitNetwork(agencies, routes)}
         </div>
       `;
@@ -216,6 +225,81 @@ export class StopViewController {
           <div class="flex items-center gap-2">
             <div class="badge badge-primary badge-sm">${routeName}</div>
             ${routeDescription ? `<div class="text-sm opacity-70 truncate flex-1">${routeDescription}</div>` : ''}
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  /**
+   * Get all child stops of a station (stops where parent_station = station_id)
+   */
+  private async getChildStops(station_id: string): Promise<Stops[]> {
+    if (!this.dependencies.gtfsDatabase) {
+      return [];
+    }
+    try {
+      const rows = await this.dependencies.gtfsDatabase.queryRows('stops', {
+        parent_station: station_id,
+      });
+      return rows as Stops[];
+    } catch {
+      return [];
+    }
+  }
+
+  private readonly LOCATION_TYPE_LABELS: Record<number, string> = {
+    0: 'Platform',
+    2: 'Entrance/Exit',
+    3: 'Generic Node',
+    4: 'Boarding Area',
+  };
+
+  /**
+   * Render child stops section for a station
+   */
+  private renderChildStopsSection(children: Stops[]): string {
+    if (children.length === 0) {
+      return `
+        <div class="space-y-4">
+          <h2 class="text-lg font-semibold">Child Stops</h2>
+          <div class="card bg-base-100 shadow-lg">
+            <div class="card-body p-4">
+              <div class="text-center py-4 opacity-70">No child stops defined.</div>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    const rows = children
+      .map((child) => {
+        const locType =
+          typeof child.location_type === 'number'
+            ? child.location_type
+            : parseInt(child.location_type ?? '0', 10) || 0;
+        const typeLabel =
+          this.LOCATION_TYPE_LABELS[locType] ?? `Type ${locType}`;
+        const name = child.stop_name || child.stop_id;
+        return `
+          <div class="flex items-center justify-between py-2 border-b last:border-b-0">
+            <div>
+              <span class="font-mono text-sm">${escapeAttr(child.stop_id)}</span>
+              ${name !== child.stop_id ? `<span class="ml-2 opacity-70">${escapeAttr(name)}</span>` : ''}
+              <span class="ml-2 badge badge-outline badge-sm">${escapeAttr(typeLabel)}</span>
+            </div>
+            <button class="btn btn-xs btn-ghost child-stop-btn" data-stop-id="${escapeAttr(child.stop_id)}">View</button>
+          </div>
+        `;
+      })
+      .join('');
+
+    return `
+      <div class="space-y-4">
+        <h2 class="text-lg font-semibold">Child Stops</h2>
+        <div class="card bg-base-100 shadow-lg">
+          <div class="card-body p-4">
+            ${rows}
           </div>
         </div>
       </div>
@@ -376,6 +460,19 @@ export class StopViewController {
         }
       });
     });
+
+    // Child stop links (station view)
+    if (this.dependencies.onStopClick) {
+      const childBtns = container.querySelectorAll('.child-stop-btn');
+      childBtns.forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const stop_id = btn.getAttribute('data-stop-id');
+          if (stop_id) {
+            this.dependencies.onStopClick!(stop_id);
+          }
+        });
+      });
+    }
 
     // Delete stop button — use event delegation so clicks on the SVG child
     // element are caught correctly. Use an AbortController to prevent the

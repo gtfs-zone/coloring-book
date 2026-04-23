@@ -35,6 +35,9 @@ export class InteractionHandler {
   // Local copy of stops GeoJSON for drag — avoids reading MapLibre's private _data
   private stopsGeoJSON: GeoJSON.FeatureCollection | null = null;
 
+  // Callback to retrieve the currently expanded station id from MapController
+  private getExpandedStationId: (() => string | null) | null = null;
+
   constructor(map: MapLibreMap, gtfsParser: GTFSParser) {
     this.map = map;
     this.gtfsParser = gtfsParser;
@@ -50,6 +53,10 @@ export class InteractionHandler {
 
   public setStopsGeoJSON(data: GeoJSON.FeatureCollection): void {
     this.stopsGeoJSON = data;
+  }
+
+  public setGetExpandedStationId(fn: () => string | null): void {
+    this.getExpandedStationId = fn;
   }
 
   public setHighlightedStop(stop_id: string | null): void {
@@ -197,6 +204,22 @@ export class InteractionHandler {
 
     const { lng, lat } = e.lngLat;
     const suggestedId = generateId();
+    const expandedStationId = this.getExpandedStationId?.() ?? null;
+
+    const locationTypeSelect = expandedStationId
+      ? `
+        <label class="label mt-2"><span class="label-text">Location Type</span></label>
+        <select id="new-stop-type-select" class="select select-bordered w-full">
+          <option value="0">0 — Platform (stop within a station)</option>
+          <option value="2">2 — Entrance / Exit</option>
+          <option value="3">3 — Generic Node</option>
+          <option value="4">4 — Boarding Area</option>
+        </select>`
+      : '';
+
+    const parentInfo = expandedStationId
+      ? `<p class="text-xs opacity-60 mt-2">Will be added as a child of station <code>${expandedStationId}</code>.</p>`
+      : '';
 
     const bodyHtml = `
       <label class="label"><span class="label-text">Stop ID</span></label>
@@ -206,7 +229,9 @@ export class InteractionHandler {
         class="input input-bordered w-full font-mono"
         value="${suggestedId}"
       />
+      ${locationTypeSelect}
       <p class="text-xs opacity-60 mt-2">The Stop ID cannot be changed after creation.</p>
+      ${parentInfo}
       <p id="stop-id-error" class="text-xs text-error mt-1 hidden"></p>
     `;
 
@@ -231,13 +256,21 @@ export class InteractionHandler {
         return true;
       }
 
+      let locationType = 0;
+      if (expandedStationId) {
+        const typeSelect = document.getElementById(
+          'new-stop-type-select'
+        ) as HTMLSelectElement;
+        locationType = parseInt(typeSelect?.value ?? '0', 10);
+      }
+
       const newStop: Stops = {
         stop_id: stopId,
         stop_name: '',
         stop_lat: parseFloat(lat.toFixed(6)),
         stop_lon: parseFloat(lng.toFixed(6)),
-        parent_station: '',
-        location_type: 0,
+        parent_station: expandedStationId ?? '',
+        location_type: locationType,
       };
 
       console.log('Creating new stop:', newStop);
@@ -260,7 +293,7 @@ export class InteractionHandler {
     };
 
     showModal({
-      title: 'New Stop',
+      title: expandedStationId ? 'New Child Stop' : 'New Stop',
       body: bodyHtml,
       enterAction: 1,
       escapeAction: 0,

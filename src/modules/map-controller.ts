@@ -56,6 +56,7 @@ export class MapController {
   private isInitialized = false;
   private resizeTimeout: NodeJS.Timeout | null = null;
   private basemapChangeHandlerSet = false;
+  public expandedStationId: string | null = null;
 
   // Highlight state management - ensures mutual exclusivity
   private currentHighlight: {
@@ -143,6 +144,11 @@ export class MapController {
       this.interactionHandler?.setStopsGeoJSON(data);
     };
 
+    // Let InteractionHandler read the expanded station id for contextual stop creation
+    this.interactionHandler.setGetExpandedStationId(
+      () => this.expandedStationId
+    );
+
     // Setup basemap change handler to re-add layers
     this.setupBasemapChangeHandler();
 
@@ -167,6 +173,7 @@ export class MapController {
       onStopCreated: this.handleStopCreated.bind(this),
       onEmptyClick: () => {
         this.clearHighlights();
+        this.collapseStation();
         this.callbacks.onEmptyClick?.();
       },
     };
@@ -260,6 +267,10 @@ export class MapController {
     if (!this.isMapReady()) {
       return;
     }
+
+    // Reset station expansion when feed changes
+    this.expandedStationId = null;
+    this.layerManager?.setStopsFilter(null);
 
     // Ensure RouteRenderer is initialized (this waits for map style to load)
     await this.routeRenderer!.ensureInitialized();
@@ -722,6 +733,22 @@ export class MapController {
   private async handleStopClick(stop_id: string): Promise<void> {
     console.log('Stop clicked:', stop_id);
 
+    const stops =
+      this.gtfsParser!.getFileDataSyncTyped<Stops>('stops.txt') || [];
+    const stop = stops.find((s) => s.stop_id === stop_id);
+    const locationType =
+      typeof stop?.location_type === 'number'
+        ? stop.location_type
+        : parseInt(stop?.location_type ?? '0', 10) || 0;
+
+    if (locationType === 1) {
+      if (this.expandedStationId === stop_id) {
+        this.collapseStation();
+      } else {
+        this.expandStation(stop_id);
+      }
+    }
+
     // Navigate using page state manager
     if (this.pageStateManager) {
       await this.pageStateManager.setPageState({ type: 'stop', stop_id });
@@ -731,6 +758,86 @@ export class MapController {
     if (this.callbacks.onStopSelect) {
       this.callbacks.onStopSelect(stop_id);
     }
+  }
+
+  /**
+   * Expand the map view to show a station and all its child stops
+   */
+  public expandStation(stationId: string): void {
+    const stops =
+      this.gtfsParser!.getFileDataSyncTyped<Stops>('stops.txt') || [];
+
+    this.expandedStationId = stationId;
+
+    // Show only the station and its children
+    this.layerManager?.setStopsFilter([
+      'any',
+      ['==', ['get', 'stop_id'], stationId],
+      ['==', ['get', 'parent_station'], stationId],
+    ] as unknown as import('maplibre-gl').FilterSpecification);
+
+    // Fly to bounding box of station + children
+    const coords: [number, number][] = stops
+      .filter(
+        (s) =>
+          (s.stop_id === stationId || s.parent_station === stationId) &&
+          s.stop_lat !== null &&
+          s.stop_lat !== undefined &&
+          s.stop_lon !== null &&
+          s.stop_lon !== undefined
+      )
+      .map((s) => [Number(s.stop_lon), Number(s.stop_lat)]);
+
+    if (coords.length === 0) {
+      return;
+    }
+
+    if (coords.length === 1) {
+      this.map!.flyTo({
+        center: coords[0],
+        zoom: 17,
+        duration: 1000,
+        essential: true,
+        padding: {
+          top: 80,
+          bottom: 80 + this.bottomPadding,
+          left: 80,
+          right: 80,
+        },
+      });
+    } else {
+      const bounds = coords
+        .slice(1)
+        .reduce(
+          (b, coord) => b.extend(coord),
+          new LngLatBounds(coords[0], coords[0])
+        );
+      this.map!.fitBounds(bounds, {
+        padding: {
+          top: 80,
+          bottom: 80 + this.bottomPadding,
+          left: 80,
+          right: 80,
+        },
+        maxZoom: 18,
+        duration: 1000,
+        essential: true,
+      });
+    }
+
+    console.log(`[MapController] Expanded station: ${stationId}`);
+  }
+
+  /**
+   * Collapse station-expanded view and restore default stops filter
+   */
+  public collapseStation(): void {
+    if (!this.expandedStationId) {
+      return;
+    }
+    this.expandedStationId = null;
+    this.layerManager?.setStopsFilter(null);
+    console.log('[MapController] Collapsed station');
   }
 
   /**
