@@ -12,6 +12,11 @@ import {
 } from '../utils/field-component.js';
 import { GTFS_TABLES, StopsSchema } from '../types/gtfs.js';
 import { getStopDisplay, renderCardLabel } from '../utils/entity-display.js';
+import type { LevelOption } from './levels-controller.js';
+
+function escapeAttr(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+}
 
 export interface StopViewDependencies {
   gtfsDatabase?: QueryOnlyDatabase;
@@ -22,6 +27,7 @@ export interface StopViewDependencies {
   onAgencyClick: (agency_id: string) => void;
   onRouteClick: (route_id: string) => void;
   onDeleteStop: (stop_id: string) => Promise<void>;
+  getLevelOptions?: () => Promise<LevelOption[]>;
 }
 
 export class StopViewController {
@@ -47,16 +53,17 @@ export class StopViewController {
         return this.renderError('Stop not found.');
       }
 
-      // Get related transit data
-      const [agencies, routes] = await Promise.all([
+      // Get related transit data and level options in parallel
+      const [agencies, routes, levelOptions] = await Promise.all([
         this.getAgenciesServingStop(stop_id),
         this.getRoutesServingStop(stop_id),
+        this.dependencies.getLevelOptions?.() ?? Promise.resolve([]),
       ]);
 
       // Render complete view - don't set height/overflow, let parent handle it
       const html = `
         <div class="p-4 space-y-4">
-          ${this.renderStopProperties(stop)}
+          ${this.renderStopProperties(stop, levelOptions)}
           ${this.renderTransitNetwork(agencies, routes)}
         </div>
       `;
@@ -71,13 +78,42 @@ export class StopViewController {
   /**
    * Render editable stop properties section
    */
-  private renderStopProperties(stop: Stops): string {
-    const fieldsHtml = renderEntityFields(
+  private renderStopProperties(
+    stop: Stops,
+    levelOptions: LevelOption[]
+  ): string {
+    let fieldsHtml = renderEntityFields(
       StopsSchema,
       stop as Record<string, string | number | undefined>,
       GTFS_TABLES.STOPS,
       this.currentStopId ?? ''
     );
+
+    // Replace the level_id text input with a <select> populated from levels
+    if (this.dependencies.getLevelOptions) {
+      const currentValue = String(stop.level_id ?? '');
+      const optionsHtml =
+        `<option value="">— no level —</option>` +
+        levelOptions
+          .map(
+            (opt) =>
+              `<option value="${escapeAttr(opt.value)}"${opt.value === currentValue ? ' selected' : ''}>${escapeAttr(opt.label)}</option>`
+          )
+          .join('');
+      const hint =
+        levelOptions.length === 0
+          ? `<div class="text-xs opacity-60 mt-1">Add levels via the Levels button in the nav bar.</div>`
+          : '';
+      // Match the input rendered by field-component for level_id
+      fieldsHtml = fieldsHtml.replace(
+        /<input([^>]*data-field="level_id"[^>]*)>/,
+        (_match, attrs) => {
+          // Strip value attribute — select uses <option selected> instead
+          const attrsClean = attrs.replace(/\s*value="[^"]*"/, '');
+          return `<select${attrsClean} class="select select-bordered select-sm w-full">${optionsHtml}</select>${hint}`;
+        }
+      );
+    }
 
     return `
       <div class="space-y-4">

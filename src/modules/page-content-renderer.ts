@@ -158,6 +158,9 @@ export interface ContentRendererDependencies {
   parser?: {
     getFileDataSync: (fileName: string) => GTFSDatabaseRecord[];
   };
+
+  // Optional: supply level options for the level_id dropdown in stop view
+  getLevelOptions?: () => Promise<{ value: string; label: string }[]>;
 }
 
 /**
@@ -179,6 +182,7 @@ export class PageContentRenderer {
       onAgencyClick: dependencies.onAgencyClick,
       onRouteClick: dependencies.onRouteClick,
       onDeleteStop: (stop_id) => this.handleDeleteStop(stop_id),
+      getLevelOptions: dependencies.getLevelOptions,
     };
     this.stopViewController = new StopViewController(stopViewDependencies);
 
