@@ -1,4 +1,5 @@
 import { Map as MapLibreMap, GeoJSONSource } from 'maplibre-gl';
+import type { FilterSpecification } from 'maplibre-gl';
 import { Stops, StopTimes } from '../types/gtfs-entities.js';
 import type { GTFSParser } from './gtfs-parser.js';
 
@@ -20,12 +21,21 @@ export interface HighlightLayerOptions {
   strokeWidth: number;
 }
 
+// Default filter: show all top-level stops (empty parent_station) and stations (location_type=1), hide child stops.
+const DEFAULT_STOPS_FILTER: FilterSpecification = [
+  'any',
+  ['==', ['get', 'parent_station'], ''],
+  ['==', ['get', 'location_type'], 1],
+] as FilterSpecification;
+
 export class LayerManager {
   private map: MapLibreMap;
   private gtfsParser: GTFSParser;
   public onStopsDataUpdated:
     | ((data: GeoJSON.FeatureCollection) => void)
     | null = null;
+
+  private activeStopsFilter: FilterSpecification = DEFAULT_STOPS_FILTER;
 
   // Default options
   private defaultStopOptions: StopLayerOptions = {
@@ -149,7 +159,10 @@ export class LayerManager {
       features: stops.map((stop) => {
         const lat = stop.stop_lat;
         const lon = stop.stop_lon;
-        const stopType = stop.location_type ?? 0;
+        const stopType =
+          typeof stop.location_type === 'number'
+            ? stop.location_type
+            : parseInt(stop.location_type ?? '0', 10) || 0;
 
         return {
           type: 'Feature',
@@ -163,6 +176,7 @@ export class LayerManager {
             stop_code: stop.stop_code || '',
             stop_desc: stop.stop_desc || '',
             location_type: stopType,
+            parent_station: stop.parent_station ?? '',
             wheelchair_boarding: stop.wheelchair_boarding || '',
           },
         };
@@ -183,20 +197,32 @@ export class LayerManager {
       id: 'stops-background',
       type: 'circle',
       source: 'stops',
+      filter: this.activeStopsFilter,
       paint: {
         'circle-radius': [
           'case',
-          ['==', ['get', 'location_type'], '1'],
+          ['==', ['get', 'location_type'], 1],
           10, // Station
-          ['==', ['get', 'location_type'], '2'],
+          ['==', ['get', 'location_type'], 2],
           5, // Entrance/Exit
-          ['==', ['get', 'location_type'], '3'],
+          ['==', ['get', 'location_type'], 3],
           5, // Generic node
-          ['==', ['get', 'location_type'], '4'],
+          ['==', ['get', 'location_type'], 4],
           7, // Boarding area
-          options.radius, // Default stop
+          options.radius,
         ],
-        'circle-color': options.backgroundColor,
+        'circle-color': [
+          'case',
+          ['==', ['get', 'location_type'], 1],
+          '#3b82f6', // Station: blue
+          ['==', ['get', 'location_type'], 2],
+          '#f59e0b', // Entrance: amber
+          ['==', ['get', 'location_type'], 3],
+          '#8b5cf6', // Generic node: purple
+          ['==', ['get', 'location_type'], 4],
+          '#10b981', // Boarding area: green
+          options.backgroundColor,
+        ],
         'circle-stroke-color': options.strokeColor,
         'circle-stroke-width': options.strokeWidth,
         'circle-opacity': 1,
@@ -218,12 +244,28 @@ export class LayerManager {
       id: 'stops-clickarea',
       type: 'circle',
       source: 'stops',
+      filter: this.activeStopsFilter,
       paint: {
         'circle-radius': options.clickAreaRadius,
         'circle-color': 'transparent',
         'circle-opacity': 0,
       },
     });
+  }
+
+  /**
+   * Set or reset the filter on the stops layers.
+   * Pass null to restore the default filter (hide child stops).
+   * Pass an array filter expression to apply a custom filter (e.g., station-expanded view).
+   */
+  public setStopsFilter(filter: FilterSpecification | null): void {
+    this.activeStopsFilter = filter ?? DEFAULT_STOPS_FILTER;
+    if (this.map.getLayer('stops-background')) {
+      this.map.setFilter('stops-background', this.activeStopsFilter);
+    }
+    if (this.map.getLayer('stops-clickarea')) {
+      this.map.setFilter('stops-clickarea', this.activeStopsFilter);
+    }
   }
 
   /**
