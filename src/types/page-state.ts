@@ -25,7 +25,8 @@ export type PageState =
       direction_id?: string;
     }
   | { type: 'stop'; stop_id: string }
-  | { type: 'service'; service_id: string };
+  | { type: 'service'; service_id: string }
+  | { type: 'pathway'; pathway_id: string };
 
 /**
  * Represents a single item in the breadcrumb trail.
@@ -102,6 +103,14 @@ export function isPageState(value: unknown): value is PageState {
       return (
         Object.keys(state).length === 2 &&
         typeof serviceState.service_id === 'string'
+      );
+    }
+
+    case 'pathway': {
+      const pathwayState = state as { type: string; pathway_id?: string };
+      return (
+        Object.keys(state).length === 2 &&
+        typeof pathwayState.pathway_id === 'string'
       );
     }
 

@@ -372,6 +372,21 @@ export class PageStateManager {
           break;
         }
 
+        case 'pathway': {
+          breadcrumbs.push({
+            label: 'Home',
+            pageState: { type: 'home' },
+          });
+          breadcrumbs.push({
+            label: `Pathway ${pageState.pathway_id}`,
+            pageState: {
+              type: 'pathway',
+              pathway_id: pageState.pathway_id,
+            },
+          });
+          break;
+        }
+
         default:
           // Unknown page state - return just Home
           breadcrumbs.push({
@@ -458,6 +473,10 @@ export class PageStateManager {
         params.set('service', pageState.service_id);
         return params.toString();
 
+      case 'pathway':
+        params.set('pathway', pageState.pathway_id);
+        return params.toString();
+
       default:
         return '';
     }
@@ -474,6 +493,10 @@ export class PageStateManager {
 
     if (params.has('stop')) {
       return { type: 'stop', stop_id: params.get('stop')! };
+    }
+
+    if (params.has('pathway')) {
+      return { type: 'pathway', pathway_id: params.get('pathway')! };
     }
 
     if (params.has('service') && !params.has('route')) {

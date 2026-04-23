@@ -20,6 +20,10 @@ import {
   ServiceViewDependencies,
 } from './service-view-controller.js';
 import {
+  PathwayViewController,
+  PathwayViewDependencies,
+} from './pathway-view-controller.js';
+import {
   renderFormFields,
   generateFieldConfigsFromSchema,
   renderEntityFormFields,
@@ -110,6 +114,7 @@ export interface ContentRendererDependencies {
   onAgencyClick: (agency_id: string) => void;
   onRouteClick: (route_id: string) => void;
   onStopClick: (stop_id: string) => void;
+  onPathwayClick?: (pathway_id: string) => void;
   onServiceClick?: (service_id: string) => void;
   onTimetableClick: (
     route_id: string,
@@ -171,6 +176,7 @@ export class PageContentRenderer {
   private stopViewController: StopViewController;
   private agencyViewController: AgencyViewController;
   private serviceViewController: ServiceViewController;
+  private pathwayViewController: PathwayViewController;
 
   constructor(dependencies: ContentRendererDependencies) {
     this.dependencies = dependencies;
@@ -186,6 +192,16 @@ export class PageContentRenderer {
       getLevelOptions: dependencies.getLevelOptions,
     };
     this.stopViewController = new StopViewController(stopViewDependencies);
+
+    // Initialize PathwayViewController
+    const pathwayViewDependencies: PathwayViewDependencies = {
+      gtfsDatabase: dependencies.gtfsDatabase,
+      onStopClick: dependencies.onStopClick,
+      onDeletePathway: (pathway_id) => this.handleDeletePathway(pathway_id),
+    };
+    this.pathwayViewController = new PathwayViewController(
+      pathwayViewDependencies
+    );
 
     // Initialize AgencyViewController with current dependencies
     const agencyViewDependencies: AgencyViewDependencies = {
@@ -235,6 +251,8 @@ export class PageContentRenderer {
           return await this.renderStop(pageState.stop_id);
         case 'service':
           return await this.renderService(pageState.service_id);
+        case 'pathway':
+          return await this.renderPathway(pageState.pathway_id);
         default:
           // TypeScript should prevent this, but fallback to home
           return await this.renderHome();
@@ -725,6 +743,9 @@ export class PageContentRenderer {
     // It will only attach to stop fields (data-table="stops.txt")
     this.stopViewController.addEventListeners(container);
 
+    // Add PathwayViewController event listeners
+    this.pathwayViewController.addEventListeners(container);
+
     // Add AgencyViewController event listeners
     // It will only attach to agency fields (data-table="agency.txt")
     this.agencyViewController.addEventListeners(container);
@@ -918,5 +939,29 @@ export class PageContentRenderer {
         },
       ],
     });
+  }
+
+  private async renderPathway(pathway_id: string): Promise<string> {
+    return this.pathwayViewController.renderPathwayView(pathway_id);
+  }
+
+  private async handleDeletePathway(pathway_id: string): Promise<void> {
+    const db = this.dependencies.gtfsDatabase;
+    const pm = this.dependencies.patchManager;
+    if (!db || !pm || !db.deleteRow) {
+      return;
+    }
+
+    const rows = await db.queryRows('pathways', { pathway_id });
+    const pathway = rows[0] as Record<string, unknown> | undefined;
+    if (!pathway) {
+      return;
+    }
+
+    await db.deleteRow('pathways', pathway_id);
+    await pm.recordDelete('pathways', pathway_id, pathway);
+
+    console.log(`[PageContentRenderer] Deleted pathway ${pathway_id}`);
+    await navigateToHome();
   }
 }

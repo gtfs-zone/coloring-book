@@ -1,6 +1,6 @@
 import { Map as MapLibreMap, GeoJSONSource } from 'maplibre-gl';
 import type { FilterSpecification } from 'maplibre-gl';
-import { Stops, StopTimes } from '../types/gtfs-entities.js';
+import { Stops, StopTimes, Pathways } from '../types/gtfs-entities.js';
 import type { GTFSParser } from './gtfs-parser.js';
 
 export interface StopLayerOptions {
@@ -66,6 +66,8 @@ export class LayerManager {
    */
   public clearAllLayers(): void {
     const layersToRemove = [
+      'pathways-lines',
+      'pathways-clickarea',
       'stops-background',
       'stops-clickarea',
       'stops-highlight',
@@ -76,7 +78,12 @@ export class LayerManager {
       'shapes',
     ];
 
-    const sourcesToRemove = ['stops', 'stops-highlight', 'trip-highlight'];
+    const sourcesToRemove = [
+      'pathways',
+      'stops',
+      'stops-highlight',
+      'trip-highlight',
+    ];
 
     layersToRemove.forEach((layerId) => {
       if (this.map.getLayer(layerId)) {
@@ -577,5 +584,178 @@ export class LayerManager {
    */
   public hasSource(sourceId: string): boolean {
     return !!this.map.getSource(sourceId);
+  }
+
+  /**
+   * Build GeoJSON FeatureCollection of pathway LineStrings for the given station.
+   * Only includes pathways where both endpoints are children of the station (or the station itself).
+   */
+  private buildPathwaysGeoJSON(stationId: string): GeoJSON.FeatureCollection {
+    const stops =
+      this.gtfsParser.getFileDataSyncTyped<Stops>('stops.txt') || [];
+    const pathways =
+      this.gtfsParser.getFileDataSyncTyped<Pathways>('pathways.txt') || [];
+
+    // Build stop coordinate lookup
+    const coordMap = new Map<string, [number, number]>();
+    stops.forEach((s) => {
+      if (
+        s.stop_lat !== null &&
+        s.stop_lat !== undefined &&
+        s.stop_lon !== null &&
+        s.stop_lon !== undefined
+      ) {
+        coordMap.set(s.stop_id, [Number(s.stop_lon), Number(s.stop_lat)]);
+      }
+    });
+
+    // Identify stop IDs that belong to this station
+    const stationStopIds = new Set(
+      stops
+        .filter(
+          (s) => s.stop_id === stationId || s.parent_station === stationId
+        )
+        .map((s) => s.stop_id)
+    );
+
+    const features: GeoJSON.Feature[] = [];
+    pathways.forEach((pw) => {
+      if (
+        !stationStopIds.has(pw.from_stop_id) ||
+        !stationStopIds.has(pw.to_stop_id)
+      ) {
+        return;
+      }
+      const from = coordMap.get(pw.from_stop_id);
+      const to = coordMap.get(pw.to_stop_id);
+      if (!from || !to) {
+        return;
+      }
+      features.push({
+        type: 'Feature',
+        geometry: {
+          type: 'LineString',
+          coordinates: [from, to],
+        },
+        properties: {
+          pathway_id: pw.pathway_id,
+          from_stop_id: pw.from_stop_id,
+          to_stop_id: pw.to_stop_id,
+          pathway_mode: Number(pw.pathway_mode) || 1,
+          is_bidirectional: pw.is_bidirectional,
+        },
+      });
+    });
+
+    return { type: 'FeatureCollection', features };
+  }
+
+  /**
+   * Add (or update) pathway source and layers for the given station.
+   * Call when a station is expanded.
+   */
+  public updatePathwaysLayer(stationId: string): void {
+    const geojson = this.buildPathwaysGeoJSON(stationId);
+
+    const pathwaySource = this.map.getSource('pathways') as
+      | GeoJSONSource
+      | undefined;
+    if (pathwaySource) {
+      pathwaySource.setData(geojson);
+    } else {
+      this.map.addSource('pathways', { type: 'geojson', data: geojson });
+    }
+
+    if (!this.map.getLayer('pathways-lines')) {
+      this.map.addLayer(
+        {
+          id: 'pathways-lines',
+          type: 'line',
+          source: 'pathways',
+          paint: {
+            'line-width': 3,
+            'line-color': [
+              'case',
+              ['==', ['get', 'pathway_mode'], 1],
+              '#22c55e', // walkway: green
+              ['==', ['get', 'pathway_mode'], 2],
+              '#f97316', // stairs: orange
+              ['==', ['get', 'pathway_mode'], 3],
+              '#06b6d4', // moving sidewalk: cyan
+              ['==', ['get', 'pathway_mode'], 4],
+              '#a855f7', // escalator: purple
+              ['==', ['get', 'pathway_mode'], 5],
+              '#3b82f6', // elevator: blue
+              ['==', ['get', 'pathway_mode'], 6],
+              '#ef4444', // fare gate: red
+              ['==', ['get', 'pathway_mode'], 7],
+              '#6b7280', // exit gate: gray
+              '#ffffff',
+            ],
+          },
+          layout: {
+            'line-cap': 'round',
+            'line-join': 'round',
+          },
+        },
+        'stops-background'
+      );
+    }
+
+    if (!this.map.getLayer('pathways-clickarea')) {
+      this.map.addLayer(
+        {
+          id: 'pathways-clickarea',
+          type: 'line',
+          source: 'pathways',
+          paint: {
+            'line-width': 16,
+            'line-opacity': 0,
+          },
+        },
+        'stops-background'
+      );
+
+      ['pathways-lines', 'pathways-clickarea'].forEach((layerId) => {
+        this.map.on('mouseenter', layerId, () => {
+          this.map.getCanvas().style.cursor = 'pointer';
+        });
+        this.map.on('mouseleave', layerId, () => {
+          this.map.getCanvas().style.cursor = '';
+        });
+      });
+    }
+
+    console.log(
+      `[LayerManager] Updated pathways layer for station: ${stationId} (${geojson.features.length} pathways)`
+    );
+  }
+
+  /**
+   * Remove pathway source and layers from the map.
+   * Call when a station is collapsed.
+   */
+  public clearPathwaysLayer(): void {
+    ['pathways-clickarea', 'pathways-lines'].forEach((layerId) => {
+      if (this.map.getLayer(layerId)) {
+        this.map.removeLayer(layerId);
+      }
+    });
+    if (this.map.getSource('pathways')) {
+      this.map.removeSource('pathways');
+    }
+    console.log('[LayerManager] Cleared pathways layer');
+  }
+
+  /**
+   * Rebuild the pathways source in-place after stops are moved.
+   * Only has an effect if the pathway layers are currently visible.
+   */
+  public rebuildPathwaysSource(stationId: string): void {
+    if (!this.map.getSource('pathways')) {
+      return;
+    }
+    const geojson = this.buildPathwaysGeoJSON(stationId);
+    (this.map.getSource('pathways') as GeoJSONSource).setData(geojson);
   }
 }

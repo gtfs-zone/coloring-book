@@ -13,6 +13,7 @@ import { generateId } from '../utils/uuid.js';
 export interface InteractionCallbacks {
   onRouteClick?: (route_id: string) => void;
   onStopClick?: (stop_id: string) => void;
+  onPathwayClick?: (pathway_id: string) => void;
   onModeChange?: (mode: MapMode) => void;
   onStopDragComplete?: (stop_id: string, lat: number, lng: number) => void;
   onStopCreated?: (stop_id: string) => void;
@@ -152,16 +153,16 @@ export class InteractionHandler {
   }
 
   /**
-   * Handle navigation mode clicks (stops and routes)
+   * Handle navigation mode clicks (stops, pathways, and routes)
    */
   private handleNavigationClick(e: MapMouseEvent): void {
-    // Query features at click point, prioritizing stops over routes
+    // Query features at click point, prioritizing stops over pathways over routes
     const stopFeatures = this.map.queryRenderedFeatures(e.point, {
       layers: ['stops-clickarea', 'stops-background'],
     });
 
     if (stopFeatures.length > 0) {
-      // Handle stop click - this takes priority over routes
+      // Handle stop click - this takes priority over everything
       const stopFeature = stopFeatures[0];
       const stop_id = stopFeature.properties?.stop_id;
 
@@ -172,7 +173,21 @@ export class InteractionHandler {
       return; // Exit early to prevent route clicks
     }
 
-    // If no stops found, check for route features
+    // Check for pathway features (only present when a station is expanded)
+    const pathwayFeatures = this.map.queryRenderedFeatures(e.point, {
+      layers: ['pathways-clickarea', 'pathways-lines'],
+    });
+
+    if (pathwayFeatures.length > 0) {
+      const pathway_id = pathwayFeatures[0].properties?.pathway_id;
+      if (pathway_id && this.callbacks.onPathwayClick) {
+        console.log('clicked on pathway', pathway_id);
+        this.callbacks.onPathwayClick(pathway_id);
+      }
+      return;
+    }
+
+    // If no stops or pathways found, check for route features
     const routeFeatures = this.map.queryRenderedFeatures(e.point, {
       layers: ['routes-clickarea', 'routes-background'],
     });
