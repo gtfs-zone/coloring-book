@@ -27,6 +27,8 @@ import {
   FeedInfo,
   FareAttributes,
   FareRules,
+  Pathways,
+  Levels,
   GTFSTableMap,
 } from '../types/gtfs-entities.js';
 import {
@@ -51,6 +53,8 @@ type GTFSStoreName =
   | 'feed_info'
   | 'fare_attributes'
   | 'fare_rules'
+  | 'pathways'
+  | 'levels'
   | 'locations'
   | 'patches'
   | 'snapshots'
@@ -126,6 +130,16 @@ export interface GTFSDBSchema extends DBSchema {
     key: string; // fare_id
     value: FareRules;
   };
+  pathways: {
+    key: string; // pathway_id
+    value: Pathways;
+    indexes: { from_stop_id: string; to_stop_id: string; pathway_mode: number };
+  };
+  levels: {
+    key: string; // level_id
+    value: Levels;
+    indexes: { level_index: number };
+  };
   locations: {
     key: string; // location_id
     value: GTFSDatabaseRecord; // Keep as generic for now since no specific schema exists
@@ -172,7 +186,7 @@ export class GTFSDatabase {
   private db: IDBPDatabase<GTFSDBSchema> | null = null;
   private readonly dbName = CONFIG.DB_NAME;
   // Fixed schema version — bump only for schema changes; pre-upgrade modal handles export.
-  private readonly dbVersion = 8;
+  private readonly dbVersion = 9;
   /** Virtual table registry — large tables that bypass per-row IDB storage. */
   private virtualTables = new Map<string, VirtualTableHandlers>();
 
@@ -500,6 +514,14 @@ export class GTFSDatabase {
       case 'fare_rules':
         // fare_id is now the primary key, no need for separate index
         store.createIndex('route_id', 'route_id', { unique: false });
+        break;
+      case 'pathways':
+        store.createIndex('from_stop_id', 'from_stop_id', { unique: false });
+        store.createIndex('to_stop_id', 'to_stop_id', { unique: false });
+        store.createIndex('pathway_mode', 'pathway_mode', { unique: false });
+        break;
+      case 'levels':
+        store.createIndex('level_index', 'level_index', { unique: false });
         break;
       case 'locations':
         // location_id is now the primary key, no need for separate index
