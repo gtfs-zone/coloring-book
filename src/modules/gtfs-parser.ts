@@ -1257,6 +1257,53 @@ export class GTFSParser {
   }
 
   /**
+   * Create a new pathway and add it to the GTFS data
+   */
+  async createPathway(pathway: GTFSDatabaseRecord): Promise<void> {
+    const fileName = GTFS_TABLES.PATHWAYS;
+    const tableName = this.getTableName(fileName);
+
+    if (!this.gtfsData[fileName]) {
+      this.gtfsData[fileName] = { content: '', data: [], errors: [] };
+    }
+
+    await this.gtfsDatabase.insertRows(tableName, [pathway]);
+
+    const pathwayId = String(pathway.pathway_id);
+    await this.patchManager?.recordInsert(
+      tableName,
+      pathwayId,
+      pathway as Record<string, unknown>
+    );
+
+    this.updatePathwaysFileContent();
+    console.log(`Pathway ${pathway.pathway_id} created successfully`);
+  }
+
+  /**
+   * Update the pathways.txt file content from in-memory data
+   */
+  private updatePathwaysFileContent(): void {
+    const fileName = GTFS_TABLES.PATHWAYS;
+    const pathwaysData = this.gtfsData[fileName];
+
+    if (!pathwaysData || !pathwaysData.data.length) {
+      return;
+    }
+
+    const allFields = new Set<string>();
+    pathwaysData.data.forEach((p) => {
+      Object.keys(p).forEach((field) => allFields.add(field));
+    });
+
+    const fieldNames = Array.from(allFields);
+    pathwaysData.content = Papa.unparse({
+      fields: fieldNames,
+      data: pathwaysData.data,
+    });
+  }
+
+  /**
    * Update the stops.txt file content from in-memory data
    */
   private updateStopsFileContent(): void {

@@ -16,6 +16,7 @@ import { BasemapControl } from './basemap-control.js';
 export enum MapMode {
   NAVIGATE = 'navigate',
   ADD_STOP = 'add_stop',
+  ADD_PATHWAY = 'add_pathway',
 }
 
 // Callback interfaces
@@ -25,6 +26,7 @@ interface MapControllerCallbacks {
   onPathwaySelect?: (pathway_id: string) => void;
   onModeChange?: (mode: MapMode) => void;
   onEmptyClick?: () => void;
+  onStationExpandChange?: () => void;
 }
 
 /**
@@ -170,6 +172,7 @@ export class MapController {
       onRouteClick: this.handleRouteClick.bind(this),
       onStopClick: this.handleStopClick.bind(this),
       onPathwayClick: this.handlePathwayClick.bind(this),
+      onPathwayCreated: this.handlePathwayCreated.bind(this),
       onModeChange: this.handleModeChange.bind(this),
       onStopDragComplete: this.handleStopDragComplete.bind(this),
       onStopCreated: this.handleStopCreated.bind(this),
@@ -664,6 +667,13 @@ export class MapController {
     this.interactionHandler?.toggleAddStopMode();
   }
 
+  /**
+   * Toggle add pathway mode
+   */
+  public toggleAddPathwayMode(): void {
+    this.interactionHandler?.toggleAddPathwayMode();
+  }
+
   // ========================================
   // UI INTEGRATION METHODS
   // ========================================
@@ -830,6 +840,7 @@ export class MapController {
     // Draw pathways between child stops
     this.layerManager?.updatePathwaysLayer(stationId);
 
+    this.callbacks.onStationExpandChange?.();
     console.log(`[MapController] Expanded station: ${stationId}`);
   }
 
@@ -843,6 +854,7 @@ export class MapController {
     this.expandedStationId = null;
     this.layerManager?.setStopsFilter(null);
     this.layerManager?.clearPathwaysLayer();
+    this.callbacks.onStationExpandChange?.();
     console.log('[MapController] Collapsed station');
   }
 
@@ -912,6 +924,20 @@ export class MapController {
       // Refresh map to revert visual changes
       await this.updateMap();
     }
+  }
+
+  /**
+   * Handle pathway creation — rebuild pathways layer and navigate to the new pathway
+   */
+  private async handlePathwayCreated(pathway_id: string): Promise<void> {
+    console.log(`Pathway ${pathway_id} created`);
+    if (this.expandedStationId) {
+      this.layerManager?.rebuildPathwaysSource(this.expandedStationId);
+    }
+    if (this.pageStateManager) {
+      await this.pageStateManager.setPageState({ type: 'pathway', pathway_id });
+    }
+    this.callbacks.onPathwaySelect?.(pathway_id);
   }
 
   /**
