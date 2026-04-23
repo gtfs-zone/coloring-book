@@ -181,6 +181,7 @@ export class PageContentRenderer {
       gtfsRelationships: dependencies.gtfsRelationships || {},
       onAgencyClick: dependencies.onAgencyClick,
       onRouteClick: dependencies.onRouteClick,
+      onStopClick: dependencies.onStopClick,
       onDeleteStop: (stop_id) => this.handleDeleteStop(stop_id),
       getLevelOptions: dependencies.getLevelOptions,
     };
