@@ -40,6 +40,7 @@ import {
   renderOptionLabel,
 } from '../utils/entity-display.js';
 import { showModal } from './modal-utils.js';
+import { showFaresModal } from './fares-modal.js';
 import { navigateToHome } from './navigation-actions.js';
 import { generateCompositeKeyFromRecord } from '../utils/gtfs-primary-keys.js';
 
@@ -376,6 +377,17 @@ export class PageContentRenderer {
                   </div>
                 </div>`
           }
+        </div>
+
+        <div class="space-y-4">
+          <div class="flex items-center justify-between gap-4">
+            <h2 class="text-lg font-semibold">Fares</h2>
+          </div>
+          <div class="card bg-base-100 shadow-lg">
+            <div class="card-body p-4">
+              <button class="btn btn-sm btn-outline fares-btn">Manage Fares (V2)</button>
+            </div>
+          </div>
         </div>
       </div>
     `;
@@ -742,6 +754,20 @@ export class PageContentRenderer {
 
     // Add service selection dropdown listener
     this.addServiceSelectionListener(container);
+
+    // Fares modal button
+    const faresBtn = container.querySelector('.fares-btn');
+    if (faresBtn && this.dependencies.patchManager) {
+      const patchManager = this.dependencies.patchManager;
+      faresBtn.addEventListener('click', () => {
+        showFaresModal({
+          gtfsDatabase: this.dependencies.gtfsDatabase as Parameters<
+            typeof showFaresModal
+          >[0]['gtfsDatabase'],
+          patchManager,
+        });
+      });
+    }
   }
 
   /**
