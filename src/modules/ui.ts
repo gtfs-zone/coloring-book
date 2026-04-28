@@ -117,9 +117,13 @@ export class UIController {
       .getElementById('atlas-search-btn')
       ?.addEventListener('click', async () => {
         closeLoadDropdown();
-        const url = await showAtlasSearchModal();
-        if (url) {
-          this.loadGTFSFromURL(url);
+        const result = await showAtlasSearchModal();
+        if (result) {
+          const effectiveUrl =
+            result.useCors && !result.url.startsWith('https://cors.gtfs.zone/')
+              ? 'https://cors.gtfs.zone/' + result.url
+              : result.url;
+          this.loadGTFSFromURL(effectiveUrl);
         }
       });
 
