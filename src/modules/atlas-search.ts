@@ -123,18 +123,18 @@ export async function showAtlasSearchModal(): Promise<{
         >
           <div class="text-base-content/60 text-sm p-4 text-center">Loading…</div>
         </div>
-        <div class="flex items-center gap-2">
-          <input type="checkbox" id="cors-proxy-checkbox" class="checkbox checkbox-sm" checked />
-          <span class="label-text text-sm">Use CORS proxy</span>
-          <a
-            href="https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/CORS"
-            target="_blank"
-            rel="noopener noreferrer"
-            class="tooltip tooltip-bottom btn btn-ghost btn-xs btn-circle"
-            data-tip="For most feeds, this is required. Note that the proxy (running on my computer) will see your request. What is CORS and why does my request fail without this proxy? Click to learn more in a new tab."
-          >?</a>
-        </div>
       </div>
+    `,
+    actionBarContent: `
+      <input type="checkbox" id="cors-proxy-checkbox" class="checkbox checkbox-sm" checked />
+      <span class="label-text text-sm">Use CORS proxy</span>
+      <a
+        href="https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/CORS"
+        target="_blank"
+        rel="noopener noreferrer"
+        class="tooltip tooltip-top btn btn-ghost btn-xs btn-circle"
+        data-tip="For most feeds, this is required. Note that the proxy (running on my computer) will see your request. What is CORS and why does my request fail without this proxy? Click to learn more in a new tab."
+      >?</a>
     `,
     actions: [{ label: 'Cancel', onClick: () => {} }],
     escapeAction: 0,
