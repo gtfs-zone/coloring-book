@@ -117,9 +117,13 @@ export class UIController {
       .getElementById('atlas-search-btn')
       ?.addEventListener('click', async () => {
         closeLoadDropdown();
-        const url = await showAtlasSearchModal();
-        if (url) {
-          this.loadGTFSFromURL(url);
+        const result = await showAtlasSearchModal();
+        if (result) {
+          const effectiveUrl =
+            result.useCors && !result.url.startsWith('https://cors.gtfs.zone/')
+              ? 'https://cors.gtfs.zone/' + result.url
+              : result.url;
+          this.loadGTFSFromURL(effectiveUrl);
         }
       });
 
@@ -335,6 +339,17 @@ export class UIController {
     showModal({
       title: 'Load from URL',
       body: `<input id="gtfs-url-input" type="url" class="input input-bordered w-full" placeholder="https://example.com/gtfs.zip" />`,
+      actionBarContent: `
+        <input type="checkbox" id="cors-proxy-checkbox" class="checkbox checkbox-sm" checked />
+        <span class="label-text text-sm">Use CORS proxy</span>
+        <a
+          href="https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/CORS"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="tooltip tooltip-top btn btn-ghost btn-xs btn-circle"
+          data-tip="For most feeds, this is required. Note that the proxy (running on my computer) will see your request. What is CORS and why does my request fail without this proxy? Click to learn more in a new tab."
+        >?</a>
+      `,
       enterAction: 1,
       escapeAction: 0,
       actions: [
@@ -350,7 +365,14 @@ export class UIController {
             if (!url) {
               return true;
             }
-            this.loadGTFSFromURL(url);
+            const useCors = (
+              document.getElementById('cors-proxy-checkbox') as HTMLInputElement
+            ).checked;
+            const effectiveUrl =
+              useCors && !url.startsWith('https://cors.gtfs.zone/')
+                ? 'https://cors.gtfs.zone/' + url
+                : url;
+            this.loadGTFSFromURL(effectiveUrl);
             return false;
           },
         },
