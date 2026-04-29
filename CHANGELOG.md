@@ -1,3 +1,24 @@
+## v0.14.0 (2026-04-29)
+
+### Feat
+
+- **ui**: add CORS proxy checkbox to Atlas Search modal
+- **ui**: add CORS proxy checkbox to Load from URL modal
+- **atlas-search**: migrate showAtlasSearchModal to showModal
+- **modal-utils**: wire enterAction/escapeAction at all showModal call sites
+- **timetable**: phase 3 — shared tooltip abstraction and floating header fix
+- improve timetable direction tabs and trip property rows
+
+### Fix
+
+- place checkbox in bottom of modal
+- simpler display
+- replace (i) SVG with ⓘ glyph and fix timetable sticky-column tooltip stacking
+
+### Refactor
+
+- **modal-utils**: replace dismissable with enterAction/escapeAction API
+
 ## v0.13.1 (2026-04-11)
 
 ### Fix
