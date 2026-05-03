@@ -138,7 +138,7 @@ export class GTFSEditor {
       this.updateUndoRedoState();
 
       // Initialize all modules
-      await this.mapController.initialize(this.gtfsParser);
+      await this.mapController.initialize(this.gtfsParser, this.patchManager);
       this.mapController.setPageStateManager(this.pageStateManager);
       this.mapController.setCallbacks({
         onEmptyClick: () => {
@@ -167,13 +167,13 @@ export class GTFSEditor {
       // Initialize search controller
       this.searchController.initialize();
 
-      // Wire undo/redo events to refresh editor and map
+      // Wire undo/redo events to refresh editor and browse navigation.
+      // Map updates are handled by MapController's own patch subscription.
       const refreshAfterUndoRedo = async () => {
         const openFile = this.editor.getCurrentFile();
         if (openFile) {
           await this.editor.buildTableEditor();
         }
-        await this.mapController.updateMap();
         await this.browseNavigation.refresh();
       };
       const onUndoRedoJump = () => {
