@@ -17,6 +17,7 @@ export interface RouteFeature extends GeoJSON.Feature {
     color: string;
     route_short_name?: string;
     route_long_name?: string;
+    trip_ids: string[];
   };
 }
 
@@ -28,13 +29,20 @@ export interface RouteRenderingOptions {
 
 export class RouteRenderer {
   private map: MapLibreMap;
-  private routeFeatures: RouteFeature[] = [];
+  private routeFeatures: Map<string, RouteFeature> = new Map();
   private gtfsParser: GTFSParser;
   private initialized: boolean = false;
   private initializationPromise: Promise<void> | null = null;
   private renderMode: 'shapes' | 'stops' = 'shapes';
 
-  // Default rendering options
+  // Cached indexes (null = not yet built / invalidated)
+  private shapeIndex: Map<string, [number, number][]> | null = null;
+  private stopSeqIndex: Map<string, [number, number][]> | null = null;
+  private tripsByGeomKey: Map<
+    string,
+    { route_id: string; trip_ids: Set<string> }
+  > | null = null;
+
   private defaultOptions: RouteRenderingOptions = {
     lineWidth: 3,
     opacity: 0.7,
@@ -45,14 +53,10 @@ export class RouteRenderer {
     this.map = map;
     this.gtfsParser = gtfsParser;
 
-    // Start initialization and store promise
-    // Always wait for the 'load' event to ensure style is fully loaded
     this.initializationPromise = new Promise((resolve) => {
       if (this.map.isStyleLoaded() && this.map.loaded()) {
-        // Map and style are already loaded
         this.initializeMapLayers().then(resolve);
       } else {
-        // Wait for both map and style to load
         this.map.once('load', async () => {
           await this.initializeMapLayers();
           resolve();
@@ -61,45 +65,31 @@ export class RouteRenderer {
     });
   }
 
-  /**
-   * Ensure layers are initialized before use
-   * @returns Promise that resolves when initialization is complete
-   */
   public async ensureInitialized(): Promise<void> {
-    // First, always wait for initial initialization to complete
     if (this.initializationPromise && !this.initialized) {
       await this.initializationPromise;
     }
 
-    // Then check if source still exists (may have been removed by style change)
     if (this.initialized && !this.map.getSource('routes')) {
-      console.log('🔄 Routes source missing, re-initializing...');
+      console.log('[RouteRenderer] Routes source missing, re-initializing...');
       this.initialized = false;
       this.initializationPromise = this.initializeMapLayers();
       await this.initializationPromise;
     }
   }
 
-  /**
-   * Initialize MapLibre layers for route rendering
-   */
   private async initializeMapLayers(): Promise<void> {
-    console.log('🔧 Initializing MapLibre route layers...');
+    console.log('[RouteRenderer] Initializing MapLibre route layers...');
 
-    // Check if already initialized
     if (this.initialized) {
-      console.log('✅ Routes already initialized');
       return;
     }
 
-    // Check if source already exists
     if (this.map.getSource('routes')) {
-      console.log('🔍 Routes source already exists');
       this.initialized = true;
       return;
     }
 
-    // Add routes source
     this.map.addSource('routes', {
       type: 'geojson',
       data: {
@@ -108,9 +98,6 @@ export class RouteRenderer {
       },
     });
 
-    console.log('✅ Routes source added');
-
-    // Add route background layer for visual appearance
     this.map.addLayer({
       id: 'routes-background',
       type: 'line',
@@ -121,21 +108,18 @@ export class RouteRenderer {
         'line-opacity': this.defaultOptions.opacity,
       },
       layout: {
-        'line-cap': 'round', // KEY: This creates smooth line ends
-        'line-join': 'round', // KEY: This creates smooth line joints
+        'line-cap': 'round',
+        'line-join': 'round',
       },
     });
 
-    console.log('✅ Routes background layer added');
-
-    // Add click area layer for interactions
     this.map.addLayer({
       id: 'routes-clickarea',
       type: 'line',
       source: 'routes',
       paint: {
         'line-color': 'transparent',
-        'line-width': 15, // Wider click area
+        'line-width': 15,
         'line-opacity': 0,
       },
       layout: {
@@ -144,15 +128,14 @@ export class RouteRenderer {
       },
     });
 
-    // Add route highlight layer
     this.map.addLayer({
       id: 'routes-highlight',
       type: 'line',
       source: 'routes',
-      filter: ['==', 'route_id', ''], // Initially matches nothing
+      filter: ['==', 'route_id', ''],
       paint: {
-        'line-color': ['get', 'color'], // Use route's original color
-        'line-width': 8, // Thicker than normal (normal is 3)
+        'line-color': ['get', 'color'],
+        'line-width': 8,
         'line-opacity': 1,
       },
       layout: {
@@ -162,13 +145,25 @@ export class RouteRenderer {
     });
 
     this.initialized = true;
-    console.log('✅ Routes layers initialized successfully');
+    console.log('[RouteRenderer] Layers initialized');
+  }
+
+  private invalidateAll(): void {
+    this.shapeIndex = null;
+    this.stopSeqIndex = null;
+    this.tripsByGeomKey = null;
+    this.routeFeatures = new Map();
   }
 
   /**
-   * Create route features as GeoJSON FeatureCollection
+   * Build all cached indexes and populate routeFeatures, deduplicating by (route_id, geometry_key).
+   * Lazily called — noop if caches are already warm.
    */
-  private createRouteFeatures(): RouteFeature[] {
+  private createRouteFeatures(): void {
+    if (this.shapeIndex !== null) {
+      return; // Already built
+    }
+
     const routes = this.gtfsParser.getFileDataSyncTyped<Routes>('routes.txt');
     const trips = this.gtfsParser.getFileDataSyncTyped<Trips>('trips.txt');
     const shapes = this.gtfsParser.getFileDataSyncTyped<Shapes>('shapes.txt');
@@ -177,13 +172,19 @@ export class RouteRenderer {
     const stops = this.gtfsParser.getFileDataSyncTyped<Stops>('stops.txt');
 
     if (routes.length === 0 || trips.length === 0) {
-      return [];
+      this.shapeIndex = new Map();
+      this.stopSeqIndex = new Map();
+      this.tripsByGeomKey = new Map();
+      return;
     }
 
-    // Build shape index: shape_id -> sorted coordinates (one pass, O(S))
-    const shapeIndex = new Map<string, [number, number][]>();
+    console.log(
+      `[RouteRenderer] Building indexes: ${shapes.length} shapes, ${stopTimes.length} stop_times, ${stops.length} stops, ${trips.length} trips, ${routes.length} routes`
+    );
+
+    // Build shapeIndex: shape_id -> sorted [lon, lat] coords
+    this.shapeIndex = new Map();
     if (shapes.length > 0) {
-      // Group points by shape_id
       const buckets = new Map<string, Shapes[]>();
       for (const pt of shapes) {
         const arr = buckets.get(pt.shape_id);
@@ -193,17 +194,44 @@ export class RouteRenderer {
           buckets.set(pt.shape_id, [pt]);
         }
       }
-      // Sort each bucket once and convert to coordinates
       for (const [id, pts] of buckets) {
         pts.sort((a, b) => a.shape_pt_sequence - b.shape_pt_sequence);
-        shapeIndex.set(
+        this.shapeIndex.set(
           id,
           pts.map((p) => [p.shape_pt_lon, p.shape_pt_lat])
         );
       }
     }
 
-    // Build trips index: route_id -> trips (one pass, O(T))
+    // Build stopsLookup: stop_id -> {lon, lat}
+    const stopsLookup = new Map<string, [number, number]>();
+    for (const stop of stops) {
+      if (stop.stop_lat !== null && stop.stop_lon !== null) {
+        stopsLookup.set(stop.stop_id, [stop.stop_lon, stop.stop_lat]);
+      }
+    }
+
+    // Build tripStopTimesIndex: trip_id -> stop_times sorted by stop_sequence
+    const tripStopTimesIndex = new Map<string, StopTimes[]>();
+    for (const st of stopTimes) {
+      const arr = tripStopTimesIndex.get(st.trip_id);
+      if (arr) {
+        arr.push(st);
+      } else {
+        tripStopTimesIndex.set(st.trip_id, [st]);
+      }
+    }
+    for (const arr of tripStopTimesIndex.values()) {
+      arr.sort((a, b) => a.stop_sequence - b.stop_sequence);
+    }
+
+    // Build routes lookup: route_id -> route
+    const routesLookup = new Map<string, Routes>();
+    for (const route of routes) {
+      routesLookup.set(route.route_id, route);
+    }
+
+    // Build tripsByRoute: route_id -> trips (preserve routes.txt order)
     const tripsByRoute = new Map<string, Trips[]>();
     for (const trip of trips) {
       const arr = tripsByRoute.get(trip.route_id);
@@ -214,127 +242,104 @@ export class RouteRenderer {
       }
     }
 
-    const routeFeatures: RouteFeature[] = [];
+    this.stopSeqIndex = new Map();
+    this.tripsByGeomKey = new Map();
 
-    routes.forEach((route) => {
+    let tripsProcessed = 0;
+
+    for (const route of routes) {
       const route_id = route.route_id;
       const routeColor = this.getRouteColor(route_id, route.route_color);
-
       const routeTrips = tripsByRoute.get(route_id) ?? [];
 
-      routeTrips.forEach((trip) => {
-        let geometry = null;
+      for (const trip of routeTrips) {
+        tripsProcessed++;
+        let geometryKey: string;
+        let coords: [number, number][] | null = null;
 
-        // Try to use shape data first (only in shapes mode)
+        // Determine geometry_key and coords
         if (
           this.renderMode === 'shapes' &&
           trip.shape_id &&
-          shapeIndex.size > 0
+          this.shapeIndex.has(trip.shape_id)
         ) {
-          geometry = this.createRouteGeometryFromShape(
-            trip.shape_id,
-            shapeIndex
-          );
+          geometryKey = `shape:${trip.shape_id}`;
+          coords = this.shapeIndex.get(trip.shape_id)!;
+        } else {
+          // Stops mode or missing/unknown shape — derive from stop sequence
+          if (trip.shape_id && this.renderMode === 'shapes') {
+            console.warn(
+              `[RouteRenderer] Trip ${trip.trip_id} references unknown shape_id "${trip.shape_id}", falling back to stop connections`
+            );
+          }
+          const tripSTs = tripStopTimesIndex.get(trip.trip_id) ?? [];
+          const stopIds = tripSTs
+            .map((st) => st.stop_id)
+            .filter((sid) => stopsLookup.has(sid));
+
+          if (stopIds.length < 2) {
+            continue; // Not enough stops to draw a line
+          }
+
+          geometryKey = `stops:${stopIds.join('|')}`;
+
+          if (!this.stopSeqIndex.has(geometryKey)) {
+            const coordArr = stopIds.map((sid) => stopsLookup.get(sid)!);
+            this.stopSeqIndex.set(geometryKey, coordArr);
+          }
+          coords = this.stopSeqIndex.get(geometryKey)!;
         }
 
-        // Fall back to stop connections if no shape
-        if (!geometry && stopTimes.length > 0 && stops.length > 0) {
-          console.warn(
-            `No shape data for trip ${trip.trip_id}, falling back to stop connections (will be jagged)`
-          );
-          geometry = this.createRouteGeometryFromStops(
-            trip.trip_id,
-            stopTimes,
-            stops
-          );
+        if (!coords || coords.length < 2) {
+          continue;
         }
 
-        if (geometry && geometry.coordinates.length >= 2) {
-          routeFeatures.push({
+        const featureKey = `${route_id}::${geometryKey}`;
+
+        // Update tripsByGeomKey bucket
+        const bucket = this.tripsByGeomKey.get(featureKey);
+        if (bucket) {
+          bucket.trip_ids.add(trip.trip_id);
+        } else {
+          this.tripsByGeomKey.set(featureKey, {
+            route_id,
+            trip_ids: new Set([trip.trip_id]),
+          });
+        }
+
+        // Create or update feature
+        if (!this.routeFeatures.has(featureKey)) {
+          this.routeFeatures.set(featureKey, {
             type: 'Feature',
-            id: `${route_id}-${trip.trip_id}`,
-            geometry: geometry,
+            id: featureKey,
+            geometry: {
+              type: 'LineString',
+              coordinates: coords,
+            },
             properties: {
               route_id,
               route_data: route,
               color: routeColor,
               route_short_name: route.route_short_name,
               route_long_name: route.route_long_name,
+              trip_ids: [trip.trip_id],
             },
           });
+        } else {
+          // Append trip_id to existing feature's trip_ids list
+          this.routeFeatures
+            .get(featureKey)!
+            .properties.trip_ids.push(trip.trip_id);
         }
-      });
-    });
-
-    return routeFeatures;
-  }
-
-  /**
-   * Create route geometry from pre-indexed shapes
-   */
-  private createRouteGeometryFromShape(
-    shape_id: string,
-    shapeIndex: Map<string, [number, number][]>
-  ): GeoJSON.LineString | null {
-    const coordinates = shapeIndex.get(shape_id);
-
-    if (!coordinates || coordinates.length < 2) {
-      return null;
+      }
     }
 
-    return {
-      type: 'LineString',
-      coordinates,
-    };
+    console.log(
+      `[RouteRenderer] Index build complete: ${tripsProcessed} trips → ${this.routeFeatures.size} features (${((1 - this.routeFeatures.size / Math.max(tripsProcessed, 1)) * 100).toFixed(1)}% dedupe)`
+    );
   }
 
-  /**
-   * Create route geometry from stop connections (fallback)
-   */
-  private createRouteGeometryFromStops(
-    trip_id: string,
-    stopTimes: StopTimes[],
-    stops: Stops[]
-  ): GeoJSON.LineString | null {
-    // Create stops lookup
-    const stopsLookup: { [key: string]: { lat: number; lon: number } } = {};
-    stops.forEach((stop) => {
-      if (stop.stop_lat !== null && stop.stop_lon !== null) {
-        stopsLookup[stop.stop_id] = {
-          lat: stop.stop_lat,
-          lon: stop.stop_lon,
-        };
-      }
-    });
-
-    // Get stops for this trip
-    const tripStopTimes = stopTimes
-      .filter((st) => st.trip_id === trip_id)
-      .sort((a, b) => a.stop_sequence - b.stop_sequence);
-
-    const routePath: [number, number][] = [];
-    tripStopTimes.forEach((st) => {
-      const stopCoords = stopsLookup[st.stop_id];
-      if (stopCoords) {
-        routePath.push([stopCoords.lon, stopCoords.lat]);
-      }
-    });
-
-    if (routePath.length < 2) {
-      return null;
-    }
-
-    return {
-      type: 'LineString',
-      coordinates: routePath,
-    };
-  }
-
-  /**
-   * Generate deterministic color for route
-   */
   private getRouteColor(route_id: string, gtfsRouteColor?: string): string {
-    // Use GTFS route_color if available and valid
     if (
       gtfsRouteColor &&
       gtfsRouteColor.length === 6 &&
@@ -343,65 +348,50 @@ export class RouteRenderer {
       return `#${gtfsRouteColor}`;
     }
 
-    // Generate deterministic color from route ID
     let hash = 0;
     for (let i = 0; i < route_id.length; i++) {
       const char = route_id.charCodeAt(i);
       hash = (hash << 5) - hash + char;
-      hash = hash & hash; // Convert to 32bit integer
+      hash = hash & hash;
     }
     const hue = Math.abs(hash) % 360;
     return `hsl(${hue}, 70%, 50%)`;
   }
 
-  /**
-   * Set the render mode and re-render routes
-   */
   public setRenderMode(mode: 'shapes' | 'stops'): void {
     console.log(`[RouteRenderer] Setting render mode: ${mode}`);
     this.renderMode = mode;
     void this.renderRoutes();
   }
 
-  /**
-   * Render routes using MapLibre with smooth line rendering
-   */
   public async renderRoutes(
     _options: Partial<RouteRenderingOptions> = {}
   ): Promise<void> {
-    console.log(
-      '🎨 Rendering routes using MapLibre with smooth line rendering...'
-    );
+    console.log('[RouteRenderer] Rendering routes...');
 
-    // Ensure layers are initialized
     await this.ensureInitialized();
 
-    // Create route features
-    this.routeFeatures = this.createRouteFeatures();
+    // Phase 1: full rebuild on every render call (Phase 2 will replace this
+    // with surgical patch-driven invalidation)
+    this.invalidateAll();
+    this.createRouteFeatures();
 
-    if (this.routeFeatures.length === 0) {
-      console.warn('No route features available for rendering');
+    const featureCount = this.routeFeatures.size;
+    if (featureCount === 0) {
+      console.warn('[RouteRenderer] No route features available for rendering');
       return;
     }
 
-    // Source is guaranteed to exist now
     const source = this.map.getSource('routes') as maplibregl.GeoJSONSource;
-    const geoJsonData = {
+    source.setData({
       type: 'FeatureCollection' as const,
-      features: this.routeFeatures,
-    };
-
-    source.setData(geoJsonData);
+      features: [...this.routeFeatures.values()],
+    });
     this.map.triggerRepaint();
 
-    console.log(
-      `✅ Rendered ${this.routeFeatures.length} route features using MapLibre with smooth lines`
-    );
+    console.log(`[RouteRenderer] setData called with ${featureCount} features`);
   }
 
-  /**
-   * Clear all route rendering
-   */
   public clearRoutes(): void {
     const source = this.map.getSource('routes') as maplibregl.GeoJSONSource;
     if (source) {
@@ -410,78 +400,49 @@ export class RouteRenderer {
         features: [],
       });
     }
-    this.routeFeatures = [];
+    this.invalidateAll();
   }
 
-  /**
-   * Update route highlighting for specific route
-   */
   public highlightRoute(route_id: string): void {
-    if (this.routeFeatures.length === 0) {
+    if (this.routeFeatures.size === 0) {
       return;
     }
 
-    console.log(`🎯 Highlighting route: ${route_id}`);
-
-    // Update the highlight filter
+    console.log(`[RouteRenderer] Highlighting route: ${route_id}`);
     this.map.setFilter('routes-highlight', ['==', 'route_id', route_id]);
-
-    console.log(`✅ Route highlight applied: ${route_id}`);
   }
 
-  /**
-   * Update route highlighting for multiple routes
-   */
   public highlightRoutes(route_ids: string[]): void {
-    if (this.routeFeatures.length === 0 || route_ids.length === 0) {
+    if (this.routeFeatures.size === 0 || route_ids.length === 0) {
       return;
     }
 
-    console.log(`🎯 Highlighting ${route_ids.length} routes`);
-
-    // Store first route as the primary highlighted route
-
-    // Update the highlight filter to match any of the route IDs
+    console.log(`[RouteRenderer] Highlighting ${route_ids.length} routes`);
     this.map.setFilter('routes-highlight', ['in', 'route_id', ...route_ids]);
-
-    console.log(`✅ Route highlights applied for ${route_ids.length} routes`);
   }
 
-  /**
-   * Clear route highlighting
-   */
   public clearHighlight(): void {
-    // Set filter to match nothing
     this.map.setFilter('routes-highlight', ['==', 'route_id', '']);
   }
 
   /**
-   * Set click handler for route interactions (DEPRECATED - handled by InteractionHandler)
+   * @deprecated Route clicks are handled by InteractionHandler
    */
   public setRouteClickHandler(
     _handler: (route_id: string, route_data: Routes) => void
   ): void {
-    // NOTE: Route clicks are now handled by InteractionHandler to prevent conflicts with stop clicks
-    // This method is kept for legacy compatibility but does nothing
     console.warn(
       'RouteRenderer.setRouteClickHandler is deprecated - route clicks are handled by InteractionHandler'
     );
   }
 
-  /**
-   * Get current route features for debugging
-   */
   public getRouteFeatures(): RouteFeature[] {
-    return this.routeFeatures;
+    return [...this.routeFeatures.values()];
   }
 
-  /**
-   * Destroy the route renderer and clean up resources
-   */
   public destroy(): void {
     this.clearRoutes();
 
-    // Remove layers and source
     if (this.map.getLayer('routes-highlight')) {
       this.map.removeLayer('routes-highlight');
     }
@@ -494,7 +455,5 @@ export class RouteRenderer {
     if (this.map.getSource('routes')) {
       this.map.removeSource('routes');
     }
-
-    this.routeFeatures = [];
   }
 }
