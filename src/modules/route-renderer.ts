@@ -7,6 +7,7 @@ import {
   Stops,
 } from '../types/gtfs-entities.js';
 import type { GTFSParser } from './gtfs-parser.js';
+import type { PatchOp } from '../types/patch.js';
 
 export interface RouteFeature extends GeoJSON.Feature {
   id: string;
@@ -42,6 +43,15 @@ export class RouteRenderer {
     string,
     { route_id: string; trip_ids: Set<string> }
   > | null = null;
+
+  // Reverse indexes for surgical patch-driven invalidation
+  private tripToFeatureKey: Map<string, string> | null = null;
+  private routeToFeatureKeys: Map<string, Set<string>> | null = null;
+  private stopToGeomKeys: Map<string, Set<string>> | null = null;
+  private stopsLookupCache: Map<string, [number, number]> | null = null;
+
+  // RAF-based coalescing
+  private dirtyFlag = false;
 
   private defaultOptions: RouteRenderingOptions = {
     lineWidth: 3,
@@ -152,7 +162,37 @@ export class RouteRenderer {
     this.shapeIndex = null;
     this.stopSeqIndex = null;
     this.tripsByGeomKey = null;
+    this.tripToFeatureKey = null;
+    this.routeToFeatureKeys = null;
+    this.stopToGeomKeys = null;
+    this.stopsLookupCache = null;
     this.routeFeatures = new Map();
+  }
+
+  /**
+   * Schedule a single RAF-coalesced setData call. Multiple invalidations in the
+   * same task queue up to one paint update.
+   */
+  private scheduleSetData(): void {
+    if (this.dirtyFlag) {
+      return;
+    }
+    this.dirtyFlag = true;
+    requestAnimationFrame(() => {
+      this.dirtyFlag = false;
+      const source = this.map.getSource('routes') as maplibregl.GeoJSONSource;
+      if (!source) {
+        return;
+      }
+      source.setData({
+        type: 'FeatureCollection' as const,
+        features: [...this.routeFeatures.values()],
+      });
+      this.map.triggerRepaint();
+      console.log(
+        `[RouteRenderer] setData (incremental) with ${this.routeFeatures.size} features`
+      );
+    });
   }
 
   /**
@@ -175,6 +215,10 @@ export class RouteRenderer {
       this.shapeIndex = new Map();
       this.stopSeqIndex = new Map();
       this.tripsByGeomKey = new Map();
+      this.tripToFeatureKey = new Map();
+      this.routeToFeatureKeys = new Map();
+      this.stopToGeomKeys = new Map();
+      this.stopsLookupCache = new Map();
       return;
     }
 
@@ -203,11 +247,11 @@ export class RouteRenderer {
       }
     }
 
-    // Build stopsLookup: stop_id -> {lon, lat}
-    const stopsLookup = new Map<string, [number, number]>();
+    // Build stopsLookupCache: stop_id -> [lon, lat]
+    this.stopsLookupCache = new Map();
     for (const stop of stops) {
       if (stop.stop_lat !== null && stop.stop_lon !== null) {
-        stopsLookup.set(stop.stop_id, [stop.stop_lon, stop.stop_lat]);
+        this.stopsLookupCache.set(stop.stop_id, [stop.stop_lon, stop.stop_lat]);
       }
     }
 
@@ -244,6 +288,9 @@ export class RouteRenderer {
 
     this.stopSeqIndex = new Map();
     this.tripsByGeomKey = new Map();
+    this.tripToFeatureKey = new Map();
+    this.routeToFeatureKeys = new Map();
+    this.stopToGeomKeys = new Map();
 
     let tripsProcessed = 0;
 
@@ -275,7 +322,7 @@ export class RouteRenderer {
           const tripSTs = tripStopTimesIndex.get(trip.trip_id) ?? [];
           const stopIds = tripSTs
             .map((st) => st.stop_id)
-            .filter((sid) => stopsLookup.has(sid));
+            .filter((sid) => this.stopsLookupCache!.has(sid));
 
           if (stopIds.length < 2) {
             continue; // Not enough stops to draw a line
@@ -284,8 +331,20 @@ export class RouteRenderer {
           geometryKey = `stops:${stopIds.join('|')}`;
 
           if (!this.stopSeqIndex.has(geometryKey)) {
-            const coordArr = stopIds.map((sid) => stopsLookup.get(sid)!);
+            const coordArr = stopIds.map(
+              (sid) => this.stopsLookupCache!.get(sid)!
+            );
             this.stopSeqIndex.set(geometryKey, coordArr);
+
+            // Build stopToGeomKeys reverse index
+            for (const sid of stopIds) {
+              const s = this.stopToGeomKeys.get(sid);
+              if (s) {
+                s.add(geometryKey);
+              } else {
+                this.stopToGeomKeys.set(sid, new Set([geometryKey]));
+              }
+            }
           }
           coords = this.stopSeqIndex.get(geometryKey)!;
         }
@@ -306,6 +365,17 @@ export class RouteRenderer {
             trip_ids: new Set([trip.trip_id]),
           });
         }
+
+        // Build routeToFeatureKeys reverse index
+        const rfk = this.routeToFeatureKeys.get(route_id);
+        if (rfk) {
+          rfk.add(featureKey);
+        } else {
+          this.routeToFeatureKeys.set(route_id, new Set([featureKey]));
+        }
+
+        // Build tripToFeatureKey reverse index
+        this.tripToFeatureKey.set(trip.trip_id, featureKey);
 
         // Create or update feature
         if (!this.routeFeatures.has(featureKey)) {
@@ -371,8 +441,6 @@ export class RouteRenderer {
 
     await this.ensureInitialized();
 
-    // Phase 1: full rebuild on every render call (Phase 2 will replace this
-    // with surgical patch-driven invalidation)
     this.invalidateAll();
     this.createRouteFeatures();
 
@@ -438,6 +506,438 @@ export class RouteRenderer {
 
   public getRouteFeatures(): RouteFeature[] {
     return [...this.routeFeatures.values()];
+  }
+
+  // ========================================
+  // SURGICAL PATCH INVALIDATION
+  // ========================================
+
+  /**
+   * Remove a trip from its current feature bucket. If the bucket becomes empty,
+   * removes the feature entirely. Updates all reverse indexes.
+   */
+  private removeTripFromBucket(trip_id: string, featureKey: string): void {
+    const bucket = this.tripsByGeomKey!.get(featureKey);
+    if (!bucket) {
+      return;
+    }
+
+    bucket.trip_ids.delete(trip_id);
+    this.tripToFeatureKey!.delete(trip_id);
+
+    if (bucket.trip_ids.size === 0) {
+      // Bucket empty — remove the feature and clean up indexes
+      this.tripsByGeomKey!.delete(featureKey);
+      this.routeFeatures.delete(featureKey);
+
+      const fks = this.routeToFeatureKeys!.get(bucket.route_id);
+      fks?.delete(featureKey);
+
+      // Clean up stopToGeomKeys if this was a stop-sequence geometry
+      const geomKey = featureKey.slice(featureKey.indexOf('::') + 2);
+      if (geomKey.startsWith('stops:')) {
+        this.stopSeqIndex!.delete(geomKey);
+        const stopIds = geomKey.slice('stops:'.length).split('|');
+        for (const sid of stopIds) {
+          const s = this.stopToGeomKeys!.get(sid);
+          if (s) {
+            s.delete(geomKey);
+            if (s.size === 0) {
+              this.stopToGeomKeys!.delete(sid);
+            }
+          }
+        }
+      }
+    } else {
+      // Update trip_ids list in feature properties
+      const feat = this.routeFeatures.get(featureKey);
+      if (feat) {
+        feat.properties.trip_ids = [...bucket.trip_ids];
+      }
+    }
+  }
+
+  /**
+   * Add a trip to its appropriate feature bucket based on current parser state.
+   * Creates a new feature if no bucket exists for the computed (route_id, geometry_key).
+   */
+  private addTripToBucket(trip_id: string): void {
+    const trips = this.gtfsParser.getFileDataSyncTyped<Trips>('trips.txt');
+    const trip = trips.find((t) => t.trip_id === trip_id);
+    if (!trip) {
+      return;
+    }
+
+    const route_id = trip.route_id;
+    let geometryKey: string;
+    let coords: [number, number][] | null = null;
+
+    if (
+      this.renderMode === 'shapes' &&
+      trip.shape_id &&
+      this.shapeIndex!.has(trip.shape_id)
+    ) {
+      geometryKey = `shape:${trip.shape_id}`;
+      coords = this.shapeIndex!.get(trip.shape_id)!;
+    } else {
+      if (trip.shape_id && this.renderMode === 'shapes') {
+        console.warn(
+          `[RouteRenderer] Trip ${trip_id} references unknown shape_id "${trip.shape_id}", falling back to stop connections`
+        );
+      }
+      // Re-read stop_times from parser for this trip (parser has up-to-date state)
+      const allStopTimes =
+        this.gtfsParser.getFileDataSyncTyped<StopTimes>('stop_times.txt');
+      const tripSTs = allStopTimes
+        .filter((st) => st.trip_id === trip_id)
+        .sort((a, b) => a.stop_sequence - b.stop_sequence);
+
+      const stopIds = tripSTs
+        .map((st) => st.stop_id)
+        .filter((sid) => this.stopsLookupCache!.has(sid));
+
+      if (stopIds.length < 2) {
+        return;
+      }
+
+      geometryKey = `stops:${stopIds.join('|')}`;
+
+      if (!this.stopSeqIndex!.has(geometryKey)) {
+        const coordArr = stopIds.map((sid) => this.stopsLookupCache!.get(sid)!);
+        this.stopSeqIndex!.set(geometryKey, coordArr);
+        for (const sid of stopIds) {
+          const s = this.stopToGeomKeys!.get(sid);
+          if (s) {
+            s.add(geometryKey);
+          } else {
+            this.stopToGeomKeys!.set(sid, new Set([geometryKey]));
+          }
+        }
+      }
+      coords = this.stopSeqIndex!.get(geometryKey)!;
+    }
+
+    if (!coords || coords.length < 2) {
+      return;
+    }
+
+    const featureKey = `${route_id}::${geometryKey}`;
+    const bucket = this.tripsByGeomKey!.get(featureKey);
+
+    if (bucket) {
+      bucket.trip_ids.add(trip_id);
+      const feat = this.routeFeatures.get(featureKey);
+      if (feat) {
+        feat.properties.trip_ids = [...bucket.trip_ids];
+      }
+    } else {
+      const routes = this.gtfsParser.getFileDataSyncTyped<Routes>('routes.txt');
+      const route = routes.find((r) => r.route_id === route_id);
+      if (!route) {
+        return;
+      }
+      const routeColor = this.getRouteColor(route_id, route.route_color);
+
+      this.tripsByGeomKey!.set(featureKey, {
+        route_id,
+        trip_ids: new Set([trip_id]),
+      });
+      this.routeFeatures.set(featureKey, {
+        type: 'Feature',
+        id: featureKey,
+        geometry: { type: 'LineString', coordinates: coords },
+        properties: {
+          route_id,
+          route_data: route,
+          color: routeColor,
+          route_short_name: route.route_short_name,
+          route_long_name: route.route_long_name,
+          trip_ids: [trip_id],
+        },
+      });
+
+      const fks = this.routeToFeatureKeys!.get(route_id);
+      if (fks) {
+        fks.add(featureKey);
+      } else {
+        this.routeToFeatureKeys!.set(route_id, new Set([featureKey]));
+      }
+    }
+
+    this.tripToFeatureKey!.set(trip_id, featureKey);
+  }
+
+  /**
+   * Surgically update features when a route record changes.
+   * forwardChanges: the `changes` map from the update patch (for update op).
+   */
+  public invalidateRoute(
+    route_id: string,
+    op: PatchOp,
+    forwardChanges?: Record<string, unknown>
+  ): void {
+    if (this.tripsByGeomKey === null) {
+      return;
+    }
+
+    if (op === 'update') {
+      // Only matters for map if visual properties changed
+      if (
+        forwardChanges &&
+        !('route_color' in forwardChanges) &&
+        !('route_short_name' in forwardChanges) &&
+        !('route_long_name' in forwardChanges)
+      ) {
+        return;
+      }
+      const routes = this.gtfsParser.getFileDataSyncTyped<Routes>('routes.txt');
+      const route = routes.find((r) => r.route_id === route_id);
+      if (!route) {
+        return;
+      }
+      const newColor = this.getRouteColor(route_id, route.route_color);
+      const featureKeys = this.routeToFeatureKeys?.get(route_id);
+      if (!featureKeys) {
+        return;
+      }
+      for (const fk of featureKeys) {
+        const feat = this.routeFeatures.get(fk);
+        if (feat) {
+          feat.properties.color = newColor;
+          feat.properties.route_data = route;
+          feat.properties.route_short_name = route.route_short_name;
+          feat.properties.route_long_name = route.route_long_name;
+        }
+      }
+      console.log(
+        `[RouteRenderer] invalidateRoute route_id=${route_id} op=update → updated ${featureKeys.size} features`
+      );
+      this.scheduleSetData();
+    } else if (op === 'delete') {
+      const featureKeys = this.routeToFeatureKeys?.get(route_id);
+      if (!featureKeys) {
+        return;
+      }
+      for (const fk of featureKeys) {
+        this.routeFeatures.delete(fk);
+        const bucket = this.tripsByGeomKey?.get(fk);
+        if (bucket) {
+          for (const tid of bucket.trip_ids) {
+            this.tripToFeatureKey?.delete(tid);
+          }
+          this.tripsByGeomKey?.delete(fk);
+        }
+      }
+      this.routeToFeatureKeys?.delete(route_id);
+      console.log(
+        `[RouteRenderer] invalidateRoute route_id=${route_id} op=delete → removed ${featureKeys.size} features`
+      );
+      this.scheduleSetData();
+    } else if (op === 'insert') {
+      const trips = this.gtfsParser.getFileDataSyncTyped<Trips>('trips.txt');
+      const routeTrips = trips.filter((t) => t.route_id === route_id);
+      for (const trip of routeTrips) {
+        this.addTripToBucket(trip.trip_id);
+      }
+      console.log(
+        `[RouteRenderer] invalidateRoute route_id=${route_id} op=insert → processed ${routeTrips.length} trips`
+      );
+      this.scheduleSetData();
+    }
+  }
+
+  /**
+   * Surgically update features when a trip record changes.
+   * beforeShapeId / afterShapeId are extracted from the patch by the caller.
+   */
+  public invalidateTrip(
+    trip_id: string,
+    op: PatchOp,
+    _beforeShapeId: string | null | undefined,
+    _afterShapeId: string | null | undefined
+  ): void {
+    if (this.tripsByGeomKey === null || this.shapeIndex === null) {
+      return;
+    }
+
+    if (op === 'update' || op === 'delete') {
+      const oldFeatureKey = this.tripToFeatureKey?.get(trip_id);
+      if (oldFeatureKey) {
+        this.removeTripFromBucket(trip_id, oldFeatureKey);
+      }
+    }
+
+    if (op === 'insert' || op === 'update') {
+      this.addTripToBucket(trip_id);
+    }
+
+    console.log(
+      `[RouteRenderer] invalidateTrip trip_id=${trip_id} op=${op} → done`
+    );
+    this.scheduleSetData();
+  }
+
+  /**
+   * Surgically update features when shape points change.
+   * shape_id is the GTFS shape_id (extracted from the composite patch key).
+   */
+  public invalidateShape(shape_id: string, op: PatchOp): void {
+    if (this.shapeIndex === null) {
+      return;
+    }
+
+    // Re-read all points for this shape from parser
+    const shapes = this.gtfsParser.getFileDataSyncTyped<Shapes>('shapes.txt');
+    const pts = shapes
+      .filter((s) => s.shape_id === shape_id)
+      .sort((a, b) => a.shape_pt_sequence - b.shape_pt_sequence);
+
+    if (pts.length >= 2) {
+      const newCoords: [number, number][] = pts.map((p) => [
+        p.shape_pt_lon,
+        p.shape_pt_lat,
+      ]);
+      this.shapeIndex.set(shape_id, newCoords);
+
+      // Update geometry.coordinates in-place for all features using this shape
+      const geomKey = `shape:${shape_id}`;
+      for (const [featureKey, feat] of this.routeFeatures) {
+        if (featureKey.endsWith(`::${geomKey}`)) {
+          feat.geometry.coordinates = newCoords;
+        }
+      }
+      console.log(
+        `[RouteRenderer] invalidateShape shape_id=${shape_id} op=${op} → updated coords (${newCoords.length} pts)`
+      );
+    } else if (op === 'delete' || pts.length === 0) {
+      // Shape has too few points — remove it and reassign trips to stop-sequence fallback
+      this.shapeIndex.delete(shape_id);
+      this.handleShapeRemoved(shape_id);
+      console.log(
+        `[RouteRenderer] invalidateShape shape_id=${shape_id} op=${op} → shape removed, trips reassigned`
+      );
+    }
+
+    this.scheduleSetData();
+  }
+
+  /** Called when a shape no longer has enough points; trips fall back to stop-sequence geometry. */
+  private handleShapeRemoved(shape_id: string): void {
+    const geomKey = `shape:${shape_id}`;
+    const affectedFeatureKeys: string[] = [];
+    for (const fk of this.routeFeatures.keys()) {
+      if (fk.endsWith(`::${geomKey}`)) {
+        affectedFeatureKeys.push(fk);
+      }
+    }
+
+    for (const fk of affectedFeatureKeys) {
+      const bucket = this.tripsByGeomKey!.get(fk);
+      if (!bucket) {
+        continue;
+      }
+
+      const tripIds = [...bucket.trip_ids];
+      for (const tid of tripIds) {
+        this.tripToFeatureKey!.delete(tid);
+      }
+      this.tripsByGeomKey!.delete(fk);
+      this.routeFeatures.delete(fk);
+      const fks = this.routeToFeatureKeys!.get(bucket.route_id);
+      fks?.delete(fk);
+
+      // Re-add each trip via stop-sequence fallback
+      for (const tid of tripIds) {
+        this.addTripToBucket(tid);
+      }
+    }
+  }
+
+  /**
+   * Surgically update features when stop_times for a trip change.
+   * This may change the trip's geometry_key in stops mode.
+   */
+  public invalidateStopTimes(trip_id: string, op: PatchOp): void {
+    if (this.tripsByGeomKey === null || this.shapeIndex === null) {
+      return;
+    }
+
+    // In shapes mode, stop_times don't affect geometry unless the trip has no valid shape
+    if (this.renderMode === 'shapes') {
+      const trips = this.gtfsParser.getFileDataSyncTyped<Trips>('trips.txt');
+      const trip = trips.find((t) => t.trip_id === trip_id);
+      if (trip && trip.shape_id && this.shapeIndex.has(trip.shape_id)) {
+        return; // Shape-mode trip with valid shape — stop_times don't matter
+      }
+    }
+
+    // Treat as a trip bucket-move: remove from old, add to new
+    if (op === 'update' || op === 'delete') {
+      const oldFeatureKey = this.tripToFeatureKey?.get(trip_id);
+      if (oldFeatureKey) {
+        this.removeTripFromBucket(trip_id, oldFeatureKey);
+      }
+    }
+
+    if (op === 'insert' || op === 'update') {
+      this.addTripToBucket(trip_id);
+    }
+
+    console.log(
+      `[RouteRenderer] invalidateStopTimes trip_id=${trip_id} op=${op} → done`
+    );
+    this.scheduleSetData();
+  }
+
+  /**
+   * Surgically update features when a stop's coordinates change.
+   * Updates all stop-sequence geometries that include this stop.
+   */
+  public invalidateStop(stop_id: string, op: PatchOp): void {
+    if (this.stopsLookupCache === null || this.stopSeqIndex === null) {
+      return;
+    }
+
+    // Update stopsLookupCache for this stop
+    if (op === 'update' || op === 'insert') {
+      const stops = this.gtfsParser.getFileDataSyncTyped<Stops>('stops.txt');
+      const stop = stops.find((s) => s.stop_id === stop_id);
+      if (stop && stop.stop_lat !== null && stop.stop_lon !== null) {
+        this.stopsLookupCache.set(stop_id, [stop.stop_lon, stop.stop_lat]);
+      } else {
+        this.stopsLookupCache.delete(stop_id);
+      }
+    } else if (op === 'delete') {
+      this.stopsLookupCache.delete(stop_id);
+    }
+
+    // Recompute coords for all stop-sequence geometries using this stop
+    const affectedGeomKeys = this.stopToGeomKeys?.get(stop_id);
+    if (!affectedGeomKeys || affectedGeomKeys.size === 0) {
+      this.scheduleSetData();
+      return;
+    }
+
+    for (const geomKey of affectedGeomKeys) {
+      const stopIds = geomKey.slice('stops:'.length).split('|');
+      const newCoords = stopIds
+        .map((sid) => this.stopsLookupCache!.get(sid))
+        .filter((c): c is [number, number] => c !== undefined);
+
+      if (newCoords.length >= 2) {
+        this.stopSeqIndex!.set(geomKey, newCoords);
+        for (const [featureKey, feat] of this.routeFeatures) {
+          if (featureKey.endsWith(`::${geomKey}`)) {
+            feat.geometry.coordinates = newCoords;
+          }
+        }
+      }
+    }
+
+    console.log(
+      `[RouteRenderer] invalidateStop stop_id=${stop_id} op=${op} → updated ${affectedGeomKeys.size} geom keys`
+    );
+    this.scheduleSetData();
   }
 
   public destroy(): void {

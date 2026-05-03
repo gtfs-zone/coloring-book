@@ -9,8 +9,10 @@ import {
 } from './interaction-handler.js';
 import { PageStateManager } from './page-state-manager.js';
 import { GTFSParser } from './gtfs-parser.js';
+import { PatchManager } from './patch-manager.js';
 import { Stops, StopTimes, Trips, Routes } from '../types/gtfs.js';
 import { BasemapControl } from './basemap-control.js';
+import type { PatchRecord, SingleGTFSPatch } from '../types/patch.js';
 
 // Map interaction modes
 export enum MapMode {
@@ -76,7 +78,10 @@ export class MapController {
   /**
    * Initialize the map controller with dependencies
    */
-  public async initialize(gtfsParser: GTFSParser): Promise<void> {
+  public async initialize(
+    gtfsParser: GTFSParser,
+    patchManager: PatchManager
+  ): Promise<void> {
     if (this.isInitialized) {
       console.warn('MapController already initialized');
       return;
@@ -86,9 +91,118 @@ export class MapController {
     this.initializeMap();
     await this.initializeModules();
     this.setupModuleCallbacks();
+    this.subscribeToPatchEvents(patchManager);
     this.isInitialized = true;
 
     console.log('🗺️ MapController initialized successfully');
+  }
+
+  /**
+   * Subscribe to patch events for incremental map updates.
+   * - change: surgical invalidation per affected table
+   * - undo/redo/jump: hard reset (full rebuild)
+   */
+  private subscribeToPatchEvents(patchManager: PatchManager): void {
+    const hardReset = () => {
+      this.updateMap().catch((e: unknown) =>
+        console.error('[MapController] hard reset failed:', e)
+      );
+    };
+
+    patchManager.on('undo', hardReset);
+    patchManager.on('redo', hardReset);
+    patchManager.on('jump', hardReset);
+
+    patchManager.on('change', (record) => {
+      if (!record) {
+        return;
+      }
+      this.handlePatchChange(record);
+    });
+  }
+
+  /**
+   * Dispatch a change patch to the appropriate surgical invalidation method.
+   */
+  private handlePatchChange(record: PatchRecord): void {
+    if (!this.routeRenderer || !this.layerManager) {
+      return;
+    }
+
+    const patch = record.patch;
+    const ops: SingleGTFSPatch[] = patch.op === 'batch' ? patch.ops : [patch];
+
+    for (const op of ops) {
+      const { table, id } = op.source;
+      console.log(
+        `[MapController] patch ${table}:${id} op=${op.op} → dispatching invalidation`
+      );
+
+      switch (table) {
+        case 'routes': {
+          const forwardChanges =
+            op.op === 'update'
+              ? (op.forward as { changes: Record<string, unknown> }).changes
+              : undefined;
+          this.routeRenderer.invalidateRoute(id, op.op, forwardChanges);
+          break;
+        }
+        case 'trips': {
+          let beforeShapeId: string | null = null;
+          let afterShapeId: string | null = null;
+
+          if (op.op === 'update') {
+            const fwd = (op.forward as { changes: Record<string, unknown> })
+              .changes;
+            const inv = (op.inverse as { changes: Record<string, unknown> })
+              .changes;
+            if (!('shape_id' in fwd) && !('route_id' in fwd)) {
+              break; // No map-visible change (e.g. trip_headsign edit)
+            }
+            if ('shape_id' in fwd) {
+              beforeShapeId =
+                (inv.shape_id as string | null | undefined) ?? null;
+              afterShapeId =
+                (fwd.shape_id as string | null | undefined) ?? null;
+            }
+          } else if (op.op === 'insert') {
+            const rec = (op.forward as { record: Record<string, unknown> })
+              .record;
+            afterShapeId = (rec.shape_id as string | null | undefined) ?? null;
+          } else if (op.op === 'delete') {
+            const rec = (op.inverse as { record: Record<string, unknown> })
+              .record;
+            beforeShapeId = (rec.shape_id as string | null | undefined) ?? null;
+          }
+
+          this.routeRenderer.invalidateTrip(
+            id,
+            op.op,
+            beforeShapeId,
+            afterShapeId
+          );
+          break;
+        }
+        case 'shapes': {
+          // Composite key: shape_id:shape_pt_sequence — extract shape_id
+          const shapeId = id.slice(0, id.lastIndexOf(':'));
+          this.routeRenderer.invalidateShape(shapeId, op.op);
+          break;
+        }
+        case 'stop_times': {
+          // Composite key: trip_id:stop_sequence — extract trip_id
+          const tripId = id.slice(0, id.lastIndexOf(':'));
+          this.routeRenderer.invalidateStopTimes(tripId, op.op);
+          break;
+        }
+        case 'stops':
+          this.routeRenderer.invalidateStop(id, op.op);
+          this.layerManager.updateStopsData();
+          break;
+        default:
+          break;
+      }
+    }
   }
 
   /**
