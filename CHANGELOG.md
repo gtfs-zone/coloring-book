@@ -1,3 +1,13 @@
+## v0.15.0 (2026-05-04)
+
+### Feat
+
+- **map**: patch-driven incremental route updates (Phase 2)
+
+### Perf
+
+- **route-renderer**: dedupe features by (route_id, geometry_key)
+
 ## v0.14.0 (2026-04-29)
 
 ### Feat
