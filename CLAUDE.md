@@ -10,29 +10,29 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 # Development
-npm run dev          # Start Vite dev server on port 8080 (auto-opens)
+pnpm dev             # Start Vite dev server on port 8080 (auto-opens)
 
 # Build
-npm run build        # Production build (Vite)
+pnpm build           # Production build (Vite)
 
 # Testing
-npm test             # Playwright tests (headless, all browsers)
-npm run test:headed  # With visible browser
-npm run test:ui      # Interactive Playwright UI
-npm run test:debug   # Debug mode
+pnpm test            # Playwright tests (headless, all browsers)
+pnpm test:headed     # With visible browser
+pnpm test:ui         # Interactive Playwright UI
+pnpm test:debug      # Debug mode
 
 # Code quality
-npm run lint         # ESLint on src/
-npm run lint:fix     # ESLint with auto-fix
-npm run format       # Prettier
-npm run typecheck    # TypeScript type check without emit
+pnpm lint            # ESLint on src/
+pnpm lint:fix        # ESLint with auto-fix
+pnpm format          # Prettier
+pnpm typecheck       # TypeScript type check without emit
 
 # Release
-npm run commit       # Interactive commit with Commitizen (use instead of git commit)
+pnpm commit          # Interactive commit with Commitizen (use instead of git commit)
 cz bump              # Bump version, update changelog, create tag (run on main only)
 ```
 
-Playwright requires the app to be served first (`npm run serve`) before tests run — the config points to `http://localhost:8080/dist`.
+Playwright requires the app to be served first (`pnpm serve`) before tests run — the config points to `http://localhost:8080/dist`.
 
 ## Architecture
 
