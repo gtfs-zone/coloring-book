@@ -1,5 +1,13 @@
 import { showModal } from './modal-utils.js';
 import { generateCompositeKeyFromRecord } from '../utils/gtfs-primary-keys.js';
+import {
+  generateFieldConfigsFromSchema,
+  renderFieldLabelContent,
+  renderFormFields,
+  type FieldConfig,
+} from '../utils/field-component.js';
+import { GTFSSchemas, GTFS_TABLES } from '../types/gtfs.js';
+import type { z } from 'zod';
 
 export interface FaresModalDeps {
   gtfsDatabase: {
@@ -43,14 +51,6 @@ function esc(s: unknown): string {
     .replace(/"/g, '&quot;');
 }
 
-const FARE_MEDIA_TYPE_LABELS: Record<number, string> = {
-  0: 'None',
-  1: 'Paper ticket',
-  2: 'Transit card',
-  3: 'cEMV',
-  4: 'Mobile app',
-};
-
 function readFormValues(
   container: HTMLElement,
   fields: string[]
@@ -58,7 +58,7 @@ function readFormValues(
   const result: Record<string, string> = {};
   for (const field of fields) {
     const el = container.querySelector<HTMLInputElement | HTMLSelectElement>(
-      `[name="${field}"]`
+      `[data-field="${field}"]`
     );
     result[field] = el ? el.value.trim() : '';
   }
@@ -73,7 +73,21 @@ function showFormError(errorEl: HTMLElement | null, msg: string): void {
   errorEl.classList.remove('hidden');
 }
 
+function renderColumnHeader(fieldName: string, configs: FieldConfig[]): string {
+  const config = configs.find((c) => c.field === fieldName);
+  return config
+    ? `<th>${renderFieldLabelContent(config)}</th>`
+    : `<th>${fieldName}</th>`;
+}
+
 function renderRiderCategoriesPanel(rows: Record<string, unknown>[]): string {
+  const configs = generateFieldConfigsFromSchema(
+    GTFSSchemas[GTFS_TABLES.RIDER_CATEGORIES] as Parameters<
+      typeof generateFieldConfigsFromSchema
+    >[0],
+    {},
+    GTFS_TABLES.RIDER_CATEGORIES
+  );
   const rowsHtml =
     rows.length === 0
       ? `<tr><td colspan="4" class="text-center text-base-content/60 py-4">No rider categories yet.</td></tr>`
@@ -103,7 +117,7 @@ function renderRiderCategoriesPanel(rows: Record<string, unknown>[]): string {
       <div class="overflow-x-auto">
         <table class="table table-xs">
           <thead>
-            <tr><th>ID</th><th>Name</th><th>Default</th><th></th></tr>
+            <tr>${renderColumnHeader('rider_category_id', configs)}${renderColumnHeader('rider_category_name', configs)}${renderColumnHeader('is_default_fare_container', configs)}<th></th></tr>
           </thead>
           <tbody>${rowsHtml}</tbody>
         </table>
@@ -112,7 +126,22 @@ function renderRiderCategoriesPanel(rows: Record<string, unknown>[]): string {
   `;
 }
 
+const FARE_MEDIA_TYPE_LABELS: Record<number, string> = {
+  0: 'None',
+  1: 'Paper ticket',
+  2: 'Transit card',
+  3: 'cEMV',
+  4: 'Mobile app',
+};
+
 function renderFareMediaPanel(rows: Record<string, unknown>[]): string {
+  const configs = generateFieldConfigsFromSchema(
+    GTFSSchemas[GTFS_TABLES.FARE_MEDIA] as Parameters<
+      typeof generateFieldConfigsFromSchema
+    >[0],
+    {},
+    GTFS_TABLES.FARE_MEDIA
+  );
   const rowsHtml =
     rows.length === 0
       ? `<tr><td colspan="4" class="text-center text-base-content/60 py-4">No fare media yet.</td></tr>`
@@ -142,7 +171,7 @@ function renderFareMediaPanel(rows: Record<string, unknown>[]): string {
       <div class="overflow-x-auto">
         <table class="table table-xs">
           <thead>
-            <tr><th>ID</th><th>Name</th><th>Type</th><th></th></tr>
+            <tr>${renderColumnHeader('fare_media_id', configs)}${renderColumnHeader('fare_media_name', configs)}${renderColumnHeader('fare_media_type', configs)}<th></th></tr>
           </thead>
           <tbody>${rowsHtml}</tbody>
         </table>
@@ -156,6 +185,13 @@ function renderFareProductsPanel(
   riderCats: Record<string, unknown>[],
   fareMedia: Record<string, unknown>[]
 ): string {
+  const configs = generateFieldConfigsFromSchema(
+    GTFSSchemas[GTFS_TABLES.FARE_PRODUCTS] as Parameters<
+      typeof generateFieldConfigsFromSchema
+    >[0],
+    {},
+    GTFS_TABLES.FARE_PRODUCTS
+  );
   const riderCatNames = new Map(
     riderCats.map((r) => [
       String(r.rider_category_id),
@@ -210,7 +246,7 @@ function renderFareProductsPanel(
       <div class="overflow-x-auto">
         <table class="table table-xs">
           <thead>
-            <tr><th>Product ID</th><th>Name</th><th>Rider Category</th><th>Fare Media</th><th>Amount</th><th>Currency</th><th></th></tr>
+            <tr>${renderColumnHeader('fare_product_id', configs)}${renderColumnHeader('fare_product_name', configs)}${renderColumnHeader('rider_category_id', configs)}${renderColumnHeader('fare_media_id', configs)}${renderColumnHeader('amount', configs)}${renderColumnHeader('currency', configs)}<th></th></tr>
           </thead>
           <tbody>${rowsHtml}</tbody>
         </table>
@@ -224,48 +260,21 @@ async function showAddEditRiderCategoryModal(
   deps: FaresModalDeps
 ): Promise<void> {
   const isEdit = existing !== null;
+  const recordId = isEdit ? String(existing!.rider_category_id) : undefined;
+
+  const schema = GTFSSchemas[
+    GTFS_TABLES.RIDER_CATEGORIES
+  ] as z.ZodObject<z.ZodRawShape>;
+  const configs: FieldConfig[] = generateFieldConfigsFromSchema(
+    schema,
+    (existing as Record<string, string | number | undefined>) ?? {},
+    GTFS_TABLES.RIDER_CATEGORIES
+  ).map((c) => ({ ...c, recordId }));
 
   const formHtml = `
-    <div id="fares-rc-form" class="space-y-3">
+    <div id="fares-rc-form">
       <div id="fares-rc-error" class="alert alert-error text-sm hidden"></div>
-      <div class="form-control w-full">
-        <label class="label"><span class="label-text">Rider Category ID *</span></label>
-        <input name="rider_category_id" class="input input-bordered input-sm w-full"
-          value="${esc(existing?.rider_category_id)}" ${isEdit ? 'disabled' : ''}
-          placeholder="e.g. adult" />
-      </div>
-      <div class="form-control w-full">
-        <label class="label"><span class="label-text">Name *</span></label>
-        <input name="rider_category_name" class="input input-bordered input-sm w-full"
-          value="${esc(existing?.rider_category_name)}"
-          placeholder="e.g. Adult" />
-      </div>
-      <div class="form-control w-full">
-        <label class="label"><span class="label-text">Is Default</span></label>
-        <select name="is_default_fare_container" class="select select-bordered select-sm w-full">
-          <option value="" ${existing?.is_default_fare_container === undefined || existing?.is_default_fare_container === null ? 'selected' : ''}>— Not specified —</option>
-          <option value="0" ${String(existing?.is_default_fare_container) === '0' ? 'selected' : ''}>0 — Not default</option>
-          <option value="1" ${String(existing?.is_default_fare_container) === '1' ? 'selected' : ''}>1 — Default</option>
-        </select>
-      </div>
-      <div class="form-control w-full">
-        <label class="label"><span class="label-text">Eligibility URL</span></label>
-        <input name="eligibility_url" class="input input-bordered input-sm w-full"
-          value="${esc(existing?.eligibility_url)}"
-          placeholder="https://..." />
-      </div>
-      <div class="grid grid-cols-2 gap-2">
-        <div class="form-control w-full">
-          <label class="label"><span class="label-text">Min Age</span></label>
-          <input name="min_age" type="number" min="0" class="input input-bordered input-sm w-full"
-            value="${esc(existing?.min_age)}" />
-        </div>
-        <div class="form-control w-full">
-          <label class="label"><span class="label-text">Max Age</span></label>
-          <input name="max_age" type="number" min="0" class="input input-bordered input-sm w-full"
-            value="${esc(existing?.max_age)}" />
-        </div>
-      </div>
+      ${renderFormFields(configs)}
     </div>
   `;
 
@@ -357,36 +366,21 @@ async function showAddEditFareMediaModal(
   deps: FaresModalDeps
 ): Promise<void> {
   const isEdit = existing !== null;
+  const recordId = isEdit ? String(existing!.fare_media_id) : undefined;
 
-  const typeOptions = [0, 1, 2, 3, 4]
-    .map(
-      (v) =>
-        `<option value="${v}" ${String(existing?.fare_media_type) === String(v) ? 'selected' : ''}>${v} — ${FARE_MEDIA_TYPE_LABELS[v]}</option>`
-    )
-    .join('');
+  const schema = GTFSSchemas[
+    GTFS_TABLES.FARE_MEDIA
+  ] as z.ZodObject<z.ZodRawShape>;
+  const configs: FieldConfig[] = generateFieldConfigsFromSchema(
+    schema,
+    (existing as Record<string, string | number | undefined>) ?? {},
+    GTFS_TABLES.FARE_MEDIA
+  ).map((c) => ({ ...c, recordId }));
 
   const formHtml = `
-    <div id="fares-fm-form" class="space-y-3">
+    <div id="fares-fm-form">
       <div id="fares-fm-error" class="alert alert-error text-sm hidden"></div>
-      <div class="form-control w-full">
-        <label class="label"><span class="label-text">Fare Media ID *</span></label>
-        <input name="fare_media_id" class="input input-bordered input-sm w-full"
-          value="${esc(existing?.fare_media_id)}" ${isEdit ? 'disabled' : ''}
-          placeholder="e.g. transit_card" />
-      </div>
-      <div class="form-control w-full">
-        <label class="label"><span class="label-text">Name</span></label>
-        <input name="fare_media_name" class="input input-bordered input-sm w-full"
-          value="${esc(existing?.fare_media_name)}"
-          placeholder="e.g. Metro Card" />
-      </div>
-      <div class="form-control w-full">
-        <label class="label"><span class="label-text">Type *</span></label>
-        <select name="fare_media_type" class="select select-bordered select-sm w-full">
-          <option value="" ${existing?.fare_media_type === undefined || existing?.fare_media_type === null ? 'selected' : ''}>— Select type —</option>
-          ${typeOptions}
-        </select>
-      </div>
+      ${renderFormFields(configs)}
     </div>
   `;
 
@@ -462,63 +456,61 @@ async function showAddEditFareProductModal(
   fareMedia: Record<string, unknown>[]
 ): Promise<void> {
   const isEdit = existing !== null;
+  const recordId = isEdit
+    ? generateCompositeKeyFromRecord(
+        'fare_products',
+        existing as Record<string, unknown>
+      )
+    : undefined;
 
-  const riderCatOptions = riderCats
-    .map(
-      (r) =>
-        `<option value="${esc(r.rider_category_id)}" ${String(existing?.rider_category_id) === String(r.rider_category_id) ? 'selected' : ''}>${esc(r.rider_category_name ?? r.rider_category_id)}</option>`
-    )
-    .join('');
+  const schema = GTFSSchemas[
+    GTFS_TABLES.FARE_PRODUCTS
+  ] as z.ZodObject<z.ZodRawShape>;
+  const baseConfigs = generateFieldConfigsFromSchema(
+    schema,
+    (existing as Record<string, string | number | undefined>) ?? {},
+    GTFS_TABLES.FARE_PRODUCTS
+  ).map((c) => ({ ...c, recordId }));
 
-  const fareMediaOptions = fareMedia
-    .map(
-      (r) =>
-        `<option value="${esc(r.fare_media_id)}" ${String(existing?.fare_media_id) === String(r.fare_media_id) ? 'selected' : ''}>${esc(r.fare_media_name ?? r.fare_media_id)}</option>`
-    )
-    .join('');
+  const riderCatSelectOptions = [
+    { value: '', label: '— All riders —' },
+    ...riderCats.map((r) => ({
+      value: String(r.rider_category_id),
+      label: String(r.rider_category_name ?? r.rider_category_id),
+    })),
+  ];
+  const fareMediaSelectOptions = [
+    { value: '', label: '— Unknown media —' },
+    ...fareMedia.map((r) => ({
+      value: String(r.fare_media_id),
+      label: String(r.fare_media_name ?? r.fare_media_id),
+    })),
+  ];
+
+  const configs: FieldConfig[] = baseConfigs.map((c) => {
+    if (c.field === 'rider_category_id') {
+      return {
+        ...c,
+        type: 'select',
+        options: riderCatSelectOptions,
+        readonly: isEdit,
+      };
+    }
+    if (c.field === 'fare_media_id') {
+      return {
+        ...c,
+        type: 'select',
+        options: fareMediaSelectOptions,
+        readonly: isEdit,
+      };
+    }
+    return c;
+  });
 
   const formHtml = `
-    <div id="fares-fp-form" class="space-y-3">
+    <div id="fares-fp-form">
       <div id="fares-fp-error" class="alert alert-error text-sm hidden"></div>
-      ${isEdit ? '<p class="text-sm text-base-content/60">Key fields cannot be changed. Delete and re-add to update them.</p>' : ''}
-      <div class="form-control w-full">
-        <label class="label"><span class="label-text">Fare Product ID *</span></label>
-        <input name="fare_product_id" class="input input-bordered input-sm w-full"
-          value="${esc(existing?.fare_product_id)}" ${isEdit ? 'disabled' : ''}
-          placeholder="e.g. single_ride" />
-      </div>
-      <div class="form-control w-full">
-        <label class="label"><span class="label-text">Name</span></label>
-        <input name="fare_product_name" class="input input-bordered input-sm w-full"
-          value="${esc(existing?.fare_product_name)}"
-          placeholder="e.g. Single Ride" />
-      </div>
-      <div class="form-control w-full">
-        <label class="label"><span class="label-text">Rider Category</span></label>
-        <select name="rider_category_id" class="select select-bordered select-sm w-full" ${isEdit ? 'disabled' : ''}>
-          <option value="" ${!existing?.rider_category_id ? 'selected' : ''}>— All riders —</option>
-          ${riderCatOptions}
-        </select>
-      </div>
-      <div class="form-control w-full">
-        <label class="label"><span class="label-text">Fare Media</span></label>
-        <select name="fare_media_id" class="select select-bordered select-sm w-full" ${isEdit ? 'disabled' : ''}>
-          <option value="" ${!existing?.fare_media_id ? 'selected' : ''}>— Unknown media —</option>
-          ${fareMediaOptions}
-        </select>
-      </div>
-      <div class="grid grid-cols-2 gap-2">
-        <div class="form-control w-full">
-          <label class="label"><span class="label-text">Amount *</span></label>
-          <input name="amount" type="number" step="any" class="input input-bordered input-sm w-full"
-            value="${esc(existing?.amount)}" placeholder="0.00" />
-        </div>
-        <div class="form-control w-full">
-          <label class="label"><span class="label-text">Currency *</span></label>
-          <input name="currency" class="input input-bordered input-sm w-full"
-            value="${esc(existing?.currency)}" placeholder="USD" maxlength="3" />
-        </div>
-      </div>
+      ${renderFormFields(configs)}
     </div>
   `;
 
@@ -645,6 +637,7 @@ export async function showFaresModal(deps: FaresModalDeps): Promise<void> {
 
   const body = `
     <div>
+      <p class="text-xs text-base-content/60 mb-3">Supports a limited set of Fares V2: rider categories, fare media, and fare products. More tables coming soon.</p>
       <div class="tabs tabs-border mb-4" id="fares-tabs">
         <button class="tab tab-active" data-tab="rider_categories">Rider Categories</button>
         <button class="tab" data-tab="fare_media">Fare Media</button>
@@ -659,6 +652,7 @@ export async function showFaresModal(deps: FaresModalDeps): Promise<void> {
     body,
     actions: [{ label: 'Close', onClick: () => {} }],
     escapeAction: 0,
+    boxClassName: 'max-w-3xl',
     onMount: (_close) => {
       let currentTab = 'rider_categories';
 
