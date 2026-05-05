@@ -606,12 +606,20 @@ export class MapController {
           ['==', ['get', 'parent_station'], newStation],
         ] as unknown as import('maplibre-gl').FilterSpecification);
         this.layerManager?.updatePathwaysLayer(newStation);
+        this.layerManager?.setFocusedPathway(
+          obj.type === 'pathway' ? obj.id : null
+        );
         this.flyToStation(newStation);
       } else {
         this.layerManager?.setStopsFilter(null);
         this.layerManager?.clearPathwaysLayer();
       }
       this.callbacks.onStationExpandChange?.();
+    } else if (newStation) {
+      // Station unchanged but focused object may have changed — update pathway highlight
+      this.layerManager?.setFocusedPathway(
+        obj.type === 'pathway' ? obj.id : null
+      );
     }
   }
 
