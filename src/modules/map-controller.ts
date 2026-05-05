@@ -596,6 +596,7 @@ export class MapController {
     const oldStation = this.deriveExpandedStation();
     this.focusedObject = obj;
     const newStation = this.deriveExpandedStation();
+    this.layerManager?.setFocusedStop(obj.type === 'stop' ? obj.id : null);
 
     if (oldStation !== newStation) {
       if (newStation) {
@@ -646,7 +647,7 @@ export class MapController {
   /**
    * Highlight specific stop
    */
-  public highlightStop(stop_id: string, color = '#e74c3c', radius = 8): void {
+  public highlightStop(stop_id: string): void {
     this.interactionHandler?.setHighlightedStop(null);
     this.layerManager?.clearHighlights();
     this.routeRenderer?.clearHighlight();
@@ -654,7 +655,6 @@ export class MapController {
     this.applyFocusedObject({ type: 'stop', id: stop_id });
 
     this.interactionHandler?.setHighlightedStop(stop_id);
-    this.layerManager?.highlightStop(stop_id, { color, radius });
 
     // Get routes that serve this stop and highlight them
     const routesAtStop = this.gtfsParser?.getRoutesForStop?.(stop_id) || [];

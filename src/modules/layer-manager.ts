@@ -36,6 +36,7 @@ export class LayerManager {
     | null = null;
 
   private activeStopsFilter: FilterSpecification = DEFAULT_STOPS_FILTER;
+  private focusedStopId: string | null = null;
 
   // Default options
   private defaultStopOptions: StopLayerOptions = {
@@ -208,15 +209,31 @@ export class LayerManager {
       paint: {
         'circle-radius': [
           'case',
-          ['==', ['get', 'location_type'], 1],
-          10, // Station
-          ['==', ['get', 'location_type'], 2],
-          5, // Entrance/Exit
-          ['==', ['get', 'location_type'], 3],
-          5, // Generic node
-          ['==', ['get', 'location_type'], 4],
-          7, // Boarding area
-          options.radius,
+          ['boolean', ['feature-state', 'focused'], false],
+          [
+            'case',
+            ['==', ['get', 'location_type'], 1],
+            17,
+            ['==', ['get', 'location_type'], 2],
+            8,
+            ['==', ['get', 'location_type'], 3],
+            8,
+            ['==', ['get', 'location_type'], 4],
+            11,
+            options.radius * 1.7,
+          ],
+          [
+            'case',
+            ['==', ['get', 'location_type'], 1],
+            10,
+            ['==', ['get', 'location_type'], 2],
+            5,
+            ['==', ['get', 'location_type'], 3],
+            5,
+            ['==', ['get', 'location_type'], 4],
+            7,
+            options.radius,
+          ],
         ],
         'circle-color': [
           'case',
@@ -231,7 +248,12 @@ export class LayerManager {
           options.backgroundColor,
         ],
         'circle-stroke-color': options.strokeColor,
-        'circle-stroke-width': options.strokeWidth,
+        'circle-stroke-width': [
+          'case',
+          ['boolean', ['feature-state', 'focused'], false],
+          4,
+          options.strokeWidth,
+        ],
         'circle-opacity': 1,
         'circle-stroke-opacity': 1,
       },
@@ -291,69 +313,10 @@ export class LayerManager {
   }
 
   /**
-   * Highlight specific stop
+   * Highlight specific stop via feature state (grows in-place, same color).
    */
-  public highlightStop(
-    stop_id: string,
-    options: Partial<HighlightLayerOptions> = {}
-  ): void {
-    const finalOptions = { ...this.defaultHighlightOptions, ...options };
-    const stops =
-      this.gtfsParser.getFileDataSyncTyped<Stops>('stops.txt') || [];
-
-    // Clear existing highlights
-    this.clearHighlights();
-
-    const stop = stops.find((s) => s.stop_id === stop_id);
-    if (!stop || !stop.stop_lat || !stop.stop_lon) {
-      console.warn(`Stop ${stop_id} not found or missing coordinates`);
-      return;
-    }
-
-    const lat = stop.stop_lat;
-    const lon = stop.stop_lon;
-
-    // Create highlight GeoJSON
-    const highlightGeoJSON = {
-      type: 'FeatureCollection' as const,
-      features: [
-        {
-          type: 'Feature' as const,
-          geometry: {
-            type: 'Point' as const,
-            coordinates: [lon, lat],
-          },
-          properties: {
-            stop_id: stop.stop_id,
-            stop_name: stop.stop_name || 'Unnamed Stop',
-            stop_code: stop.stop_code || '',
-          },
-        },
-      ],
-    };
-
-    // Add highlight source and layer
-    this.map.addSource('stops-highlight', {
-      type: 'geojson',
-      data: highlightGeoJSON,
-    });
-
-    // Use size increase instead of color change - keep white background and black stroke like normal stops
-    this.map.addLayer({
-      id: 'stops-highlight',
-      type: 'circle',
-      source: 'stops-highlight',
-      paint: {
-        'circle-radius': finalOptions.radius, // Use larger radius (default 12 vs normal 4)
-        'circle-color': '#ffffff', // Keep white background like normal stops
-        'circle-stroke-color': '#000000', // Keep black stroke like normal stops
-        'circle-stroke-width': finalOptions.strokeWidth, // Use thicker stroke (default 3 vs normal 2)
-        'circle-opacity': 1,
-        'circle-stroke-opacity': 1,
-      },
-    });
-
-    console.log(`🎯 Highlighted stop: ${stop_id}`);
+  public highlightStop(stop_id: string): void {
+    this.setFocusedStop(stop_id);
   }
 
   /**
@@ -510,6 +473,7 @@ export class LayerManager {
    * Clear all highlights
    */
   public clearHighlights(): void {
+    this.setFocusedStop(null);
     const highlightLayers = ['trip-highlight', 'stops-highlight'];
 
     highlightLayers.forEach((layerId) => {
@@ -520,6 +484,30 @@ export class LayerManager {
         this.map.removeSource(layerId);
       }
     });
+  }
+
+  public setFocusedStop(stop_id: string | null): void {
+    try {
+      if (this.focusedStopId !== null && this.map.getSource('stops')) {
+        this.map.setFeatureState(
+          { source: 'stops', id: this.focusedStopId },
+          { focused: false }
+        );
+      }
+      this.focusedStopId = stop_id;
+      if (stop_id !== null && this.map.getSource('stops')) {
+        this.map.setFeatureState(
+          { source: 'stops', id: stop_id },
+          { focused: true }
+        );
+      }
+    } catch (error) {
+      console.debug(
+        '[LayerManager] Could not set focused stop:',
+        stop_id,
+        error
+      );
+    }
   }
 
   /**
