@@ -37,6 +37,7 @@ export class LayerManager {
 
   private activeStopsFilter: FilterSpecification = DEFAULT_STOPS_FILTER;
   private focusedStopId: string | null = null;
+  private focusedPathwayId: string | null = null;
 
   // Default options
   private defaultStopOptions: StopLayerOptions = {
@@ -510,6 +511,30 @@ export class LayerManager {
     }
   }
 
+  public setFocusedPathway(pathway_id: string | null): void {
+    try {
+      if (this.focusedPathwayId !== null && this.map.getSource('pathways')) {
+        this.map.setFeatureState(
+          { source: 'pathways', id: this.focusedPathwayId },
+          { focused: false }
+        );
+      }
+      this.focusedPathwayId = pathway_id;
+      if (pathway_id !== null && this.map.getSource('pathways')) {
+        this.map.setFeatureState(
+          { source: 'pathways', id: pathway_id },
+          { focused: true }
+        );
+      }
+    } catch (error) {
+      console.debug(
+        '[LayerManager] Could not set focused pathway:',
+        pathway_id,
+        error
+      );
+    }
+  }
+
   /**
    * Update stop feature state (for dragging, selection, etc.)
    */
@@ -621,6 +646,7 @@ export class LayerManager {
       }
       features.push({
         type: 'Feature',
+        id: pw.pathway_id,
         geometry: {
           type: 'LineString',
           coordinates: [from, to],
@@ -661,7 +687,12 @@ export class LayerManager {
           type: 'line',
           source: 'pathways',
           paint: {
-            'line-width': 3,
+            'line-width': [
+              'case',
+              ['boolean', ['feature-state', 'focused'], false],
+              6,
+              3,
+            ],
             'line-color': [
               'case',
               ['==', ['get', 'pathway_mode'], 1],
@@ -724,6 +755,7 @@ export class LayerManager {
    * Call when a station is collapsed.
    */
   public clearPathwaysLayer(): void {
+    this.setFocusedPathway(null);
     ['pathways-clickarea', 'pathways-lines'].forEach((layerId) => {
       if (this.map.getLayer(layerId)) {
         this.map.removeLayer(layerId);
