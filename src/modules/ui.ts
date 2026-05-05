@@ -1315,7 +1315,7 @@ export class UIController {
     pointerBtn?.classList.toggle('btn-primary', mode === MapMode.NAVIGATE);
     addStopBtn?.classList.toggle('btn-primary', mode === MapMode.ADD_STOP);
     if (addPathwayBtn) {
-      const hasExpandedStation = !!this.mapController.expandedStationId;
+      const hasExpandedStation = !!this.mapController.getExpandedStationId();
       addPathwayBtn.disabled = !hasExpandedStation;
       addPathwayBtn.classList.toggle(
         'btn-primary',
