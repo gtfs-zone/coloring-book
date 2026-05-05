@@ -24,12 +24,13 @@ export async function showModal(options: {
   onMount?: (close: () => void) => void;
   enterAction?: number;
   escapeAction?: number;
+  boxClassName?: string;
 }): Promise<void> {
   return new Promise((resolve) => {
     const modal = document.createElement('div');
     modal.className = 'modal modal-open';
     modal.innerHTML = `
-      <div class="modal-box relative max-h-[80vh] flex flex-col">
+      <div class="modal-box relative max-h-[80vh] flex flex-col ${options.boxClassName ?? ''}">
         ${options.escapeAction !== undefined ? '<button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2" data-dismiss>✕</button>' : ''}
         <h3 class="font-bold text-lg">${options.title}</h3>
         <div class="flex-1 overflow-y-auto py-4">${options.body}</div>
