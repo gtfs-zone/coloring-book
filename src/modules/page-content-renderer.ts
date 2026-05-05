@@ -377,6 +377,7 @@ export class PageContentRenderer {
                 </div>`
           }
         </div>
+
       </div>
     `;
   }
