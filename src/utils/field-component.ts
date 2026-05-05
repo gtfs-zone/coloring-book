@@ -175,7 +175,10 @@ export function buildFieldTooltipContent(config: FieldConfig): string {
  * wrapped in a tooltip container showing structured field info on hover.
  * Used by both form field labels and timetable trip property rows.
  */
-export function renderFieldLabelContent(config: FieldConfig): string {
+export function renderFieldLabelContent(
+  config: FieldConfig,
+  tooltipDirection: 'top' | 'bottom' | 'left' | 'right' = 'right'
+): string {
   const specUrl = getSpecUrl(config.tableName);
   const tipContent = buildFieldTooltipContent(config);
   const labelText = escapeHtml(config.label);
@@ -185,7 +188,7 @@ export function renderFieldLabelContent(config: FieldConfig): string {
   const presenceMark = renderPresenceMark(config);
 
   if (tipContent) {
-    return `<span class="tooltip tooltip-right" data-tip="${escapeAttr(tipContent)}">${linkContent}${presenceMark}</span>`;
+    return `<span class="tooltip tooltip-${tooltipDirection}" data-tip="${escapeAttr(tipContent)}">${linkContent}${presenceMark}</span>`;
   }
   return `${linkContent}${presenceMark}`;
 }
