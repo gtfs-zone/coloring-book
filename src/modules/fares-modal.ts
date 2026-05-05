@@ -269,7 +269,11 @@ async function showAddEditRiderCategoryModal(
     schema,
     (existing as Record<string, string | number | undefined>) ?? {},
     GTFS_TABLES.RIDER_CATEGORIES
-  ).map((c) => ({ ...c, recordId }));
+  )
+    .map((c) => ({ ...c, recordId }))
+    .map((c) =>
+      c.field === 'rider_category_id' ? { ...c, readonly: isEdit } : c
+    );
 
   const formHtml = `
     <div id="fares-rc-form">
@@ -375,7 +379,9 @@ async function showAddEditFareMediaModal(
     schema,
     (existing as Record<string, string | number | undefined>) ?? {},
     GTFS_TABLES.FARE_MEDIA
-  ).map((c) => ({ ...c, recordId }));
+  )
+    .map((c) => ({ ...c, recordId }))
+    .map((c) => (c.field === 'fare_media_id' ? { ...c, readonly: isEdit } : c));
 
   const formHtml = `
     <div id="fares-fm-form">
@@ -470,7 +476,11 @@ async function showAddEditFareProductModal(
     schema,
     (existing as Record<string, string | number | undefined>) ?? {},
     GTFS_TABLES.FARE_PRODUCTS
-  ).map((c) => ({ ...c, recordId }));
+  )
+    .map((c) => ({ ...c, recordId }))
+    .map((c) =>
+      c.field === 'fare_product_id' ? { ...c, readonly: isEdit } : c
+    );
 
   const riderCatSelectOptions = [
     { value: '', label: '— All riders —' },
