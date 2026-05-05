@@ -76,7 +76,7 @@ function showFormError(errorEl: HTMLElement | null, msg: string): void {
 function renderColumnHeader(fieldName: string, configs: FieldConfig[]): string {
   const config = configs.find((c) => c.field === fieldName);
   return config
-    ? `<th>${renderFieldLabelContent(config)}</th>`
+    ? `<th>${renderFieldLabelContent(config, 'bottom')}</th>`
     : `<th>${fieldName}</th>`;
 }
 
@@ -647,7 +647,7 @@ export async function showFaresModal(deps: FaresModalDeps): Promise<void> {
 
   const body = `
     <div>
-      <p class="text-xs text-base-content/60 mb-3">Supports a limited set of Fares V2: rider categories, fare media, and fare products. More tables coming soon.</p>
+      <p class="text-xs text-base-content/60 mb-3">Supports a limited set of Fares V2: rider categories, fare media, and fare products. More tables coming soon. Fares V1 is not shown here — use the file viewer to inspect those tables. <a href="https://gtfs.org/documentation/schedule/reference/#fare_attributestxt" target="_blank" rel="noopener noreferrer" class="link">More info</a>.</p>
       <div class="tabs tabs-border mb-4" id="fares-tabs">
         <button class="tab tab-active" data-tab="rider_categories">Rider Categories</button>
         <button class="tab" data-tab="fare_media">Fare Media</button>
