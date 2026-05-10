@@ -1,7 +1,12 @@
 export const UNSPECIFIED_AGENCY_ID = '' as const;
 
-export function normalizeAgencyId(id: string | undefined | null): string {
-  return id || UNSPECIFIED_AGENCY_ID;
+export function normalizeAgencyId(
+  id: string | number | boolean | undefined | null
+): string {
+  if (id === undefined || id === null || id === '') {
+    return UNSPECIFIED_AGENCY_ID;
+  }
+  return String(id);
 }
 
 /**
