@@ -188,7 +188,14 @@ export function renderFieldLabelContent(
   const presenceMark = renderPresenceMark(config);
 
   if (tipContent) {
-    return `<span class="tooltip tooltip-${tooltipDirection}" data-tip="${escapeAttr(tipContent)}">${linkContent}${presenceMark}</span>`;
+    const directionClass: Record<'top' | 'bottom' | 'left' | 'right', string> =
+      {
+        top: 'tooltip-top',
+        bottom: 'tooltip-bottom',
+        left: 'tooltip-left',
+        right: 'tooltip-right',
+      };
+    return `<span class="tooltip ${directionClass[tooltipDirection]}" data-tip="${escapeAttr(tipContent)}">${linkContent}${presenceMark}</span>`;
   }
   return `${linkContent}${presenceMark}`;
 }
