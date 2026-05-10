@@ -524,10 +524,23 @@ export class PageContentRenderer {
       </div>
     `;
 
-    // Get all available services from calendar
+    // Get all available services from calendar, then merge in calendar_dates-only services
     const allServices = (await this.dependencies.gtfsDatabase.getAllRows(
       'calendar'
     )) as Record<string, unknown>[];
+    const calendarServiceIds = new Set(
+      allServices.map((s) => s.service_id as string)
+    );
+    const calendarDatesRows = (await this.dependencies.gtfsDatabase.getAllRows(
+      'calendar_dates'
+    )) as Record<string, unknown>[];
+    for (const row of calendarDatesRows) {
+      const sid = row.service_id as string;
+      if (!calendarServiceIds.has(sid)) {
+        calendarServiceIds.add(sid);
+        allServices.push({ service_id: sid });
+      }
+    }
 
     // Render new service selector
     const newServiceSelectorHTML =
