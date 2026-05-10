@@ -12,6 +12,7 @@ import {
 } from '../utils/field-component.js';
 import { GTFS_TABLES, StopsSchema } from '../types/gtfs.js';
 import { getStopDisplay, renderCardLabel } from '../utils/entity-display.js';
+import { normalizeAgencyId } from '../utils/agency-helpers.js';
 
 export interface StopViewDependencies {
   gtfsDatabase?: QueryOnlyDatabase;
@@ -122,7 +123,7 @@ export class StopViewController {
     // Group routes by agency
     const routesByAgency = new Map();
     routes.forEach((route) => {
-      const agency_id = route.agency_id || 'default';
+      const agency_id = normalizeAgencyId(route.agency_id);
       if (!routesByAgency.has(agency_id)) {
         routesByAgency.set(agency_id, []);
       }
@@ -131,7 +132,8 @@ export class StopViewController {
 
     const agencySections = agencies
       .map((agency) => {
-        const agencyRoutes = routesByAgency.get(agency.agency_id) || [];
+        const agencyRoutes =
+          routesByAgency.get(normalizeAgencyId(agency.agency_id)) || [];
 
         return `
         <div class="mb-6">
