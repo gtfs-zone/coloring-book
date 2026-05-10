@@ -404,10 +404,28 @@ export class PageContentRenderer {
    */
   private async getServices(): Promise<Record<string, unknown>[]> {
     try {
-      // Get all services from calendar table
-      const services =
-        await this.dependencies.gtfsDatabase.getAllRows('calendar');
-      return services as Record<string, unknown>[];
+      const calendarRows = (await this.dependencies.gtfsDatabase.getAllRows(
+        'calendar'
+      )) as Record<string, unknown>[];
+      const calendarDatesRows =
+        (await this.dependencies.gtfsDatabase.getAllRows(
+          'calendar_dates'
+        )) as Record<string, unknown>[];
+
+      const covered = new Set<string>(
+        calendarRows.map((r) => String(r['service_id'] ?? ''))
+      );
+
+      const extraIds = new Set<string>();
+      for (const r of calendarDatesRows) {
+        const id = String(r['service_id'] ?? '');
+        if (id !== '' && !covered.has(id)) {
+          extraIds.add(id);
+        }
+      }
+      const extraServices = [...extraIds].map((id) => ({ service_id: id }));
+
+      return [...calendarRows, ...extraServices];
     } catch (error) {
       console.error('Error getting services:', error);
       return [];
