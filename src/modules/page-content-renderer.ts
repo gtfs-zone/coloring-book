@@ -42,6 +42,7 @@ import {
 import { showModal } from './modal-utils.js';
 import { navigateToHome } from './navigation-actions.js';
 import { generateCompositeKeyFromRecord } from '../utils/gtfs-primary-keys.js';
+import { normalizeAgencyId } from '../utils/agency-helpers.js';
 
 /**
  * Interface for injected dependencies
@@ -284,7 +285,7 @@ export class PageContentRenderer {
 
         return `
           <div class="flex items-center gap-3 p-3 rounded-lg hover:bg-base-200 cursor-pointer transition-colors agency-card"
-               data-agency-id="${agencyData.agency_id}">
+               data-agency-id="${normalizeAgencyId(agencyData.agency_id as string)}">
             <div class="flex-1 min-w-0">
               <div class="font-semibold">${renderCardLabel(getAgencyDisplay(agencyData))}</div>
             </div>

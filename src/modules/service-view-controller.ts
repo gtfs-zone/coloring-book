@@ -8,6 +8,7 @@
 
 import type { Agency, Routes, Trips } from '../types/gtfs.js';
 import type { QueryOnlyDatabase } from '../utils/field-component.js';
+import { normalizeAgencyId } from '../utils/agency-helpers.js';
 
 export interface ServiceViewDependencies {
   gtfsDatabase?: QueryOnlyDatabase;
@@ -191,7 +192,7 @@ export class ServiceViewController {
     // Group routes by agency
     const routesByAgency = new Map<string, Routes[]>();
     routes.forEach((route) => {
-      const agency_id = route.agency_id || 'default';
+      const agency_id = normalizeAgencyId(route.agency_id);
       if (!routesByAgency.has(agency_id)) {
         routesByAgency.set(agency_id, []);
       }
@@ -204,7 +205,8 @@ export class ServiceViewController {
     // If we have agencies, group by agency
     if (agencies.length > 0) {
       agencies.forEach((agency) => {
-        const agencyRoutes = routesByAgency.get(agency.agency_id) || [];
+        const agencyRoutes =
+          routesByAgency.get(normalizeAgencyId(agency.agency_id)) || [];
         if (agencyRoutes.length === 0) {
           return;
         }
