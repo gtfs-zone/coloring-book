@@ -10,7 +10,11 @@ import {
 import { PageStateManager } from './page-state-manager.js';
 import { GTFSParser } from './gtfs-parser.js';
 import { PatchManager } from './patch-manager.js';
-import { Stops, StopTimes, Trips, Routes } from '../types/gtfs.js';
+import { Stops, StopTimes, Trips, Routes, Agency } from '../types/gtfs.js';
+import {
+  agencyRouteFilter,
+  normalizeAgencyId,
+} from '../utils/agency-helpers.js';
 import { BasemapControl } from './basemap-control.js';
 import type { PatchRecord, SingleGTFSPatch } from '../types/patch.js';
 
@@ -720,8 +724,11 @@ export class MapController {
   public highlightAgencyRoutes(agency_id: string): void {
     const routes =
       this.gtfsParser!.getFileDataSyncTyped<Routes>('routes.txt') || [];
-    const agencyRoutes = routes.filter(
-      (route) => route.agency_id === agency_id
+    const agencies =
+      this.gtfsParser!.getFileDataSyncTyped<Agency>('agency.txt') || [];
+    const acceptedIds = agencyRouteFilter(agency_id, agencies.length);
+    const agencyRoutes = routes.filter((route) =>
+      acceptedIds.includes(normalizeAgencyId(route.agency_id))
     );
 
     if (agencyRoutes.length === 0) {
