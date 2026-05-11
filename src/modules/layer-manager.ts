@@ -70,6 +70,7 @@ export class LayerManager {
     const layersToRemove = [
       'pathways-lines',
       'pathways-clickarea',
+      'stops-station-x',
       'stops-background',
       'stops-clickarea',
       'stops-highlight',
@@ -121,7 +122,7 @@ export class LayerManager {
     );
 
     // Create GeoJSON for stops
-    const stopsGeoJSON = this.createStopsGeoJSON(validStops);
+    const stopsGeoJSON = this.createStopsGeoJSON(validStops, stops);
 
     // Add source with feature IDs for state management
     const stopsGeoJSONWithIds = {
@@ -144,6 +145,7 @@ export class LayerManager {
     // Add background stops layer if enabled
     if (finalOptions.showBackground) {
       this.addStopsBackgroundLayer(finalOptions);
+      this.addStationXLayer();
     }
 
     // Add invisible click areas if enabled
@@ -162,7 +164,44 @@ export class LayerManager {
   /**
    * Create GeoJSON data for stops
    */
-  private createStopsGeoJSON(stops: Stops[]): GeoJSON.FeatureCollection {
+  private createStopsGeoJSON(
+    stops: Stops[],
+    allStops?: Stops[]
+  ): GeoJSON.FeatureCollection {
+    // Build lookup for ancestor traversal (includes stops without coords)
+    const stopById = new Map<string, Stops>();
+    (allStops ?? stops).forEach((s) => stopById.set(s.stop_id, s));
+
+    const resolveStationId = (stop: Stops): string => {
+      const locType =
+        typeof stop.location_type === 'number'
+          ? stop.location_type
+          : parseInt(stop.location_type ?? '0', 10) || 0;
+      if (locType === 1) {
+        return stop.stop_id;
+      }
+      let current = stop;
+      for (let i = 0; i < 5; i++) {
+        const parentId = current.parent_station;
+        if (!parentId) {
+          break;
+        }
+        const parent = stopById.get(String(parentId));
+        if (!parent) {
+          break;
+        }
+        const parentType =
+          typeof parent.location_type === 'number'
+            ? parent.location_type
+            : parseInt(parent.location_type ?? '0', 10) || 0;
+        if (parentType === 1) {
+          return parent.stop_id;
+        }
+        current = parent;
+      }
+      return '';
+    };
+
     return {
       type: 'FeatureCollection',
       features: stops.map((stop) => {
@@ -186,6 +225,7 @@ export class LayerManager {
             stop_desc: stop.stop_desc || '',
             location_type: stopType,
             parent_station: stop.parent_station ?? '',
+            station_id: resolveStationId(stop),
             wheelchair_boarding: stop.wheelchair_boarding || '',
           },
         };
@@ -214,7 +254,7 @@ export class LayerManager {
           [
             'case',
             ['==', ['get', 'location_type'], 1],
-            17,
+            10,
             ['==', ['get', 'location_type'], 2],
             8,
             ['==', ['get', 'location_type'], 3],
@@ -226,7 +266,7 @@ export class LayerManager {
           [
             'case',
             ['==', ['get', 'location_type'], 1],
-            10,
+            6,
             ['==', ['get', 'location_type'], 2],
             5,
             ['==', ['get', 'location_type'], 3],
@@ -239,7 +279,7 @@ export class LayerManager {
         'circle-color': [
           'case',
           ['==', ['get', 'location_type'], 1],
-          '#3b82f6', // Station: blue
+          '#ffffff', // Station: white (X overlay provided by stops-station-x symbol layer)
           ['==', ['get', 'location_type'], 2],
           '#f59e0b', // Entrance: amber
           ['==', ['get', 'location_type'], 3],
@@ -248,7 +288,12 @@ export class LayerManager {
           '#10b981', // Boarding area: green
           options.backgroundColor,
         ],
-        'circle-stroke-color': options.strokeColor,
+        'circle-stroke-color': [
+          'case',
+          ['==', ['get', 'location_type'], 1],
+          '#000000', // Station: black stroke
+          options.strokeColor,
+        ],
         'circle-stroke-width': [
           'case',
           ['boolean', ['feature-state', 'focused'], false],
@@ -257,6 +302,43 @@ export class LayerManager {
         ],
         'circle-opacity': 1,
         'circle-stroke-opacity': 1,
+      },
+    });
+  }
+
+  /**
+   * Add ✕ symbol layer centered on each station feature.
+   * Sits above the white circle background so the X is visible.
+   */
+  private addStationXLayer(): void {
+    if (this.map.getLayer('stops-station-x')) {
+      return;
+    }
+
+    this.map.addLayer({
+      id: 'stops-station-x',
+      type: 'symbol',
+      source: 'stops',
+      filter: [
+        '==',
+        ['get', 'location_type'],
+        1,
+      ] as unknown as FilterSpecification,
+      layout: {
+        'text-field': '✕',
+        'text-anchor': 'center',
+        'text-allow-overlap': true,
+        'text-ignore-placement': true,
+        'text-size': [
+          'case',
+          ['boolean', ['feature-state', 'focused'], false],
+          16,
+          10,
+        ],
+        'text-font': ['Open Sans Regular', 'Arial Unicode MS Regular'],
+      },
+      paint: {
+        'text-color': '#000000',
       },
     });
   }
@@ -295,6 +377,22 @@ export class LayerManager {
     }
     if (this.map.getLayer('stops-clickarea')) {
       this.map.setFilter('stops-clickarea', this.activeStopsFilter);
+    }
+    // Station-X layer always filters to location_type=1; compose with activeStopsFilter when non-default
+    if (this.map.getLayer('stops-station-x')) {
+      const stationXFilter: FilterSpecification =
+        filter === null
+          ? ([
+              '==',
+              ['get', 'location_type'],
+              1,
+            ] as unknown as FilterSpecification)
+          : ([
+              'all',
+              ['==', ['get', 'location_type'], 1],
+              filter,
+            ] as unknown as FilterSpecification);
+      this.map.setFilter('stops-station-x', stationXFilter);
     }
   }
 
@@ -571,7 +669,7 @@ export class LayerManager {
         !isNaN(stop.stop_lon)
     );
 
-    const stopsGeoJSON = this.createStopsGeoJSON(validStops);
+    const stopsGeoJSON = this.createStopsGeoJSON(validStops, stops);
     const stopsGeoJSONWithIds = {
       ...stopsGeoJSON,
       features: stopsGeoJSON.features.map((feature) => ({
