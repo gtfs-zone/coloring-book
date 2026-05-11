@@ -5,6 +5,10 @@
  */
 
 import { GTFSDatabase, GTFSDatabaseRecord } from './gtfs-database.js';
+import {
+  normalizeAgencyId,
+  agencyRouteFilter,
+} from '../utils/agency-helpers.js';
 
 interface GTFSParserInterface {
   getFileDataSync: (filename: string) => GTFSDatabaseRecord[];
@@ -50,8 +54,12 @@ export class GTFSRelationships {
    */
   getRoutesForAgency(agency_id: string) {
     const routesData = this.gtfsParser.getFileDataSync('routes.txt');
+    const agencyCount = this.gtfsParser.getFileDataSync('agency.txt').length;
+    const acceptedIds = agencyRouteFilter(agency_id, agencyCount);
     return routesData
-      .filter((route) => route.agency_id === agency_id)
+      .filter((route) =>
+        acceptedIds.includes(normalizeAgencyId(route.agency_id))
+      )
       .map((route) => ({
         id: route.route_id,
         route_id: route.route_id,
@@ -417,18 +425,21 @@ export class GTFSRelationships {
       if (!agencyData || !Array.isArray(agencyData)) {
         return [];
       }
-      return agencyData.map((agency) => ({
-        id: agency.agency_id,
-        agency_id: agency.agency_id,
-        name: agency.agency_name || `Agency ${agency.agency_id}`,
-        agency_name: agency.agency_name || `Agency ${agency.agency_id}`,
-        url: agency.agency_url,
-        timezone: agency.agency_timezone,
-        lang: agency.agency_lang,
-        phone: agency.agency_phone,
-        fare_url: agency.agency_fare_url,
-        email: agency.agency_email,
-      }));
+      return agencyData.map((agency) => {
+        const id = normalizeAgencyId(agency.agency_id);
+        return {
+          id,
+          agency_id: id,
+          name: agency.agency_name || `Agency ${id}`,
+          agency_name: agency.agency_name || `Agency ${id}`,
+          url: agency.agency_url,
+          timezone: agency.agency_timezone,
+          lang: agency.agency_lang,
+          phone: agency.agency_phone,
+          fare_url: agency.agency_fare_url,
+          email: agency.agency_email,
+        };
+      });
     } catch (error) {
       console.error('Error getting agencies from IndexedDB:', error);
       // Fallback to sync method
@@ -441,9 +452,17 @@ export class GTFSRelationships {
    */
   async getRoutesForAgencyAsync(agency_id: string) {
     try {
-      const routesData = await this.gtfsDatabase.queryRows('routes', {
-        agency_id: agency_id,
-      });
+      const agencyRows = await this.gtfsDatabase.getAllRows('agency');
+      const agencyCount = agencyRows?.length ?? 1;
+      const acceptedIds = agencyRouteFilter(agency_id, agencyCount);
+
+      const routeArrays = await Promise.all(
+        acceptedIds.map((id) =>
+          this.gtfsDatabase.queryRows('routes', { agency_id: id })
+        )
+      );
+      const routesData = routeArrays.flat();
+
       if (!routesData || !Array.isArray(routesData)) {
         return [];
       }
@@ -984,7 +1003,7 @@ export class GTFSRelationships {
   async getAgencyByIdAsync(agency_id: string) {
     try {
       const agencyData = await this.gtfsDatabase.queryRows('agency', {
-        agency_id: agency_id,
+        agency_id: normalizeAgencyId(agency_id),
       });
       if (
         !agencyData ||

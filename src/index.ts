@@ -27,6 +27,7 @@ import { HistoryController } from './modules/history-controller';
 import { TabLockController } from './modules/tab-lock';
 import { humanLabel } from './utils/patch-label';
 import { showAboutModal } from './modules/about-modal';
+import { showFaresModal } from './modules/fares-modal';
 import { PanelResizer } from './modules/panel-resizer';
 import { LevelsController } from './modules/levels-controller';
 import './styles/main.css';
@@ -225,6 +226,16 @@ export class GTFSEditor {
 
       // Initialize keyboard shortcuts
       this.keyboardShortcuts.initialize();
+
+      // Wire fares button to open Fares modal
+      document.getElementById('fares-btn')?.addEventListener('click', () => {
+        showFaresModal({
+          gtfsDatabase: this.gtfsParser.gtfsDatabase as Parameters<
+            typeof showFaresModal
+          >[0]['gtfsDatabase'],
+          patchManager: this.patchManager,
+        });
+      });
 
       // Wire up about modal
       const openAbout = () =>
