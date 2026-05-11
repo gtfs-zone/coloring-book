@@ -3,7 +3,12 @@
  * Handles HTML generation for timetable views and schedule headers
  */
 
-import { Routes, Calendar, CalendarDates } from '../types/gtfs-entities.js';
+import {
+  Routes,
+  Stops,
+  Calendar,
+  CalendarDates,
+} from '../types/gtfs-entities.js';
 import { TimetableData, DirectionInfo } from './timetable-data-processor.js';
 import { TimetableCellRenderer } from './timetable-cell-renderer.js';
 import {
@@ -26,29 +31,32 @@ function getBrouterProfile(routeType: string | number): string {
   return 'car-fast';
 }
 
-function buildBrouterUrl(data: TimetableData): string | null {
-  const stops = data.stops.filter(
+function buildBrouterUrl(
+  stops: Stops[],
+  routeType: string | number
+): string | null {
+  const geocoded = stops.filter(
     (s) =>
       s.stop_lat !== null &&
       s.stop_lat !== undefined &&
       s.stop_lon !== null &&
       s.stop_lon !== undefined
   );
-  if (stops.length < 2) {
+  if (geocoded.length < 2) {
     return null;
   }
 
-  const lats = stops.map((s) => parseFloat(s.stop_lat as string));
-  const lons = stops.map((s) => parseFloat(s.stop_lon as string));
+  const lats = geocoded.map((s) => parseFloat(s.stop_lat as string));
+  const lons = geocoded.map((s) => parseFloat(s.stop_lon as string));
   const centerLat = (lats.reduce((a, b) => a + b, 0) / lats.length).toFixed(4);
   const centerLon = (lons.reduce((a, b) => a + b, 0) / lons.length).toFixed(4);
-  const lonlats = stops
+  const lonlats = geocoded
     .map(
       (s) =>
         `${parseFloat(s.stop_lon as string).toFixed(6)},${parseFloat(s.stop_lat as string).toFixed(6)}`
     )
     .join(';');
-  const profile = getBrouterProfile(data.route.route_type ?? '');
+  const profile = getBrouterProfile(routeType);
   return `https://brouter.de/brouter-web/#map=12/${centerLat}/${centerLon}/standard&lonlats=${lonlats}&profile=${profile}`;
 }
 
@@ -159,16 +167,10 @@ export class TimetableRenderer {
       })
       .join('');
 
-    const brouterUrl = buildBrouterUrl(data);
-    const brouterLink = brouterUrl
-      ? `<a href="${brouterUrl}" target="_blank" rel="noopener" class="btn btn-xs btn-outline ml-auto">Open in brouter ↗</a>`
-      : '';
-
     return `
       <div class="border-b border-base-300">
         <div class="tabs tabs-border p-2 flex items-center">
           ${tabsHTML}
-          ${brouterLink}
         </div>
       </div>
     `;
@@ -409,10 +411,19 @@ export class TimetableRenderer {
     const trips = data.trips;
     const tripHeaders = trips
       .map((trip) => {
+        const tripStops = data.stops.filter((_, i) => trip.stopTimes.has(i));
+        const brouterUrl = buildBrouterUrl(
+          tripStops,
+          data.route.route_type ?? ''
+        );
+        const brouterLink = brouterUrl
+          ? `<a href="${brouterUrl}" target="_blank" rel="noopener" class="btn btn-xs btn-outline mt-1" title="Open in brouter">↗</a>`
+          : '';
         return `
           <td class="trip-header text-center min-w-[80px] p-2 text-xs font-mono">
             ${this.escapeHtml(trip.trip_id)}
             <button class="btn btn-xs btn-error btn-outline delete-trip-btn mt-1" data-trip-id="${this.escapeHtml(trip.trip_id)}" title="Delete">${renderTrashIcon('h-3 w-3')}</button>
+            ${brouterLink}
           </td>
         `;
       })

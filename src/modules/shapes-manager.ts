@@ -1,4 +1,4 @@
-import { showModal, renderTrashIcon } from './modal-utils.js';
+import { showModal, renderTrashIcon, renderUploadIcon } from './modal-utils.js';
 import type { GTFSParser } from './gtfs-parser.js';
 import type { PatchManager } from './patch-manager.js';
 import { parseGPX } from '../utils/gpx-parser.js';
@@ -52,7 +52,7 @@ function renderBody(shapes: Map<string, number>): string {
           <td>${count}</td>
           <td>
             <div class="flex gap-1">
-              <button class="btn btn-xs btn-ghost" data-action="replace" data-shape-id="${esc(shapeId)}" title="Replace with GPX">↑ Replace</button>
+              <button class="btn btn-xs btn-ghost" data-action="replace" data-shape-id="${esc(shapeId)}" title="Replace with GPX">${renderUploadIcon()}</button>
               <button class="btn btn-xs btn-ghost text-error" data-action="delete" data-shape-id="${esc(shapeId)}" title="Delete shape">${renderTrashIcon()}</button>
             </div>
           </td>
