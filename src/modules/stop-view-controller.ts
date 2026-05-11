@@ -22,6 +22,7 @@ import type { LevelOption } from './levels-controller.js';
 import { renderTrashIcon } from './modal-utils.js';
 import {
   renderServiceReference,
+  renderStopReference,
   SERVICE_REF_ROW,
 } from '../utils/entity-references.js';
 
@@ -119,7 +120,7 @@ export class StopViewController {
       const html = `
         <div class="p-4 space-y-4">
           ${this.renderStopProperties(stop, levelOptions)}
-          ${isStation ? this.renderChildStopsSection(childStops) : ''}
+          ${isStation ? this.renderChildStopsSections(childStops) : ''}
           ${!isStation ? this.renderPathwaysSection(connectedPathways, stop_id) : ''}
           ${this.renderTimetablesSection(timetableKeys, routes, calendarByServiceId, calendarDatesByServiceId)}
         </div>
@@ -256,13 +257,6 @@ export class StopViewController {
     7: 'Exit Gate',
   };
 
-  private readonly LOCATION_TYPE_LABELS: Record<number, string> = {
-    0: 'Platform',
-    2: 'Entrance/Exit',
-    3: 'Generic Node',
-    4: 'Boarding Area',
-  };
-
   /**
    * Get all pathways connected to this stop (from or to)
    */
@@ -335,11 +329,64 @@ export class StopViewController {
     `;
   }
 
-  /**
-   * Render child stops section for a station
-   */
-  private renderChildStopsSection(children: Stops[]): string {
+  private groupChildrenByLocationType(children: Stops[]): {
+    entrances: Stops[];
+    platforms: Stops[];
+    genericNodes: Stops[];
+  } {
+    const entrances: Stops[] = [];
+    const platforms: Stops[] = [];
+    const genericNodes: Stops[] = [];
+    for (const child of children) {
+      const locType =
+        typeof child.location_type === 'number'
+          ? child.location_type
+          : parseInt(child.location_type ?? '0', 10) || 0;
+      if (locType === 2) {
+        entrances.push(child);
+      } else if (locType === 0) {
+        platforms.push(child);
+      } else if (locType === 3) {
+        genericNodes.push(child);
+      }
+      // locType === 4 (boarding areas) silently skipped — they belong under platforms
+    }
+    return { entrances, platforms, genericNodes };
+  }
+
+  private renderTypedChildSection(title: string, children: Stops[]): string {
     if (children.length === 0) {
+      return '';
+    }
+    const rows = children
+      .map((child) =>
+        renderStopReference(child as unknown as Record<string, unknown>)
+      )
+      .join('');
+    return `
+      <div class="space-y-2">
+        <h3 class="text-base font-semibold">${title}</h3>
+        <div class="card bg-base-100 shadow-lg">
+          <div class="card-body p-4">
+            <div class="space-y-1">${rows}</div>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  private renderChildStopsSections(children: Stops[]): string {
+    const { entrances, platforms, genericNodes } =
+      this.groupChildrenByLocationType(children);
+    const sections = [
+      this.renderTypedChildSection('Entrances / Exits', entrances),
+      this.renderTypedChildSection('Platforms', platforms),
+      this.renderTypedChildSection('Generic Nodes', genericNodes),
+    ]
+      .filter(Boolean)
+      .join('');
+
+    if (!sections) {
       return `
         <div class="space-y-4">
           <h2 class="text-lg font-semibold">Child Stops</h2>
@@ -352,36 +399,10 @@ export class StopViewController {
       `;
     }
 
-    const rows = children
-      .map((child) => {
-        const locType =
-          typeof child.location_type === 'number'
-            ? child.location_type
-            : parseInt(child.location_type ?? '0', 10) || 0;
-        const typeLabel =
-          this.LOCATION_TYPE_LABELS[locType] ?? `Type ${locType}`;
-        const name = child.stop_name || child.stop_id;
-        return `
-          <div class="flex items-center justify-between py-2 border-b last:border-b-0">
-            <div>
-              <span class="font-mono text-sm">${escapeAttr(child.stop_id)}</span>
-              ${name !== child.stop_id ? `<span class="ml-2 opacity-70">${escapeAttr(name)}</span>` : ''}
-              <span class="ml-2 badge badge-outline badge-sm">${escapeAttr(typeLabel)}</span>
-            </div>
-            <button class="btn btn-xs btn-ghost child-stop-btn" data-stop-id="${escapeAttr(child.stop_id)}">View</button>
-          </div>
-        `;
-      })
-      .join('');
-
     return `
       <div class="space-y-4">
         <h2 class="text-lg font-semibold">Child Stops</h2>
-        <div class="card bg-base-100 shadow-lg">
-          <div class="card-body p-4">
-            ${rows}
-          </div>
-        </div>
+        ${sections}
       </div>
     `;
   }
@@ -457,32 +478,6 @@ export class StopViewController {
   }
 
   addEventListeners(container: HTMLElement): void {
-    // Child stop links (station view)
-    if (this.dependencies.onStopClick) {
-      const childBtns = container.querySelectorAll('.child-stop-btn');
-      childBtns.forEach((btn) => {
-        btn.addEventListener('click', () => {
-          const stop_id = btn.getAttribute('data-stop-id');
-          if (stop_id) {
-            this.dependencies.onStopClick!(stop_id);
-          }
-        });
-      });
-    }
-
-    // Pathway links (non-station stop view)
-    if (this.dependencies.onPathwayClick) {
-      const pathwayBtns = container.querySelectorAll('.pathway-view-btn');
-      pathwayBtns.forEach((btn) => {
-        btn.addEventListener('click', () => {
-          const pathway_id = btn.getAttribute('data-pathway-id');
-          if (pathway_id) {
-            this.dependencies.onPathwayClick!(pathway_id);
-          }
-        });
-      });
-    }
-
     // Delete stop button — use event delegation so clicks on the SVG child
     // element are caught correctly. Use an AbortController to prevent the
     // listener from accumulating across re-renders of the same container.
