@@ -619,7 +619,7 @@ export class MapController {
         this.layerManager?.setStopsFilter([
           'any',
           ['==', ['get', 'stop_id'], newStation],
-          ['==', ['get', 'parent_station'], newStation],
+          ['==', ['get', 'station_id'], newStation],
         ] as unknown as import('maplibre-gl').FilterSpecification);
         this.layerManager?.updatePathwaysLayer(newStation);
         this.layerManager?.setFocusedPathway(
