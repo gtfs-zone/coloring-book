@@ -110,6 +110,7 @@ export interface ContentRendererDependencies {
     clearHighlights: () => void;
     focusOnAgency: (agency_id: string) => void;
     refreshStops: () => void;
+    focusFeed: () => void;
   };
 
   // Navigation callbacks
@@ -276,6 +277,7 @@ export class PageContentRenderer {
    * Render home page (feed info and agencies list)
    */
   private async renderHome(): Promise<string> {
+    this.dependencies.mapController.focusFeed();
     const agencies = await this.dependencies.relationships.getAgenciesAsync();
 
     // Get feed_info data
@@ -639,6 +641,7 @@ export class PageContentRenderer {
     direction_id?: string
   ): Promise<string> {
     try {
+      this.dependencies.mapController.highlightRoute(route_id);
       // Get the rendered schedule HTML directly
       return await this.dependencies.scheduleController.renderSchedule(
         route_id,
@@ -666,6 +669,7 @@ export class PageContentRenderer {
    * Render service page
    */
   private async renderService(service_id: string): Promise<string> {
+    this.dependencies.mapController.focusFeed();
     // Use the new ServiceViewController for comprehensive service view
     return await this.serviceViewController.renderServiceView(service_id);
   }
