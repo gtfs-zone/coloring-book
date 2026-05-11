@@ -206,6 +206,7 @@ export class PageContentRenderer {
       onAgencyClick: dependencies.onAgencyClick,
       onRouteClick: dependencies.onRouteClick,
       onTimetableClick: dependencies.onTimetableClick,
+      onDeleteService: (service_id) => this.handleDeleteService(service_id),
     };
     this.serviceViewController = new ServiceViewController(
       serviceViewDependencies
@@ -949,6 +950,171 @@ export class PageContentRenderer {
         { label: 'Cancel', className: 'btn-ghost', onClick: () => {} },
         {
           label: `Delete route + ${trips.length} trips + ${allStopTimes.length} stop_times`,
+          className: 'btn-error',
+          onClick: doDelete,
+        },
+      ],
+    });
+  }
+
+  private async handleDeleteService(service_id: string): Promise<void> {
+    console.log(
+      '[PageContentRenderer] handleDeleteService called, service_id:',
+      service_id
+    );
+    const db = this.dependencies.gtfsDatabase;
+    const pm = this.dependencies.patchManager;
+    if (!db || !pm || !db.deleteRow) {
+      console.warn(
+        '[PageContentRenderer] handleDeleteService: missing db/pm/deleteRow'
+      );
+      return;
+    }
+
+    const trips = (await db.queryRows('trips', {
+      service_id,
+    })) as Record<string, unknown>[];
+
+    const stopTimesPerTrip: Array<Record<string, unknown>[]> =
+      await Promise.all(
+        trips.map(
+          (trip) =>
+            db.queryRows('stop_times', {
+              trip_id: trip.trip_id as string,
+            }) as Promise<Record<string, unknown>[]>
+        )
+      );
+    const allStopTimes = stopTimesPerTrip.flat();
+
+    const calendarDates = (await db.queryRows('calendar_dates', {
+      service_id,
+    })) as Record<string, unknown>[];
+
+    const calendarRow = (await db.getRow('calendar', service_id)) as
+      | Record<string, unknown>
+      | undefined;
+
+    const doDelete = async () => {
+      for (const st of allStopTimes) {
+        const key = generateCompositeKeyFromRecord('stop_times', st);
+        await db.deleteRow!('stop_times', key);
+      }
+      for (const trip of trips) {
+        await db.deleteRow!('trips', trip.trip_id as string);
+      }
+      for (const cd of calendarDates) {
+        const key = generateCompositeKeyFromRecord('calendar_dates', cd);
+        await db.deleteRow!('calendar_dates', key);
+      }
+      if (calendarRow) {
+        await db.deleteRow!('calendar', service_id);
+      }
+
+      const deleteOps = [
+        ...allStopTimes.map((st) => ({
+          table: 'stop_times',
+          id: generateCompositeKeyFromRecord('stop_times', st),
+          record: st,
+        })),
+        ...trips.map((trip) => ({
+          table: 'trips',
+          id: trip.trip_id as string,
+          record: trip,
+        })),
+        ...calendarDates.map((cd) => ({
+          table: 'calendar_dates',
+          id: generateCompositeKeyFromRecord('calendar_dates', cd),
+          record: cd,
+        })),
+        ...(calendarRow
+          ? [{ table: 'calendar', id: service_id, record: calendarRow }]
+          : []),
+      ];
+
+      const parts: string[] = [];
+      if (trips.length > 0) {
+        parts.push(`${trips.length} trip${trips.length !== 1 ? 's' : ''}`);
+      }
+      if (allStopTimes.length > 0) {
+        parts.push(
+          `${allStopTimes.length} stop_time${allStopTimes.length !== 1 ? 's' : ''}`
+        );
+      }
+      if (calendarDates.length > 0) {
+        parts.push(
+          `${calendarDates.length} calendar_date${calendarDates.length !== 1 ? 's' : ''}`
+        );
+      }
+      const label =
+        parts.length === 0
+          ? 'Delete service'
+          : `Delete service + ${parts.join(', ')}`;
+      await pm.recordBatchDelete(deleteOps, label);
+
+      console.log(
+        `[PageContentRenderer] Deleted service ${service_id} + ${trips.length} trips + ${allStopTimes.length} stop_times + ${calendarDates.length} calendar_dates`
+      );
+      await navigateToHome();
+    };
+
+    const hasAnyDependents = trips.length > 0 || calendarDates.length > 0;
+
+    if (!hasAnyDependents) {
+      await showModal({
+        title: 'Delete service?',
+        body: `<p>This service has no trips or calendar dates. Are you sure you want to delete it?</p>`,
+        enterAction: 1,
+        escapeAction: 0,
+        actions: [
+          { label: 'Cancel', className: 'btn-ghost', onClick: () => {} },
+          {
+            label: 'Delete service',
+            className: 'btn-error',
+            onClick: doDelete,
+          },
+        ],
+      });
+      return;
+    }
+
+    const summaryParts: string[] = [];
+    if (trips.length > 0) {
+      summaryParts.push(
+        `<strong>${trips.length} trip${trips.length !== 1 ? 's' : ''}</strong>`
+      );
+    }
+    if (allStopTimes.length > 0) {
+      summaryParts.push(
+        `<strong>${allStopTimes.length} stop_time${allStopTimes.length !== 1 ? 's' : ''}</strong>`
+      );
+    }
+    if (calendarDates.length > 0) {
+      summaryParts.push(
+        `<strong>${calendarDates.length} calendar_date${calendarDates.length !== 1 ? 's' : ''}</strong>`
+      );
+    }
+
+    const deleteBtnParts: string[] = [];
+    if (trips.length > 0) {
+      deleteBtnParts.push(`${trips.length} trips`);
+    }
+    if (allStopTimes.length > 0) {
+      deleteBtnParts.push(`${allStopTimes.length} stop_times`);
+    }
+    if (calendarDates.length > 0) {
+      deleteBtnParts.push(`${calendarDates.length} calendar_dates`);
+    }
+
+    await showModal({
+      title: 'Service has dependents',
+      body: `<p>This service has ${summaryParts.join(', ')}.</p>
+             <p class="mt-3">Deleting this service will cascade-delete all its trips, stop_times, and calendar_dates (reversible via undo). Or cancel to keep it.</p>`,
+      enterAction: 1,
+      escapeAction: 0,
+      actions: [
+        { label: 'Cancel', className: 'btn-ghost', onClick: () => {} },
+        {
+          label: `Delete service + ${deleteBtnParts.join(' + ')}`,
           className: 'btn-error',
           onClick: doDelete,
         },
