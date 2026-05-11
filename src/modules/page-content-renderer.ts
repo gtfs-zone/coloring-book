@@ -192,8 +192,6 @@ export class PageContentRenderer {
     const stopViewDependencies: StopViewDependencies = {
       gtfsDatabase: dependencies.gtfsDatabase,
       gtfsRelationships: dependencies.gtfsRelationships || {},
-      onAgencyClick: dependencies.onAgencyClick,
-      onRouteClick: dependencies.onRouteClick,
       onStopClick: dependencies.onStopClick,
       onPathwayClick: dependencies.onPathwayClick,
       onDeleteStop: (stop_id) => this.handleDeleteStop(stop_id),
