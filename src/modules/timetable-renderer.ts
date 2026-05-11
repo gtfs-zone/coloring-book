@@ -3,7 +3,12 @@
  * Handles HTML generation for timetable views and schedule headers
  */
 
-import { Routes, Calendar, CalendarDates } from '../types/gtfs-entities.js';
+import {
+  Routes,
+  Stops,
+  Calendar,
+  CalendarDates,
+} from '../types/gtfs-entities.js';
 import { TimetableData, DirectionInfo } from './timetable-data-processor.js';
 import { TimetableCellRenderer } from './timetable-cell-renderer.js';
 import {
@@ -14,6 +19,46 @@ import {
 import { TripsSchema, GTFS_TABLES } from '../types/gtfs.js';
 import { getStopDisplay, renderOptionLabel } from '../utils/entity-display.js';
 import { renderTrashIcon } from './modal-utils.js';
+
+function getBrouterProfile(routeType: string | number): string {
+  const t = Number(routeType);
+  if ([0, 1, 2, 12].includes(t)) {
+    return 'rail';
+  }
+  if (t === 4) {
+    return 'river';
+  }
+  return 'car-fast';
+}
+
+function buildBrouterUrl(
+  stops: Stops[],
+  routeType: string | number
+): string | null {
+  const geocoded = stops.filter(
+    (s) =>
+      s.stop_lat !== null &&
+      s.stop_lat !== undefined &&
+      s.stop_lon !== null &&
+      s.stop_lon !== undefined
+  );
+  if (geocoded.length < 2) {
+    return null;
+  }
+
+  const lats = geocoded.map((s) => parseFloat(s.stop_lat as string));
+  const lons = geocoded.map((s) => parseFloat(s.stop_lon as string));
+  const centerLat = (lats.reduce((a, b) => a + b, 0) / lats.length).toFixed(4);
+  const centerLon = (lons.reduce((a, b) => a + b, 0) / lons.length).toFixed(4);
+  const lonlats = geocoded
+    .map(
+      (s) =>
+        `${parseFloat(s.stop_lon as string).toFixed(6)},${parseFloat(s.stop_lat as string).toFixed(6)}`
+    )
+    .join(';');
+  const profile = getBrouterProfile(routeType);
+  return `https://brouter.de/brouter-web/#map=12/${centerLat}/${centerLon}/standard&lonlats=${lonlats}&profile=${profile}`;
+}
 
 /**
  * Timetable Renderer - HTML generation for schedule views
@@ -29,10 +74,8 @@ import { renderTrashIcon } from './modal-utils.js';
  */
 export class TimetableRenderer {
   private cellRenderer: TimetableCellRenderer;
+  public availableShapeIds: string[] = [];
 
-  /**
-   * Initialize TimetableRenderer with cell renderer dependency
-   */
   constructor() {
     this.cellRenderer = new TimetableCellRenderer();
   }
@@ -126,7 +169,7 @@ export class TimetableRenderer {
 
     return `
       <div class="border-b border-base-300">
-        <div class="tabs tabs-border p-2">
+        <div class="tabs tabs-border p-2 flex items-center">
           ${tabsHTML}
         </div>
       </div>
@@ -272,7 +315,28 @@ export class TimetableRenderer {
     const value = trip[config.field] ?? '';
     const inputId = `trip-prop-${trip_id}-${config.field}`;
 
-    if (config.type === 'select' && config.options) {
+    if (config.field === 'shape_id') {
+      const optionsHtml = [
+        `<option value=""${value === '' ? ' selected' : ''}>— none —</option>`,
+        ...this.availableShapeIds.map((sid) => {
+          const selected = String(value) === sid ? ' selected' : '';
+          return `<option value="${this.escapeHtml(sid)}"${selected}>${this.escapeHtml(sid)}</option>`;
+        }),
+      ].join('');
+      return `
+        <td class="text-center p-2">
+          <select
+            id="${inputId}"
+            class="select select-xs w-full"
+            data-trip-id="${trip_id}"
+            data-field="${config.field}"
+            data-table="trips.txt"
+            onchange="gtfsEditor.scheduleController.updateTripProperty('${trip_id}', '${config.field}', this.value)">
+            ${optionsHtml}
+          </select>
+        </td>
+      `;
+    } else if (config.type === 'select' && config.options) {
       const optionsHtml = [
         '<option value="">-</option>',
         ...config.options.map((opt) => {
@@ -347,10 +411,19 @@ export class TimetableRenderer {
     const trips = data.trips;
     const tripHeaders = trips
       .map((trip) => {
+        const tripStops = data.stops.filter((_, i) => trip.stopTimes.has(i));
+        const brouterUrl = buildBrouterUrl(
+          tripStops,
+          data.route.route_type ?? ''
+        );
+        const brouterLink = brouterUrl
+          ? `<a href="${brouterUrl}" target="_blank" rel="noopener" class="btn btn-xs btn-outline mt-1" title="Open in brouter">↗</a>`
+          : '';
         return `
           <td class="trip-header text-center min-w-[80px] p-2 text-xs font-mono">
             ${this.escapeHtml(trip.trip_id)}
             <button class="btn btn-xs btn-error btn-outline delete-trip-btn mt-1" data-trip-id="${this.escapeHtml(trip.trip_id)}" title="Delete">${renderTrashIcon('h-3 w-3')}</button>
+            ${brouterLink}
           </td>
         `;
       })
