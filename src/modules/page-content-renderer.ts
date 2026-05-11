@@ -43,6 +43,11 @@ import { showModal } from './modal-utils.js';
 import { navigateToHome } from './navigation-actions.js';
 import { generateCompositeKeyFromRecord } from '../utils/gtfs-primary-keys.js';
 import { normalizeAgencyId } from '../utils/agency-helpers.js';
+import {
+  renderServiceReference,
+  SERVICE_REF_ROW,
+  ENTITY_REF_BTN,
+} from '../utils/entity-references.js';
 
 /**
  * Interface for injected dependencies
@@ -569,10 +574,15 @@ export class PageContentRenderer {
     `
         : '';
 
-    // Render services list
+    // Build lookup map for calendar data (full calendar rows only)
+    const calendarByServiceId = new Map(
+      allServices.map((s) => [s.service_id as string, s])
+    );
+
+    // Render timetables list
     const servicesListHTML = `
       <div class="space-y-4">
-        <h2 class="text-lg font-semibold">Services</h2>
+        <h2 class="text-lg font-semibold">Timetables</h2>
         <div class="card bg-base-100 shadow-lg">
           <div class="card-body p-4">
             ${newServiceSelectorHTML}
@@ -588,35 +598,12 @@ export class PageContentRenderer {
                   </div>`
                   : `<div class="space-y-2 ${newServiceSelectorHTML ? 'mt-4' : ''}">
                     ${Object.entries(serviceGroups)
-                      .map(([service_id, serviceTrips]) => {
-                        const tripCount = serviceTrips.length;
-                        const directions = [
-                          ...new Set(
-                            serviceTrips.map(
-                              (trip: unknown) =>
-                                (trip as Record<string, unknown>).direction_id
-                            )
-                          ),
-                        ];
-
-                        return `
-                          <div class="flex items-center justify-between p-3 rounded-lg hover:bg-base-200 cursor-pointer transition-colors service-row"
-                               data-service-id="${service_id}">
-                            <div class="flex-1">
-                              <div class="font-semibold">Service ${service_id}</div>
-                              <div class="text-sm text-base-content/70">
-                                ${tripCount} trip${tripCount !== 1 ? 's' : ''}
-                                ${directions.length > 1 ? ' • Both directions' : ''}
-                              </div>
-                            </div>
-                            <button class="btn btn-sm btn-ghost route-timetable-btn"
-                                    data-route-id="${route_id}"
-                                    data-service-id="${service_id}">
-                              View Timetable
-                            </button>
-                          </div>
-                        `;
-                      })
+                      .map(([service_id, serviceTrips]) =>
+                        renderServiceReference(
+                          calendarByServiceId.get(service_id) ?? { service_id },
+                          { tripCount: serviceTrips.length, route_id }
+                        )
+                      )
                       .join('')}
                   </div>`
             }
@@ -711,38 +698,24 @@ export class PageContentRenderer {
       });
     });
 
-    // Service timetable button clicks (route page)
-    const routeTimetableButtons = container.querySelectorAll(
-      '.route-timetable-btn'
-    );
-    routeTimetableButtons.forEach((button) => {
-      button.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const route_id = button.getAttribute('data-route-id');
-        const service_id = button.getAttribute('data-service-id');
+    // Service reference row clicks (route page) → timetable
+    const serviceRefRows = container.querySelectorAll(`.${SERVICE_REF_ROW}`);
+    serviceRefRows.forEach((row) => {
+      row.addEventListener('click', () => {
+        const route_id = row.getAttribute('data-route-id');
+        const service_id = row.getAttribute('data-service-id');
         if (route_id && service_id) {
           this.dependencies.onTimetableClick(route_id, service_id);
         }
       });
     });
 
-    // Service row clicks (route page)
-    const serviceRows = container.querySelectorAll('.service-row');
-    serviceRows.forEach((row) => {
-      row.addEventListener('click', () => {
-        const service_id = row.getAttribute('data-service-id');
-        if (service_id && this.dependencies.onServiceClick) {
-          this.dependencies.onServiceClick(service_id);
-        }
-      });
-    });
-
-    // Service link clicks (on route page)
-    const serviceLinks = container.querySelectorAll('.service-link');
-    serviceLinks.forEach((link) => {
-      link.addEventListener('click', (e) => {
-        e.stopPropagation(); // Prevent event bubbling
-        const service_id = link.getAttribute('data-service-id');
+    // "View Service" button clicks (route page) → service page
+    const entityRefBtns = container.querySelectorAll(`.${ENTITY_REF_BTN}`);
+    entityRefBtns.forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const service_id = btn.getAttribute('data-service-id');
         if (service_id && this.dependencies.onServiceClick) {
           this.dependencies.onServiceClick(service_id);
         }
