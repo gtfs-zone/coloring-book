@@ -9,6 +9,7 @@
 import type { Agency, Routes, Trips } from '../types/gtfs.js';
 import type { QueryOnlyDatabase } from '../utils/field-component.js';
 import { normalizeAgencyId } from '../utils/agency-helpers.js';
+import { renderTrashIcon } from './modal-utils.js';
 import {
   renderRouteReference,
   ROUTE_REF_ROW,
@@ -31,6 +32,7 @@ export interface ServiceViewDependencies {
     service_id: string,
     direction_id?: string
   ) => void;
+  onDeleteService?: (service_id: string) => void;
 }
 
 export class ServiceViewController {
@@ -181,7 +183,10 @@ export class ServiceViewController {
 
     return `
       <div class="space-y-4">
-        <h2 class="text-lg font-semibold">Service Schedule</h2>
+        <div class="flex items-center justify-between gap-2">
+          <h2 class="text-lg font-semibold">Service Schedule</h2>
+          <button class="btn btn-sm btn-error btn-outline delete-service-btn" data-service-id="${service_id}" title="Delete">${renderTrashIcon()}</button>
+        </div>
         <div class="card bg-base-100 shadow-lg">
           <div class="card-body p-4">
             ${serviceEditorHTML}
@@ -254,6 +259,17 @@ export class ServiceViewController {
    * This should be called after the content is inserted into the DOM
    */
   addEventListeners(container: HTMLElement): void {
+    // Delete service button
+    const deleteServiceBtn = container.querySelector('.delete-service-btn');
+    if (deleteServiceBtn) {
+      deleteServiceBtn.addEventListener('click', () => {
+        const service_id = deleteServiceBtn.getAttribute('data-service-id');
+        if (service_id && this.dependencies.onDeleteService) {
+          this.dependencies.onDeleteService(service_id);
+        }
+      });
+    }
+
     // Route reference row click → timetable
     const routeRows = container.querySelectorAll(`.${ROUTE_REF_ROW}`);
     routeRows.forEach((row) => {
