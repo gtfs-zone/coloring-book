@@ -567,8 +567,12 @@ export class GTFSParser {
       console.time('[GTFS] parseFile total');
 
       if (!alreadyStarted) {
-        feedProgressIndicator.startLoading(operation, 'Loading GTFS file...');
+        feedProgressIndicator.startLoading(operation, 'Reading file...');
       }
+
+      // Convert File/Blob to ArrayBuffer for zero-copy transfer to worker
+      const buffer = await file.arrayBuffer();
+
       feedProgressIndicator.updateProgress(
         operation,
         10,
@@ -579,9 +583,6 @@ export class GTFSParser {
       await this.gtfsDatabase.clearDatabase();
       this.gtfsDatabase.clearVirtualTables();
       console.timeEnd('[GTFS] clearDatabase');
-
-      // Convert File/Blob to ArrayBuffer for zero-copy transfer to worker
-      const buffer = await file.arrayBuffer();
 
       // Spawn worker and transfer the buffer (zero-copy)
       const worker = new Worker(
