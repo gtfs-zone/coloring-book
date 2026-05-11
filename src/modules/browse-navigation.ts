@@ -70,6 +70,8 @@ export class BrowseNavigation {
     setRouteSelectCallback: (callback: (route_id: string) => void) => void;
     setStopSelectCallback: (callback: (stop_id: string) => void) => void;
     refreshStops: () => void;
+    focusFeed: () => void;
+    highlightAgencyRoutes: (agency_id: string) => void;
   };
   public uiController: {
     showFileInEditor: (filename: string, rowId?: string) => void;
@@ -207,6 +209,8 @@ export class BrowseNavigation {
       setRouteSelectCallback: (callback: (route_id: string) => void) => void;
       setStopSelectCallback: (callback: (stop_id: string) => void) => void;
       refreshStops: () => void;
+      focusFeed: () => void;
+      highlightAgencyRoutes: (agency_id: string) => void;
     },
     scheduleController?: {
       renderSchedule: (
@@ -323,6 +327,7 @@ export class BrowseNavigation {
         focusOnAgency: (agency_id: string) =>
           this.highlightAgencyOnMap(agency_id),
         refreshStops: () => this.mapController.refreshStops(),
+        focusFeed: () => this.mapController.focusFeed(),
       },
       onAgencyClick: (agency_id: string) => navigateToAgency(agency_id),
       onRouteClick: (route_id: string) => navigateToRoute(route_id),
@@ -532,8 +537,8 @@ export class BrowseNavigation {
   }
 
   // Map highlighting methods
-  highlightAgencyOnMap(_agency_id: string) {
-    // mapController does not expose agency-level route highlighting
+  highlightAgencyOnMap(agency_id: string) {
+    this.mapController?.highlightAgencyRoutes(agency_id);
   }
 
   highlightRouteOnMap(route_id: string) {
