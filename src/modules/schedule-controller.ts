@@ -15,6 +15,7 @@ import { TimetableDatabase } from './timetable-database.js';
 import { generateCompositeKeyFromRecord } from '../utils/gtfs-primary-keys.js';
 import { patchUpdate } from '../utils/patch-utils.js';
 import { getStopDisplay, renderOptionLabel } from '../utils/entity-display.js';
+import { showModal } from './modal-utils.js';
 
 // Enhanced GTFS interfaces using standard GTFS property names
 
@@ -61,6 +62,8 @@ interface GTFSParserInterface {
       oldKeys: string[],
       newRows: GTFSTableMap[T][]
     ): Promise<void>;
+    deleteRow(tableName: string, key: string): Promise<void>;
+    deleteRows(tableName: string, keys: string[]): Promise<void>;
   };
 }
 
@@ -83,6 +86,10 @@ interface PatchManagerInterface {
       before: Record<string, unknown>;
       after: Record<string, unknown>;
     }>,
+    label: string
+  ): Promise<void>;
+  recordBatchDelete(
+    ops: Array<{ table: string; id: string; record: Record<string, unknown> }>,
     label: string
   ): Promise<void>;
 }
@@ -127,6 +134,8 @@ export class ScheduleController {
   // because the browser resets both values during async DB awaits.
   public timetableScrollLeft = 0;
   public timetableScrollTop = 0;
+
+  private deleteTripAbortController: AbortController | null = null;
 
   /**
    * Initialize ScheduleController with required dependencies
@@ -995,6 +1004,25 @@ export class ScheduleController {
           newScrollDiv.scrollTop = savedScrollTop;
         }
       }
+
+      if (this.deleteTripAbortController) {
+        this.deleteTripAbortController.abort();
+      }
+      this.deleteTripAbortController = new AbortController();
+      container.addEventListener(
+        'click',
+        async (e) => {
+          const btn = (e.target as Element).closest('.delete-trip-btn');
+          if (!btn) {
+            return;
+          }
+          const trip_id = btn.getAttribute('data-trip-id');
+          if (trip_id) {
+            await this.handleDeleteTrip(trip_id);
+          }
+        },
+        { signal: this.deleteTripAbortController.signal }
+      );
     }
   }
 
@@ -1465,6 +1493,91 @@ export class ScheduleController {
       console.error('[ScheduleController] changeStopAtRow failed:', error);
       selectEl.value = oldStopId;
     }
+  }
+
+  async handleDeleteTrip(trip_id: string): Promise<void> {
+    const db = this.gtfsParser.gtfsDatabase;
+    const pm = this.patchManager;
+    if (!pm) {
+      console.warn(
+        '[ScheduleController] handleDeleteTrip: missing patchManager'
+      );
+      return;
+    }
+
+    const trips = await db.queryRows('trips', { trip_id });
+    const trip = trips[0] as Record<string, unknown> | undefined;
+    if (!trip) {
+      console.warn(
+        '[ScheduleController] handleDeleteTrip: trip not found',
+        trip_id
+      );
+      return;
+    }
+
+    const stopTimes = (await db.queryRows('stop_times', { trip_id })) as Record<
+      string,
+      unknown
+    >[];
+
+    const doDelete = async () => {
+      const stopTimeKeys = stopTimes.map((st) =>
+        generateCompositeKeyFromRecord('stop_times', st)
+      );
+      if (stopTimeKeys.length > 0) {
+        await db.deleteRows('stop_times', stopTimeKeys);
+      }
+      await db.deleteRow('trips', trip_id);
+
+      const ops = [
+        ...stopTimes.map((st) => ({
+          table: 'stop_times',
+          id: generateCompositeKeyFromRecord('stop_times', st),
+          record: st,
+        })),
+        { table: 'trips', id: trip_id, record: trip },
+      ];
+      const label =
+        stopTimes.length > 0
+          ? `Delete trip ${trip_id} + ${stopTimes.length} stop_time${stopTimes.length !== 1 ? 's' : ''}`
+          : `Delete trip ${trip_id}`;
+      await pm.recordBatchDelete(ops, label);
+
+      console.log(
+        `[ScheduleController] Deleted trip ${trip_id}${stopTimes.length > 0 ? ` and ${stopTimes.length} stop_times` : ''}`
+      );
+      await this.refreshCurrentTimetable();
+    };
+
+    if (stopTimes.length === 0) {
+      await showModal({
+        title: 'Delete trip?',
+        body: `<p>Delete trip <strong>${trip_id}</strong>? This cannot be undone without undo.</p>`,
+        enterAction: 1,
+        escapeAction: 0,
+        actions: [
+          { label: 'Cancel', className: 'btn-ghost', onClick: () => {} },
+          { label: 'Delete trip', className: 'btn-error', onClick: doDelete },
+        ],
+      });
+      return;
+    }
+
+    await showModal({
+      title: 'Trip has stop times',
+      body: `<p>Trip <strong>${trip_id}</strong> has <strong>${stopTimes.length} stop_time${stopTimes.length !== 1 ? 's' : ''}</strong>.</p>
+             <p class="mt-3">Deleting this trip will also remove all its stop times (reversible via undo).</p>`,
+      enterAction: 1,
+      escapeAction: 0,
+      actions: [
+        { label: 'Cancel', className: 'btn-ghost', onClick: () => {} },
+        {
+          label: `Delete trip + ${stopTimes.length} stop_time${stopTimes.length !== 1 ? 's' : ''}`,
+          className: 'btn-error',
+          onClick: doDelete,
+        },
+      ],
+    });
   }
 
   // Note: Old getSortedStops method removed - now handled directly by enhanced SCS

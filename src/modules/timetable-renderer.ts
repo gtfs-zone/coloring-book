@@ -349,6 +349,7 @@ export class TimetableRenderer {
         return `
           <td class="trip-header text-center min-w-[80px] p-2 text-xs font-mono">
             ${this.escapeHtml(trip.trip_id)}
+            <button class="btn btn-xs btn-error btn-outline delete-trip-btn mt-1" data-trip-id="${this.escapeHtml(trip.trip_id)}">Delete</button>
           </td>
         `;
       })
