@@ -1,3 +1,24 @@
+## v0.17.0 (2026-05-12)
+
+### Feat
+
+- per-trip brouter links, upload icon, click-away modals
+- render shape_id as dropdown in timetable trip properties
+- add brouter deep-link to timetable direction tabs
+- add ShapesManager modal with GPX import/replace/delete
+- add GPX parser utility for shapes import
+- replace Transit Network section with Timetables on stop page
+
+### Fix
+
+- use update op when re-assigning trips to replaced shape
+- re-assign trips to shape geometry after GPX replace
+
+### Refactor
+
+- simplify ShapesManager types and file picker
+- consolidate stop_times queries into fetchStopRelations
+
 ## v0.16.1 (2026-05-11)
 
 ## v0.16.0 (2026-05-11)
