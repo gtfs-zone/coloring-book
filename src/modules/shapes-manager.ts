@@ -1,10 +1,9 @@
 import { showModal, renderTrashIcon, renderUploadIcon } from './modal-utils.js';
 import type { GTFSParser } from './gtfs-parser.js';
 import type { PatchManager } from './patch-manager.js';
+import type { Shapes } from '../types/gtfs-entities.js';
 import { parseGPX } from '../utils/gpx-parser.js';
 import { generateCompositeKeyFromRecord } from '../utils/gtfs-primary-keys.js';
-
-type ShapeRow = Record<string, string | number>;
 
 function esc(s: string): string {
   const div = document.createElement('div');
@@ -26,11 +25,6 @@ function pickGPXFile(): Promise<File | null> {
     };
     input.addEventListener('change', () => done(input.files?.[0] ?? null));
     input.addEventListener('cancel', () => done(null));
-    const onWindowFocus = () => {
-      setTimeout(() => done(null), 300);
-      window.removeEventListener('focus', onWindowFocus);
-    };
-    window.addEventListener('focus', onWindowFocus);
     input.click();
   });
 }
@@ -92,7 +86,7 @@ export class ShapesManager {
     const getShapes = async (): Promise<Map<string, number>> => {
       const rows = (await this.gtfsParser.gtfsDatabase.getAllRows(
         'shapes'
-      )) as ShapeRow[];
+      )) as Shapes[];
       const map = new Map<string, number>();
       for (const row of rows) {
         const id = String(row.shape_id);
@@ -171,7 +165,7 @@ export class ShapesManager {
 
     const rows = (await this.gtfsParser.gtfsDatabase.getAllRows(
       'shapes'
-    )) as ShapeRow[];
+    )) as Shapes[];
     const toDelete = rows.filter((r) => String(r.shape_id) === shapeId);
     const keys = toDelete.map((r) =>
       generateCompositeKeyFromRecord('shapes', r)
@@ -193,7 +187,7 @@ export class ShapesManager {
       return;
     }
 
-    let newRows: ShapeRow[];
+    let newRows: Shapes[];
     try {
       newRows = await parseGPX(file, shapeId);
     } catch (e) {
@@ -209,7 +203,7 @@ export class ShapesManager {
     // Delete old rows
     const existing = (await this.gtfsParser.gtfsDatabase.getAllRows(
       'shapes'
-    )) as ShapeRow[];
+    )) as Shapes[];
     const toDelete = existing.filter((r) => String(r.shape_id) === shapeId);
     const deleteKeys = toDelete.map((r) =>
       generateCompositeKeyFromRecord('shapes', r)
@@ -290,7 +284,7 @@ export class ShapesManager {
               return true;
             }
 
-            let newRows: ShapeRow[];
+            let newRows: Shapes[];
             try {
               newRows = await parseGPX(file, shapeId);
             } catch (e) {
