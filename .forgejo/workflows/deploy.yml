@@ -13,6 +13,7 @@ jobs:
       - name: Install dependencies
         run: |
           apk add --no-cache nodejs npm git
+          npm install -g pnpm
 
       - name: Checkout
         uses: actions/checkout@v6
@@ -21,10 +22,10 @@ jobs:
           github-server-url: https://git.kcfam.us
 
       - name: Install node modules
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       - name: Build
-        run: npm run build
+        run: pnpm build
 
       - name: Deploy
         run: |
