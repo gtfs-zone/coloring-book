@@ -553,7 +553,10 @@ export class GTFSParser {
     await this.persistDirtyBlobs();
   }
 
-  async parseFile(file: File | Blob): Promise<{
+  async parseFile(
+    file: File | Blob,
+    alreadyStarted = false
+  ): Promise<{
     data: { [fileName: string]: GTFSFileData };
     unknownFiles: string[];
   }> {
@@ -563,7 +566,13 @@ export class GTFSParser {
       console.log('Loading GTFS file:', (file as File).name || 'blob');
       console.time('[GTFS] parseFile total');
 
-      feedProgressIndicator.startLoading(operation, 'Loading GTFS file...');
+      if (!alreadyStarted) {
+        feedProgressIndicator.startLoading(operation, 'Reading file...');
+      }
+
+      // Convert File/Blob to ArrayBuffer for zero-copy transfer to worker
+      const buffer = await file.arrayBuffer();
+
       feedProgressIndicator.updateProgress(
         operation,
         10,
@@ -574,9 +583,6 @@ export class GTFSParser {
       await this.gtfsDatabase.clearDatabase();
       this.gtfsDatabase.clearVirtualTables();
       console.timeEnd('[GTFS] clearDatabase');
-
-      // Convert File/Blob to ArrayBuffer for zero-copy transfer to worker
-      const buffer = await file.arrayBuffer();
 
       // Spawn worker and transfer the buffer (zero-copy)
       const worker = new Worker(
@@ -658,11 +664,14 @@ export class GTFSParser {
   }
 
   async parseFromURL(url: string): Promise<{ unknownFiles: string[] }> {
+    const operation = 'parseFile';
     console.log('[GTFSParser] Fetching GTFS from URL:', url);
+    feedProgressIndicator.startLoading(operation, 'Downloading feed...');
     let response: Response;
     try {
       response = await fetch(url);
     } catch (networkError) {
+      feedProgressIndicator.finishLoading(operation);
       const msg =
         networkError instanceof TypeError
           ? `Network error — could not reach ${url}. Check your connection or whether the server allows cross-origin requests (CORS).`
@@ -673,15 +682,17 @@ export class GTFSParser {
     }
 
     if (!response.ok) {
+      feedProgressIndicator.finishLoading(operation);
       const msg = `HTTP ${response.status} ${response.statusText} from ${url}`;
 
       console.error('[GTFSParser]', msg);
       throw new Error(msg);
     }
 
-    console.log('[GTFSParser] Download complete, parsing ZIP...');
     const blob = await response.blob();
-    const { unknownFiles } = await this.parseFile(blob);
+    feedProgressIndicator.updateProgress(operation, 5, 'Preparing...');
+    console.log('[GTFSParser] Download complete, parsing ZIP...');
+    const { unknownFiles } = await this.parseFile(blob, true);
     return { unknownFiles };
   }
 

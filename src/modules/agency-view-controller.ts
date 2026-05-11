@@ -11,15 +11,20 @@ import {
   type QueryOnlyDatabase,
 } from '../utils/field-component.js';
 import { GTFS_TABLES, AgencySchema } from '../types/gtfs.js';
-import { getRouteDisplay, renderCardLabel } from '../utils/entity-display.js';
 import {
   normalizeAgencyId,
   agencyRouteFilter,
 } from '../utils/agency-helpers.js';
+import {
+  renderRouteReference,
+  ROUTE_REF_ROW,
+} from '../utils/entity-references.js';
+import { renderTrashIcon } from './modal-utils.js';
 
 export interface AgencyViewDependencies {
   gtfsDatabase?: QueryOnlyDatabase;
   onRouteClick: (route_id: string) => void;
+  onDeleteAgency?: (agency_id: string) => void;
 }
 
 export class AgencyViewController {
@@ -47,11 +52,24 @@ export class AgencyViewController {
       // Get related routes
       const routes = await this.getRoutesForAgency(agency_id);
 
+      // Build trip count per route
+      const allTrips = ((await this.dependencies.gtfsDatabase?.queryRows(
+        'trips'
+      )) ?? []) as Record<string, unknown>[];
+      const routeIdSet = new Set(routes.map((r) => r.route_id));
+      const tripCountByRoute = new Map<string, number>();
+      for (const trip of allTrips) {
+        const rid = trip.route_id as string;
+        if (routeIdSet.has(rid)) {
+          tripCountByRoute.set(rid, (tripCountByRoute.get(rid) ?? 0) + 1);
+        }
+      }
+
       // Render complete view
       const html = `
         <div class="p-4 space-y-4">
           ${this.renderAgencyProperties(agency)}
-          ${this.renderRoutesList(routes, agency_id)}
+          ${this.renderRoutesList(routes, agency_id, tripCountByRoute)}
         </div>
       `;
       console.log('Agency view HTML length:', html.length);
@@ -75,7 +93,10 @@ export class AgencyViewController {
 
     return `
       <div class="space-y-4">
-        <h2 class="text-lg font-semibold">Agency Properties</h2>
+        <div class="flex items-center justify-between gap-2">
+          <h2 class="text-lg font-semibold">Agency Properties</h2>
+          <button class="btn btn-sm btn-error btn-outline delete-agency-btn" data-agency-id="${this.currentAgencyId ?? ''}" title="Delete">${renderTrashIcon()}</button>
+        </div>
         <div class="card bg-base-100 shadow-lg">
           <div class="card-body p-4">
             <div class="max-w-md">
@@ -90,9 +111,17 @@ export class AgencyViewController {
   /**
    * Render routes list section
    */
-  private renderRoutesList(routes: Routes[], agency_id: string): string {
+  private renderRoutesList(
+    routes: Routes[],
+    agency_id: string,
+    tripCountByRoute: Map<string, number>
+  ): string {
     const routeItems = routes
-      .map((route) => this.renderRouteItem(route))
+      .map((route) =>
+        renderRouteReference(route as Record<string, unknown>, {
+          tripCount: tripCountByRoute.get(route.route_id),
+        })
+      )
       .join('');
 
     return `
@@ -123,24 +152,6 @@ export class AgencyViewController {
                   </div>`
             }
           </div>
-        </div>
-      </div>
-    `;
-  }
-
-  /**
-   * Render individual route item
-   */
-  private renderRouteItem(route: Routes): string {
-    const routeId = route.route_id;
-    const routeColor = route.route_color ? `#${route.route_color}` : '#6366f1';
-
-    return `
-      <div class="flex items-center gap-3 p-3 rounded-lg hover:bg-base-200 cursor-pointer transition-colors route-item"
-           data-route-id="${routeId}">
-        <div class="w-3 h-3 rounded-full flex-shrink-0" style="background-color: ${routeColor}"></div>
-        <div class="flex-1 min-w-0">
-          <div class="font-semibold">${renderCardLabel(getRouteDisplay(route as unknown as Record<string, string>))}</div>
         </div>
       </div>
     `;
@@ -204,8 +215,8 @@ export class AgencyViewController {
    * Add event listeners for interactive elements
    */
   addEventListeners(container: HTMLElement): void {
-    // Route item clicks
-    const routeItems = container.querySelectorAll('.route-item');
+    // Route reference row clicks
+    const routeItems = container.querySelectorAll(`.${ROUTE_REF_ROW}`);
     routeItems.forEach((item) => {
       item.addEventListener('click', () => {
         const route_id = item.getAttribute('data-route-id');
@@ -214,6 +225,17 @@ export class AgencyViewController {
         }
       });
     });
+
+    // Delete agency button
+    const deleteBtn = container.querySelector('.delete-agency-btn');
+    if (deleteBtn) {
+      deleteBtn.addEventListener('click', () => {
+        const agency_id = deleteBtn.getAttribute('data-agency-id');
+        if (agency_id && this.dependencies.onDeleteAgency) {
+          this.dependencies.onDeleteAgency(agency_id);
+        }
+      });
+    }
   }
 
   /**
