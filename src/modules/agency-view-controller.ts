@@ -23,6 +23,7 @@ import {
 export interface AgencyViewDependencies {
   gtfsDatabase?: QueryOnlyDatabase;
   onRouteClick: (route_id: string) => void;
+  onDeleteAgency?: (agency_id: string) => void;
 }
 
 export class AgencyViewController {
@@ -91,7 +92,10 @@ export class AgencyViewController {
 
     return `
       <div class="space-y-4">
-        <h2 class="text-lg font-semibold">Agency Properties</h2>
+        <div class="flex items-center justify-between gap-2">
+          <h2 class="text-lg font-semibold">Agency Properties</h2>
+          <button class="btn btn-sm btn-error btn-outline delete-agency-btn" data-agency-id="${this.currentAgencyId ?? ''}">Delete Agency</button>
+        </div>
         <div class="card bg-base-100 shadow-lg">
           <div class="card-body p-4">
             <div class="max-w-md">
@@ -220,6 +224,17 @@ export class AgencyViewController {
         }
       });
     });
+
+    // Delete agency button
+    const deleteBtn = container.querySelector('.delete-agency-btn');
+    if (deleteBtn) {
+      deleteBtn.addEventListener('click', () => {
+        const agency_id = deleteBtn.getAttribute('data-agency-id');
+        if (agency_id && this.dependencies.onDeleteAgency) {
+          this.dependencies.onDeleteAgency(agency_id);
+        }
+      });
+    }
   }
 
   /**

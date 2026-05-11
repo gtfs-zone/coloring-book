@@ -193,6 +193,7 @@ export class PageContentRenderer {
     const agencyViewDependencies: AgencyViewDependencies = {
       gtfsDatabase: dependencies.gtfsDatabase,
       onRouteClick: dependencies.onRouteClick,
+      onDeleteAgency: (agency_id) => this.handleDeleteAgency(agency_id),
     };
     this.agencyViewController = new AgencyViewController(
       agencyViewDependencies
@@ -1115,6 +1116,134 @@ export class PageContentRenderer {
         { label: 'Cancel', className: 'btn-ghost', onClick: () => {} },
         {
           label: `Delete service + ${deleteBtnParts.join(' + ')}`,
+          className: 'btn-error',
+          onClick: doDelete,
+        },
+      ],
+    });
+  }
+
+  private async handleDeleteAgency(agency_id: string): Promise<void> {
+    console.log(
+      '[PageContentRenderer] handleDeleteAgency called, agency_id:',
+      agency_id
+    );
+    const db = this.dependencies.gtfsDatabase;
+    const pm = this.dependencies.patchManager;
+    if (!db || !pm || !db.deleteRow) {
+      console.warn(
+        '[PageContentRenderer] handleDeleteAgency: missing db/pm/deleteRow'
+      );
+      return;
+    }
+
+    const agencyRows = await db.queryRows('agency', { agency_id });
+    const agency = agencyRows[0] as Record<string, unknown> | undefined;
+    if (!agency) {
+      console.warn(
+        '[PageContentRenderer] handleDeleteAgency: agency not found for id',
+        agency_id
+      );
+      return;
+    }
+
+    const routes = (await db.queryRows('routes', {
+      agency_id,
+    })) as Record<string, unknown>[];
+
+    const tripsPerRoute: Array<Record<string, unknown>[]> = await Promise.all(
+      routes.map(
+        (route) =>
+          db.queryRows('trips', {
+            route_id: route.route_id as string,
+          }) as Promise<Record<string, unknown>[]>
+      )
+    );
+    const allTrips = tripsPerRoute.flat();
+
+    const stopTimesPerTrip: Array<Record<string, unknown>[]> =
+      await Promise.all(
+        allTrips.map(
+          (trip) =>
+            db.queryRows('stop_times', {
+              trip_id: trip.trip_id as string,
+            }) as Promise<Record<string, unknown>[]>
+        )
+      );
+    const allStopTimes = stopTimesPerTrip.flat();
+
+    const doDelete = async () => {
+      for (const st of allStopTimes) {
+        const key = generateCompositeKeyFromRecord('stop_times', st);
+        await db.deleteRow!('stop_times', key);
+      }
+      for (const trip of allTrips) {
+        await db.deleteRow!('trips', trip.trip_id as string);
+      }
+      for (const route of routes) {
+        await db.deleteRow!('routes', route.route_id as string);
+      }
+      await db.deleteRow!('agency', agency_id);
+
+      const deleteOps = [
+        ...allStopTimes.map((st) => ({
+          table: 'stop_times',
+          id: generateCompositeKeyFromRecord('stop_times', st),
+          record: st,
+        })),
+        ...allTrips.map((trip) => ({
+          table: 'trips',
+          id: trip.trip_id as string,
+          record: trip,
+        })),
+        ...routes.map((route) => ({
+          table: 'routes',
+          id: route.route_id as string,
+          record: route,
+        })),
+        { table: 'agency', id: agency_id, record: agency },
+      ];
+
+      const label =
+        routes.length === 0
+          ? 'Delete agency'
+          : `Delete agency + ${routes.length} route${routes.length !== 1 ? 's' : ''} + ${allTrips.length} trip${allTrips.length !== 1 ? 's' : ''} + ${allStopTimes.length} stop_time${allStopTimes.length !== 1 ? 's' : ''}`;
+      await pm.recordBatchDelete(deleteOps, label);
+
+      console.log(
+        `[PageContentRenderer] Deleted agency ${agency_id} + ${routes.length} routes + ${allTrips.length} trips + ${allStopTimes.length} stop_times`
+      );
+      await navigateToHome();
+    };
+
+    if (routes.length === 0) {
+      await showModal({
+        title: 'Delete agency?',
+        body: `<p>This agency has no routes. Are you sure you want to delete it?</p>`,
+        enterAction: 1,
+        escapeAction: 0,
+        actions: [
+          { label: 'Cancel', className: 'btn-ghost', onClick: () => {} },
+          {
+            label: 'Delete agency',
+            className: 'btn-error',
+            onClick: doDelete,
+          },
+        ],
+      });
+      return;
+    }
+
+    await showModal({
+      title: 'Agency has routes',
+      body: `<p>This agency has <strong>${routes.length} route${routes.length !== 1 ? 's' : ''}</strong>, <strong>${allTrips.length} trip${allTrips.length !== 1 ? 's' : ''}</strong>, and <strong>${allStopTimes.length} stop_time${allStopTimes.length !== 1 ? 's' : ''}</strong>.</p>
+             <p class="mt-3">Deleting this agency will cascade-delete all its routes, trips, and stop_times (reversible via undo). Or cancel to keep it.</p>`,
+      enterAction: 1,
+      escapeAction: 0,
+      actions: [
+        { label: 'Cancel', className: 'btn-ghost', onClick: () => {} },
+        {
+          label: `Delete agency + ${routes.length} routes + ${allTrips.length} trips + ${allStopTimes.length} stop_times`,
           className: 'btn-error',
           onClick: doDelete,
         },
