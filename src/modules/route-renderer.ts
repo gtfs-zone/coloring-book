@@ -801,14 +801,30 @@ export class RouteRenderer {
 
       // Update geometry.coordinates in-place for all features using this shape
       const geomKey = `shape:${shape_id}`;
+      let anyUpdated = false;
       for (const [featureKey, feat] of this.routeFeatures) {
         if (featureKey.endsWith(`::${geomKey}`)) {
           feat.geometry.coordinates = newCoords;
+          anyUpdated = true;
         }
       }
-      console.log(
-        `[RouteRenderer] invalidateShape shape_id=${shape_id} op=${op} → updated coords (${newCoords.length} pts)`
-      );
+
+      if (!anyUpdated) {
+        // Shape was previously removed (e.g. delete+insert from replace). Re-assign all trips
+        // that reference this shape_id so they pick up the new shape geometry.
+        const trips = this.gtfsParser.getFileDataSyncTyped<Trips>('trips.txt');
+        const affected = trips.filter((t) => t.shape_id === shape_id);
+        for (const trip of affected) {
+          this.invalidateTrip(trip.trip_id, 'update', null, shape_id);
+        }
+        console.log(
+          `[RouteRenderer] invalidateShape: no existing features for shape ${shape_id}, re-assigning ${affected.length} trips`
+        );
+      } else {
+        console.log(
+          `[RouteRenderer] invalidateShape shape_id=${shape_id} op=${op} → updated coords (${newCoords.length} pts)`
+        );
+      }
     } else if (op === 'delete' || pts.length === 0) {
       // Shape has too few points — remove it and reassign trips to stop-sequence fallback
       this.shapeIndex.delete(shape_id);
