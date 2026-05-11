@@ -50,6 +50,8 @@ import { normalizeAgencyId } from '../utils/agency-helpers.js';
 import {
   renderServiceReference,
   SERVICE_REF_ROW,
+  STOP_REF_ROW,
+  PATHWAY_REF_ROW,
   ENTITY_REF_BTN,
 } from '../utils/entity-references.js';
 
@@ -742,14 +744,41 @@ export class PageContentRenderer {
       });
     });
 
-    // "View Service" button clicks (route page) → service page
+    // "View ..." button clicks — handles stops and services
     const entityRefBtns = container.querySelectorAll(`.${ENTITY_REF_BTN}`);
     entityRefBtns.forEach((btn) => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
+        const stop_id = btn.getAttribute('data-stop-id');
+        if (stop_id) {
+          this.dependencies.onStopClick(stop_id);
+          return;
+        }
         const service_id = btn.getAttribute('data-service-id');
         if (service_id && this.dependencies.onServiceClick) {
           this.dependencies.onServiceClick(service_id);
+        }
+      });
+    });
+
+    // Stop reference row clicks → stop page
+    const stopRefRows = container.querySelectorAll(`.${STOP_REF_ROW}`);
+    stopRefRows.forEach((row) => {
+      row.addEventListener('click', () => {
+        const stop_id = row.getAttribute('data-stop-id');
+        if (stop_id) {
+          this.dependencies.onStopClick(stop_id);
+        }
+      });
+    });
+
+    // Pathway reference row clicks → pathway page
+    const pathwayRefRows = container.querySelectorAll(`.${PATHWAY_REF_ROW}`);
+    pathwayRefRows.forEach((row) => {
+      row.addEventListener('click', () => {
+        const pathway_id = row.getAttribute('data-pathway-id');
+        if (pathway_id && this.dependencies.onPathwayClick) {
+          this.dependencies.onPathwayClick(pathway_id);
         }
       });
     });
