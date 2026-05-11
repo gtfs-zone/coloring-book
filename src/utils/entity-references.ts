@@ -1,11 +1,14 @@
 import {
   getRouteDisplay,
   getServiceDisplay,
+  getStopDisplay,
   renderCardLabel,
 } from './entity-display';
 
 export const ROUTE_REF_ROW = 'route-ref-row';
 export const SERVICE_REF_ROW = 'service-ref-row';
+export const STOP_REF_ROW = 'stop-ref-row';
+export const PATHWAY_REF_ROW = 'pathway-ref-row';
 export const ENTITY_REF_BTN = 'entity-ref-btn';
 
 export interface RouteReferenceOpts {
@@ -121,6 +124,58 @@ export function renderRouteReference(
   </div>
   ${badge}
   ${viewBtn}
+</div>`;
+}
+
+export interface StopReferenceOpts {
+  locationTypeLabel?: string;
+}
+
+export function renderStopReference(
+  stop: Record<string, unknown>,
+  opts: StopReferenceOpts = {}
+): string {
+  const label = renderCardLabel(getStopDisplay(stop as Record<string, string>));
+  const badge = opts.locationTypeLabel
+    ? `<div class="badge badge-outline badge-sm">${opts.locationTypeLabel}</div>`
+    : '';
+
+  return `<div class="flex items-center gap-3 p-3 rounded-lg hover:bg-base-200 cursor-pointer transition-colors ${STOP_REF_ROW}" data-stop-id="${stop.stop_id}">
+  <div class="flex-1 min-w-0">
+    ${label}
+  </div>
+  ${badge}
+</div>`;
+}
+
+export interface PathwayReferenceOpts {
+  modeLabel: string;
+  otherStop?: Record<string, unknown>;
+  otherStopId: string;
+  direction: 'to' | 'from';
+  viewStopButton?: boolean;
+}
+
+export function renderPathwayReference(
+  pathway: Record<string, unknown>,
+  opts: PathwayReferenceOpts
+): string {
+  const otherDisplay = opts.otherStop
+    ? getStopDisplay(opts.otherStop as Record<string, string>).primary
+    : String(opts.otherStopId);
+
+  const primaryText = `${opts.modeLabel} ${opts.direction} ${otherDisplay}`;
+  const label = `<div class="font-medium truncate">${primaryText}</div>`;
+
+  const viewStopBtn = opts.viewStopButton
+    ? `<button class="btn btn-xs btn-ghost ${ENTITY_REF_BTN}" data-stop-id="${opts.otherStopId}">View Stop</button>`
+    : '';
+
+  return `<div class="flex items-center gap-3 p-3 rounded-lg hover:bg-base-200 cursor-pointer transition-colors ${PATHWAY_REF_ROW}" data-pathway-id="${pathway.pathway_id}">
+  <div class="flex-1 min-w-0">
+    ${label}
+  </div>
+  ${viewStopBtn}
 </div>`;
 }
 
