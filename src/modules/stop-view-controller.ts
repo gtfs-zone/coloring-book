@@ -2,11 +2,10 @@
  * Stop View Controller
  *
  * Comprehensive stop view implementation with inline editing and transit network relationships.
- * Provides a single-column layout showing stop properties and related transit services.
+ * Provides a single-column layout showing stop properties and timetable relationships.
  */
 
 import type {
-  Agency,
   Routes,
   Stops,
   Trips,
@@ -20,8 +19,21 @@ import {
 import { GTFS_TABLES, StopsSchema } from '../types/gtfs.js';
 import { getStopDisplay, renderCardLabel } from '../utils/entity-display.js';
 import type { LevelOption } from './levels-controller.js';
-import { normalizeAgencyId } from '../utils/agency-helpers.js';
 import { renderTrashIcon } from './modal-utils.js';
+import {
+  renderServiceReference,
+  SERVICE_REF_ROW,
+} from '../utils/entity-references.js';
+
+interface TimetableKey {
+  route_id: string;
+  service_id: string;
+}
+
+interface StopRelations {
+  routes: Routes[];
+  timetableKeys: TimetableKey[];
+}
 
 function escapeAttr(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
@@ -33,8 +45,6 @@ export interface StopViewDependencies {
     getAgenciesServingStop?: (stop_id: string) => Promise<unknown[]>;
     getRoutesServingStop?: (stop_id: string) => Promise<unknown[]>;
   };
-  onAgencyClick: (agency_id: string) => void;
-  onRouteClick: (route_id: string) => void;
   onStopClick?: (stop_id: string) => void;
   onPathwayClick?: (pathway_id: string) => void;
   onDeleteStop: (stop_id: string) => Promise<void>;
@@ -50,15 +60,11 @@ export class StopViewController {
     this.dependencies = dependencies;
   }
 
-  /**
-   * Render comprehensive stop view
-   */
   async renderStopView(stop_id: string): Promise<string> {
     this.currentStopId = stop_id;
     console.log('StopViewController: Rendering stop view for:', stop_id);
 
     try {
-      // Get stop data
       const stop = await this.getStopData(stop_id);
       if (!stop) {
         return this.renderError('Stop not found.');
@@ -70,23 +76,52 @@ export class StopViewController {
           : parseInt(stop.location_type ?? '0', 10) || 0;
       const isStation = locationType === 1;
 
-      // Get related transit data, level options, child stops, and pathways in parallel
-      const [agencies, routes, levelOptions, childStops, connectedPathways] =
-        await Promise.all([
-          this.getAgenciesServingStop(stop_id),
-          this.getRoutesServingStop(stop_id),
-          this.dependencies.getLevelOptions?.() ?? Promise.resolve([]),
-          isStation ? this.getChildStops(stop_id) : Promise.resolve([]),
-          !isStation ? this.getConnectedPathways(stop_id) : Promise.resolve([]),
-        ]);
+      const { routes, timetableKeys } = await this.fetchStopRelations(stop_id);
 
-      // Render complete view - don't set height/overflow, let parent handle it
+      const calendarByServiceId = new Map<string, Record<string, unknown>>();
+      const calendarDatesByServiceId = new Map<
+        string,
+        Array<{ date: string; exception_type: string | number }>
+      >();
+
+      if (this.dependencies.gtfsDatabase && timetableKeys.length > 0) {
+        const serviceIdSet = new Set(timetableKeys.map((k) => k.service_id));
+        const allCalendars =
+          await this.dependencies.gtfsDatabase.queryRows('calendar');
+        for (const cal of allCalendars) {
+          const record = cal as Record<string, unknown>;
+          const sid = record['service_id'] as string;
+          if (serviceIdSet.has(sid)) {
+            calendarByServiceId.set(sid, record);
+          }
+        }
+        const allCalendarDates =
+          await this.dependencies.gtfsDatabase.queryRows('calendar_dates');
+        for (const cd of allCalendarDates) {
+          const record = cd as Record<string, unknown>;
+          const sid = record['service_id'] as string;
+          if (serviceIdSet.has(sid)) {
+            const existing = calendarDatesByServiceId.get(sid) ?? [];
+            existing.push(
+              record as { date: string; exception_type: string | number }
+            );
+            calendarDatesByServiceId.set(sid, existing);
+          }
+        }
+      }
+
+      const [levelOptions, childStops, connectedPathways] = await Promise.all([
+        this.dependencies.getLevelOptions?.() ?? Promise.resolve([]),
+        isStation ? this.getChildStops(stop_id) : Promise.resolve([]),
+        !isStation ? this.getConnectedPathways(stop_id) : Promise.resolve([]),
+      ]);
+
       const html = `
         <div class="p-4 space-y-4">
           ${this.renderStopProperties(stop, levelOptions)}
           ${isStation ? this.renderChildStopsSection(childStops) : ''}
           ${!isStation ? this.renderPathwaysSection(connectedPathways, stop_id) : ''}
-          ${this.renderTransitNetwork(agencies, routes)}
+          ${this.renderTimetablesSection(timetableKeys, routes, calendarByServiceId, calendarDatesByServiceId)}
         </div>
       `;
       console.log('Stop view HTML length:', html.length);
@@ -97,9 +132,6 @@ export class StopViewController {
     }
   }
 
-  /**
-   * Render editable stop properties section
-   */
   private renderStopProperties(
     stop: Stops,
     levelOptions: LevelOption[]
@@ -154,18 +186,23 @@ export class StopViewController {
     `;
   }
 
-  /**
-   * Render transit network relationships
-   */
-  private renderTransitNetwork(agencies: Agency[], routes: Routes[]): string {
-    if (agencies.length === 0) {
+  private renderTimetablesSection(
+    timetableKeys: TimetableKey[],
+    _routes: Routes[],
+    calendarByServiceId: Map<string, Record<string, unknown>>,
+    calendarDatesByServiceId: Map<
+      string,
+      Array<{ date: string; exception_type: string | number }>
+    >
+  ): string {
+    if (timetableKeys.length === 0) {
       return `
         <div class="space-y-4">
-          <h2 class="text-lg font-semibold">Transit Network</h2>
+          <h2 class="text-lg font-semibold">Timetables</h2>
           <div class="card bg-base-100 shadow-lg">
             <div class="card-body p-4">
               <div class="text-center py-6 opacity-70">
-                This stop is not served by any routes.
+                This stop is not included in any timetables.
               </div>
             </div>
           </div>
@@ -173,77 +210,28 @@ export class StopViewController {
       `;
     }
 
-    // Group routes by agency
-    const routesByAgency = new Map();
-    routes.forEach((route) => {
-      const agency_id = normalizeAgencyId(route.agency_id);
-      if (!routesByAgency.has(agency_id)) {
-        routesByAgency.set(agency_id, []);
-      }
-      routesByAgency.get(agency_id).push(route);
-    });
-
-    const agencySections = agencies
-      .map((agency) => {
-        const agencyRoutes =
-          routesByAgency.get(normalizeAgencyId(agency.agency_id)) || [];
-
-        return `
-        <div class="mb-6">
-          <div class="flex items-center justify-between mb-3">
-            <div class="flex items-center gap-3">
-              <h3 class="text-lg font-semibold">${agency.agency_name || agency.agency_id}</h3>
-              <div class="badge badge-outline">${agencyRoutes.length} route${agencyRoutes.length !== 1 ? 's' : ''}</div>
-            </div>
-            <button class="btn btn-sm btn-outline agency-view-btn" data-agency-id="${agency.agency_id}">
-              View Agency
-            </button>
-          </div>
-
-          <div class="grid grid-cols-1 gap-2">
-            ${(agencyRoutes as Routes[]).map((route: Routes) => this.renderRouteCard(route)).join('')}
-          </div>
-        </div>
-      `;
+    const rows = timetableKeys
+      .map(({ route_id, service_id }) => {
+        const calendar = calendarByServiceId.get(service_id) ?? { service_id };
+        const calendarDates = calendarDatesByServiceId.get(service_id);
+        return renderServiceReference(calendar, { route_id, calendarDates });
       })
       .join('');
 
     return `
       <div class="space-y-4">
-        <h2 class="text-lg font-semibold">Transit Network</h2>
+        <h2 class="text-lg font-semibold">Timetables</h2>
         <div class="card bg-base-100 shadow-lg">
           <div class="card-body p-4">
-            ${agencySections}
+            <div class="space-y-2">
+              ${rows}
+            </div>
           </div>
         </div>
       </div>
     `;
   }
 
-  /**
-   * Render individual route card
-   */
-  private renderRouteCard(route: Routes): string {
-    const routeName =
-      route.route_short_name || route.route_long_name || route.route_id;
-    const routeDescription = route.route_long_name || route.route_desc || '';
-
-    return `
-      <div class="card bg-base-100 border hover:shadow-md transition-shadow cursor-pointer route-card-mini"
-           data-route-id="${route.route_id}">
-        <div class="card-body p-2">
-          <div class="flex items-center gap-2">
-            <div class="badge badge-primary badge-sm">${routeName}</div>
-            ${routeDescription ? `<div class="text-sm opacity-70 truncate flex-1">${routeDescription}</div>` : ''}
-          </div>
-        </div>
-      </div>
-    `;
-  }
-
-  /**
-   * Get all child stops of a station (stops where parent_station = station_id)
-   */
   private async getChildStops(station_id: string): Promise<Stops[]> {
     if (!this.dependencies.gtfsDatabase) {
       return [];
@@ -398,9 +386,6 @@ export class StopViewController {
     `;
   }
 
-  /**
-   * Get stop data from database
-   */
   private async getStopData(stop_id: string): Promise<Stops | null> {
     if (!this.dependencies.gtfsDatabase) {
       return { stop_id, stop_name: stop_id, parent_station: '' } as Stops;
@@ -420,139 +405,58 @@ export class StopViewController {
     }
   }
 
-  /**
-   * Get agencies serving this stop
-   */
-  private async getAgenciesServingStop(stop_id: string): Promise<Agency[]> {
+  private async fetchStopRelations(stop_id: string): Promise<StopRelations> {
     if (!this.dependencies.gtfsDatabase) {
-      return [];
+      return { routes: [], timetableKeys: [] };
     }
 
     try {
-      // Get all routes that serve this stop via stop_times
       const stopTimes = (await this.dependencies.gtfsDatabase.queryRows(
         'stop_times',
         { stop_id }
       )) as StopTimes[];
-      const tripIds = [
-        ...new Set(stopTimes.map((st: StopTimes) => st.trip_id)),
-      ];
+      const tripIdSet = new Set(stopTimes.map((st) => st.trip_id));
 
-      if (tripIds.length === 0) {
-        return [];
+      if (tripIdSet.size === 0) {
+        return { routes: [], timetableKeys: [] };
       }
 
-      // Get routes from trips
       const allTrips = (await this.dependencies.gtfsDatabase.queryRows(
         'trips'
       )) as Trips[];
-      const relevantTrips = allTrips.filter((trip: Trips) =>
-        tripIds.includes(trip.trip_id)
+      const relevantTrips = allTrips.filter((trip) =>
+        tripIdSet.has(trip.trip_id)
       );
-      const routeIds = [
-        ...new Set(relevantTrips.map((trip: Trips) => trip.route_id)),
-      ];
 
-      // Get agencies from routes
+      const routeIdSet = new Set(relevantTrips.map((trip) => trip.route_id));
+      const timetableKeySet = new Set<string>();
+      const timetableKeys: TimetableKey[] = [];
+      for (const trip of relevantTrips) {
+        const key = `${trip.route_id}||${trip.service_id}`;
+        if (!timetableKeySet.has(key)) {
+          timetableKeySet.add(key);
+          timetableKeys.push({
+            route_id: trip.route_id,
+            service_id: trip.service_id,
+          });
+        }
+      }
+
       const allRoutes = (await this.dependencies.gtfsDatabase.queryRows(
         'routes'
       )) as Routes[];
-      const relevantRoutes = allRoutes.filter((route: Routes) =>
-        routeIds.includes(route.route_id)
+      const routes = allRoutes.filter((route) =>
+        routeIdSet.has(route.route_id)
       );
-      const agencyIds = [
-        ...new Set(
-          relevantRoutes
-            .map((route: Routes) => route.agency_id)
-            .filter((id) => id)
-        ),
-      ];
 
-      // Get agency details
-      const agencies = (await this.dependencies.gtfsDatabase.queryRows(
-        'agency'
-      )) as Agency[];
-      return agencies.filter((agency: Agency) =>
-        agencyIds.includes(agency.agency_id)
-      );
+      return { routes, timetableKeys };
     } catch (error) {
-      console.error('Error getting agencies serving stop:', error);
-      return [];
+      console.error('Error fetching stop relations:', error);
+      return { routes: [], timetableKeys: [] };
     }
   }
 
-  /**
-   * Get routes serving this stop
-   */
-  private async getRoutesServingStop(stop_id: string): Promise<Routes[]> {
-    if (!this.dependencies.gtfsDatabase) {
-      return [];
-    }
-
-    try {
-      // Get all routes that serve this stop via stop_times
-      const stopTimes = (await this.dependencies.gtfsDatabase.queryRows(
-        'stop_times',
-        { stop_id }
-      )) as StopTimes[];
-      const tripIds = [
-        ...new Set(stopTimes.map((st: StopTimes) => st.trip_id)),
-      ];
-
-      if (tripIds.length === 0) {
-        return [];
-      }
-
-      // Get routes from trips
-      const allTrips = (await this.dependencies.gtfsDatabase.queryRows(
-        'trips'
-      )) as Trips[];
-      const relevantTrips = allTrips.filter((trip: Trips) =>
-        tripIds.includes(trip.trip_id)
-      );
-      const routeIds = [
-        ...new Set(relevantTrips.map((trip: Trips) => trip.route_id)),
-      ];
-
-      // Get route details
-      const routes = (await this.dependencies.gtfsDatabase.queryRows(
-        'routes'
-      )) as Routes[];
-      return routes.filter((route: Routes) =>
-        routeIds.includes(route.route_id)
-      );
-    } catch (error) {
-      console.error('Error getting routes serving stop:', error);
-      return [];
-    }
-  }
-
-  /**
-   * Add event listeners for interactive elements
-   */
   addEventListeners(container: HTMLElement): void {
-    // Agency view button clicks
-    const agencyButtons = container.querySelectorAll('.agency-view-btn');
-    agencyButtons.forEach((button) => {
-      button.addEventListener('click', () => {
-        const agency_id = button.getAttribute('data-agency-id');
-        if (agency_id) {
-          this.dependencies.onAgencyClick(agency_id);
-        }
-      });
-    });
-
-    // Route card clicks
-    const routeCards = container.querySelectorAll('.route-card-mini');
-    routeCards.forEach((card) => {
-      card.addEventListener('click', () => {
-        const route_id = card.getAttribute('data-route-id');
-        if (route_id) {
-          this.dependencies.onRouteClick(route_id);
-        }
-      });
-    });
-
     // Child stop links (station view)
     if (this.dependencies.onStopClick) {
       const childBtns = container.querySelectorAll('.child-stop-btn');
@@ -604,9 +508,6 @@ export class StopViewController {
     );
   }
 
-  /**
-   * Render error state
-   */
   private renderError(message: string): string {
     return `
       <div class="alert alert-error m-4">
@@ -618,3 +519,7 @@ export class StopViewController {
     `;
   }
 }
+
+// SERVICE_REF_ROW is used by page-content-renderer's event delegation — re-export
+// so callers don't need to import entity-references directly for this class.
+export { SERVICE_REF_ROW };
