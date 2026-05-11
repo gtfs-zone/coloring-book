@@ -815,7 +815,7 @@ export class RouteRenderer {
         const trips = this.gtfsParser.getFileDataSyncTyped<Trips>('trips.txt');
         const affected = trips.filter((t) => t.shape_id === shape_id);
         for (const trip of affected) {
-          this.invalidateTrip(trip.trip_id, 'insert', null, shape_id);
+          this.invalidateTrip(trip.trip_id, 'update', null, shape_id);
         }
         console.log(
           `[RouteRenderer] invalidateShape: no existing features for shape ${shape_id}, re-assigning ${affected.length} trips`
