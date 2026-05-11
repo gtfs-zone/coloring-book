@@ -21,6 +21,7 @@ import { GTFS_TABLES, StopsSchema } from '../types/gtfs.js';
 import { getStopDisplay, renderCardLabel } from '../utils/entity-display.js';
 import type { LevelOption } from './levels-controller.js';
 import { normalizeAgencyId } from '../utils/agency-helpers.js';
+import { renderTrashIcon } from './modal-utils.js';
 
 function escapeAttr(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
@@ -140,11 +141,7 @@ export class StopViewController {
       <div class="space-y-4">
         <div class="flex items-center justify-between">
           <h2 class="text-lg font-semibold">${renderCardLabel(getStopDisplay(stop as unknown as Record<string, string>))}</h2>
-          <button class="btn btn-sm btn-error btn-outline delete-stop-btn" data-stop-id="${stop.stop_id}">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-            </svg>
-          </button>
+          <button class="btn btn-sm btn-error btn-outline delete-stop-btn" data-stop-id="${stop.stop_id}" title="Delete">${renderTrashIcon()}</button>
         </div>
         <div class="card bg-base-100 shadow-lg">
           <div class="card-body p-4">
