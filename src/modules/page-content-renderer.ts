@@ -530,7 +530,10 @@ export class PageContentRenderer {
     // Render route properties section
     const routePropertiesHTML = `
       <div class="space-y-4">
-        <h2 class="text-lg font-semibold">${renderCardLabel(getRouteDisplay(routeData))}</h2>
+        <div class="flex items-center justify-between gap-2">
+          <h2 class="text-lg font-semibold">${renderCardLabel(getRouteDisplay(routeData))}</h2>
+          <button class="btn btn-sm btn-error btn-outline delete-route-btn" data-route-id="${route_id}">Delete Route</button>
+        </div>
         <div class="card bg-base-100 shadow-lg">
           <div class="card-body p-4">
             <div class="max-w-md">
@@ -727,6 +730,17 @@ export class PageContentRenderer {
       });
     });
 
+    // Delete route button
+    const deleteRouteBtn = container.querySelector('.delete-route-btn');
+    if (deleteRouteBtn) {
+      deleteRouteBtn.addEventListener('click', () => {
+        const route_id = deleteRouteBtn.getAttribute('data-route-id');
+        if (route_id) {
+          this.handleDeleteRoute(route_id);
+        }
+      });
+    }
+
     // Add StopViewController event listeners
     // It will only attach to stop fields (data-table="stops.txt")
     this.stopViewController.addEventListeners(container);
@@ -834,6 +848,111 @@ export class PageContentRenderer {
 
       // Reset the dropdown
       serviceSelect.value = '';
+    });
+  }
+
+  private async handleDeleteRoute(route_id: string): Promise<void> {
+    console.log(
+      '[PageContentRenderer] handleDeleteRoute called, route_id:',
+      route_id
+    );
+    const db = this.dependencies.gtfsDatabase;
+    const pm = this.dependencies.patchManager;
+    if (!db || !pm || !db.deleteRow) {
+      console.warn(
+        '[PageContentRenderer] handleDeleteRoute: missing db/pm/deleteRow'
+      );
+      return;
+    }
+
+    const routeRows = await db.queryRows('routes', { route_id });
+    const route = routeRows[0] as Record<string, unknown> | undefined;
+    if (!route) {
+      console.warn(
+        '[PageContentRenderer] handleDeleteRoute: route not found for id',
+        route_id
+      );
+      return;
+    }
+
+    const trips = (await db.queryRows('trips', {
+      route_id,
+    })) as Record<string, unknown>[];
+
+    const stopTimesPerTrip: Array<Record<string, unknown>[]> =
+      await Promise.all(
+        trips.map(
+          (trip) =>
+            db.queryRows('stop_times', {
+              trip_id: trip.trip_id as string,
+            }) as Promise<Record<string, unknown>[]>
+        )
+      );
+    const allStopTimes = stopTimesPerTrip.flat();
+
+    const doDelete = async () => {
+      for (const st of allStopTimes) {
+        const key = generateCompositeKeyFromRecord('stop_times', st);
+        await db.deleteRow!('stop_times', key);
+      }
+      for (const trip of trips) {
+        await db.deleteRow!('trips', trip.trip_id as string);
+      }
+      await db.deleteRow!('routes', route_id);
+
+      const deleteOps = [
+        ...allStopTimes.map((st) => ({
+          table: 'stop_times',
+          id: generateCompositeKeyFromRecord('stop_times', st),
+          record: st,
+        })),
+        ...trips.map((trip) => ({
+          table: 'trips',
+          id: trip.trip_id as string,
+          record: trip,
+        })),
+        { table: 'routes', id: route_id, record: route },
+      ];
+      const label =
+        trips.length === 0
+          ? 'Delete route'
+          : `Delete route + ${trips.length} trip${trips.length !== 1 ? 's' : ''} + ${allStopTimes.length} stop_time${allStopTimes.length !== 1 ? 's' : ''}`;
+      await pm.recordBatchDelete(deleteOps, label);
+
+      console.log(
+        `[PageContentRenderer] Deleted route ${route_id} + ${trips.length} trips + ${allStopTimes.length} stop_times`
+      );
+      await navigateToHome();
+    };
+
+    if (trips.length === 0) {
+      await showModal({
+        title: 'Delete route?',
+        body: `<p>This route has no trips. Are you sure you want to delete it?</p>`,
+        enterAction: 1,
+        escapeAction: 0,
+        actions: [
+          { label: 'Cancel', className: 'btn-ghost', onClick: () => {} },
+          { label: 'Delete route', className: 'btn-error', onClick: doDelete },
+        ],
+      });
+      return;
+    }
+
+    await showModal({
+      title: 'Route has trips',
+      body: `<p>This route has <strong>${trips.length} trip${trips.length !== 1 ? 's' : ''}</strong> and <strong>${allStopTimes.length} stop_time${allStopTimes.length !== 1 ? 's' : ''}</strong>.</p>
+             <p class="mt-3">Deleting this route will cascade-delete all its trips and stop_times (reversible via undo). Or cancel to keep it.</p>`,
+      enterAction: 1,
+      escapeAction: 0,
+      actions: [
+        { label: 'Cancel', className: 'btn-ghost', onClick: () => {} },
+        {
+          label: `Delete route + ${trips.length} trips + ${allStopTimes.length} stop_times`,
+          className: 'btn-error',
+          onClick: doDelete,
+        },
+      ],
     });
   }
 
