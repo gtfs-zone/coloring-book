@@ -12,6 +12,10 @@ import {
 } from '../utils/field-component.js';
 import { GTFS_TABLES, AgencySchema } from '../types/gtfs.js';
 import { getRouteDisplay, renderCardLabel } from '../utils/entity-display.js';
+import {
+  normalizeAgencyId,
+  agencyRouteFilter,
+} from '../utils/agency-helpers.js';
 
 export interface AgencyViewDependencies {
   gtfsDatabase?: QueryOnlyDatabase;
@@ -158,7 +162,7 @@ export class AgencyViewController {
     try {
       const agencies = await this.dependencies.gtfsDatabase.queryRows(
         'agency',
-        { agency_id }
+        { agency_id: normalizeAgencyId(agency_id) }
       );
       if (agencies.length === 0) {
         return null;
@@ -179,10 +183,17 @@ export class AgencyViewController {
     }
 
     try {
-      const routes = await this.dependencies.gtfsDatabase.queryRows('routes', {
-        agency_id,
-      });
-      return routes as Routes[];
+      const allAgencies =
+        await this.dependencies.gtfsDatabase.queryRows('agency');
+      const agencyCount = allAgencies.length;
+      const acceptedIds = agencyRouteFilter(agency_id, agencyCount);
+
+      const routeArrays = await Promise.all(
+        acceptedIds.map((id) =>
+          this.dependencies.gtfsDatabase!.queryRows('routes', { agency_id: id })
+        )
+      );
+      return routeArrays.flat() as Routes[];
     } catch (error) {
       console.error('Error getting routes for agency:', error);
       return [];

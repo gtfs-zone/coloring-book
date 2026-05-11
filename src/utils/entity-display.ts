@@ -14,7 +14,7 @@ export function getAgencyDisplay(
   if (name) {
     return { primary: name, secondary: id };
   }
-  return { primary: id ?? '' };
+  return { primary: id || 'Not specified' };
 }
 
 export function getStopDisplay(
