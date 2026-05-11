@@ -66,10 +66,8 @@ function buildBrouterUrl(data: TimetableData): string | null {
  */
 export class TimetableRenderer {
   private cellRenderer: TimetableCellRenderer;
+  public availableShapeIds: string[] = [];
 
-  /**
-   * Initialize TimetableRenderer with cell renderer dependency
-   */
   constructor() {
     this.cellRenderer = new TimetableCellRenderer();
   }
@@ -315,7 +313,28 @@ export class TimetableRenderer {
     const value = trip[config.field] ?? '';
     const inputId = `trip-prop-${trip_id}-${config.field}`;
 
-    if (config.type === 'select' && config.options) {
+    if (config.field === 'shape_id') {
+      const optionsHtml = [
+        `<option value=""${value === '' ? ' selected' : ''}>— none —</option>`,
+        ...this.availableShapeIds.map((sid) => {
+          const selected = String(value) === sid ? ' selected' : '';
+          return `<option value="${this.escapeHtml(sid)}"${selected}>${this.escapeHtml(sid)}</option>`;
+        }),
+      ].join('');
+      return `
+        <td class="text-center p-2">
+          <select
+            id="${inputId}"
+            class="select select-xs w-full"
+            data-trip-id="${trip_id}"
+            data-field="${config.field}"
+            data-table="trips.txt"
+            onchange="gtfsEditor.scheduleController.updateTripProperty('${trip_id}', '${config.field}', this.value)">
+            ${optionsHtml}
+          </select>
+        </td>
+      `;
+    } else if (config.type === 'select' && config.options) {
       const optionsHtml = [
         '<option value="">-</option>',
         ...config.options.map((opt) => {

@@ -893,6 +893,13 @@ export class ScheduleController {
         hasPendingStop: !!this.pendingStop,
       });
 
+      const shapeRows = await this.gtfsParser.gtfsDatabase.queryRows(
+        'shapes',
+        {}
+      );
+      const shapeIdSet = new Set(shapeRows.map((r) => String(r.shape_id)));
+      this.renderer.availableShapeIds = Array.from(shapeIdSet).sort();
+
       const html = this.renderer.renderTimetableHTML(
         timetableData,
         this.pendingStop?.stop_id
