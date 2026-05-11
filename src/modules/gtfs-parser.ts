@@ -382,6 +382,10 @@ export class GTFSParser {
     } else if (tableName === 'trips') {
       fieldMaps.set('route_id', new Map());
       fieldMaps.set('service_id', new Map());
+    } else if (tableName === 'agency') {
+      fieldMaps.set('agency_id', new Map());
+    } else if (tableName === 'routes') {
+      fieldMaps.set('agency_id', new Map());
     }
 
     this.buildAndRegisterVirtual(tableName, data, fieldMaps);

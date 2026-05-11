@@ -177,12 +177,24 @@ export class ServiceDaysController {
       let calendar = calendarRows[0];
 
       if (!calendar) {
-        // Create new calendar entry with default dates
-        const today = new Date();
-        const startDate = this.formatDateToGTFS(today);
-        const endDate = this.formatDateToGTFS(
-          new Date(today.getTime() + 365 * 24 * 60 * 60 * 1000)
-        ); // 1 year from now
+        // Derive date range from existing calendar_dates, fall back to today/+1yr
+        const existingDates = await this.gtfsParser.gtfsDatabase.queryRows(
+          'calendar_dates',
+          { service_id }
+        );
+        let startDate: string;
+        let endDate: string;
+        if (existingDates.length > 0) {
+          const sorted = existingDates.map((e) => e.date).sort();
+          startDate = sorted[0];
+          endDate = sorted[sorted.length - 1];
+        } else {
+          const today = new Date();
+          startDate = this.formatDateToGTFS(today);
+          endDate = this.formatDateToGTFS(
+            new Date(today.getTime() + 365 * 24 * 60 * 60 * 1000)
+          );
+        }
 
         calendar = {
           service_id,
@@ -260,6 +272,20 @@ export class ServiceDaysController {
       let calendar = calendarRows[0];
 
       if (!calendar) {
+        // Derive date range from existing calendar_dates, fall back to the edited date
+        const existingDates = await this.gtfsParser.gtfsDatabase.queryRows(
+          'calendar_dates',
+          { service_id }
+        );
+        let otherDate: string;
+        if (existingDates.length > 0) {
+          const sorted = existingDates.map((e) => e.date).sort();
+          otherDate =
+            dateType === 'start_date' ? sorted[sorted.length - 1] : sorted[0];
+        } else {
+          otherDate = gtfsDate;
+        }
+
         // Create new calendar entry
         calendar = {
           service_id,
@@ -270,8 +296,8 @@ export class ServiceDaysController {
           friday: 0,
           saturday: 0,
           sunday: 0,
-          start_date: gtfsDate,
-          end_date: gtfsDate,
+          start_date: dateType === 'start_date' ? gtfsDate : otherDate,
+          end_date: dateType === 'end_date' ? gtfsDate : otherDate,
         } as Calendar;
 
         calendar[dateType] = gtfsDate;
@@ -418,7 +444,17 @@ export class ServiceDaysController {
     exceptions: CalendarDates[]
   ): string {
     const weeklyPatternHTML = this.renderWeeklyPattern(service_id, calendar);
-    const dateRangeHTML = this.renderDateRange(service_id, calendar);
+
+    let derivedDates: { start: string; end: string } | undefined;
+    if (!calendar && exceptions.length > 0) {
+      const sorted = exceptions.map((e) => e.date).sort();
+      derivedDates = { start: sorted[0], end: sorted[sorted.length - 1] };
+    }
+    const dateRangeHTML = this.renderDateRange(
+      service_id,
+      calendar,
+      derivedDates
+    );
     const exceptionsHTML = this.renderExceptions(
       service_id,
       calendar,
@@ -491,14 +527,19 @@ export class ServiceDaysController {
    */
   private renderDateRange(
     service_id: string,
-    calendar: Calendar | null
+    calendar: Calendar | null,
+    derivedDates?: { start: string; end: string }
   ): string {
     const startDate = calendar?.start_date
       ? this.parseGTFSDate(calendar.start_date)
-      : '';
+      : derivedDates
+        ? this.parseGTFSDate(derivedDates.start)
+        : '';
     const endDate = calendar?.end_date
       ? this.parseGTFSDate(calendar.end_date)
-      : '';
+      : derivedDates
+        ? this.parseGTFSDate(derivedDates.end)
+        : '';
 
     return `
       <div class="date-inputs grid grid-cols-2 gap-3">

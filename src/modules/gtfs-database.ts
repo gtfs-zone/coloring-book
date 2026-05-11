@@ -29,6 +29,9 @@ import {
   FareRules,
   Pathways,
   Levels,
+  RiderCategories,
+  FareMedia,
+  FareProducts,
   GTFSTableMap,
 } from '../types/gtfs-entities.js';
 import {
@@ -55,6 +58,9 @@ type GTFSStoreName =
   | 'fare_rules'
   | 'pathways'
   | 'levels'
+  | 'rider_categories'
+  | 'fare_media'
+  | 'fare_products'
   | 'locations'
   | 'patches'
   | 'snapshots'
@@ -139,6 +145,18 @@ export interface GTFSDBSchema extends DBSchema {
     key: string; // level_id
     value: Levels;
     indexes: { level_index: number };
+  };
+  rider_categories: {
+    key: string;
+    value: RiderCategories;
+  };
+  fare_media: {
+    key: string;
+    value: FareMedia;
+  };
+  fare_products: {
+    key: string;
+    value: FareProducts;
   };
   locations: {
     key: string; // location_id
@@ -522,6 +540,22 @@ export class GTFSDatabase {
         break;
       case 'levels':
         store.createIndex('level_index', 'level_index', { unique: false });
+        break;
+      case 'fare_media':
+        store.createIndex('fare_media_name', 'fare_media_name', {
+          unique: false,
+        });
+        break;
+      case 'rider_categories':
+        store.createIndex('rider_category_name', 'rider_category_name', {
+          unique: false,
+        });
+        break;
+      case 'fare_products':
+        store.createIndex('rider_category_id', 'rider_category_id', {
+          unique: false,
+        });
+        store.createIndex('fare_media_id', 'fare_media_id', { unique: false });
         break;
       case 'locations':
         // location_id is now the primary key, no need for separate index
