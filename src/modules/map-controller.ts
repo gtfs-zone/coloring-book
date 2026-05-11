@@ -424,6 +424,11 @@ export class MapController {
     return true;
   }
 
+  public focusFeed(): void {
+    this.clearHighlights();
+    this.fitMapToData();
+  }
+
   /**
    * Fit map to show all GTFS data
    */
