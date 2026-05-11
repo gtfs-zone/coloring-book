@@ -15,6 +15,43 @@ import { TripsSchema, GTFS_TABLES } from '../types/gtfs.js';
 import { getStopDisplay, renderOptionLabel } from '../utils/entity-display.js';
 import { renderTrashIcon } from './modal-utils.js';
 
+function getBrouterProfile(routeType: string | number): string {
+  const t = Number(routeType);
+  if ([0, 1, 2, 12].includes(t)) {
+    return 'rail';
+  }
+  if (t === 4) {
+    return 'river';
+  }
+  return 'car-fast';
+}
+
+function buildBrouterUrl(data: TimetableData): string | null {
+  const stops = data.stops.filter(
+    (s) =>
+      s.stop_lat !== null &&
+      s.stop_lat !== undefined &&
+      s.stop_lon !== null &&
+      s.stop_lon !== undefined
+  );
+  if (stops.length < 2) {
+    return null;
+  }
+
+  const lats = stops.map((s) => parseFloat(s.stop_lat as string));
+  const lons = stops.map((s) => parseFloat(s.stop_lon as string));
+  const centerLat = (lats.reduce((a, b) => a + b, 0) / lats.length).toFixed(4);
+  const centerLon = (lons.reduce((a, b) => a + b, 0) / lons.length).toFixed(4);
+  const lonlats = stops
+    .map(
+      (s) =>
+        `${parseFloat(s.stop_lon as string).toFixed(6)},${parseFloat(s.stop_lat as string).toFixed(6)}`
+    )
+    .join(';');
+  const profile = getBrouterProfile(data.route.route_type ?? '');
+  return `https://brouter.de/brouter-web/#map=12/${centerLat}/${centerLon}/standard&lonlats=${lonlats}&profile=${profile}`;
+}
+
 /**
  * Timetable Renderer - HTML generation for schedule views
  *
@@ -124,10 +161,16 @@ export class TimetableRenderer {
       })
       .join('');
 
+    const brouterUrl = buildBrouterUrl(data);
+    const brouterLink = brouterUrl
+      ? `<a href="${brouterUrl}" target="_blank" rel="noopener" class="btn btn-xs btn-outline ml-auto">Open in brouter ↗</a>`
+      : '';
+
     return `
       <div class="border-b border-base-300">
-        <div class="tabs tabs-border p-2">
+        <div class="tabs tabs-border p-2 flex items-center">
           ${tabsHTML}
+          ${brouterLink}
         </div>
       </div>
     `;
