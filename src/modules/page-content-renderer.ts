@@ -641,6 +641,7 @@ export class PageContentRenderer {
     direction_id?: string
   ): Promise<string> {
     try {
+      this.dependencies.mapController.highlightRoute(route_id);
       // Get the rendered schedule HTML directly
       return await this.dependencies.scheduleController.renderSchedule(
         route_id,
