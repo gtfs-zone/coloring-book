@@ -15,6 +15,17 @@ import { getStopDisplay, renderCardLabel } from '../utils/entity-display.js';
 import { normalizeAgencyId } from '../utils/agency-helpers.js';
 import { renderTrashIcon } from './modal-utils.js';
 
+interface TimetableKey {
+  route_id: string;
+  service_id: string;
+}
+
+interface StopRelations {
+  agencies: Agency[];
+  routes: Routes[];
+  timetableKeys: TimetableKey[];
+}
+
 export interface StopViewDependencies {
   gtfsDatabase?: QueryOnlyDatabase;
   gtfsRelationships?: {
@@ -50,10 +61,7 @@ export class StopViewController {
       }
 
       // Get related transit data
-      const [agencies, routes] = await Promise.all([
-        this.getAgenciesServingStop(stop_id),
-        this.getRoutesServingStop(stop_id),
-      ]);
+      const { agencies, routes } = await this.fetchStopRelations(stop_id);
 
       // Render complete view - don't set height/overflow, let parent handle it
       const html = `
@@ -207,110 +215,64 @@ export class StopViewController {
     }
   }
 
-  /**
-   * Get agencies serving this stop
-   */
-  private async getAgenciesServingStop(stop_id: string): Promise<Agency[]> {
+  private async fetchStopRelations(stop_id: string): Promise<StopRelations> {
     if (!this.dependencies.gtfsDatabase) {
-      return [];
+      return { agencies: [], routes: [], timetableKeys: [] };
     }
 
     try {
-      // Get all routes that serve this stop via stop_times
       const stopTimes = (await this.dependencies.gtfsDatabase.queryRows(
         'stop_times',
         { stop_id }
       )) as StopTimes[];
-      const tripIds = [
-        ...new Set(stopTimes.map((st: StopTimes) => st.trip_id)),
-      ];
+      const tripIdSet = new Set(stopTimes.map((st) => st.trip_id));
 
-      if (tripIds.length === 0) {
-        return [];
+      if (tripIdSet.size === 0) {
+        return { agencies: [], routes: [], timetableKeys: [] };
       }
 
-      // Get routes from trips
       const allTrips = (await this.dependencies.gtfsDatabase.queryRows(
         'trips'
       )) as Trips[];
-      const relevantTrips = allTrips.filter((trip: Trips) =>
-        tripIds.includes(trip.trip_id)
+      const relevantTrips = allTrips.filter((trip) =>
+        tripIdSet.has(trip.trip_id)
       );
-      const routeIds = [
-        ...new Set(relevantTrips.map((trip: Trips) => trip.route_id)),
-      ];
 
-      // Get agencies from routes
+      const routeIdSet = new Set(relevantTrips.map((trip) => trip.route_id));
+      const timetableKeySet = new Set<string>();
+      const timetableKeys: TimetableKey[] = [];
+      for (const trip of relevantTrips) {
+        const key = `${trip.route_id}||${trip.service_id}`;
+        if (!timetableKeySet.has(key)) {
+          timetableKeySet.add(key);
+          timetableKeys.push({
+            route_id: trip.route_id,
+            service_id: trip.service_id,
+          });
+        }
+      }
+
       const allRoutes = (await this.dependencies.gtfsDatabase.queryRows(
         'routes'
       )) as Routes[];
-      const relevantRoutes = allRoutes.filter((route: Routes) =>
-        routeIds.includes(route.route_id)
+      const routes = allRoutes.filter((route) =>
+        routeIdSet.has(route.route_id)
       );
-      const agencyIds = [
-        ...new Set(
-          relevantRoutes
-            .map((route: Routes) => route.agency_id)
-            .filter((id) => id)
-        ),
-      ];
 
-      // Get agency details
-      const agencies = (await this.dependencies.gtfsDatabase.queryRows(
+      const agencyIdSet = new Set(
+        routes.map((route) => route.agency_id).filter((id) => id)
+      );
+      const allAgencies = (await this.dependencies.gtfsDatabase.queryRows(
         'agency'
       )) as Agency[];
-      return agencies.filter((agency: Agency) =>
-        agencyIds.includes(agency.agency_id)
+      const agencies = allAgencies.filter((agency) =>
+        agencyIdSet.has(agency.agency_id)
       );
+
+      return { agencies, routes, timetableKeys };
     } catch (error) {
-      console.error('Error getting agencies serving stop:', error);
-      return [];
-    }
-  }
-
-  /**
-   * Get routes serving this stop
-   */
-  private async getRoutesServingStop(stop_id: string): Promise<Routes[]> {
-    if (!this.dependencies.gtfsDatabase) {
-      return [];
-    }
-
-    try {
-      // Get all routes that serve this stop via stop_times
-      const stopTimes = (await this.dependencies.gtfsDatabase.queryRows(
-        'stop_times',
-        { stop_id }
-      )) as StopTimes[];
-      const tripIds = [
-        ...new Set(stopTimes.map((st: StopTimes) => st.trip_id)),
-      ];
-
-      if (tripIds.length === 0) {
-        return [];
-      }
-
-      // Get routes from trips
-      const allTrips = (await this.dependencies.gtfsDatabase.queryRows(
-        'trips'
-      )) as Trips[];
-      const relevantTrips = allTrips.filter((trip: Trips) =>
-        tripIds.includes(trip.trip_id)
-      );
-      const routeIds = [
-        ...new Set(relevantTrips.map((trip: Trips) => trip.route_id)),
-      ];
-
-      // Get route details
-      const routes = (await this.dependencies.gtfsDatabase.queryRows(
-        'routes'
-      )) as Routes[];
-      return routes.filter((route: Routes) =>
-        routeIds.includes(route.route_id)
-      );
-    } catch (error) {
-      console.error('Error getting routes serving stop:', error);
-      return [];
+      console.error('Error fetching stop relations:', error);
+      return { agencies: [], routes: [], timetableKeys: [] };
     }
   }
 
