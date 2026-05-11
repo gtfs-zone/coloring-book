@@ -9,6 +9,7 @@
 import type { Agency, Routes, Trips } from '../types/gtfs.js';
 import type { QueryOnlyDatabase } from '../utils/field-component.js';
 import { normalizeAgencyId } from '../utils/agency-helpers.js';
+import { renderTrashIcon } from './modal-utils.js';
 import {
   renderRouteReference,
   ROUTE_REF_ROW,
@@ -184,7 +185,7 @@ export class ServiceViewController {
       <div class="space-y-4">
         <div class="flex items-center justify-between gap-2">
           <h2 class="text-lg font-semibold">Service Schedule</h2>
-          <button class="btn btn-sm btn-error btn-outline delete-service-btn" data-service-id="${service_id}">Delete Service</button>
+          <button class="btn btn-sm btn-error btn-outline delete-service-btn" data-service-id="${service_id}" title="Delete">${renderTrashIcon()}</button>
         </div>
         <div class="card bg-base-100 shadow-lg">
           <div class="card-body p-4">
