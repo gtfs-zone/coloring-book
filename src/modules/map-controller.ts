@@ -303,8 +303,7 @@ export class MapController {
       onStopDragComplete: this.handleStopDragComplete.bind(this),
       onStopCreated: this.handleStopCreated.bind(this),
       onEmptyClick: () => {
-        this.clearHighlights();
-        this.callbacks.onEmptyClick?.();
+        void this.handleEmptyClick();
       },
     };
 
@@ -781,6 +780,37 @@ export class MapController {
   /**
    * Clear all highlights
    */
+  private async handleEmptyClick(): Promise<void> {
+    const obj = this.focusedObject;
+    const stops =
+      this.gtfsParser?.getFileDataSyncTyped<Stops>('stops.txt') || [];
+    const pathways =
+      this.gtfsParser?.getFileDataSyncTyped<Pathways>('pathways.txt') || [];
+
+    let parentStopId: string | null = null;
+    if (obj.type === 'stop') {
+      const stop = stops.find((s) => s.stop_id === obj.id);
+      parentStopId = stop?.parent_station ? String(stop.parent_station) : null;
+    } else if (obj.type === 'pathway') {
+      const pw = pathways.find((p) => p.pathway_id === obj.id);
+      const from = pw ? stops.find((s) => s.stop_id === pw.from_stop_id) : null;
+      parentStopId = from?.stop_id ?? null;
+    }
+
+    if (parentStopId) {
+      this.applyFocusedObject({ type: 'stop', id: parentStopId });
+      if (this.pageStateManager) {
+        await this.pageStateManager.setPageState({
+          type: 'stop',
+          stop_id: parentStopId,
+        });
+      }
+    } else {
+      this.clearHighlights();
+      this.callbacks.onEmptyClick?.();
+    }
+  }
+
   public clearHighlights(): void {
     this.interactionHandler?.setHighlightedStop(null);
     this.layerManager?.clearHighlights();

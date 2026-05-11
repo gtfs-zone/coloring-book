@@ -30,6 +30,12 @@ export interface BreadcrumbLookup {
   getRouteName: (route_id: string) => Promise<string>;
   getStopName: (stop_id: string) => Promise<string>;
   getAgencyIdForRoute: (route_id: string) => Promise<string>;
+  getStopAncestors: (
+    stop_id: string
+  ) => Promise<Array<{ stop_id: string; stop_name: string }>>;
+  getPathwayAncestors: (
+    pathway_id: string
+  ) => Promise<Array<{ stop_id: string; stop_name: string }>>;
 }
 
 /**
@@ -343,11 +349,20 @@ export class PageStateManager {
 
         case 'stop': {
           const stopName = await this.getObjectName('stop', pageState.stop_id);
+          const ancestors = this.breadcrumbLookup
+            ? await this.breadcrumbLookup.getStopAncestors(pageState.stop_id)
+            : [];
 
           breadcrumbs.push({
             label: 'Home',
             pageState: { type: 'home' },
           });
+          for (const ancestor of ancestors) {
+            breadcrumbs.push({
+              label: ancestor.stop_name,
+              pageState: { type: 'stop', stop_id: ancestor.stop_id },
+            });
+          }
           breadcrumbs.push({
             label: stopName,
             pageState: { type: 'stop', stop_id: pageState.stop_id },
@@ -373,10 +388,22 @@ export class PageStateManager {
         }
 
         case 'pathway': {
+          const pathwayAncestors = this.breadcrumbLookup
+            ? await this.breadcrumbLookup.getPathwayAncestors(
+                pageState.pathway_id
+              )
+            : [];
+
           breadcrumbs.push({
             label: 'Home',
             pageState: { type: 'home' },
           });
+          for (const ancestor of pathwayAncestors) {
+            breadcrumbs.push({
+              label: ancestor.stop_name,
+              pageState: { type: 'stop', stop_id: ancestor.stop_id },
+            });
+          }
           breadcrumbs.push({
             label: `Pathway ${pageState.pathway_id}`,
             pageState: {
