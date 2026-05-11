@@ -299,18 +299,28 @@ export class PageContentRenderer {
       })
       .join('');
 
+    const allTrips = (await this.dependencies.gtfsDatabase.getAllRows(
+      'trips'
+    )) as Record<string, unknown>[];
+    const tripCountByService = new Map<string, number>();
+    const routesByService = new Map<string, Set<string>>();
+    for (const trip of allTrips) {
+      const sid = trip.service_id as string;
+      const rid = trip.route_id as string;
+      tripCountByService.set(sid, (tripCountByService.get(sid) ?? 0) + 1);
+      if (!routesByService.has(sid)) {
+        routesByService.set(sid, new Set());
+      }
+      routesByService.get(sid)!.add(rid);
+    }
+
     const serviceItems = services
       .map((service: Record<string, unknown>) => {
-        const serviceData = service as Record<string, string>;
-
-        return `
-          <div class="flex items-center gap-3 p-3 rounded-lg hover:bg-base-200 cursor-pointer transition-colors service-card"
-               data-service-id="${serviceData.service_id}">
-            <div class="flex-1 min-w-0">
-              <div class="font-semibold">${renderCardLabel(getServiceDisplay(serviceData))}</div>
-            </div>
-          </div>
-        `;
+        const sid = service.service_id as string;
+        return renderServiceReference(service, {
+          tripCount: tripCountByService.get(sid),
+          routeCount: routesByService.get(sid)?.size,
+        });
       })
       .join('');
 
@@ -676,17 +686,6 @@ export class PageContentRenderer {
       });
     });
 
-    // Service card clicks
-    const serviceCards = container.querySelectorAll('.service-card');
-    serviceCards.forEach((card) => {
-      card.addEventListener('click', () => {
-        const service_id = card.getAttribute('data-service-id');
-        if (service_id && this.dependencies.onServiceClick) {
-          this.dependencies.onServiceClick(service_id);
-        }
-      });
-    });
-
     // Route card clicks
     const routeCards = container.querySelectorAll('.route-card');
     routeCards.forEach((card) => {
@@ -698,7 +697,7 @@ export class PageContentRenderer {
       });
     });
 
-    // Service reference row clicks (route page) → timetable
+    // Service reference row clicks → timetable (route page) or service page (home)
     const serviceRefRows = container.querySelectorAll(`.${SERVICE_REF_ROW}`);
     serviceRefRows.forEach((row) => {
       row.addEventListener('click', () => {
@@ -706,6 +705,8 @@ export class PageContentRenderer {
         const service_id = row.getAttribute('data-service-id');
         if (route_id && service_id) {
           this.dependencies.onTimetableClick(route_id, service_id);
+        } else if (service_id && this.dependencies.onServiceClick) {
+          this.dependencies.onServiceClick(service_id);
         }
       });
     });
