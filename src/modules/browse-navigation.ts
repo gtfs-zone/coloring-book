@@ -70,6 +70,7 @@ export class BrowseNavigation {
     setRouteSelectCallback: (callback: (route_id: string) => void) => void;
     setStopSelectCallback: (callback: (stop_id: string) => void) => void;
     refreshStops: () => void;
+    focusFeed: () => void;
   };
   public uiController: {
     showFileInEditor: (filename: string, rowId?: string) => void;
@@ -207,6 +208,7 @@ export class BrowseNavigation {
       setRouteSelectCallback: (callback: (route_id: string) => void) => void;
       setStopSelectCallback: (callback: (stop_id: string) => void) => void;
       refreshStops: () => void;
+      focusFeed: () => void;
     },
     scheduleController?: {
       renderSchedule: (
@@ -323,6 +325,7 @@ export class BrowseNavigation {
         focusOnAgency: (agency_id: string) =>
           this.highlightAgencyOnMap(agency_id),
         refreshStops: () => this.mapController.refreshStops(),
+        focusFeed: () => this.mapController.focusFeed(),
       },
       onAgencyClick: (agency_id: string) => navigateToAgency(agency_id),
       onRouteClick: (route_id: string) => navigateToRoute(route_id),
