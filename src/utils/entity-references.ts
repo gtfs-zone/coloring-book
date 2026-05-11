@@ -6,7 +6,6 @@ import {
 
 export const ROUTE_REF_ROW = 'route-ref-row';
 export const SERVICE_REF_ROW = 'service-ref-row';
-export const TIMETABLE_REF_BTN = 'timetable-ref-btn';
 export const ENTITY_REF_BTN = 'entity-ref-btn';
 
 export interface RouteReferenceOpts {
