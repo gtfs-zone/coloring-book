@@ -424,6 +424,11 @@ export class MapController {
     return true;
   }
 
+  public focusFeed(): void {
+    this.clearHighlights();
+    this.fitMapToData();
+  }
+
   /**
    * Fit map to show all GTFS data
    */
@@ -735,16 +740,11 @@ export class MapController {
       return;
     }
 
-    // Clear existing highlights
+    const agencyRouteIds = agencyRoutes.map((r) => r.route_id);
+
     this.clearHighlights();
-
-    // Highlight all routes for this agency
-    agencyRoutes.forEach((route) => {
-      this.highlightRoute(route.route_id);
-    });
-
-    // Fit map to show highlighted routes
-    this.fitToRoutes(agencyRoutes.map((r) => r.route_id));
+    this.routeRenderer?.highlightRoutes(agencyRouteIds);
+    this.fitToRoutes(agencyRouteIds);
   }
 
   // ========================================
