@@ -19,6 +19,7 @@ import {
   renderRouteReference,
   ROUTE_REF_ROW,
 } from '../utils/entity-references.js';
+import { renderTrashIcon } from './modal-utils.js';
 
 export interface AgencyViewDependencies {
   gtfsDatabase?: QueryOnlyDatabase;
@@ -94,7 +95,7 @@ export class AgencyViewController {
       <div class="space-y-4">
         <div class="flex items-center justify-between gap-2">
           <h2 class="text-lg font-semibold">Agency Properties</h2>
-          <button class="btn btn-sm btn-error btn-outline delete-agency-btn" data-agency-id="${this.currentAgencyId ?? ''}">Delete Agency</button>
+          <button class="btn btn-sm btn-error btn-outline delete-agency-btn" data-agency-id="${this.currentAgencyId ?? ''}" title="Delete">${renderTrashIcon()}</button>
         </div>
         <div class="card bg-base-100 shadow-lg">
           <div class="card-body p-4">

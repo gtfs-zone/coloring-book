@@ -13,6 +13,7 @@ import {
 } from '../utils/field-component.js';
 import { TripsSchema, GTFS_TABLES } from '../types/gtfs.js';
 import { getStopDisplay, renderOptionLabel } from '../utils/entity-display.js';
+import { renderTrashIcon } from './modal-utils.js';
 
 /**
  * Timetable Renderer - HTML generation for schedule views
@@ -349,7 +350,7 @@ export class TimetableRenderer {
         return `
           <td class="trip-header text-center min-w-[80px] p-2 text-xs font-mono">
             ${this.escapeHtml(trip.trip_id)}
-            <button class="btn btn-xs btn-error btn-outline delete-trip-btn mt-1" data-trip-id="${this.escapeHtml(trip.trip_id)}">Delete</button>
+            <button class="btn btn-xs btn-error btn-outline delete-trip-btn mt-1" data-trip-id="${this.escapeHtml(trip.trip_id)}" title="Delete">${renderTrashIcon('h-3 w-3')}</button>
           </td>
         `;
       })

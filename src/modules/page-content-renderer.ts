@@ -39,7 +39,7 @@ import {
   renderCardLabel,
   renderOptionLabel,
 } from '../utils/entity-display.js';
-import { showModal } from './modal-utils.js';
+import { showModal, renderTrashIcon } from './modal-utils.js';
 import { navigateToHome } from './navigation-actions.js';
 import { generateCompositeKeyFromRecord } from '../utils/gtfs-primary-keys.js';
 import { normalizeAgencyId } from '../utils/agency-helpers.js';
@@ -534,7 +534,7 @@ export class PageContentRenderer {
       <div class="space-y-4">
         <div class="flex items-center justify-between gap-2">
           <h2 class="text-lg font-semibold">${renderCardLabel(getRouteDisplay(routeData))}</h2>
-          <button class="btn btn-sm btn-error btn-outline delete-route-btn" data-route-id="${route_id}">Delete Route</button>
+          <button class="btn btn-sm btn-error btn-outline delete-route-btn" data-route-id="${route_id}" title="Delete">${renderTrashIcon()}</button>
         </div>
         <div class="card bg-base-100 shadow-lg">
           <div class="card-body p-4">
