@@ -43,10 +43,15 @@ import {
   renderCardLabel,
   renderOptionLabel,
 } from '../utils/entity-display.js';
-import { showModal } from './modal-utils.js';
+import { showModal, renderTrashIcon } from './modal-utils.js';
 import { navigateToHome } from './navigation-actions.js';
 import { generateCompositeKeyFromRecord } from '../utils/gtfs-primary-keys.js';
 import { normalizeAgencyId } from '../utils/agency-helpers.js';
+import {
+  renderServiceReference,
+  SERVICE_REF_ROW,
+  ENTITY_REF_BTN,
+} from '../utils/entity-references.js';
 
 /**
  * Interface for injected dependencies
@@ -109,6 +114,7 @@ export interface ContentRendererDependencies {
     clearHighlights: () => void;
     focusOnAgency: (agency_id: string) => void;
     refreshStops: () => void;
+    focusFeed: () => void;
   };
 
   // Navigation callbacks
@@ -209,6 +215,7 @@ export class PageContentRenderer {
     const agencyViewDependencies: AgencyViewDependencies = {
       gtfsDatabase: dependencies.gtfsDatabase,
       onRouteClick: dependencies.onRouteClick,
+      onDeleteAgency: (agency_id) => this.handleDeleteAgency(agency_id),
     };
     this.agencyViewController = new AgencyViewController(
       agencyViewDependencies
@@ -222,6 +229,7 @@ export class PageContentRenderer {
       onAgencyClick: dependencies.onAgencyClick,
       onRouteClick: dependencies.onRouteClick,
       onTimetableClick: dependencies.onTimetableClick,
+      onDeleteService: (service_id) => this.handleDeleteService(service_id),
     };
     this.serviceViewController = new ServiceViewController(
       serviceViewDependencies
@@ -295,6 +303,7 @@ export class PageContentRenderer {
    * Render home page (feed info and agencies list)
    */
   private async renderHome(): Promise<string> {
+    this.dependencies.mapController.focusFeed();
     const agencies = await this.dependencies.relationships.getAgenciesAsync();
 
     // Get feed_info data
@@ -318,18 +327,28 @@ export class PageContentRenderer {
       })
       .join('');
 
+    const allTrips = (await this.dependencies.gtfsDatabase.getAllRows(
+      'trips'
+    )) as Record<string, unknown>[];
+    const tripCountByService = new Map<string, number>();
+    const routesByService = new Map<string, Set<string>>();
+    for (const trip of allTrips) {
+      const sid = trip.service_id as string;
+      const rid = trip.route_id as string;
+      tripCountByService.set(sid, (tripCountByService.get(sid) ?? 0) + 1);
+      if (!routesByService.has(sid)) {
+        routesByService.set(sid, new Set());
+      }
+      routesByService.get(sid)!.add(rid);
+    }
+
     const serviceItems = services
       .map((service: Record<string, unknown>) => {
-        const serviceData = service as Record<string, string>;
-
-        return `
-          <div class="flex items-center gap-3 p-3 rounded-lg hover:bg-base-200 cursor-pointer transition-colors service-card"
-               data-service-id="${serviceData.service_id}">
-            <div class="flex-1 min-w-0">
-              <div class="font-semibold">${renderCardLabel(getServiceDisplay(serviceData))}</div>
-            </div>
-          </div>
-        `;
+        const sid = service.service_id as string;
+        return renderServiceReference(service, {
+          tripCount: tripCountByService.get(sid),
+          routeCount: routesByService.get(sid)?.size,
+        });
       })
       .join('');
 
@@ -537,7 +556,10 @@ export class PageContentRenderer {
     // Render route properties section
     const routePropertiesHTML = `
       <div class="space-y-4">
-        <h2 class="text-lg font-semibold">${renderCardLabel(getRouteDisplay(routeData))}</h2>
+        <div class="flex items-center justify-between gap-2">
+          <h2 class="text-lg font-semibold">${renderCardLabel(getRouteDisplay(routeData))}</h2>
+          <button class="btn btn-sm btn-error btn-outline delete-route-btn" data-route-id="${route_id}" title="Delete">${renderTrashIcon()}</button>
+        </div>
         <div class="card bg-base-100 shadow-lg">
           <div class="card-body p-4">
             <div class="max-w-md">
@@ -593,10 +615,15 @@ export class PageContentRenderer {
     `
         : '';
 
-    // Render services list
+    // Build lookup map for calendar data (full calendar rows only)
+    const calendarByServiceId = new Map(
+      allServices.map((s) => [s.service_id as string, s])
+    );
+
+    // Render timetables list
     const servicesListHTML = `
       <div class="space-y-4">
-        <h2 class="text-lg font-semibold">Services</h2>
+        <h2 class="text-lg font-semibold">Timetables</h2>
         <div class="card bg-base-100 shadow-lg">
           <div class="card-body p-4">
             ${newServiceSelectorHTML}
@@ -612,35 +639,12 @@ export class PageContentRenderer {
                   </div>`
                   : `<div class="space-y-2 ${newServiceSelectorHTML ? 'mt-4' : ''}">
                     ${Object.entries(serviceGroups)
-                      .map(([service_id, serviceTrips]) => {
-                        const tripCount = serviceTrips.length;
-                        const directions = [
-                          ...new Set(
-                            serviceTrips.map(
-                              (trip: unknown) =>
-                                (trip as Record<string, unknown>).direction_id
-                            )
-                          ),
-                        ];
-
-                        return `
-                          <div class="flex items-center justify-between p-3 rounded-lg hover:bg-base-200 cursor-pointer transition-colors service-row"
-                               data-service-id="${service_id}">
-                            <div class="flex-1">
-                              <div class="font-semibold">Service ${service_id}</div>
-                              <div class="text-sm text-base-content/70">
-                                ${tripCount} trip${tripCount !== 1 ? 's' : ''}
-                                ${directions.length > 1 ? ' • Both directions' : ''}
-                              </div>
-                            </div>
-                            <button class="btn btn-sm btn-ghost route-timetable-btn"
-                                    data-route-id="${route_id}"
-                                    data-service-id="${service_id}">
-                              View Timetable
-                            </button>
-                          </div>
-                        `;
-                      })
+                      .map(([service_id, serviceTrips]) =>
+                        renderServiceReference(
+                          calendarByServiceId.get(service_id) ?? { service_id },
+                          { tripCount: serviceTrips.length, route_id }
+                        )
+                      )
                       .join('')}
                   </div>`
             }
@@ -666,6 +670,7 @@ export class PageContentRenderer {
     direction_id?: string
   ): Promise<string> {
     try {
+      this.dependencies.mapController.highlightRoute(route_id);
       // Get the rendered schedule HTML directly
       return await this.dependencies.scheduleController.renderSchedule(
         route_id,
@@ -693,6 +698,7 @@ export class PageContentRenderer {
    * Render service page
    */
   private async renderService(service_id: string): Promise<string> {
+    this.dependencies.mapController.focusFeed();
     // Use the new ServiceViewController for comprehensive service view
     return await this.serviceViewController.renderServiceView(service_id);
   }
@@ -713,17 +719,6 @@ export class PageContentRenderer {
       });
     });
 
-    // Service card clicks
-    const serviceCards = container.querySelectorAll('.service-card');
-    serviceCards.forEach((card) => {
-      card.addEventListener('click', () => {
-        const service_id = card.getAttribute('data-service-id');
-        if (service_id && this.dependencies.onServiceClick) {
-          this.dependencies.onServiceClick(service_id);
-        }
-      });
-    });
-
     // Route card clicks
     const routeCards = container.querySelectorAll('.route-card');
     routeCards.forEach((card) => {
@@ -735,43 +730,42 @@ export class PageContentRenderer {
       });
     });
 
-    // Service timetable button clicks (route page)
-    const routeTimetableButtons = container.querySelectorAll(
-      '.route-timetable-btn'
-    );
-    routeTimetableButtons.forEach((button) => {
-      button.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const route_id = button.getAttribute('data-route-id');
-        const service_id = button.getAttribute('data-service-id');
+    // Service reference row clicks → timetable (route page) or service page (home)
+    const serviceRefRows = container.querySelectorAll(`.${SERVICE_REF_ROW}`);
+    serviceRefRows.forEach((row) => {
+      row.addEventListener('click', () => {
+        const route_id = row.getAttribute('data-route-id');
+        const service_id = row.getAttribute('data-service-id');
         if (route_id && service_id) {
           this.dependencies.onTimetableClick(route_id, service_id);
+        } else if (service_id && this.dependencies.onServiceClick) {
+          this.dependencies.onServiceClick(service_id);
         }
       });
     });
 
-    // Service row clicks (route page)
-    const serviceRows = container.querySelectorAll('.service-row');
-    serviceRows.forEach((row) => {
-      row.addEventListener('click', () => {
-        const service_id = row.getAttribute('data-service-id');
+    // "View Service" button clicks (route page) → service page
+    const entityRefBtns = container.querySelectorAll(`.${ENTITY_REF_BTN}`);
+    entityRefBtns.forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const service_id = btn.getAttribute('data-service-id');
         if (service_id && this.dependencies.onServiceClick) {
           this.dependencies.onServiceClick(service_id);
         }
       });
     });
 
-    // Service link clicks (on route page)
-    const serviceLinks = container.querySelectorAll('.service-link');
-    serviceLinks.forEach((link) => {
-      link.addEventListener('click', (e) => {
-        e.stopPropagation(); // Prevent event bubbling
-        const service_id = link.getAttribute('data-service-id');
-        if (service_id && this.dependencies.onServiceClick) {
-          this.dependencies.onServiceClick(service_id);
+    // Delete route button
+    const deleteRouteBtn = container.querySelector('.delete-route-btn');
+    if (deleteRouteBtn) {
+      deleteRouteBtn.addEventListener('click', () => {
+        const route_id = deleteRouteBtn.getAttribute('data-route-id');
+        if (route_id) {
+          this.handleDeleteRoute(route_id);
         }
       });
-    });
+    }
 
     // Add StopViewController event listeners
     // It will only attach to stop fields (data-table="stops.txt")
@@ -883,6 +877,404 @@ export class PageContentRenderer {
 
       // Reset the dropdown
       serviceSelect.value = '';
+    });
+  }
+
+  private async handleDeleteRoute(route_id: string): Promise<void> {
+    console.log(
+      '[PageContentRenderer] handleDeleteRoute called, route_id:',
+      route_id
+    );
+    const db = this.dependencies.gtfsDatabase;
+    const pm = this.dependencies.patchManager;
+    if (!db || !pm || !db.deleteRow) {
+      console.warn(
+        '[PageContentRenderer] handleDeleteRoute: missing db/pm/deleteRow'
+      );
+      return;
+    }
+
+    const routeRows = await db.queryRows('routes', { route_id });
+    const route = routeRows[0] as Record<string, unknown> | undefined;
+    if (!route) {
+      console.warn(
+        '[PageContentRenderer] handleDeleteRoute: route not found for id',
+        route_id
+      );
+      return;
+    }
+
+    const trips = (await db.queryRows('trips', {
+      route_id,
+    })) as Record<string, unknown>[];
+
+    const stopTimesPerTrip: Array<Record<string, unknown>[]> =
+      await Promise.all(
+        trips.map(
+          (trip) =>
+            db.queryRows('stop_times', {
+              trip_id: trip.trip_id as string,
+            }) as Promise<Record<string, unknown>[]>
+        )
+      );
+    const allStopTimes = stopTimesPerTrip.flat();
+
+    const doDelete = async () => {
+      for (const st of allStopTimes) {
+        const key = generateCompositeKeyFromRecord('stop_times', st);
+        await db.deleteRow!('stop_times', key);
+      }
+      for (const trip of trips) {
+        await db.deleteRow!('trips', trip.trip_id as string);
+      }
+      await db.deleteRow!('routes', route_id);
+
+      const deleteOps = [
+        ...allStopTimes.map((st) => ({
+          table: 'stop_times',
+          id: generateCompositeKeyFromRecord('stop_times', st),
+          record: st,
+        })),
+        ...trips.map((trip) => ({
+          table: 'trips',
+          id: trip.trip_id as string,
+          record: trip,
+        })),
+        { table: 'routes', id: route_id, record: route },
+      ];
+      const label =
+        trips.length === 0
+          ? 'Delete route'
+          : `Delete route + ${trips.length} trip${trips.length !== 1 ? 's' : ''} + ${allStopTimes.length} stop_time${allStopTimes.length !== 1 ? 's' : ''}`;
+      await pm.recordBatchDelete(deleteOps, label);
+
+      console.log(
+        `[PageContentRenderer] Deleted route ${route_id} + ${trips.length} trips + ${allStopTimes.length} stop_times`
+      );
+      await navigateToHome();
+    };
+
+    if (trips.length === 0) {
+      await showModal({
+        title: 'Delete route?',
+        body: `<p>This route has no trips. Are you sure you want to delete it?</p>`,
+        enterAction: 1,
+        escapeAction: 0,
+        actions: [
+          { label: 'Cancel', className: 'btn-ghost', onClick: () => {} },
+          { label: 'Delete route', className: 'btn-error', onClick: doDelete },
+        ],
+      });
+      return;
+    }
+
+    await showModal({
+      title: 'Route has trips',
+      body: `<p>This route has <strong>${trips.length} trip${trips.length !== 1 ? 's' : ''}</strong> and <strong>${allStopTimes.length} stop_time${allStopTimes.length !== 1 ? 's' : ''}</strong>.</p>
+             <p class="mt-3">Deleting this route will cascade-delete all its trips and stop_times (reversible via undo). Or cancel to keep it.</p>`,
+      enterAction: 1,
+      escapeAction: 0,
+      actions: [
+        { label: 'Cancel', className: 'btn-ghost', onClick: () => {} },
+        {
+          label: `Delete route + ${trips.length} trips + ${allStopTimes.length} stop_times`,
+          className: 'btn-error',
+          onClick: doDelete,
+        },
+      ],
+    });
+  }
+
+  private async handleDeleteService(service_id: string): Promise<void> {
+    console.log(
+      '[PageContentRenderer] handleDeleteService called, service_id:',
+      service_id
+    );
+    const db = this.dependencies.gtfsDatabase;
+    const pm = this.dependencies.patchManager;
+    if (!db || !pm || !db.deleteRow) {
+      console.warn(
+        '[PageContentRenderer] handleDeleteService: missing db/pm/deleteRow'
+      );
+      return;
+    }
+
+    const trips = (await db.queryRows('trips', {
+      service_id,
+    })) as Record<string, unknown>[];
+
+    const stopTimesPerTrip: Array<Record<string, unknown>[]> =
+      await Promise.all(
+        trips.map(
+          (trip) =>
+            db.queryRows('stop_times', {
+              trip_id: trip.trip_id as string,
+            }) as Promise<Record<string, unknown>[]>
+        )
+      );
+    const allStopTimes = stopTimesPerTrip.flat();
+
+    const calendarDates = (await db.queryRows('calendar_dates', {
+      service_id,
+    })) as Record<string, unknown>[];
+
+    const calendarRow = (await db.getRow('calendar', service_id)) as
+      | Record<string, unknown>
+      | undefined;
+
+    const doDelete = async () => {
+      for (const st of allStopTimes) {
+        const key = generateCompositeKeyFromRecord('stop_times', st);
+        await db.deleteRow!('stop_times', key);
+      }
+      for (const trip of trips) {
+        await db.deleteRow!('trips', trip.trip_id as string);
+      }
+      for (const cd of calendarDates) {
+        const key = generateCompositeKeyFromRecord('calendar_dates', cd);
+        await db.deleteRow!('calendar_dates', key);
+      }
+      if (calendarRow) {
+        await db.deleteRow!('calendar', service_id);
+      }
+
+      const deleteOps = [
+        ...allStopTimes.map((st) => ({
+          table: 'stop_times',
+          id: generateCompositeKeyFromRecord('stop_times', st),
+          record: st,
+        })),
+        ...trips.map((trip) => ({
+          table: 'trips',
+          id: trip.trip_id as string,
+          record: trip,
+        })),
+        ...calendarDates.map((cd) => ({
+          table: 'calendar_dates',
+          id: generateCompositeKeyFromRecord('calendar_dates', cd),
+          record: cd,
+        })),
+        ...(calendarRow
+          ? [{ table: 'calendar', id: service_id, record: calendarRow }]
+          : []),
+      ];
+
+      const parts: string[] = [];
+      if (trips.length > 0) {
+        parts.push(`${trips.length} trip${trips.length !== 1 ? 's' : ''}`);
+      }
+      if (allStopTimes.length > 0) {
+        parts.push(
+          `${allStopTimes.length} stop_time${allStopTimes.length !== 1 ? 's' : ''}`
+        );
+      }
+      if (calendarDates.length > 0) {
+        parts.push(
+          `${calendarDates.length} calendar_date${calendarDates.length !== 1 ? 's' : ''}`
+        );
+      }
+      const label =
+        parts.length === 0
+          ? 'Delete service'
+          : `Delete service + ${parts.join(', ')}`;
+      await pm.recordBatchDelete(deleteOps, label);
+
+      console.log(
+        `[PageContentRenderer] Deleted service ${service_id} + ${trips.length} trips + ${allStopTimes.length} stop_times + ${calendarDates.length} calendar_dates`
+      );
+      await navigateToHome();
+    };
+
+    const hasAnyDependents = trips.length > 0 || calendarDates.length > 0;
+
+    if (!hasAnyDependents) {
+      await showModal({
+        title: 'Delete service?',
+        body: `<p>This service has no trips or calendar dates. Are you sure you want to delete it?</p>`,
+        enterAction: 1,
+        escapeAction: 0,
+        actions: [
+          { label: 'Cancel', className: 'btn-ghost', onClick: () => {} },
+          {
+            label: 'Delete service',
+            className: 'btn-error',
+            onClick: doDelete,
+          },
+        ],
+      });
+      return;
+    }
+
+    const summaryParts: string[] = [];
+    if (trips.length > 0) {
+      summaryParts.push(
+        `<strong>${trips.length} trip${trips.length !== 1 ? 's' : ''}</strong>`
+      );
+    }
+    if (allStopTimes.length > 0) {
+      summaryParts.push(
+        `<strong>${allStopTimes.length} stop_time${allStopTimes.length !== 1 ? 's' : ''}</strong>`
+      );
+    }
+    if (calendarDates.length > 0) {
+      summaryParts.push(
+        `<strong>${calendarDates.length} calendar_date${calendarDates.length !== 1 ? 's' : ''}</strong>`
+      );
+    }
+
+    const deleteBtnParts: string[] = [];
+    if (trips.length > 0) {
+      deleteBtnParts.push(`${trips.length} trips`);
+    }
+    if (allStopTimes.length > 0) {
+      deleteBtnParts.push(`${allStopTimes.length} stop_times`);
+    }
+    if (calendarDates.length > 0) {
+      deleteBtnParts.push(`${calendarDates.length} calendar_dates`);
+    }
+
+    await showModal({
+      title: 'Service has dependents',
+      body: `<p>This service has ${summaryParts.join(', ')}.</p>
+             <p class="mt-3">Deleting this service will cascade-delete all its trips, stop_times, and calendar_dates (reversible via undo). Or cancel to keep it.</p>`,
+      enterAction: 1,
+      escapeAction: 0,
+      actions: [
+        { label: 'Cancel', className: 'btn-ghost', onClick: () => {} },
+        {
+          label: `Delete service + ${deleteBtnParts.join(' + ')}`,
+          className: 'btn-error',
+          onClick: doDelete,
+        },
+      ],
+    });
+  }
+
+  private async handleDeleteAgency(agency_id: string): Promise<void> {
+    console.log(
+      '[PageContentRenderer] handleDeleteAgency called, agency_id:',
+      agency_id
+    );
+    const db = this.dependencies.gtfsDatabase;
+    const pm = this.dependencies.patchManager;
+    if (!db || !pm || !db.deleteRow) {
+      console.warn(
+        '[PageContentRenderer] handleDeleteAgency: missing db/pm/deleteRow'
+      );
+      return;
+    }
+
+    const agencyRows = await db.queryRows('agency', { agency_id });
+    const agency = agencyRows[0] as Record<string, unknown> | undefined;
+    if (!agency) {
+      console.warn(
+        '[PageContentRenderer] handleDeleteAgency: agency not found for id',
+        agency_id
+      );
+      return;
+    }
+
+    const routes = (await db.queryRows('routes', {
+      agency_id,
+    })) as Record<string, unknown>[];
+
+    const tripsPerRoute: Array<Record<string, unknown>[]> = await Promise.all(
+      routes.map(
+        (route) =>
+          db.queryRows('trips', {
+            route_id: route.route_id as string,
+          }) as Promise<Record<string, unknown>[]>
+      )
+    );
+    const allTrips = tripsPerRoute.flat();
+
+    const stopTimesPerTrip: Array<Record<string, unknown>[]> =
+      await Promise.all(
+        allTrips.map(
+          (trip) =>
+            db.queryRows('stop_times', {
+              trip_id: trip.trip_id as string,
+            }) as Promise<Record<string, unknown>[]>
+        )
+      );
+    const allStopTimes = stopTimesPerTrip.flat();
+
+    const doDelete = async () => {
+      for (const st of allStopTimes) {
+        const key = generateCompositeKeyFromRecord('stop_times', st);
+        await db.deleteRow!('stop_times', key);
+      }
+      for (const trip of allTrips) {
+        await db.deleteRow!('trips', trip.trip_id as string);
+      }
+      for (const route of routes) {
+        await db.deleteRow!('routes', route.route_id as string);
+      }
+      await db.deleteRow!('agency', agency_id);
+
+      const deleteOps = [
+        ...allStopTimes.map((st) => ({
+          table: 'stop_times',
+          id: generateCompositeKeyFromRecord('stop_times', st),
+          record: st,
+        })),
+        ...allTrips.map((trip) => ({
+          table: 'trips',
+          id: trip.trip_id as string,
+          record: trip,
+        })),
+        ...routes.map((route) => ({
+          table: 'routes',
+          id: route.route_id as string,
+          record: route,
+        })),
+        { table: 'agency', id: agency_id, record: agency },
+      ];
+
+      const label =
+        routes.length === 0
+          ? 'Delete agency'
+          : `Delete agency + ${routes.length} route${routes.length !== 1 ? 's' : ''} + ${allTrips.length} trip${allTrips.length !== 1 ? 's' : ''} + ${allStopTimes.length} stop_time${allStopTimes.length !== 1 ? 's' : ''}`;
+      await pm.recordBatchDelete(deleteOps, label);
+
+      console.log(
+        `[PageContentRenderer] Deleted agency ${agency_id} + ${routes.length} routes + ${allTrips.length} trips + ${allStopTimes.length} stop_times`
+      );
+      await navigateToHome();
+    };
+
+    if (routes.length === 0) {
+      await showModal({
+        title: 'Delete agency?',
+        body: `<p>This agency has no routes. Are you sure you want to delete it?</p>`,
+        enterAction: 1,
+        escapeAction: 0,
+        actions: [
+          { label: 'Cancel', className: 'btn-ghost', onClick: () => {} },
+          {
+            label: 'Delete agency',
+            className: 'btn-error',
+            onClick: doDelete,
+          },
+        ],
+      });
+      return;
+    }
+
+    await showModal({
+      title: 'Agency has routes',
+      body: `<p>This agency has <strong>${routes.length} route${routes.length !== 1 ? 's' : ''}</strong>, <strong>${allTrips.length} trip${allTrips.length !== 1 ? 's' : ''}</strong>, and <strong>${allStopTimes.length} stop_time${allStopTimes.length !== 1 ? 's' : ''}</strong>.</p>
+             <p class="mt-3">Deleting this agency will cascade-delete all its routes, trips, and stop_times (reversible via undo). Or cancel to keep it.</p>`,
+      enterAction: 1,
+      escapeAction: 0,
+      actions: [
+        { label: 'Cancel', className: 'btn-ghost', onClick: () => {} },
+        {
+          label: `Delete agency + ${routes.length} routes + ${allTrips.length} trips + ${allStopTimes.length} stop_times`,
+          className: 'btn-error',
+          onClick: doDelete,
+        },
+      ],
     });
   }
 

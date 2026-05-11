@@ -1,3 +1,42 @@
+## v0.16.0 (2026-05-11)
+
+### Feat
+
+- show 'Reading file...' indicator immediately on file upload
+- show 'Downloading feed...' indicator immediately on URL load
+- replace text delete buttons with trash icon across all object types
+- add agency deletion with cascade routes, trips, and stop_times
+- add service deletion with cascade trips, stop_times, and calendar_dates
+- add route deletion with cascade trips and stop_times
+- add trip deletion from timetable header with cascade stop_times
+- highlight route on map when navigating to timetable page
+- add focusFeed() to MapController and wire home/service pages
+- enrich agency page route items with renderRouteReference and trip counts
+- enrich home page service cards with renderServiceReference
+- refactor service page timetables to use renderRouteReference rows
+- replace route page service rows with renderServiceReference, rename section to Timetables
+- add entity-references utility with route and service reference renderers
+- include calendar_dates-only services on home page
+- add agency-helpers utilities and fix empty agency display
+- **fares**: move Fares button from home page to navbar
+- **fares-modal**: add schema-driven column header tooltips to fare table panels
+- **fares**: add Fares section to home page wired to showFaresModal
+- **fares**: add showFaresModal with CRUD for fare_media, fare_products, rider_categories
+- **db**: register fare_media, fare_products, rider_categories tables (schema v9)
+
+### Fix
+
+- wire agency map focus and fix highlightAgencyRoutes loop bug
+- remove unused TIMETABLE_REF_BTN export
+- derive date range from calendar_dates for calendar_dates-only services
+- include calendar_dates-only services in 'Add timetable' dropdown
+- normalize agency_id in map highlight and remaining view consumers
+- apply agencyRouteFilter in all relationship query methods
+- add agency_id fieldMaps for agency and routes virtual tables
+- tooltip directions fixed
+- lil fixes to Fares
+- **fares**: make ID fields editable in add mode, readonly only in edit mode
+
 ## v0.15.0 (2026-05-04)
 
 ### Feat

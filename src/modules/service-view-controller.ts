@@ -9,6 +9,12 @@
 import type { Agency, Routes, Trips } from '../types/gtfs.js';
 import type { QueryOnlyDatabase } from '../utils/field-component.js';
 import { normalizeAgencyId } from '../utils/agency-helpers.js';
+import { renderTrashIcon } from './modal-utils.js';
+import {
+  renderRouteReference,
+  ROUTE_REF_ROW,
+  ENTITY_REF_BTN,
+} from '../utils/entity-references.js';
 
 export interface ServiceViewDependencies {
   gtfsDatabase?: QueryOnlyDatabase;
@@ -26,6 +32,7 @@ export interface ServiceViewDependencies {
     service_id: string,
     direction_id?: string
   ) => void;
+  onDeleteService?: (service_id: string) => void;
 }
 
 export class ServiceViewController {
@@ -48,10 +55,30 @@ export class ServiceViewController {
       const routes = await this.getRoutesForService(service_id);
       const agencies = await this.getAgenciesForRoutes(routes);
 
+      const trips =
+        await (this.dependencies.gtfsRelationships?.getTripsForService?.(
+          service_id
+        ) ??
+          this.dependencies.gtfsDatabase?.queryRows('trips', { service_id }) ??
+          []);
+      const tripCountByRoute = new Map<string, number>();
+      for (const trip of trips) {
+        const rid = (trip as Record<string, unknown>).route_id as string;
+        tripCountByRoute.set(rid, (tripCountByRoute.get(rid) ?? 0) + 1);
+      }
+
+      const agencyNameByNormalizedId = new Map<string, string>();
+      for (const agency of agencies) {
+        agencyNameByNormalizedId.set(
+          normalizeAgencyId(agency.agency_id),
+          agency.agency_name || agency.agency_id
+        );
+      }
+
       const html = `
         <div class="p-4 space-y-4">
           ${await this.renderServiceProperties(service_id)}
-          ${this.renderRelatedRoutes(routes, agencies, service_id)}
+          ${this.renderTimetablesSection(routes, agencyNameByNormalizedId, tripCountByRoute, service_id)}
         </div>
       `;
       console.log('Service view HTML length:', html.length);
@@ -156,7 +183,10 @@ export class ServiceViewController {
 
     return `
       <div class="space-y-4">
-        <h2 class="text-lg font-semibold">Service Schedule</h2>
+        <div class="flex items-center justify-between gap-2">
+          <h2 class="text-lg font-semibold">Service Schedule</h2>
+          <button class="btn btn-sm btn-error btn-outline delete-service-btn" data-service-id="${service_id}" title="Delete">${renderTrashIcon()}</button>
+        </div>
         <div class="card bg-base-100 shadow-lg">
           <div class="card-body p-4">
             ${serviceEditorHTML}
@@ -166,18 +196,16 @@ export class ServiceViewController {
     `;
   }
 
-  /**
-   * Render related routes section with DaisyUI table-pin-rows
-   */
-  private renderRelatedRoutes(
+  private renderTimetablesSection(
     routes: Routes[],
-    agencies: Agency[],
+    agencyNameByNormalizedId: Map<string, string>,
+    tripCountByRoute: Map<string, number>,
     service_id: string
   ): string {
     if (routes.length === 0) {
       return `
         <div class="space-y-4">
-          <h2 class="text-lg font-semibold">Routes Using This Service</h2>
+          <h2 class="text-lg font-semibold">Timetables</h2>
           <div class="card bg-base-100 shadow-lg">
             <div class="card-body p-4">
               <div class="text-center py-6 opacity-70">
@@ -189,107 +217,23 @@ export class ServiceViewController {
       `;
     }
 
-    // Group routes by agency
-    const routesByAgency = new Map<string, Routes[]>();
-    routes.forEach((route) => {
-      const agency_id = normalizeAgencyId(route.agency_id);
-      if (!routesByAgency.has(agency_id)) {
-        routesByAgency.set(agency_id, []);
-      }
-      routesByAgency.get(agency_id)?.push(route);
-    });
-
-    // Build table with pinned rows
-    let tableHTML = '';
-
-    // If we have agencies, group by agency
-    if (agencies.length > 0) {
-      agencies.forEach((agency) => {
-        const agencyRoutes =
-          routesByAgency.get(normalizeAgencyId(agency.agency_id)) || [];
-        if (agencyRoutes.length === 0) {
-          return;
-        }
-
-        // Agency header (pinned row) - clickable
-        tableHTML += `
-          <thead>
-            <tr>
-              <th colspan="3" class="bg-base-200">
-                <div class="flex items-center justify-between">
-                  <span class="font-semibold link link-hover agency-link cursor-pointer" data-agency-id="${agency.agency_id}">${agency.agency_name || agency.agency_id}</span>
-                  <div class="badge badge-outline">${agencyRoutes.length} route${agencyRoutes.length !== 1 ? 's' : ''}</div>
-                </div>
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            ${agencyRoutes
-              .map(
-                (route) => `
-              <tr class="hover">
-                <td class="cursor-pointer route-row" data-route-id="${route.route_id}">
-                  <div class="font-medium">${route.route_short_name || route.route_long_name || route.route_id}</div>
-                  ${route.route_long_name && route.route_short_name ? `<div class="text-sm opacity-70">${route.route_long_name}</div>` : ''}
-                </td>
-                <td class="text-right">
-                  ${route.route_color ? `<div class="badge" style="background-color: #${route.route_color}; color: #${route.route_text_color || 'FFFFFF'};">${route.route_short_name || 'Route'}</div>` : ''}
-                </td>
-                <td class="text-right">
-                  <button class="btn btn-xs btn-ghost timetable-btn" data-route-id="${route.route_id}" data-service-id="${service_id}">
-                    Timetable
-                  </button>
-                </td>
-              </tr>
-            `
-              )
-              .join('')}
-          </tbody>
-        `;
-      });
-    } else {
-      // No agencies, just show routes
-      tableHTML = `
-        <thead>
-          <tr>
-            <th>Route</th>
-            <th></th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          ${routes
-            .map(
-              (route) => `
-            <tr class="hover">
-              <td class="cursor-pointer route-row" data-route-id="${route.route_id}">
-                <div class="font-medium">${route.route_short_name || route.route_long_name || route.route_id}</div>
-                ${route.route_long_name && route.route_short_name ? `<div class="text-sm opacity-70">${route.route_long_name}</div>` : ''}
-              </td>
-              <td class="text-right">
-                ${route.route_color ? `<div class="badge" style="background-color: #${route.route_color}; color: #${route.route_text_color || 'FFFFFF'};">${route.route_short_name || 'Route'}</div>` : ''}
-              </td>
-              <td class="text-right">
-                <button class="btn btn-xs btn-ghost timetable-btn" data-route-id="${route.route_id}" data-service-id="${service_id}">
-                  Timetable
-                </button>
-              </td>
-            </tr>
-          `
-            )
-            .join('')}
-        </tbody>
-      `;
-    }
+    const items = routes
+      .map((route) => {
+        const normalizedId = normalizeAgencyId(route.agency_id);
+        return renderRouteReference(route as Record<string, unknown>, {
+          agencyName: agencyNameByNormalizedId.get(normalizedId),
+          tripCount: tripCountByRoute.get(route.route_id),
+          service_id,
+        });
+      })
+      .join('');
 
     return `
       <div class="space-y-4">
-        <h2 class="text-lg font-semibold">Routes Using This Service</h2>
+        <h2 class="text-lg font-semibold">Timetables</h2>
         <div class="card bg-base-100 shadow-lg">
-          <div class="card-body p-0">
-            <table class="table table-pin-rows">
-              ${tableHTML}
-            </table>
+          <div class="card-body p-4">
+            <div class="space-y-2">${items}</div>
           </div>
         </div>
       </div>
@@ -315,38 +259,37 @@ export class ServiceViewController {
    * This should be called after the content is inserted into the DOM
    */
   addEventListeners(container: HTMLElement): void {
-    // Route row clicks
-    const routeRows = container.querySelectorAll('.route-row');
+    // Delete service button
+    const deleteServiceBtn = container.querySelector('.delete-service-btn');
+    if (deleteServiceBtn) {
+      deleteServiceBtn.addEventListener('click', () => {
+        const service_id = deleteServiceBtn.getAttribute('data-service-id');
+        if (service_id && this.dependencies.onDeleteService) {
+          this.dependencies.onDeleteService(service_id);
+        }
+      });
+    }
+
+    // Route reference row click → timetable
+    const routeRows = container.querySelectorAll(`.${ROUTE_REF_ROW}`);
     routeRows.forEach((row) => {
       row.addEventListener('click', () => {
         const route_id = row.getAttribute('data-route-id');
-        if (route_id) {
-          this.dependencies.onRouteClick(route_id);
-        }
-      });
-    });
-
-    // Agency link clicks
-    const agencyLinks = container.querySelectorAll('.agency-link');
-    agencyLinks.forEach((link) => {
-      link.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const agency_id = link.getAttribute('data-agency-id');
-        if (agency_id && this.dependencies.onAgencyClick) {
-          this.dependencies.onAgencyClick(agency_id);
-        }
-      });
-    });
-
-    // Timetable button clicks
-    const timetableButtons = container.querySelectorAll('.timetable-btn');
-    timetableButtons.forEach((button) => {
-      button.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const route_id = button.getAttribute('data-route-id');
-        const service_id = button.getAttribute('data-service-id');
+        const service_id = row.getAttribute('data-service-id');
         if (route_id && service_id) {
           this.dependencies.onTimetableClick(route_id, service_id);
+        }
+      });
+    });
+
+    // "View Route" button click → route page
+    const entityBtns = container.querySelectorAll(`.${ENTITY_REF_BTN}`);
+    entityBtns.forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const route_id = btn.getAttribute('data-route-id');
+        if (route_id) {
+          this.dependencies.onRouteClick(route_id);
         }
       });
     });
