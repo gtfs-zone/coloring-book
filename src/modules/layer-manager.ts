@@ -709,7 +709,11 @@ export class LayerManager {
 
     // Build stop coordinate lookup
     const coordMap = new Map<string, [number, number]>();
+    const parentByStopId = new Map<string, string>();
     stops.forEach((s) => {
+      if (s.parent_station) {
+        parentByStopId.set(s.stop_id, String(s.parent_station));
+      }
       if (
         s.stop_lat !== null &&
         s.stop_lat !== undefined &&
@@ -719,6 +723,23 @@ export class LayerManager {
         coordMap.set(s.stop_id, [Number(s.stop_lon), Number(s.stop_lat)]);
       }
     });
+
+    // Walk up the parent chain to find the nearest ancestor with coords.
+    const resolveCoord = (stop_id: string): [number, number] | null => {
+      let current = stop_id;
+      for (let i = 0; i <= 5; i++) {
+        const coord = coordMap.get(current);
+        if (coord) {
+          return coord;
+        }
+        const parent = parentByStopId.get(current);
+        if (!parent) {
+          return null;
+        }
+        current = parent;
+      }
+      return null;
+    };
 
     // Identify stop IDs that belong to this station
     const stationStopIds = new Set(
@@ -737,8 +758,8 @@ export class LayerManager {
       ) {
         return;
       }
-      const from = coordMap.get(pw.from_stop_id);
-      const to = coordMap.get(pw.to_stop_id);
+      const from = resolveCoord(pw.from_stop_id);
+      const to = resolveCoord(pw.to_stop_id);
       if (!from || !to) {
         return;
       }
