@@ -28,6 +28,7 @@ import { TabLockController } from './modules/tab-lock';
 import { humanLabel } from './utils/patch-label';
 import { showAboutModal } from './modules/about-modal';
 import { showFaresModal } from './modules/fares-modal';
+import { ShapesManager } from './modules/shapes-manager';
 import { PanelResizer } from './modules/panel-resizer';
 import './styles/main.css';
 
@@ -221,6 +222,15 @@ export class GTFSEditor {
 
       // Initialize keyboard shortcuts
       this.keyboardShortcuts.initialize();
+
+      // Wire shapes button to open Shapes manager
+      const shapesManager = new ShapesManager(
+        this.gtfsParser,
+        this.patchManager
+      );
+      document.getElementById('shapes-btn')?.addEventListener('click', () => {
+        void shapesManager.open();
+      });
 
       // Wire fares button to open Fares modal
       document.getElementById('fares-btn')?.addEventListener('click', () => {
