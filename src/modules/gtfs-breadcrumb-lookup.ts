@@ -89,6 +89,90 @@ export class GTFSBreadcrumbLookup implements BreadcrumbLookup {
   }
 
   /**
+   * Get the ancestor chain for a stop (outermost station first, excluding the stop itself).
+   */
+  async getStopAncestors(
+    stop_id: string
+  ): Promise<Array<{ stop_id: string; stop_name: string }>> {
+    const chain: Array<{ stop_id: string; stop_name: string }> = [];
+    try {
+      let currentId = stop_id;
+      for (let i = 0; i < 5; i++) {
+        const rows = await this.database.queryRows('stops', {
+          stop_id: currentId,
+        });
+        if (rows.length === 0) {
+          break;
+        }
+        const row = rows[0];
+        const parentId = row.parent_station as string | undefined;
+        if (!parentId) {
+          break;
+        }
+        const parentRows = await this.database.queryRows('stops', {
+          stop_id: parentId,
+        });
+        if (parentRows.length === 0) {
+          break;
+        }
+        const parent = parentRows[0];
+        chain.push({
+          stop_id: parentId,
+          stop_name: (parent.stop_name as string) || `Stop ${parentId}`,
+        });
+        currentId = parentId;
+      }
+      chain.reverse();
+    } catch (error) {
+      console.warn(
+        `[GTFSBreadcrumbLookup] Failed to get ancestors for stop ${stop_id}:`,
+        error
+      );
+    }
+    return chain;
+  }
+
+  /**
+   * Get the ancestor chain for a pathway (outermost station first, ending at from_stop).
+   */
+  async getPathwayAncestors(
+    pathway_id: string
+  ): Promise<Array<{ stop_id: string; stop_name: string }>> {
+    try {
+      const pathwayRows = await this.database.queryRows('pathways', {
+        pathway_id,
+      });
+      if (pathwayRows.length === 0) {
+        return [];
+      }
+      const pathway = pathwayRows[0];
+      const from_stop_id = pathway.from_stop_id as string | undefined;
+      if (!from_stop_id) {
+        return [];
+      }
+
+      const stopAncestors = await this.getStopAncestors(from_stop_id);
+      const fromStopRows = await this.database.queryRows('stops', {
+        stop_id: from_stop_id,
+      });
+      const fromStopName =
+        fromStopRows.length > 0
+          ? (fromStopRows[0].stop_name as string) || `Stop ${from_stop_id}`
+          : `Stop ${from_stop_id}`;
+      return [
+        ...stopAncestors,
+        { stop_id: from_stop_id, stop_name: fromStopName },
+      ];
+    } catch (error) {
+      console.warn(
+        `[GTFSBreadcrumbLookup] Failed to get ancestors for pathway ${pathway_id}:`,
+        error
+      );
+      return [];
+    }
+  }
+
+  /**
    * No-op cache clearing method for compatibility
    */
   clearCache(): void {
