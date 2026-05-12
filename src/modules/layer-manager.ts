@@ -124,23 +124,18 @@ export class LayerManager {
     // Create GeoJSON for stops
     const stopsGeoJSON = this.createStopsGeoJSON(validStops, stops);
 
-    // Add source with feature IDs for state management
-    const stopsGeoJSONWithIds = {
-      ...stopsGeoJSON,
-      features: stopsGeoJSON.features.map((feature) => ({
-        ...feature,
-        id: feature.properties?.stop_id, // Add ID for feature state
-      })),
-    };
-
-    // Check if source already exists before adding
+    // Check if source already exists before adding.
+    // promoteId tells MapLibre to use the stop_id property as the feature id
+    // for feature-state lookups, preserving string ids like "place-jfk" that
+    // would otherwise be coerced to 0 by the vector-tile encoder.
     if (!this.map.getSource('stops')) {
       this.map.addSource('stops', {
         type: 'geojson',
-        data: stopsGeoJSONWithIds,
+        data: stopsGeoJSON,
+        promoteId: 'stop_id',
       });
     }
-    this.onStopsDataUpdated?.(stopsGeoJSONWithIds);
+    this.onStopsDataUpdated?.(stopsGeoJSON);
 
     // Add background stops layer if enabled
     if (finalOptions.showBackground) {
@@ -367,12 +362,11 @@ export class LayerManager {
         'icon-anchor': 'center',
         'icon-allow-overlap': true,
         'icon-ignore-placement': true,
-        'icon-size': [
-          'case',
-          ['boolean', ['feature-state', 'focused'], false],
-          1.3,
-          0.8,
-        ],
+        // icon-size is a layout property and cannot use feature-state.
+        // Pick a single size that reads well inside both the unfocused
+        // (r=6) and focused (r=10) station circle — the white circle
+        // grows around the static ✕ for the focus signal.
+        'icon-size': 1.0,
       },
     });
     console.log('[LayerManager] addStationXLayer added', {
@@ -722,16 +716,8 @@ export class LayerManager {
     );
 
     const stopsGeoJSON = this.createStopsGeoJSON(validStops, stops);
-    const stopsGeoJSONWithIds = {
-      ...stopsGeoJSON,
-      features: stopsGeoJSON.features.map((feature) => ({
-        ...feature,
-        id: feature.properties?.stop_id,
-      })),
-    };
-
-    stopsSource.setData(stopsGeoJSONWithIds);
-    this.onStopsDataUpdated?.(stopsGeoJSONWithIds);
+    stopsSource.setData(stopsGeoJSON);
+    this.onStopsDataUpdated?.(stopsGeoJSON);
     console.log(`🔄 Updated stops data: ${validStops.length} stops`);
   }
 
@@ -848,7 +834,11 @@ export class LayerManager {
     if (pathwaySource) {
       pathwaySource.setData(geojson);
     } else {
-      this.map.addSource('pathways', { type: 'geojson', data: geojson });
+      this.map.addSource('pathways', {
+        type: 'geojson',
+        data: geojson,
+        promoteId: 'pathway_id',
+      });
     }
 
     if (!this.map.getLayer('pathways-lines')) {
