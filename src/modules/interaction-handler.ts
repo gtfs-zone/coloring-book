@@ -3,6 +3,8 @@ import {
   GeoJSONSource,
   MapMouseEvent,
   MapTouchEvent,
+  Point,
+  MapGeoJSONFeature,
 } from 'maplibre-gl';
 import { Stops } from '../types/gtfs-entities.js';
 import { MapMode } from './map-controller.js';
@@ -160,13 +162,30 @@ export class InteractionHandler {
   }
 
   /**
+   * Query rendered features, restricting to layers that currently exist.
+   * MapLibre throws if any requested layer is missing, so callers that
+   * reference dynamically-added layers (e.g. pathways) must filter first.
+   */
+  private queryFeaturesOnLayers(
+    point: Point,
+    layers: string[]
+  ): MapGeoJSONFeature[] {
+    const existing = layers.filter((id) => !!this.map.getLayer(id));
+    if (existing.length === 0) {
+      return [];
+    }
+    return this.map.queryRenderedFeatures(point, { layers: existing });
+  }
+
+  /**
    * Handle navigation mode clicks (stops, pathways, and routes)
    */
   private handleNavigationClick(e: MapMouseEvent): void {
     // Query features at click point, prioritizing stops over pathways over routes
-    const stopFeatures = this.map.queryRenderedFeatures(e.point, {
-      layers: ['stops-clickarea', 'stops-background'],
-    });
+    const stopFeatures = this.queryFeaturesOnLayers(e.point, [
+      'stops-clickarea',
+      'stops-background',
+    ]);
 
     if (stopFeatures.length > 0) {
       // Handle stop click - this takes priority over everything
@@ -181,9 +200,10 @@ export class InteractionHandler {
     }
 
     // Check for pathway features (only present when a station is expanded)
-    const pathwayFeatures = this.map.queryRenderedFeatures(e.point, {
-      layers: ['pathways-clickarea', 'pathways-lines'],
-    });
+    const pathwayFeatures = this.queryFeaturesOnLayers(e.point, [
+      'pathways-clickarea',
+      'pathways-lines',
+    ]);
 
     if (pathwayFeatures.length > 0) {
       const pathway_id = pathwayFeatures[0].properties?.pathway_id;
@@ -195,9 +215,10 @@ export class InteractionHandler {
     }
 
     // If no stops or pathways found, check for route features
-    const routeFeatures = this.map.queryRenderedFeatures(e.point, {
-      layers: ['routes-clickarea', 'routes-background'],
-    });
+    const routeFeatures = this.queryFeaturesOnLayers(e.point, [
+      'routes-clickarea',
+      'routes-background',
+    ]);
 
     if (routeFeatures.length > 0) {
       // Handle route click
