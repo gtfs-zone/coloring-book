@@ -70,7 +70,7 @@ export class LayerManager {
     const layersToRemove = [
       'pathways-lines',
       'pathways-clickarea',
-      'stops-station-x',
+      'stops-station-dot',
       'stops-background',
       'stops-clickarea',
       'stops-highlight',
@@ -140,7 +140,7 @@ export class LayerManager {
     // Add background stops layer if enabled
     if (finalOptions.showBackground) {
       this.addStopsBackgroundLayer(finalOptions);
-      this.addStationXLayer();
+      this.addStationDotLayer();
     }
 
     // Add invisible click areas if enabled
@@ -274,7 +274,7 @@ export class LayerManager {
         'circle-color': [
           'case',
           ['==', ['get', 'location_type'], 1],
-          '#ffffff', // Station: white (X overlay provided by stops-station-x symbol layer)
+          '#ffffff', // Station: white (black inner dot drawn by stops-station-dot layer)
           ['==', ['get', 'location_type'], 2],
           '#f59e0b', // Entrance: amber
           ['==', ['get', 'location_type'], 3],
@@ -302,75 +302,35 @@ export class LayerManager {
   }
 
   /**
-   * Register a black ✕ as a map image. Idempotent.
-   * Drawn at 2× pixel ratio so it's crisp on retina displays.
-   * Used by stops-station-x via icon-image — works on every basemap
-   * regardless of whether the style includes a glyphs URL.
+   * Add a small black dot at the center of each station feature.
+   * Sits on top of the white station circle to mark it as a station.
+   * Uses paint-side feature-state so the dot grows with focus.
    */
-  private ensureStationXIcon(): void {
-    if (this.map.hasImage('station-x')) {
+  private addStationDotLayer(): void {
+    if (this.map.getLayer('stops-station-dot')) {
       return;
     }
-    const size = 32;
-    const canvas = document.createElement('canvas');
-    canvas.width = size;
-    canvas.height = size;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) {
-      console.warn(
-        '[LayerManager] Failed to get 2d context for station-x icon'
-      );
-      return;
-    }
-    ctx.clearRect(0, 0, size, size);
-    ctx.strokeStyle = '#000000';
-    ctx.lineWidth = 4;
-    ctx.lineCap = 'round';
-    const margin = size * 0.28;
-    ctx.beginPath();
-    ctx.moveTo(margin, margin);
-    ctx.lineTo(size - margin, size - margin);
-    ctx.moveTo(size - margin, margin);
-    ctx.lineTo(margin, size - margin);
-    ctx.stroke();
-    const imageData = ctx.getImageData(0, 0, size, size);
-    this.map.addImage('station-x', imageData, { pixelRatio: 2 });
-    console.log('[LayerManager] Registered station-x icon');
-  }
-
-  /**
-   * Add ✕ symbol layer centered on each station feature.
-   * Sits above the white circle background so the X is visible.
-   */
-  private addStationXLayer(): void {
-    if (this.map.getLayer('stops-station-x')) {
-      return;
-    }
-    this.ensureStationXIcon();
 
     this.map.addLayer({
-      id: 'stops-station-x',
-      type: 'symbol',
+      id: 'stops-station-dot',
+      type: 'circle',
       source: 'stops',
       filter: [
         '==',
         ['get', 'location_type'],
         1,
       ] as unknown as FilterSpecification,
-      layout: {
-        'icon-image': 'station-x',
-        'icon-anchor': 'center',
-        'icon-allow-overlap': true,
-        'icon-ignore-placement': true,
-        // icon-size is a layout property and cannot use feature-state.
-        // Pick a single size that reads well inside both the unfocused
-        // (r=6) and focused (r=10) station circle — the white circle
-        // grows around the static ✕ for the focus signal.
-        'icon-size': 1.0,
+      paint: {
+        'circle-radius': [
+          'case',
+          ['boolean', ['feature-state', 'focused'], false],
+          4,
+          2.5,
+        ],
+        'circle-color': '#000000',
+        'circle-opacity': 1,
+        'circle-stroke-width': 0,
       },
-    });
-    console.log('[LayerManager] addStationXLayer added', {
-      layerExists: !!this.map.getLayer('stops-station-x'),
     });
   }
 
@@ -409,9 +369,9 @@ export class LayerManager {
     if (this.map.getLayer('stops-clickarea')) {
       this.map.setFilter('stops-clickarea', this.activeStopsFilter);
     }
-    // Station-X layer always filters to location_type=1; compose with activeStopsFilter when non-default
-    if (this.map.getLayer('stops-station-x')) {
-      const stationXFilter: FilterSpecification =
+    // Station-dot layer always filters to location_type=1; compose with activeStopsFilter when non-default
+    if (this.map.getLayer('stops-station-dot')) {
+      const stationDotFilter: FilterSpecification =
         filter === null
           ? ([
               '==',
@@ -423,7 +383,7 @@ export class LayerManager {
               ['==', ['get', 'location_type'], 1],
               filter,
             ] as unknown as FilterSpecification);
-      this.map.setFilter('stops-station-x', stationXFilter);
+      this.map.setFilter('stops-station-dot', stationDotFilter);
     }
   }
 
