@@ -307,6 +307,43 @@ export class LayerManager {
   }
 
   /**
+   * Register a black ✕ as a map image. Idempotent.
+   * Drawn at 2× pixel ratio so it's crisp on retina displays.
+   * Used by stops-station-x via icon-image — works on every basemap
+   * regardless of whether the style includes a glyphs URL.
+   */
+  private ensureStationXIcon(): void {
+    if (this.map.hasImage('station-x')) {
+      return;
+    }
+    const size = 32;
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) {
+      console.warn(
+        '[LayerManager] Failed to get 2d context for station-x icon'
+      );
+      return;
+    }
+    ctx.clearRect(0, 0, size, size);
+    ctx.strokeStyle = '#000000';
+    ctx.lineWidth = 4;
+    ctx.lineCap = 'round';
+    const margin = size * 0.28;
+    ctx.beginPath();
+    ctx.moveTo(margin, margin);
+    ctx.lineTo(size - margin, size - margin);
+    ctx.moveTo(size - margin, margin);
+    ctx.lineTo(margin, size - margin);
+    ctx.stroke();
+    const imageData = ctx.getImageData(0, 0, size, size);
+    this.map.addImage('station-x', imageData, { pixelRatio: 2 });
+    console.log('[LayerManager] Registered station-x icon');
+  }
+
+  /**
    * Add ✕ symbol layer centered on each station feature.
    * Sits above the white circle background so the X is visible.
    */
@@ -314,6 +351,7 @@ export class LayerManager {
     if (this.map.getLayer('stops-station-x')) {
       return;
     }
+    this.ensureStationXIcon();
 
     this.map.addLayer({
       id: 'stops-station-x',
@@ -325,21 +363,20 @@ export class LayerManager {
         1,
       ] as unknown as FilterSpecification,
       layout: {
-        'text-field': '✕',
-        'text-anchor': 'center',
-        'text-allow-overlap': true,
-        'text-ignore-placement': true,
-        'text-size': [
+        'icon-image': 'station-x',
+        'icon-anchor': 'center',
+        'icon-allow-overlap': true,
+        'icon-ignore-placement': true,
+        'icon-size': [
           'case',
           ['boolean', ['feature-state', 'focused'], false],
-          16,
-          10,
+          1.3,
+          0.8,
         ],
-        'text-font': ['Open Sans Regular', 'Arial Unicode MS Regular'],
       },
-      paint: {
-        'text-color': '#000000',
-      },
+    });
+    console.log('[LayerManager] addStationXLayer added', {
+      layerExists: !!this.map.getLayer('stops-station-x'),
     });
   }
 
@@ -586,22 +623,37 @@ export class LayerManager {
   }
 
   public setFocusedStop(stop_id: string | null): void {
+    const hasSource = !!this.map.getSource('stops');
+    console.log('[LayerManager] setFocusedStop', {
+      prev: this.focusedStopId,
+      next: stop_id,
+      hasSource,
+    });
     try {
-      if (this.focusedStopId !== null && this.map.getSource('stops')) {
+      if (this.focusedStopId !== null && hasSource) {
         this.map.setFeatureState(
           { source: 'stops', id: this.focusedStopId },
           { focused: false }
         );
       }
       this.focusedStopId = stop_id;
-      if (stop_id !== null && this.map.getSource('stops')) {
+      if (stop_id !== null && hasSource) {
         this.map.setFeatureState(
           { source: 'stops', id: stop_id },
           { focused: true }
         );
+        const readback = this.map.getFeatureState({
+          source: 'stops',
+          id: stop_id,
+        });
+        console.log('[LayerManager] setFocusedStop readback', {
+          stop_id,
+          stateAfter: readback,
+          idType: typeof stop_id,
+        });
       }
     } catch (error) {
-      console.debug(
+      console.warn(
         '[LayerManager] Could not set focused stop:',
         stop_id,
         error
