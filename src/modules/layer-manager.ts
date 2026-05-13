@@ -249,14 +249,14 @@ export class LayerManager {
           [
             'case',
             ['==', ['get', 'location_type'], 1],
-            10,
+            12,
             ['==', ['get', 'location_type'], 2],
-            8,
+            10,
             ['==', ['get', 'location_type'], 3],
-            8,
+            10,
             ['==', ['get', 'location_type'], 4],
-            11,
-            options.radius * 1.7,
+            13,
+            options.radius * 2,
           ],
           [
             'case',
@@ -292,7 +292,7 @@ export class LayerManager {
         'circle-stroke-width': [
           'case',
           ['boolean', ['feature-state', 'focused'], false],
-          4,
+          5,
           options.strokeWidth,
         ],
         'circle-opacity': 1,
@@ -324,7 +324,7 @@ export class LayerManager {
         'circle-radius': [
           'case',
           ['boolean', ['feature-state', 'focused'], false],
-          4,
+          5,
           2.5,
         ],
         'circle-color': '#000000',
@@ -577,34 +577,26 @@ export class LayerManager {
   }
 
   public setFocusedStop(stop_id: string | null): void {
-    const hasSource = !!this.map.getSource('stops');
+    if (this.focusedStopId === stop_id) {
+      return;
+    }
     console.log('[LayerManager] setFocusedStop', {
       prev: this.focusedStopId,
       next: stop_id,
-      hasSource,
     });
     try {
-      if (this.focusedStopId !== null && hasSource) {
+      if (this.focusedStopId !== null && this.map.getSource('stops')) {
         this.map.setFeatureState(
           { source: 'stops', id: this.focusedStopId },
           { focused: false }
         );
       }
       this.focusedStopId = stop_id;
-      if (stop_id !== null && hasSource) {
+      if (stop_id !== null && this.map.getSource('stops')) {
         this.map.setFeatureState(
           { source: 'stops', id: stop_id },
           { focused: true }
         );
-        const readback = this.map.getFeatureState({
-          source: 'stops',
-          id: stop_id,
-        });
-        console.log('[LayerManager] setFocusedStop readback', {
-          stop_id,
-          stateAfter: readback,
-          idType: typeof stop_id,
-        });
       }
     } catch (error) {
       console.warn(
@@ -616,6 +608,13 @@ export class LayerManager {
   }
 
   public setFocusedPathway(pathway_id: string | null): void {
+    if (this.focusedPathwayId === pathway_id) {
+      return;
+    }
+    console.log('[LayerManager] setFocusedPathway', {
+      prev: this.focusedPathwayId,
+      next: pathway_id,
+    });
     try {
       if (this.focusedPathwayId !== null && this.map.getSource('pathways')) {
         this.map.setFeatureState(
@@ -631,7 +630,7 @@ export class LayerManager {
         );
       }
     } catch (error) {
-      console.debug(
+      console.warn(
         '[LayerManager] Could not set focused pathway:',
         pathway_id,
         error
