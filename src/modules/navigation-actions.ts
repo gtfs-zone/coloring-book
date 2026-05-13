@@ -86,18 +86,6 @@ export async function navigateToService(service_id: string): Promise<void> {
 }
 
 /**
- * Navigate to pathway details page
- * @param pathway_id - The pathway ID to display
- */
-export async function navigateToPathway(pathway_id: string): Promise<void> {
-  const pageState: PageState = {
-    type: 'pathway',
-    pathway_id: pathway_id,
-  };
-  await getPageStateManager().navigateTo(pageState);
-}
-
-/**
  * Get the current page state
  */
 export function getCurrentPageState(): PageState {
