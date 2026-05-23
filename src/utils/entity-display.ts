@@ -22,8 +22,9 @@ export function getStopDisplay(
 ): EntityDisplayInfo {
   const name = record['stop_name'];
   const id = record['stop_id'];
+  const parent = record['parent_station'];
   if (name) {
-    return { primary: name, secondary: id };
+    return parent ? { primary: name, secondary: id } : { primary: name };
   }
   return { primary: id ?? '' };
 }

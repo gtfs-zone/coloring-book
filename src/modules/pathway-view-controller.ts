@@ -4,6 +4,7 @@ import {
   type QueryOnlyDatabase,
 } from '../utils/field-component.js';
 import { GTFSSchemas, GTFS_TABLES } from '../types/gtfs.js';
+import { getStopDisplay, renderOptionLabel } from '../utils/entity-display.js';
 
 function escapeAttr(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
@@ -100,8 +101,12 @@ export class PathwayViewController {
     toStop: Stops | null
   ): string {
     const renderStopLink = (stop_id: string, stop: Stops | null): string => {
-      const label = stop?.stop_name
-        ? `${escapeAttr(stop.stop_name)} (${escapeAttr(stop_id)})`
+      const label = stop
+        ? escapeAttr(
+            renderOptionLabel(
+              getStopDisplay(stop as unknown as Record<string, string>)
+            )
+          )
         : escapeAttr(stop_id);
       return `<button class="btn btn-xs btn-ghost font-mono stop-link-btn" data-stop-id="${escapeAttr(stop_id)}">${label}</button>`;
     };

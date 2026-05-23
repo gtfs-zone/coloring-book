@@ -32,10 +32,10 @@ export interface BreadcrumbLookup {
   getAgencyIdForRoute: (route_id: string) => Promise<string>;
   getStopAncestors: (
     stop_id: string
-  ) => Promise<Array<{ stop_id: string; stop_name: string }>>;
+  ) => Promise<Array<{ stop_id: string; label: string }>>;
   getPathwayAncestors: (
     pathway_id: string
-  ) => Promise<Array<{ stop_id: string; stop_name: string }>>;
+  ) => Promise<Array<{ stop_id: string; label: string }>>;
 }
 
 /**
@@ -359,7 +359,7 @@ export class PageStateManager {
           });
           for (const ancestor of ancestors) {
             breadcrumbs.push({
-              label: ancestor.stop_name,
+              label: ancestor.label,
               pageState: { type: 'stop', stop_id: ancestor.stop_id },
             });
           }
@@ -400,7 +400,7 @@ export class PageStateManager {
           });
           for (const ancestor of pathwayAncestors) {
             breadcrumbs.push({
-              label: ancestor.stop_name,
+              label: ancestor.label,
               pageState: { type: 'stop', stop_id: ancestor.stop_id },
             });
           }
