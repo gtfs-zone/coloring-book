@@ -20,6 +20,7 @@ import { GTFSParser } from './gtfs-parser.js';
 import { Editor } from './editor.js';
 import { BrowseNavigation } from './browse-navigation.js';
 import { ScheduleController } from './schedule-controller.js';
+import { getStopDisplay, renderOptionLabel } from '../utils/entity-display.js';
 
 function escapeHtml(text: string): string {
   return text
@@ -645,12 +646,13 @@ export class UIController {
             'Unknown';
         }
       } else if (objectType === 'Stop') {
-        objectName =
-          objectData.name ||
-          objectData.stop_name ||
-          objectData.id ||
-          objectData.stop_id ||
-          'Unknown';
+        if (objectData.stop_name || objectData.stop_id) {
+          objectName = renderOptionLabel(
+            getStopDisplay(objectData as Record<string, string>)
+          );
+        } else {
+          objectName = objectData.name || objectData.id || 'Unknown';
+        }
       } else if (objectType === 'Trip') {
         objectName = objectData.id || objectData.trip_id || 'Unknown';
       } else {
