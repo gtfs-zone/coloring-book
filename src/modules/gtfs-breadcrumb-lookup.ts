@@ -7,6 +7,7 @@
 
 import { BreadcrumbLookup } from './page-state-manager.js';
 import { GTFSDatabase } from './gtfs-database.js';
+import { getStopDisplay, renderOptionLabel } from '../utils/entity-display.js';
 
 /**
  * GTFS-specific breadcrumb lookup implementation
@@ -76,9 +77,9 @@ export class GTFSBreadcrumbLookup implements BreadcrumbLookup {
       });
 
       if (stops.length > 0) {
-        const stop = stops[0];
-        const name = (stop.stop_name as string) || `Stop ${stop_id}`;
-        return name;
+        return renderOptionLabel(
+          getStopDisplay(stops[0] as Record<string, string>)
+        );
       }
     } catch (error) {
       console.warn(`Failed to lookup stop name for ID ${stop_id}:`, error);
@@ -93,8 +94,8 @@ export class GTFSBreadcrumbLookup implements BreadcrumbLookup {
    */
   async getStopAncestors(
     stop_id: string
-  ): Promise<Array<{ stop_id: string; stop_name: string }>> {
-    const chain: Array<{ stop_id: string; stop_name: string }> = [];
+  ): Promise<Array<{ stop_id: string; label: string }>> {
+    const chain: Array<{ stop_id: string; label: string }> = [];
     try {
       let currentId = stop_id;
       for (let i = 0; i < 5; i++) {
@@ -118,7 +119,9 @@ export class GTFSBreadcrumbLookup implements BreadcrumbLookup {
         const parent = parentRows[0];
         chain.push({
           stop_id: parentId,
-          stop_name: (parent.stop_name as string) || `Stop ${parentId}`,
+          label: renderOptionLabel(
+            getStopDisplay(parent as Record<string, string>)
+          ),
         });
         currentId = parentId;
       }
@@ -137,7 +140,7 @@ export class GTFSBreadcrumbLookup implements BreadcrumbLookup {
    */
   async getPathwayAncestors(
     pathway_id: string
-  ): Promise<Array<{ stop_id: string; stop_name: string }>> {
+  ): Promise<Array<{ stop_id: string; label: string }>> {
     try {
       const pathwayRows = await this.database.queryRows('pathways', {
         pathway_id,
@@ -155,13 +158,15 @@ export class GTFSBreadcrumbLookup implements BreadcrumbLookup {
       const fromStopRows = await this.database.queryRows('stops', {
         stop_id: from_stop_id,
       });
-      const fromStopName =
+      const fromStopLabel =
         fromStopRows.length > 0
-          ? (fromStopRows[0].stop_name as string) || `Stop ${from_stop_id}`
+          ? renderOptionLabel(
+              getStopDisplay(fromStopRows[0] as Record<string, string>)
+            )
           : `Stop ${from_stop_id}`;
       return [
         ...stopAncestors,
-        { stop_id: from_stop_id, stop_name: fromStopName },
+        { stop_id: from_stop_id, label: fromStopLabel },
       ];
     } catch (error) {
       console.warn(
