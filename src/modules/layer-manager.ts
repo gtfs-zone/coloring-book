@@ -2,6 +2,10 @@ import { Map as MapLibreMap, GeoJSONSource } from 'maplibre-gl';
 import type { FilterSpecification } from 'maplibre-gl';
 import { Stops, StopTimes, Pathways } from '../types/gtfs-entities.js';
 import type { GTFSParser } from './gtfs-parser.js';
+import {
+  buildStopCoordResolver,
+  hasValidCoords,
+} from '../utils/stop-coords.js';
 
 export interface StopLayerOptions {
   showBackground: boolean;
@@ -113,16 +117,9 @@ export class LayerManager {
 
     const finalOptions = { ...this.defaultStopOptions, ...options };
 
-    const validStops = stops.filter(
-      (stop) =>
-        stop.stop_lat !== null &&
-        stop.stop_lon !== null &&
-        !isNaN(stop.stop_lat) &&
-        !isNaN(stop.stop_lon)
-    );
-
-    // Create GeoJSON for stops
-    const stopsGeoJSON = this.createStopsGeoJSON(validStops, stops);
+    // Create GeoJSON for stops (resolver fans coord-less children around their
+    // ancestor station; stops with no resolvable coords are skipped + warned).
+    const stopsGeoJSON = this.createStopsGeoJSON(stops);
 
     // Check if source already exists before adding.
     // promoteId tells MapLibre to use the stop_id property as the feature id
@@ -153,19 +150,20 @@ export class LayerManager {
       this.addStopsHoverBehavior();
     }
 
-    console.log(`🗺️ Added ${validStops.length} stops to map`);
+    const featureCount = stopsGeoJSON.features.length;
+    console.log(`🗺️ Added ${featureCount} stops to map`);
   }
 
   /**
-   * Create GeoJSON data for stops
+   * Create GeoJSON data for stops.
+   *
+   * Coord-less child stops are placed on a circle around their nearest
+   * coord-having ancestor (see buildStopCoordResolver). Stops with no own
+   * coords and no coord-having ancestor are skipped with a warning.
    */
-  private createStopsGeoJSON(
-    stops: Stops[],
-    allStops?: Stops[]
-  ): GeoJSON.FeatureCollection {
-    // Build lookup for ancestor traversal (includes stops without coords)
+  private createStopsGeoJSON(stops: Stops[]): GeoJSON.FeatureCollection {
     const stopById = new Map<string, Stops>();
-    (allStops ?? stops).forEach((s) => stopById.set(s.stop_id, s));
+    stops.forEach((s) => stopById.set(String(s.stop_id), s));
 
     const resolveStationId = (stop: Stops): string => {
       const locType =
@@ -173,7 +171,7 @@ export class LayerManager {
           ? stop.location_type
           : parseInt(stop.location_type ?? '0', 10) || 0;
       if (locType === 1) {
-        return stop.stop_id;
+        return String(stop.stop_id);
       }
       let current = stop;
       for (let i = 0; i < 5; i++) {
@@ -190,42 +188,51 @@ export class LayerManager {
             ? parent.location_type
             : parseInt(parent.location_type ?? '0', 10) || 0;
         if (parentType === 1) {
-          return parent.stop_id;
+          return String(parent.stop_id);
         }
         current = parent;
       }
       return '';
     };
 
-    return {
-      type: 'FeatureCollection',
-      features: stops.map((stop) => {
-        const lat = stop.stop_lat;
-        const lon = stop.stop_lon;
-        const stopType =
-          typeof stop.location_type === 'number'
-            ? stop.location_type
-            : parseInt(stop.location_type ?? '0', 10) || 0;
+    const resolveCoord = buildStopCoordResolver(stops);
 
-        return {
-          type: 'Feature',
-          geometry: {
-            type: 'Point',
-            coordinates: [lon, lat], // [lng, lat] for MapLibre
-          },
-          properties: {
-            stop_id: stop.stop_id,
-            stop_name: stop.stop_name || 'Unnamed Stop',
-            stop_code: stop.stop_code || '',
-            stop_desc: stop.stop_desc || '',
-            location_type: stopType,
-            parent_station: stop.parent_station ?? '',
-            station_id: resolveStationId(stop),
-            wheelchair_boarding: stop.wheelchair_boarding || '',
-          },
-        };
-      }),
-    };
+    const features: GeoJSON.Feature[] = [];
+    for (const stop of stops) {
+      const coord = resolveCoord(String(stop.stop_id));
+      if (!coord) {
+        if (!hasValidCoords(stop)) {
+          console.warn(
+            `[LayerManager] Skipping stop without resolvable coords: stop_id=${stop.stop_id} location_type=${stop.location_type ?? ''} parent_station=${stop.parent_station ?? ''}`
+          );
+        }
+        continue;
+      }
+      const stopType =
+        typeof stop.location_type === 'number'
+          ? stop.location_type
+          : parseInt(stop.location_type ?? '0', 10) || 0;
+
+      features.push({
+        type: 'Feature',
+        geometry: {
+          type: 'Point',
+          coordinates: coord, // [lng, lat] for MapLibre
+        },
+        properties: {
+          stop_id: stop.stop_id,
+          stop_name: stop.stop_name || 'Unnamed Stop',
+          stop_code: stop.stop_code || '',
+          stop_desc: stop.stop_desc || '',
+          location_type: stopType,
+          parent_station: stop.parent_station ?? '',
+          station_id: resolveStationId(stop),
+          wheelchair_boarding: stop.wheelchair_boarding || '',
+        },
+      });
+    }
+
+    return { type: 'FeatureCollection', features };
   }
 
   /**
@@ -666,18 +673,10 @@ export class LayerManager {
       return;
     }
 
-    const validStops = stops.filter(
-      (stop) =>
-        stop.stop_lat !== null &&
-        stop.stop_lon !== null &&
-        !isNaN(stop.stop_lat) &&
-        !isNaN(stop.stop_lon)
-    );
-
-    const stopsGeoJSON = this.createStopsGeoJSON(validStops, stops);
+    const stopsGeoJSON = this.createStopsGeoJSON(stops);
     stopsSource.setData(stopsGeoJSON);
     this.onStopsDataUpdated?.(stopsGeoJSON);
-    console.log(`🔄 Updated stops data: ${validStops.length} stops`);
+    console.log(`🔄 Updated stops data: ${stopsGeoJSON.features.length} stops`);
   }
 
   /**
@@ -704,39 +703,10 @@ export class LayerManager {
     const pathways =
       this.gtfsParser.getFileDataSyncTyped<Pathways>('pathways.txt') || [];
 
-    // Build stop coordinate lookup
-    const coordMap = new Map<string, [number, number]>();
-    const parentByStopId = new Map<string, string>();
-    stops.forEach((s) => {
-      if (s.parent_station) {
-        parentByStopId.set(s.stop_id, String(s.parent_station));
-      }
-      if (
-        s.stop_lat !== null &&
-        s.stop_lat !== undefined &&
-        s.stop_lon !== null &&
-        s.stop_lon !== undefined
-      ) {
-        coordMap.set(s.stop_id, [Number(s.stop_lon), Number(s.stop_lat)]);
-      }
-    });
-
-    // Walk up the parent chain to find the nearest ancestor with coords.
-    const resolveCoord = (stop_id: string): [number, number] | null => {
-      let current = stop_id;
-      for (let i = 0; i <= 5; i++) {
-        const coord = coordMap.get(current);
-        if (coord) {
-          return coord;
-        }
-        const parent = parentByStopId.get(current);
-        if (!parent) {
-          return null;
-        }
-        current = parent;
-      }
-      return null;
-    };
+    // Shared coord resolver: own coords if available, otherwise a circular
+    // position around the nearest coord-having ancestor (matches how stops
+    // are drawn so pathway endpoints align with the rendered child dots).
+    const resolveCoord = buildStopCoordResolver(stops);
 
     // Identify stop IDs that belong to this station
     const stationStopIds = new Set(
@@ -755,8 +725,8 @@ export class LayerManager {
       ) {
         return;
       }
-      const from = resolveCoord(pw.from_stop_id);
-      const to = resolveCoord(pw.to_stop_id);
+      const from = resolveCoord(String(pw.from_stop_id));
+      const to = resolveCoord(String(pw.to_stop_id));
       if (!from || !to) {
         return;
       }

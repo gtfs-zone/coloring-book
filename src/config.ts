@@ -20,4 +20,11 @@ export const CONFIG = {
 
   // Patch system — how often to compress and store a full-state snapshot
   SNAPSHOT_INTERVAL: 50, // take a full snapshot every N patches
+
+  // Map rendering — radius (in meters) used to visually distribute child stops
+  // that are missing their own stop_lat/stop_lon around their parent station.
+  // Children share their ancestor's coords; we fan them out on a circle of this
+  // radius so the map shows them as distinct dots and pathway lines fan out
+  // instead of collapsing onto the station center.
+  MISSING_COORD_CIRCLE_RADIUS_METERS: 30,
 } as const;
