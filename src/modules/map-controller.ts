@@ -10,6 +10,7 @@ import {
 import { PageStateManager } from './page-state-manager.js';
 import { GTFSParser } from './gtfs-parser.js';
 import { PatchManager } from './patch-manager.js';
+import { hasValidCoords } from '../utils/stop-coords.js';
 import {
   Stops,
   StopTimes,
@@ -460,20 +461,15 @@ export class MapController {
       return;
     }
 
-    const validStops = stops.filter(
-      (stop) =>
-        stop.stop_lat !== null &&
-        stop.stop_lon !== null &&
-        !isNaN(stop.stop_lat) &&
-        !isNaN(stop.stop_lon)
-    );
+    const validStops = stops.filter(hasValidCoords);
 
     if (validStops.length === 0) {
       return;
     }
 
     const coordinates = validStops.map(
-      (stop) => [stop.stop_lon!, stop.stop_lat!] as [number, number]
+      (stop) =>
+        [Number(stop.stop_lon), Number(stop.stop_lat)] as [number, number]
     );
 
     const bounds = coordinates.reduce(
