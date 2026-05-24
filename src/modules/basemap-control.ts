@@ -165,7 +165,7 @@ export class BasemapControl {
 
     // Create FAB structure with vertical labeled layout
     this.container.innerHTML = `
-      <div class="fab bottom-0 right-0">
+      <div class="fab">
         <!-- Main FAB button (shows current basemap) -->
         <div tabindex="0" role="button" class="btn btn-lg btn-circle btn-neutral basemap-fab-main">
           ${currentStyle?.icon || basemapStyles[0].icon}
@@ -211,6 +211,12 @@ export class BasemapControl {
     // Add minimal custom styles
     const style = document.createElement('style');
     style.textContent = `
+      .basemap-control .fab {
+        position: relative;
+        inset-inline-end: 0;
+        bottom: auto;
+      }
+
       .basemap-control .projection-swap {
         flex-shrink: 0;
       }
