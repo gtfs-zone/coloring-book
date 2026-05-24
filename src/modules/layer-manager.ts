@@ -1,6 +1,11 @@
 import { Map as MapLibreMap, GeoJSONSource } from 'maplibre-gl';
-import { Stops, StopTimes } from '../types/gtfs-entities.js';
+import type { FilterSpecification } from 'maplibre-gl';
+import { Stops, StopTimes, Pathways } from '../types/gtfs-entities.js';
 import type { GTFSParser } from './gtfs-parser.js';
+import {
+  buildStopCoordResolver,
+  hasValidCoords,
+} from '../utils/stop-coords.js';
 
 export interface StopLayerOptions {
   showBackground: boolean;
@@ -20,12 +25,35 @@ export interface HighlightLayerOptions {
   strokeWidth: number;
 }
 
+// Default filter: show all top-level stops (empty parent_station) and stations (location_type=1), hide child stops.
+const DEFAULT_STOPS_FILTER: FilterSpecification = [
+  'any',
+  ['==', ['get', 'parent_station'], ''],
+  ['==', ['get', 'location_type'], 1],
+] as FilterSpecification;
+
 export class LayerManager {
   private map: MapLibreMap;
   private gtfsParser: GTFSParser;
   public onStopsDataUpdated:
     | ((data: GeoJSON.FeatureCollection) => void)
     | null = null;
+
+  private activeStopsFilter: FilterSpecification = DEFAULT_STOPS_FILTER;
+  private focusedStopId: string | null = null;
+  private focusedPathwayId: string | null = null;
+
+  private _resolverDirty = true;
+  private _cachedResolver:
+    | ((stop_id: string) => [number, number] | null)
+    | null = null;
+
+  private readonly onPathwayMouseEnter = () => {
+    this.map.getCanvas().style.cursor = 'pointer';
+  };
+  private readonly onPathwayMouseLeave = () => {
+    this.map.getCanvas().style.cursor = '';
+  };
 
   // Default options
   private defaultStopOptions: StopLayerOptions = {
@@ -56,6 +84,9 @@ export class LayerManager {
    */
   public clearAllLayers(): void {
     const layersToRemove = [
+      'pathways-lines',
+      'pathways-clickarea',
+      'stops-station-dot',
       'stops-background',
       'stops-clickarea',
       'stops-highlight',
@@ -66,7 +97,12 @@ export class LayerManager {
       'shapes',
     ];
 
-    const sourcesToRemove = ['stops', 'stops-highlight', 'trip-highlight'];
+    const sourcesToRemove = [
+      'pathways',
+      'stops',
+      'stops-highlight',
+      'trip-highlight',
+    ];
 
     layersToRemove.forEach((layerId) => {
       if (this.map.getLayer(layerId)) {
@@ -93,38 +129,28 @@ export class LayerManager {
 
     const finalOptions = { ...this.defaultStopOptions, ...options };
 
-    const validStops = stops.filter(
-      (stop) =>
-        stop.stop_lat !== null &&
-        stop.stop_lon !== null &&
-        !isNaN(stop.stop_lat) &&
-        !isNaN(stop.stop_lon)
-    );
+    // Create GeoJSON for stops (resolver places coord-less children via Tutte
+    // layout over the pathway graph; stops with no resolvable coords or in
+    // orphan pathway components are skipped + warned).
+    const stopsGeoJSON = this.createStopsGeoJSON(stops);
 
-    // Create GeoJSON for stops
-    const stopsGeoJSON = this.createStopsGeoJSON(validStops);
-
-    // Add source with feature IDs for state management
-    const stopsGeoJSONWithIds = {
-      ...stopsGeoJSON,
-      features: stopsGeoJSON.features.map((feature) => ({
-        ...feature,
-        id: feature.properties?.stop_id, // Add ID for feature state
-      })),
-    };
-
-    // Check if source already exists before adding
+    // Check if source already exists before adding.
+    // promoteId tells MapLibre to use the stop_id property as the feature id
+    // for feature-state lookups, preserving string ids like "place-jfk" that
+    // would otherwise be coerced to 0 by the vector-tile encoder.
     if (!this.map.getSource('stops')) {
       this.map.addSource('stops', {
         type: 'geojson',
-        data: stopsGeoJSONWithIds,
+        data: stopsGeoJSON,
+        promoteId: 'stop_id',
       });
     }
-    this.onStopsDataUpdated?.(stopsGeoJSONWithIds);
+    this.onStopsDataUpdated?.(stopsGeoJSON);
 
     // Add background stops layer if enabled
     if (finalOptions.showBackground) {
       this.addStopsBackgroundLayer(finalOptions);
+      this.addStationDotLayer();
     }
 
     // Add invisible click areas if enabled
@@ -137,37 +163,93 @@ export class LayerManager {
       this.addStopsHoverBehavior();
     }
 
-    console.log(`🗺️ Added ${validStops.length} stops to map`);
+    const featureCount = stopsGeoJSON.features.length;
+    console.log(`🗺️ Added ${featureCount} stops to map`);
   }
 
   /**
-   * Create GeoJSON data for stops
+   * Create GeoJSON data for stops.
+   *
+   * Coord-less child stops are placed via Tutte's barycentric embedding over
+   * the pathway graph (see buildStopCoordResolver). Stops with no own coords
+   * and no coord-having ancestor, or in pathway components disconnected from
+   * any pinned sibling, are skipped with a warning.
    */
   private createStopsGeoJSON(stops: Stops[]): GeoJSON.FeatureCollection {
-    return {
-      type: 'FeatureCollection',
-      features: stops.map((stop) => {
-        const lat = stop.stop_lat;
-        const lon = stop.stop_lon;
-        const stopType = stop.location_type ?? 0;
+    const stopById = new Map<string, Stops>();
+    stops.forEach((s) => stopById.set(String(s.stop_id), s));
 
-        return {
-          type: 'Feature',
-          geometry: {
-            type: 'Point',
-            coordinates: [lon, lat], // [lng, lat] for MapLibre
-          },
-          properties: {
-            stop_id: stop.stop_id,
-            stop_name: stop.stop_name || 'Unnamed Stop',
-            stop_code: stop.stop_code || '',
-            stop_desc: stop.stop_desc || '',
-            location_type: stopType,
-            wheelchair_boarding: stop.wheelchair_boarding || '',
-          },
-        };
-      }),
+    const resolveStationId = (stop: Stops): string => {
+      const locType =
+        typeof stop.location_type === 'number'
+          ? stop.location_type
+          : parseInt(stop.location_type ?? '0', 10) || 0;
+      if (locType === 1) {
+        return String(stop.stop_id);
+      }
+      let current = stop;
+      for (let i = 0; i < 5; i++) {
+        const parentId = current.parent_station;
+        if (!parentId) {
+          break;
+        }
+        const parent = stopById.get(String(parentId));
+        if (!parent) {
+          break;
+        }
+        const parentType =
+          typeof parent.location_type === 'number'
+            ? parent.location_type
+            : parseInt(parent.location_type ?? '0', 10) || 0;
+        if (parentType === 1) {
+          return String(parent.stop_id);
+        }
+        current = parent;
+      }
+      return '';
     };
+
+    const pathways =
+      this.gtfsParser.getFileDataSyncTyped<Pathways>('pathways.txt') || [];
+    const resolveCoord = this.getCachedResolver(stops, pathways);
+
+    const features: GeoJSON.Feature[] = [];
+    for (const stop of stops) {
+      const coord = resolveCoord(String(stop.stop_id));
+      if (!coord) {
+        if (!hasValidCoords(stop)) {
+          console.warn(
+            `[LayerManager] Skipping stop without resolvable coords: stop_id=${stop.stop_id} location_type=${stop.location_type ?? ''} parent_station=${stop.parent_station ?? ''}`
+          );
+        }
+        continue;
+      }
+      const stopType =
+        typeof stop.location_type === 'number'
+          ? stop.location_type
+          : parseInt(stop.location_type ?? '0', 10) || 0;
+
+      features.push({
+        type: 'Feature',
+        geometry: {
+          type: 'Point',
+          coordinates: coord, // [lng, lat] for MapLibre
+        },
+        properties: {
+          stop_id: stop.stop_id,
+          stop_name: stop.stop_name || 'Unnamed Stop',
+          stop_code: stop.stop_code || '',
+          stop_desc: stop.stop_desc || '',
+          location_type: stopType,
+          parent_station: stop.parent_station ?? '',
+          station_id: resolveStationId(stop),
+          wheelchair_boarding: stop.wheelchair_boarding || '',
+          has_own_coords: hasValidCoords(stop),
+        },
+      });
+    }
+
+    return { type: 'FeatureCollection', features };
   }
 
   /**
@@ -183,24 +265,97 @@ export class LayerManager {
       id: 'stops-background',
       type: 'circle',
       source: 'stops',
+      filter: this.activeStopsFilter,
       paint: {
         'circle-radius': [
           'case',
-          ['==', ['get', 'location_type'], '1'],
-          10, // Station
-          ['==', ['get', 'location_type'], '2'],
-          5, // Entrance/Exit
-          ['==', ['get', 'location_type'], '3'],
-          5, // Generic node
-          ['==', ['get', 'location_type'], '4'],
-          7, // Boarding area
-          options.radius, // Default stop
+          ['boolean', ['feature-state', 'focused'], false],
+          [
+            'case',
+            ['==', ['get', 'location_type'], 1],
+            12,
+            ['==', ['get', 'location_type'], 2],
+            10,
+            ['==', ['get', 'location_type'], 3],
+            10,
+            ['==', ['get', 'location_type'], 4],
+            13,
+            options.radius * 2,
+          ],
+          [
+            'case',
+            ['==', ['get', 'location_type'], 1],
+            6,
+            ['==', ['get', 'location_type'], 2],
+            5,
+            ['==', ['get', 'location_type'], 3],
+            5,
+            ['==', ['get', 'location_type'], 4],
+            7,
+            options.radius,
+          ],
         ],
-        'circle-color': options.backgroundColor,
-        'circle-stroke-color': options.strokeColor,
-        'circle-stroke-width': options.strokeWidth,
+        'circle-color': [
+          'case',
+          ['==', ['get', 'location_type'], 1],
+          '#ffffff', // Station: white (black inner dot drawn by stops-station-dot layer)
+          ['==', ['get', 'location_type'], 2],
+          '#f59e0b', // Entrance: amber
+          ['==', ['get', 'location_type'], 3],
+          '#8b5cf6', // Generic node: purple
+          ['==', ['get', 'location_type'], 4],
+          '#10b981', // Boarding area: green
+          options.backgroundColor,
+        ],
+        'circle-stroke-color': [
+          'case',
+          ['==', ['get', 'has_own_coords'], false],
+          '#9ca3af', // No own lat/lon: grey stroke
+          ['==', ['get', 'location_type'], 1],
+          '#000000', // Station: black stroke
+          options.strokeColor,
+        ],
+        'circle-stroke-width': [
+          'case',
+          ['boolean', ['feature-state', 'focused'], false],
+          5,
+          options.strokeWidth,
+        ],
         'circle-opacity': 1,
         'circle-stroke-opacity': 1,
+      },
+    });
+  }
+
+  /**
+   * Add a small black dot at the center of each station feature.
+   * Sits on top of the white station circle to mark it as a station.
+   * Uses paint-side feature-state so the dot grows with focus.
+   */
+  private addStationDotLayer(): void {
+    if (this.map.getLayer('stops-station-dot')) {
+      return;
+    }
+
+    this.map.addLayer({
+      id: 'stops-station-dot',
+      type: 'circle',
+      source: 'stops',
+      filter: [
+        '==',
+        ['get', 'location_type'],
+        1,
+      ] as unknown as FilterSpecification,
+      paint: {
+        'circle-radius': [
+          'case',
+          ['boolean', ['feature-state', 'focused'], false],
+          5,
+          2.5,
+        ],
+        'circle-color': '#000000',
+        'circle-opacity': 1,
+        'circle-stroke-width': 0,
       },
     });
   }
@@ -218,12 +373,44 @@ export class LayerManager {
       id: 'stops-clickarea',
       type: 'circle',
       source: 'stops',
+      filter: this.activeStopsFilter,
       paint: {
         'circle-radius': options.clickAreaRadius,
         'circle-color': 'transparent',
         'circle-opacity': 0,
       },
     });
+  }
+
+  /**
+   * Set or reset the filter on the stops layers.
+   * Pass null to restore the default filter (hide child stops).
+   * Pass an array filter expression to apply a custom filter (e.g., station-expanded view).
+   */
+  public setStopsFilter(filter: FilterSpecification | null): void {
+    this.activeStopsFilter = filter ?? DEFAULT_STOPS_FILTER;
+    if (this.map.getLayer('stops-background')) {
+      this.map.setFilter('stops-background', this.activeStopsFilter);
+    }
+    if (this.map.getLayer('stops-clickarea')) {
+      this.map.setFilter('stops-clickarea', this.activeStopsFilter);
+    }
+    // Station-dot layer always filters to location_type=1; compose with activeStopsFilter when non-default
+    if (this.map.getLayer('stops-station-dot')) {
+      const stationDotFilter: FilterSpecification =
+        filter === null
+          ? ([
+              '==',
+              ['get', 'location_type'],
+              1,
+            ] as unknown as FilterSpecification)
+          : ([
+              'all',
+              ['==', ['get', 'location_type'], 1],
+              filter,
+            ] as unknown as FilterSpecification);
+      this.map.setFilter('stops-station-dot', stationDotFilter);
+    }
   }
 
   /**
@@ -242,69 +429,10 @@ export class LayerManager {
   }
 
   /**
-   * Highlight specific stop
+   * Highlight specific stop via feature state (grows in-place, same color).
    */
-  public highlightStop(
-    stop_id: string,
-    options: Partial<HighlightLayerOptions> = {}
-  ): void {
-    const finalOptions = { ...this.defaultHighlightOptions, ...options };
-    const stops =
-      this.gtfsParser.getFileDataSyncTyped<Stops>('stops.txt') || [];
-
-    // Clear existing highlights
-    this.clearHighlights();
-
-    const stop = stops.find((s) => s.stop_id === stop_id);
-    if (!stop || !stop.stop_lat || !stop.stop_lon) {
-      console.warn(`Stop ${stop_id} not found or missing coordinates`);
-      return;
-    }
-
-    const lat = stop.stop_lat;
-    const lon = stop.stop_lon;
-
-    // Create highlight GeoJSON
-    const highlightGeoJSON = {
-      type: 'FeatureCollection' as const,
-      features: [
-        {
-          type: 'Feature' as const,
-          geometry: {
-            type: 'Point' as const,
-            coordinates: [lon, lat],
-          },
-          properties: {
-            stop_id: stop.stop_id,
-            stop_name: stop.stop_name || 'Unnamed Stop',
-            stop_code: stop.stop_code || '',
-          },
-        },
-      ],
-    };
-
-    // Add highlight source and layer
-    this.map.addSource('stops-highlight', {
-      type: 'geojson',
-      data: highlightGeoJSON,
-    });
-
-    // Use size increase instead of color change - keep white background and black stroke like normal stops
-    this.map.addLayer({
-      id: 'stops-highlight',
-      type: 'circle',
-      source: 'stops-highlight',
-      paint: {
-        'circle-radius': finalOptions.radius, // Use larger radius (default 12 vs normal 4)
-        'circle-color': '#ffffff', // Keep white background like normal stops
-        'circle-stroke-color': '#000000', // Keep black stroke like normal stops
-        'circle-stroke-width': finalOptions.strokeWidth, // Use thicker stroke (default 3 vs normal 2)
-        'circle-opacity': 1,
-        'circle-stroke-opacity': 1,
-      },
-    });
-
-    console.log(`🎯 Highlighted stop: ${stop_id}`);
+  public highlightStop(stop_id: string): void {
+    this.setFocusedStop(stop_id);
   }
 
   /**
@@ -461,6 +589,7 @@ export class LayerManager {
    * Clear all highlights
    */
   public clearHighlights(): void {
+    this.setFocusedStop(null);
     const highlightLayers = ['trip-highlight', 'stops-highlight'];
 
     highlightLayers.forEach((layerId) => {
@@ -471,6 +600,68 @@ export class LayerManager {
         this.map.removeSource(layerId);
       }
     });
+  }
+
+  public setFocusedStop(stop_id: string | null): void {
+    if (this.focusedStopId === stop_id) {
+      return;
+    }
+    console.log('[LayerManager] setFocusedStop', {
+      prev: this.focusedStopId,
+      next: stop_id,
+    });
+    try {
+      if (this.focusedStopId !== null && this.map.getSource('stops')) {
+        this.map.setFeatureState(
+          { source: 'stops', id: this.focusedStopId },
+          { focused: false }
+        );
+      }
+      this.focusedStopId = stop_id;
+      if (stop_id !== null && this.map.getSource('stops')) {
+        this.map.setFeatureState(
+          { source: 'stops', id: stop_id },
+          { focused: true }
+        );
+      }
+    } catch (error) {
+      console.warn(
+        '[LayerManager] Could not set focused stop:',
+        stop_id,
+        error
+      );
+    }
+  }
+
+  public setFocusedPathway(pathway_id: string | null): void {
+    if (this.focusedPathwayId === pathway_id) {
+      return;
+    }
+    console.log('[LayerManager] setFocusedPathway', {
+      prev: this.focusedPathwayId,
+      next: pathway_id,
+    });
+    try {
+      if (this.focusedPathwayId !== null && this.map.getSource('pathways')) {
+        this.map.setFeatureState(
+          { source: 'pathways', id: this.focusedPathwayId },
+          { focused: false }
+        );
+      }
+      this.focusedPathwayId = pathway_id;
+      if (pathway_id !== null && this.map.getSource('pathways')) {
+        this.map.setFeatureState(
+          { source: 'pathways', id: pathway_id },
+          { focused: true }
+        );
+      }
+    } catch (error) {
+      console.warn(
+        '[LayerManager] Could not set focused pathway:',
+        pathway_id,
+        error
+      );
+    }
   }
 
   /**
@@ -487,6 +678,22 @@ export class LayerManager {
     }
   }
 
+  public invalidateCoordResolver(): void {
+    this._resolverDirty = true;
+  }
+
+  private getCachedResolver(
+    stops: Stops[],
+    pathways: Pathways[]
+  ): (stop_id: string) => [number, number] | null {
+    if (!this._resolverDirty && this._cachedResolver) {
+      return this._cachedResolver;
+    }
+    this._cachedResolver = buildStopCoordResolver(stops, pathways);
+    this._resolverDirty = false;
+    return this._cachedResolver;
+  }
+
   /**
    * Update stops data source
    */
@@ -501,26 +708,10 @@ export class LayerManager {
       return;
     }
 
-    const validStops = stops.filter(
-      (stop) =>
-        stop.stop_lat !== null &&
-        stop.stop_lon !== null &&
-        !isNaN(stop.stop_lat) &&
-        !isNaN(stop.stop_lon)
-    );
-
-    const stopsGeoJSON = this.createStopsGeoJSON(validStops);
-    const stopsGeoJSONWithIds = {
-      ...stopsGeoJSON,
-      features: stopsGeoJSON.features.map((feature) => ({
-        ...feature,
-        id: feature.properties?.stop_id,
-      })),
-    };
-
-    stopsSource.setData(stopsGeoJSONWithIds);
-    this.onStopsDataUpdated?.(stopsGeoJSONWithIds);
-    console.log(`🔄 Updated stops data: ${validStops.length} stops`);
+    const stopsGeoJSON = this.createStopsGeoJSON(stops);
+    stopsSource.setData(stopsGeoJSON);
+    this.onStopsDataUpdated?.(stopsGeoJSON);
+    console.log(`🔄 Updated stops data: ${stopsGeoJSON.features.length} stops`);
   }
 
   /**
@@ -535,5 +726,179 @@ export class LayerManager {
    */
   public hasSource(sourceId: string): boolean {
     return !!this.map.getSource(sourceId);
+  }
+
+  /**
+   * Build GeoJSON FeatureCollection of pathway LineStrings for the given station.
+   * Only includes pathways where both endpoints are children of the station (or the station itself).
+   */
+  private buildPathwaysGeoJSON(stationId: string): GeoJSON.FeatureCollection {
+    const stops =
+      this.gtfsParser.getFileDataSyncTyped<Stops>('stops.txt') || [];
+    const pathways =
+      this.gtfsParser.getFileDataSyncTyped<Pathways>('pathways.txt') || [];
+
+    // Shared coord resolver: own coords if available, otherwise a Tutte-layout
+    // position over the pathway graph (matches how stops are drawn so pathway
+    // endpoints align with the rendered child dots).
+    const resolveCoord = this.getCachedResolver(stops, pathways);
+
+    // Identify stop IDs that belong to this station
+    const stationStopIds = new Set(
+      stops
+        .filter(
+          (s) => s.stop_id === stationId || s.parent_station === stationId
+        )
+        .map((s) => s.stop_id)
+    );
+
+    const features: GeoJSON.Feature[] = [];
+    pathways.forEach((pw) => {
+      if (
+        !stationStopIds.has(pw.from_stop_id) ||
+        !stationStopIds.has(pw.to_stop_id)
+      ) {
+        return;
+      }
+      const from = resolveCoord(String(pw.from_stop_id));
+      const to = resolveCoord(String(pw.to_stop_id));
+      if (!from || !to) {
+        return;
+      }
+      features.push({
+        type: 'Feature',
+        id: pw.pathway_id,
+        geometry: {
+          type: 'LineString',
+          coordinates: [from, to],
+        },
+        properties: {
+          pathway_id: pw.pathway_id,
+          from_stop_id: pw.from_stop_id,
+          to_stop_id: pw.to_stop_id,
+          pathway_mode: Number(pw.pathway_mode) || 1,
+          is_bidirectional: pw.is_bidirectional,
+        },
+      });
+    });
+
+    return { type: 'FeatureCollection', features };
+  }
+
+  /**
+   * Add (or update) pathway source and layers for the given station.
+   * Call when a station is expanded.
+   */
+  public updatePathwaysLayer(stationId: string): void {
+    const geojson = this.buildPathwaysGeoJSON(stationId);
+
+    const pathwaySource = this.map.getSource('pathways') as
+      | GeoJSONSource
+      | undefined;
+    if (pathwaySource) {
+      pathwaySource.setData(geojson);
+    } else {
+      this.map.addSource('pathways', {
+        type: 'geojson',
+        data: geojson,
+        promoteId: 'pathway_id',
+      });
+    }
+
+    if (!this.map.getLayer('pathways-lines')) {
+      this.map.addLayer(
+        {
+          id: 'pathways-lines',
+          type: 'line',
+          source: 'pathways',
+          paint: {
+            'line-width': [
+              'case',
+              ['boolean', ['feature-state', 'focused'], false],
+              6,
+              3,
+            ],
+            'line-color': [
+              'case',
+              ['==', ['get', 'pathway_mode'], 1],
+              '#22c55e', // walkway: green
+              ['==', ['get', 'pathway_mode'], 2],
+              '#f97316', // stairs: orange
+              ['==', ['get', 'pathway_mode'], 3],
+              '#06b6d4', // moving sidewalk: cyan
+              ['==', ['get', 'pathway_mode'], 4],
+              '#a855f7', // escalator: purple
+              ['==', ['get', 'pathway_mode'], 5],
+              '#3b82f6', // elevator: blue
+              ['==', ['get', 'pathway_mode'], 6],
+              '#ef4444', // fare gate: red
+              ['==', ['get', 'pathway_mode'], 7],
+              '#6b7280', // exit gate: gray
+              '#ffffff',
+            ],
+          },
+          layout: {
+            'line-cap': 'round',
+            'line-join': 'round',
+          },
+        },
+        'stops-background'
+      );
+    }
+
+    if (!this.map.getLayer('pathways-clickarea')) {
+      this.map.addLayer(
+        {
+          id: 'pathways-clickarea',
+          type: 'line',
+          source: 'pathways',
+          paint: {
+            'line-width': 16,
+            'line-opacity': 0,
+          },
+        },
+        'stops-background'
+      );
+
+      ['pathways-lines', 'pathways-clickarea'].forEach((layerId) => {
+        this.map.on('mouseenter', layerId, this.onPathwayMouseEnter);
+        this.map.on('mouseleave', layerId, this.onPathwayMouseLeave);
+      });
+    }
+
+    console.log(
+      `[LayerManager] Updated pathways layer for station: ${stationId} (${geojson.features.length} pathways)`
+    );
+  }
+
+  /**
+   * Remove pathway source and layers from the map.
+   * Call when a station is collapsed.
+   */
+  public clearPathwaysLayer(): void {
+    this.setFocusedPathway(null);
+    ['pathways-clickarea', 'pathways-lines'].forEach((layerId) => {
+      this.map.off('mouseenter', layerId, this.onPathwayMouseEnter);
+      this.map.off('mouseleave', layerId, this.onPathwayMouseLeave);
+      if (this.map.getLayer(layerId)) {
+        this.map.removeLayer(layerId);
+      }
+    });
+    if (this.map.getSource('pathways')) {
+      this.map.removeSource('pathways');
+    }
+    console.log('[LayerManager] Cleared pathways layer');
+  }
+
+  /**
+   * Rebuild the pathways source in-place after stops are moved.
+   * Only has an effect if the pathway layers are currently visible.
+   */
+  public rebuildPathwaysSource(stationId: string): void {
+    if (!this.map.getSource('pathways')) {
+      return;
+    }
+    const geojson = this.buildPathwaysGeoJSON(stationId);
+    (this.map.getSource('pathways') as GeoJSONSource).setData(geojson);
   }
 }

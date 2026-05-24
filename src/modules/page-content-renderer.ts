@@ -20,6 +20,10 @@ import {
   ServiceViewDependencies,
 } from './service-view-controller.js';
 import {
+  PathwayViewController,
+  PathwayViewDependencies,
+} from './pathway-view-controller.js';
+import {
   renderFormFields,
   generateFieldConfigsFromSchema,
   renderEntityFormFields,
@@ -46,6 +50,8 @@ import { normalizeAgencyId } from '../utils/agency-helpers.js';
 import {
   renderServiceReference,
   SERVICE_REF_ROW,
+  STOP_REF_ROW,
+  PATHWAY_REF_ROW,
   ENTITY_REF_BTN,
 } from '../utils/entity-references.js';
 
@@ -107,6 +113,7 @@ export interface ContentRendererDependencies {
   mapController: {
     highlightRoute: (route_id: string) => void;
     highlightStop: (stop_id: string) => void;
+    highlightPathway: (pathway_id: string) => void;
     clearHighlights: () => void;
     focusOnAgency: (agency_id: string) => void;
     refreshStops: () => void;
@@ -117,6 +124,7 @@ export interface ContentRendererDependencies {
   onAgencyClick: (agency_id: string) => void;
   onRouteClick: (route_id: string) => void;
   onStopClick: (stop_id: string) => void;
+  onPathwayClick?: (pathway_id: string) => void;
   onServiceClick?: (service_id: string) => void;
   onTimetableClick: (
     route_id: string,
@@ -165,6 +173,9 @@ export interface ContentRendererDependencies {
   parser?: {
     getFileDataSync: (fileName: string) => GTFSDatabaseRecord[];
   };
+
+  // Optional: supply level options for the level_id dropdown in stop view
+  getLevelOptions?: () => Promise<{ value: string; label: string }[]>;
 }
 
 /**
@@ -175,6 +186,7 @@ export class PageContentRenderer {
   private stopViewController: StopViewController;
   private agencyViewController: AgencyViewController;
   private serviceViewController: ServiceViewController;
+  private pathwayViewController: PathwayViewController;
 
   constructor(dependencies: ContentRendererDependencies) {
     this.dependencies = dependencies;
@@ -183,11 +195,23 @@ export class PageContentRenderer {
     const stopViewDependencies: StopViewDependencies = {
       gtfsDatabase: dependencies.gtfsDatabase,
       gtfsRelationships: dependencies.gtfsRelationships || {},
-      onTimetableClick: (route_id, service_id) =>
-        dependencies.onTimetableClick(route_id, service_id),
+      onStopClick: dependencies.onStopClick,
+      onPathwayClick: dependencies.onPathwayClick,
+      onTimetableClick: dependencies.onTimetableClick,
       onDeleteStop: (stop_id) => this.handleDeleteStop(stop_id),
+      getLevelOptions: dependencies.getLevelOptions,
     };
     this.stopViewController = new StopViewController(stopViewDependencies);
+
+    // Initialize PathwayViewController
+    const pathwayViewDependencies: PathwayViewDependencies = {
+      gtfsDatabase: dependencies.gtfsDatabase,
+      onStopClick: dependencies.onStopClick,
+      onDeletePathway: (pathway_id) => this.handleDeletePathway(pathway_id),
+    };
+    this.pathwayViewController = new PathwayViewController(
+      pathwayViewDependencies
+    );
 
     // Initialize AgencyViewController with current dependencies
     const agencyViewDependencies: AgencyViewDependencies = {
@@ -239,6 +263,8 @@ export class PageContentRenderer {
           return await this.renderStop(pageState.stop_id);
         case 'service':
           return await this.renderService(pageState.service_id);
+        case 'pathway':
+          return await this.renderPathway(pageState.pathway_id);
         default:
           // TypeScript should prevent this, but fallback to home
           return await this.renderHome();
@@ -720,14 +746,41 @@ export class PageContentRenderer {
       });
     });
 
-    // "View Service" button clicks (route page) → service page
+    // "View ..." button clicks — handles stops and services
     const entityRefBtns = container.querySelectorAll(`.${ENTITY_REF_BTN}`);
     entityRefBtns.forEach((btn) => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
+        const stop_id = btn.getAttribute('data-stop-id');
+        if (stop_id) {
+          this.dependencies.onStopClick(stop_id);
+          return;
+        }
         const service_id = btn.getAttribute('data-service-id');
         if (service_id && this.dependencies.onServiceClick) {
           this.dependencies.onServiceClick(service_id);
+        }
+      });
+    });
+
+    // Stop reference row clicks → stop page
+    const stopRefRows = container.querySelectorAll(`.${STOP_REF_ROW}`);
+    stopRefRows.forEach((row) => {
+      row.addEventListener('click', () => {
+        const stop_id = row.getAttribute('data-stop-id');
+        if (stop_id) {
+          this.dependencies.onStopClick(stop_id);
+        }
+      });
+    });
+
+    // Pathway reference row clicks → pathway page
+    const pathwayRefRows = container.querySelectorAll(`.${PATHWAY_REF_ROW}`);
+    pathwayRefRows.forEach((row) => {
+      row.addEventListener('click', () => {
+        const pathway_id = row.getAttribute('data-pathway-id');
+        if (pathway_id && this.dependencies.onPathwayClick) {
+          this.dependencies.onPathwayClick(pathway_id);
         }
       });
     });
@@ -746,6 +799,9 @@ export class PageContentRenderer {
     // Add StopViewController event listeners
     // It will only attach to stop fields (data-table="stops.txt")
     this.stopViewController.addEventListeners(container);
+
+    // Add PathwayViewController event listeners
+    this.pathwayViewController.addEventListeners(container);
 
     // Add AgencyViewController event listeners
     // It will only attach to agency fields (data-table="agency.txt")
@@ -1338,5 +1394,30 @@ export class PageContentRenderer {
         },
       ],
     });
+  }
+
+  private async renderPathway(pathway_id: string): Promise<string> {
+    this.dependencies.mapController.highlightPathway(pathway_id);
+    return this.pathwayViewController.renderPathwayView(pathway_id);
+  }
+
+  private async handleDeletePathway(pathway_id: string): Promise<void> {
+    const db = this.dependencies.gtfsDatabase;
+    const pm = this.dependencies.patchManager;
+    if (!db || !pm || !db.deleteRow) {
+      return;
+    }
+
+    const rows = await db.queryRows('pathways', { pathway_id });
+    const pathway = rows[0] as Record<string, unknown> | undefined;
+    if (!pathway) {
+      return;
+    }
+
+    await db.deleteRow('pathways', pathway_id);
+    await pm.recordDelete('pathways', pathway_id, pathway);
+
+    console.log(`[PageContentRenderer] Deleted pathway ${pathway_id}`);
+    await navigateToHome();
   }
 }

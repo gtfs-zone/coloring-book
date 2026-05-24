@@ -1,11 +1,21 @@
 import {
   getRouteDisplay,
   getServiceDisplay,
+  getStopDisplay,
   renderCardLabel,
+  renderOptionLabel,
 } from './entity-display';
+
+function escapeAttr(text: unknown): string {
+  const div = document.createElement('div');
+  div.textContent = String(text ?? '');
+  return div.innerHTML.replace(/'/g, '&#39;').replace(/"/g, '&quot;');
+}
 
 export const ROUTE_REF_ROW = 'route-ref-row';
 export const SERVICE_REF_ROW = 'service-ref-row';
+export const STOP_REF_ROW = 'stop-ref-row';
+export const PATHWAY_REF_ROW = 'pathway-ref-row';
 export const ENTITY_REF_BTN = 'entity-ref-btn';
 
 export interface RouteReferenceOpts {
@@ -106,14 +116,14 @@ export function renderRouteReference(
       : '';
 
   const viewBtn = opts.service_id
-    ? `<button class="btn btn-xs btn-ghost ${ENTITY_REF_BTN}" data-route-id="${route.route_id}">View Route</button>`
+    ? `<button class="btn btn-xs btn-ghost ${ENTITY_REF_BTN}" data-route-id="${escapeAttr(route.route_id)}">View Route</button>`
     : '';
 
   const serviceAttr = opts.service_id
-    ? ` data-service-id="${opts.service_id}"`
+    ? ` data-service-id="${escapeAttr(opts.service_id)}"`
     : '';
 
-  return `<div class="flex items-center gap-3 p-3 rounded-lg hover:bg-base-200 cursor-pointer transition-colors ${ROUTE_REF_ROW}" data-route-id="${route.route_id}"${serviceAttr}>
+  return `<div class="flex items-center gap-3 p-3 rounded-lg hover:bg-base-200 cursor-pointer transition-colors ${ROUTE_REF_ROW}" data-route-id="${escapeAttr(route.route_id)}"${serviceAttr}>
   ${dot}
   <div class="flex-1 min-w-0">
     ${label}
@@ -121,6 +131,60 @@ export function renderRouteReference(
   </div>
   ${badge}
   ${viewBtn}
+</div>`;
+}
+
+export interface StopReferenceOpts {
+  locationTypeLabel?: string;
+}
+
+export function renderStopReference(
+  stop: Record<string, unknown>,
+  opts: StopReferenceOpts = {}
+): string {
+  const label = renderCardLabel(getStopDisplay(stop as Record<string, string>));
+  const badge = opts.locationTypeLabel
+    ? `<div class="badge badge-outline badge-sm">${opts.locationTypeLabel}</div>`
+    : '';
+
+  return `<div class="flex items-center gap-3 p-3 rounded-lg hover:bg-base-200 cursor-pointer transition-colors ${STOP_REF_ROW}" data-stop-id="${escapeAttr(stop.stop_id)}">
+  <div class="flex-1 min-w-0">
+    ${label}
+  </div>
+  ${badge}
+</div>`;
+}
+
+export interface PathwayReferenceOpts {
+  modeLabel: string;
+  otherStop?: Record<string, unknown>;
+  otherStopId: string;
+  direction: 'to' | 'from';
+  viewStopButton?: boolean;
+}
+
+export function renderPathwayReference(
+  pathway: Record<string, unknown>,
+  opts: PathwayReferenceOpts
+): string {
+  const otherDisplay = opts.otherStop
+    ? renderOptionLabel(
+        getStopDisplay(opts.otherStop as Record<string, string>)
+      )
+    : String(opts.otherStopId);
+
+  const primaryText = `${opts.modeLabel} ${opts.direction} ${otherDisplay}`;
+  const label = `<div class="font-medium truncate">${primaryText}</div>`;
+
+  const viewStopBtn = opts.viewStopButton
+    ? `<button class="btn btn-xs btn-ghost ${ENTITY_REF_BTN}" data-stop-id="${escapeAttr(opts.otherStopId)}">View Stop</button>`
+    : '';
+
+  return `<div class="flex items-center gap-3 p-3 rounded-lg hover:bg-base-200 cursor-pointer transition-colors ${PATHWAY_REF_ROW}" data-pathway-id="${escapeAttr(pathway.pathway_id)}">
+  <div class="flex-1 min-w-0">
+    ${label}
+  </div>
+  ${viewStopBtn}
 </div>`;
 }
 
@@ -151,12 +215,14 @@ export function renderServiceReference(
       : '';
 
   const viewBtn = opts.route_id
-    ? `<button class="btn btn-xs btn-ghost ${ENTITY_REF_BTN}" data-service-id="${service.service_id}">View Service</button>`
+    ? `<button class="btn btn-xs btn-ghost ${ENTITY_REF_BTN}" data-service-id="${escapeAttr(service.service_id)}">View Service</button>`
     : '';
 
-  const routeAttr = opts.route_id ? ` data-route-id="${opts.route_id}"` : '';
+  const routeAttr = opts.route_id
+    ? ` data-route-id="${escapeAttr(opts.route_id)}"`
+    : '';
 
-  return `<div class="flex items-center gap-3 p-3 rounded-lg hover:bg-base-200 cursor-pointer transition-colors ${SERVICE_REF_ROW}" data-service-id="${service.service_id}"${routeAttr}>
+  return `<div class="flex items-center gap-3 p-3 rounded-lg hover:bg-base-200 cursor-pointer transition-colors ${SERVICE_REF_ROW}" data-service-id="${escapeAttr(service.service_id)}"${routeAttr}>
   <div class="flex-1 min-w-0">
     ${label}
     ${daysLine}
