@@ -131,6 +131,13 @@ async function loadCalendarData(
   return result;
 }
 
+function hexToRgba(hex: string, alpha: number): string {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
 function esc(s: unknown): string {
   return String(s ?? '')
     .replace(/&/g, '&amp;')
@@ -262,6 +269,181 @@ function renderMonthGrid(
   `;
 }
 
+const MONTH_ABBR = [
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec',
+];
+const THREE_YEARS_MS = 3 * 365.25 * 24 * 60 * 60 * 1000;
+
+function renderTimeline(data: ServiceDataMap): string {
+  if (data.size === 0) {
+    return `<div class="flex items-center justify-center h-32 text-base-content/50 text-sm">No service data available</div>`;
+  }
+
+  let minTs = Infinity;
+  let maxTs = -Infinity;
+
+  for (const [, sd] of data) {
+    if (sd.calendar) {
+      const s = parseGTFSDate(String(sd.calendar.start_date)).getTime();
+      const e = parseGTFSDate(String(sd.calendar.end_date)).getTime();
+      if (s < minTs) {
+        minTs = s;
+      }
+      if (e > maxTs) {
+        maxTs = e;
+      }
+    }
+    for (const ex of sd.exceptions) {
+      const t = parseGTFSDate(String(ex.date)).getTime();
+      if (t < minTs) {
+        minTs = t;
+      }
+      if (t > maxTs) {
+        maxTs = t;
+      }
+    }
+  }
+
+  if (!isFinite(minTs) || !isFinite(maxTs)) {
+    return `<div class="flex items-center justify-center h-32 text-base-content/50 text-sm">No date data available</div>`;
+  }
+
+  // Snap minDate back to the nearest Sunday
+  const dow = new Date(minTs).getUTCDay();
+  const minDate = new Date(minTs - dow * 86400000);
+
+  let maxDate = new Date(maxTs);
+  let truncated = false;
+  if (maxTs - minDate.getTime() > THREE_YEARS_MS) {
+    maxDate = new Date(minDate.getTime() + THREE_YEARS_MS);
+    truncated = true;
+  }
+
+  // Build weeks array (Sunday-start)
+  const weeks: string[] = [];
+  let cur = minDate.getTime();
+  const maxTime = maxDate.getTime();
+  while (cur <= maxTime) {
+    weeks.push(formatGTFS(new Date(cur)));
+    cur += 7 * 86400000;
+  }
+
+  // Group weeks into month header spans
+  const monthSpans: Array<{ label: string; colspan: number }> = [];
+  for (const week of weeks) {
+    const d = parseGTFSDate(week);
+    const label = `${MONTH_ABBR[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
+    if (
+      monthSpans.length === 0 ||
+      monthSpans[monthSpans.length - 1].label !== label
+    ) {
+      monthSpans.push({ label, colspan: 1 });
+    } else {
+      monthSpans[monthSpans.length - 1].colspan++;
+    }
+  }
+
+  const headerHtml = monthSpans
+    .map(
+      ({ label, colspan }) =>
+        `<th colspan="${colspan}" class="px-1 py-0.5 text-center text-base-content/60 font-medium border-b border-base-300 whitespace-nowrap">${label}</th>`
+    )
+    .join('');
+
+  const rowsHtml = [...data.entries()]
+    .map(([sid, sd]) => {
+      const calStart = sd.calendar ? String(sd.calendar.start_date) : null;
+      const calEnd = sd.calendar ? String(sd.calendar.end_date) : null;
+      const hasActiveWeekday = sd.calendar
+        ? WEEKDAY_KEYS.some((k) => Number(sd.calendar![k]) === 1)
+        : false;
+
+      const excByDate = new Map<string, number>();
+      for (const ex of sd.exceptions) {
+        excByDate.set(String(ex.date), Number(ex.exception_type));
+      }
+
+      const cells = weeks
+        .map((weekStart) => {
+          const weekStartTs = parseGTFSDate(weekStart).getTime();
+          const weekEndTs = weekStartTs + 6 * 86400000;
+          const weekEnd = formatGTFS(new Date(weekEndTs));
+
+          const isActive =
+            calStart !== null &&
+            calEnd !== null &&
+            hasActiveWeekday &&
+            calStart <= weekEnd &&
+            calEnd >= weekStart;
+
+          const ticks: string[] = [];
+          for (let t = weekStartTs; t <= weekEndTs; t += 86400000) {
+            const dateStr = formatGTFS(new Date(t));
+            const excType = excByDate.get(dateStr);
+            if (excType === 1) {
+              ticks.push(
+                `<span style="color:#4ade80" title="${dateStr}">▲</span>`
+              );
+            } else if (excType === 2) {
+              ticks.push(
+                `<span style="color:#f87171" title="${dateStr}">▼</span>`
+              );
+            }
+          }
+
+          const bgStyle = isActive
+            ? `background-color:${hexToRgba(sd.color, 0.2)}`
+            : '';
+          return `<td class="w-5 min-w-5 h-7 border-r border-base-300/20 text-center align-middle leading-none" style="${bgStyle}">${ticks.join('')}</td>`;
+        })
+        .join('');
+
+      const labelCell = `<td class="sticky left-0 z-10 bg-base-200 px-2 py-1 border-b border-base-300/30 w-36 min-w-36 max-w-36">
+        <span class="inline-flex items-center gap-1 overflow-hidden max-w-full">
+          <span class="w-2 h-2 rounded-full flex-shrink-0" style="background-color:${esc(sd.color)}"></span>
+          <span class="truncate" title="${esc(sid)}">${esc(sid)}</span>
+        </span>
+      </td>`;
+
+      return `<tr class="timeline-row cursor-pointer hover:bg-base-300/20" data-service-id="${esc(sid)}">${labelCell}${cells}</tr>`;
+    })
+    .join('');
+
+  const warningHtml = truncated
+    ? `<div class="text-xs text-warning mb-2">Date range exceeds 3 years — display truncated.</div>`
+    : '';
+
+  return `
+    <div>
+      ${warningHtml}
+      <div class="overflow-x-auto">
+        <table class="text-xs border-collapse">
+          <thead>
+            <tr>
+              <th class="sticky left-0 z-10 bg-base-200 w-36 min-w-36 border-b border-base-300"></th>
+              ${headerHtml}
+            </tr>
+          </thead>
+          <tbody>
+            ${rowsHtml}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
+
 export async function showCalendarModal(
   deps: CalendarModalDeps
 ): Promise<void> {
@@ -280,11 +462,7 @@ export async function showCalendarModal(
     </div>
   `;
 
-  const timelinePlaceholder = `
-    <div class="flex items-center justify-center h-32 text-base-content/50 text-sm">
-      Timeline view — coming soon
-    </div>
-  `;
+  const timelineHtml = renderTimeline(data);
 
   const body = `
     <div>
@@ -348,6 +526,20 @@ export async function showCalendarModal(
         });
       };
 
+      const attachTimelineListeners = (): void => {
+        panelEl
+          .querySelectorAll<HTMLElement>('.timeline-row')
+          .forEach((row) => {
+            row.addEventListener('click', () => {
+              const sid = row.dataset.serviceId;
+              if (sid) {
+                close();
+                deps.onServiceClick(sid);
+              }
+            });
+          });
+      };
+
       attachGridListeners();
 
       tabBtns.forEach((btn) => {
@@ -364,7 +556,8 @@ export async function showCalendarModal(
             panelEl.innerHTML = renderMonthGrid(data, year, month1);
             attachGridListeners();
           } else {
-            panelEl.innerHTML = timelinePlaceholder;
+            panelEl.innerHTML = timelineHtml;
+            attachTimelineListeners();
           }
         });
       });
