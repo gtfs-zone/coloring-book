@@ -116,14 +116,14 @@ export function renderRouteReference(
       : '';
 
   const viewBtn = opts.service_id
-    ? `<button class="btn btn-xs btn-ghost ${ENTITY_REF_BTN}" data-route-id="${route.route_id}">View Route</button>`
+    ? `<button class="btn btn-xs btn-ghost ${ENTITY_REF_BTN}" data-route-id="${escapeAttr(route.route_id)}">View Route</button>`
     : '';
 
   const serviceAttr = opts.service_id
-    ? ` data-service-id="${opts.service_id}"`
+    ? ` data-service-id="${escapeAttr(opts.service_id)}"`
     : '';
 
-  return `<div class="flex items-center gap-3 p-3 rounded-lg hover:bg-base-200 cursor-pointer transition-colors ${ROUTE_REF_ROW}" data-route-id="${route.route_id}"${serviceAttr}>
+  return `<div class="flex items-center gap-3 p-3 rounded-lg hover:bg-base-200 cursor-pointer transition-colors ${ROUTE_REF_ROW}" data-route-id="${escapeAttr(route.route_id)}"${serviceAttr}>
   ${dot}
   <div class="flex-1 min-w-0">
     ${label}
@@ -215,12 +215,14 @@ export function renderServiceReference(
       : '';
 
   const viewBtn = opts.route_id
-    ? `<button class="btn btn-xs btn-ghost ${ENTITY_REF_BTN}" data-service-id="${service.service_id}">View Service</button>`
+    ? `<button class="btn btn-xs btn-ghost ${ENTITY_REF_BTN}" data-service-id="${escapeAttr(service.service_id)}">View Service</button>`
     : '';
 
-  const routeAttr = opts.route_id ? ` data-route-id="${opts.route_id}"` : '';
+  const routeAttr = opts.route_id
+    ? ` data-route-id="${escapeAttr(opts.route_id)}"`
+    : '';
 
-  return `<div class="flex items-center gap-3 p-3 rounded-lg hover:bg-base-200 cursor-pointer transition-colors ${SERVICE_REF_ROW}" data-service-id="${service.service_id}"${routeAttr}>
+  return `<div class="flex items-center gap-3 p-3 rounded-lg hover:bg-base-200 cursor-pointer transition-colors ${SERVICE_REF_ROW}" data-service-id="${escapeAttr(service.service_id)}"${routeAttr}>
   <div class="flex-1 min-w-0">
     ${label}
     ${daysLine}
