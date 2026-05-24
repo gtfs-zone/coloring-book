@@ -285,6 +285,32 @@ const MONTH_ABBR = [
 ];
 const THREE_YEARS_MS = 3 * 365.25 * 24 * 60 * 60 * 1000;
 
+// Mon–Sun order for weekday dot display (differs from WEEKDAY_KEYS which is Sun-first)
+const WEEKDAY_DOT_KEYS = [
+  'monday',
+  'tuesday',
+  'wednesday',
+  'thursday',
+  'friday',
+  'saturday',
+  'sunday',
+];
+
+function renderWeekdayDots(calendar: Record<string, unknown> | null): string {
+  const dots = WEEKDAY_DOT_KEYS.map((k) =>
+    calendar && Number(calendar[k]) === 1 ? '●' : '○'
+  ).join('');
+  return `<span class="font-mono tracking-tight text-base-content/70">${dots}</span>`;
+}
+
+function formatHumanDate(gtfsDate: string): string {
+  const d = parseGTFSDate(gtfsDate);
+  const dayName = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][
+    d.getUTCDay()
+  ];
+  return `${dayName}, ${MONTH_ABBR[d.getUTCMonth()]} ${d.getUTCDate()} ${d.getUTCFullYear()}`;
+}
+
 function renderTimeline(data: ServiceDataMap): string {
   if (data.size === 0) {
     return `<div class="flex items-center justify-center h-32 text-base-content/50 text-sm">No service data available</div>`;
@@ -354,6 +380,9 @@ function renderTimeline(data: ServiceDataMap): string {
     }
   }
 
+  const maxIdLen = Math.max(0, ...[...data.keys()].map((k) => k.length));
+  const labelColPx = Math.min(300, Math.max(80, maxIdLen * 7 + 32));
+
   const headerHtml = monthSpans
     .map(
       ({ label, colspan }) =>
@@ -393,11 +422,11 @@ function renderTimeline(data: ServiceDataMap): string {
             const excType = excByDate.get(dateStr);
             if (excType === 1) {
               ticks.push(
-                `<span style="color:#4ade80" title="${dateStr}">▲</span>`
+                `<span class="tooltip tooltip-top" data-tip="${esc(formatHumanDate(dateStr))}"><span style="color:#4ade80">▲</span></span>`
               );
             } else if (excType === 2) {
               ticks.push(
-                `<span style="color:#f87171" title="${dateStr}">▼</span>`
+                `<span class="tooltip tooltip-top" data-tip="${esc(formatHumanDate(dateStr))}"><span style="color:#f87171">▼</span></span>`
               );
             }
           }
@@ -409,14 +438,16 @@ function renderTimeline(data: ServiceDataMap): string {
         })
         .join('');
 
-      const labelCell = `<td class="sticky left-0 z-10 bg-base-200 px-2 py-1 border-b border-base-300/30 w-36 min-w-36 max-w-36">
+      const labelCell = `<td class="sticky left-0 z-10 bg-base-200 px-2 py-1 border-b border-base-300/30" style="width:${labelColPx}px;min-width:${labelColPx}px;max-width:${labelColPx}px">
         <span class="inline-flex items-center gap-1 overflow-hidden max-w-full">
           <span class="w-2 h-2 rounded-full flex-shrink-0" style="background-color:${esc(sd.color)}"></span>
           <span class="truncate" title="${esc(sid)}">${esc(sid)}</span>
         </span>
       </td>`;
 
-      return `<tr class="timeline-row cursor-pointer hover:bg-base-300/20" data-service-id="${esc(sid)}">${labelCell}${cells}</tr>`;
+      const dotCell = `<td class="w-14 min-w-14 px-1 py-1 border-b border-base-300/30 text-xs">${renderWeekdayDots(sd.calendar)}</td>`;
+
+      return `<tr class="timeline-row cursor-pointer hover:bg-base-300/20" data-service-id="${esc(sid)}">${labelCell}${dotCell}${cells}</tr>`;
     })
     .join('');
 
@@ -431,7 +462,8 @@ function renderTimeline(data: ServiceDataMap): string {
         <table class="text-xs border-collapse">
           <thead>
             <tr>
-              <th class="sticky left-0 z-10 bg-base-200 w-36 min-w-36 border-b border-base-300"></th>
+              <th class="sticky left-0 z-10 bg-base-200 border-b border-base-300" style="width:${labelColPx}px;min-width:${labelColPx}px"></th>
+              <th class="w-14 min-w-14 px-1 py-0.5 border-b border-base-300 text-center"><span class="font-mono tracking-tight text-base-content/50 text-xs">M T W T F S S</span></th>
               ${headerHtml}
             </tr>
           </thead>
