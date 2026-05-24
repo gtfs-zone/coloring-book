@@ -65,13 +65,13 @@ This makes `StopViewController` only work when embedded inside the renderer that
 `src/modules/pathway-view-controller.ts:168` — `addEventListeners(container)` does `container.addEventListener('click', ...)`. The container DIV is reused across renders (only `innerHTML` is replaced), so after N pathway navigations a single delete click fires the handler N times → N `onDeletePathway` calls with the same id.
 **Fix:** mirror the other delegated listeners in `page-content-renderer.ts:711` — query `.delete-pathway-btn` inside the container and attach to the button (or attach to container once at construction, not per render).
 
-### 14. `levels-controller.ts` — `Number(levelIndex)` of garbage input silently stores `NaN` **(C)**
-Validation only rejects `levelIndex === ''`. `Number('abc')` returns NaN, gets written to IndexedDB, and the sort comparator `Number(a.level_index ?? 0) - Number(b.level_index ?? 0)` returns NaN for any NaN row → `Array.sort` leaves order undefined.
-**Fix:** reject `Number.isNaN(Number(levelIndex))` at input time, and treat non-finite `level_index` defensively in the comparator.
+### ~~14. `levels-controller.ts` — `Number(levelIndex)` of garbage input silently stores `NaN` **(C)**~~
+~~Validation only rejects `levelIndex === ''`. `Number('abc')` returns NaN, gets written to IndexedDB, and the sort comparator `Number(a.level_index ?? 0) - Number(b.level_index ?? 0)` returns NaN for any NaN row → `Array.sort` leaves order undefined.~~
+~~**Fix:** reject `Number.isNaN(Number(levelIndex))` at input time, and treat non-finite `level_index` defensively in the comparator.~~ **Fixed.**
 
-### 15. `interaction-handler.ts:366` — `queryRenderedFeatures` without the existence guard used elsewhere **(C)**
-The other call sites (line 123, 177) route through `queryFeaturesOnLayers` (defensive against missing layers — added in commit `637058f`). The add-pathway handler bypasses that and will throw on basemap-change or transient teardown.
-**Fix:** route through `queryFeaturesOnLayers`.
+### ~~15. `interaction-handler.ts:366` — `queryRenderedFeatures` without the existence guard used elsewhere **(C)**~~
+~~The other call sites (line 123, 177) route through `queryFeaturesOnLayers` (defensive against missing layers — added in commit `637058f`). The add-pathway handler bypasses that and will throw on basemap-change or transient teardown.~~
+~~**Fix:** route through `queryFeaturesOnLayers`.~~ **Fixed.**
 
 ### 16. Unescaped HTML in level rows and data-stop-id / data-pathway-id attrs **(C)**
 - `src/modules/levels-controller.ts` interpolates `${l.level_name}` and `${l.level_id}` raw into table cells / `data-level-id`.
