@@ -43,6 +43,11 @@ export class LayerManager {
   private focusedStopId: string | null = null;
   private focusedPathwayId: string | null = null;
 
+  private _resolverDirty = true;
+  private _cachedResolver:
+    | ((stop_id: string) => [number, number] | null)
+    | null = null;
+
   private readonly onPathwayMouseEnter = () => {
     this.map.getCanvas().style.cursor = 'pointer';
   };
@@ -206,7 +211,7 @@ export class LayerManager {
 
     const pathways =
       this.gtfsParser.getFileDataSyncTyped<Pathways>('pathways.txt') || [];
-    const resolveCoord = buildStopCoordResolver(stops, pathways);
+    const resolveCoord = this.getCachedResolver(stops, pathways);
 
     const features: GeoJSON.Feature[] = [];
     for (const stop of stops) {
@@ -673,6 +678,22 @@ export class LayerManager {
     }
   }
 
+  public invalidateCoordResolver(): void {
+    this._resolverDirty = true;
+  }
+
+  private getCachedResolver(
+    stops: Stops[],
+    pathways: Pathways[]
+  ): (stop_id: string) => [number, number] | null {
+    if (!this._resolverDirty && this._cachedResolver) {
+      return this._cachedResolver;
+    }
+    this._cachedResolver = buildStopCoordResolver(stops, pathways);
+    this._resolverDirty = false;
+    return this._cachedResolver;
+  }
+
   /**
    * Update stops data source
    */
@@ -720,7 +741,7 @@ export class LayerManager {
     // Shared coord resolver: own coords if available, otherwise a Tutte-layout
     // position over the pathway graph (matches how stops are drawn so pathway
     // endpoints align with the rendered child dots).
-    const resolveCoord = buildStopCoordResolver(stops, pathways);
+    const resolveCoord = this.getCachedResolver(stops, pathways);
 
     // Identify stop IDs that belong to this station
     const stationStopIds = new Set(
