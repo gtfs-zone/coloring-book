@@ -124,7 +124,7 @@ async function loadCalendarData(
       calendar: calendarByService.get(sid) ?? null,
       exceptions: exceptionsByService.get(sid) ?? [],
       color: getServiceColor(i),
-      label: sid.length > 8 ? sid.slice(0, 8) : sid,
+      label: sid,
     });
   });
 
@@ -173,7 +173,9 @@ function renderMonthNav(year: number, month1: number): string {
 function renderMonthGrid(
   data: ServiceDataMap,
   year: number,
-  month1: number
+  month1: number,
+  feedStartDate: string | null,
+  feedEndDate: string | null
 ): string {
   const DAY_HEADERS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
 
@@ -207,14 +209,7 @@ function renderMonthGrid(
       }
     }
 
-    const MAX_CHIPS = 4;
-    const overflow = activeServices.length > MAX_CHIPS;
-    const shown = overflow
-      ? activeServices.slice(0, MAX_CHIPS)
-      : activeServices;
-    const overflowCount = activeServices.length - MAX_CHIPS;
-
-    const chipsHtml = shown
+    const chipsHtml = activeServices
       .map(({ sid, data: sd }) => {
         const excForDay = sd.exceptions.find(
           (e) => String(e.date) === gtfsDate
@@ -235,15 +230,20 @@ function renderMonthGrid(
       })
       .join('');
 
-    const overflowHtml = overflow
-      ? `<span class="text-xs text-base-content/60">+${overflowCount}</span>`
-      : '';
+    const feedStartBadge =
+      gtfsDate === feedStartDate
+        ? `<span class="badge badge-xs badge-success ml-1" title="Feed start date">&#9654;</span>`
+        : '';
+    const feedEndBadge =
+      gtfsDate === feedEndDate
+        ? `<span class="badge badge-xs badge-error ml-1" title="Feed end date">&#9664;</span>`
+        : '';
 
     cells.push(`
       <div class="min-h-16 p-1 rounded bg-base-200/20 border border-base-300/30">
-        <div class="text-xs text-base-content/60 mb-0.5">${day}</div>
-        <div class="flex flex-col gap-0.5">
-          ${chipsHtml}${overflowHtml}
+        <div class="text-xs text-base-content/60 mb-0.5 flex items-center gap-0.5">${day}${feedStartBadge}${feedEndBadge}</div>
+        <div class="flex flex-col gap-0.5 max-h-24 overflow-y-auto">
+          ${chipsHtml}
         </div>
       </div>
     `);
@@ -447,7 +447,17 @@ function renderTimeline(data: ServiceDataMap): string {
 export async function showCalendarModal(
   deps: CalendarModalDeps
 ): Promise<void> {
-  const data = await loadCalendarData(deps.gtfsDatabase);
+  const [data, feedInfoRows] = await Promise.all([
+    loadCalendarData(deps.gtfsDatabase),
+    deps.gtfsDatabase.getAllRows('feed_info'),
+  ]);
+
+  const feedStart = feedInfoRows[0]?.feed_start_date;
+  const feedEnd = feedInfoRows[0]?.feed_end_date;
+  const feedStartDate: string | null =
+    feedStart !== null && feedStart !== undefined ? String(feedStart) : null;
+  const feedEndDate: string | null =
+    feedEnd !== null && feedEnd !== undefined ? String(feedEnd) : null;
 
   const now = new Date();
   let year = now.getFullYear();
@@ -467,7 +477,7 @@ export async function showCalendarModal(
   const body = `
     <div>
       ${tabBarHtml}
-      <div id="cal-panel">${renderMonthGrid(data, year, month1)}</div>
+      <div id="cal-panel">${renderMonthGrid(data, year, month1, feedStartDate, feedEndDate)}</div>
     </div>
   `;
 
@@ -488,7 +498,13 @@ export async function showCalendarModal(
       }
 
       const rerenderGrid = (): void => {
-        panelEl.innerHTML = renderMonthGrid(data, year, month1);
+        panelEl.innerHTML = renderMonthGrid(
+          data,
+          year,
+          month1,
+          feedStartDate,
+          feedEndDate
+        );
         attachGridListeners();
       };
 
@@ -553,7 +569,13 @@ export async function showCalendarModal(
           btn.classList.add('tab-active');
 
           if (tab === 'month') {
-            panelEl.innerHTML = renderMonthGrid(data, year, month1);
+            panelEl.innerHTML = renderMonthGrid(
+              data,
+              year,
+              month1,
+              feedStartDate,
+              feedEndDate
+            );
             attachGridListeners();
           } else {
             panelEl.innerHTML = timelineHtml;
