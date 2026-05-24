@@ -11,6 +11,7 @@ import { PageStateManager } from './page-state-manager.js';
 import { GTFSParser } from './gtfs-parser.js';
 import { PatchManager } from './patch-manager.js';
 import { hasValidCoords } from '../utils/stop-coords.js';
+import { CONFIG } from '../config.js';
 import {
   Stops,
   StopTimes,
@@ -569,7 +570,7 @@ export class MapController {
     if (coords.length === 1) {
       this.map!.flyTo({
         center: coords[0],
-        zoom: 17,
+        zoom: CONFIG.STOP_FOCUS_ZOOM,
         duration: 1000,
         essential: true,
         padding: {
@@ -593,7 +594,7 @@ export class MapController {
           left: 80,
           right: 80,
         },
-        maxZoom: 18,
+        maxZoom: CONFIG.STOP_FOCUS_ZOOM,
         duration: 1000,
         essential: true,
       });
@@ -682,29 +683,49 @@ export class MapController {
       this.routeRenderer?.highlightRoutes(route_ids);
     }
 
-    // Smoothly fly to stop location
-    const stops =
-      this.gtfsParser!.getFileDataSyncTyped<Stops>('stops.txt') || [];
-    const stop = stops.find((s) => s.stop_id === stop_id);
+    // For child stops and stations, applyFocusedObject already flew to the
+    // expanded station via flyToStation — skip the individual-stop flyTo so
+    // it doesn't override the station fit. Only fly to the stop directly when
+    // no station is expanded (i.e. standalone stops).
+    if (this.getExpandedStationId() === null) {
+      const stops =
+        this.gtfsParser!.getFileDataSyncTyped<Stops>('stops.txt') || [];
+      const stop = stops.find((s) => s.stop_id === stop_id);
 
-    if (stop && stop.stop_lat && stop.stop_lon) {
-      const lat = stop.stop_lat;
-      const lon = stop.stop_lon;
+      if (stop && stop.stop_lat && stop.stop_lon) {
+        const lat = stop.stop_lat;
+        const lon = stop.stop_lon;
 
-      this.map!.flyTo({
-        center: [lon, lat],
-        zoom: Math.max(this.map!.getZoom(), 13),
-        duration: 1500,
-        essential: true,
-        padding: {
-          top: 50,
-          bottom: 50 + this.bottomPadding,
-          left: 50,
-          right: 50,
-        },
-      });
+        this.map!.flyTo({
+          center: [lon, lat],
+          zoom: CONFIG.STOP_FOCUS_ZOOM,
+          duration: 1500,
+          essential: true,
+          padding: {
+            top: 50,
+            bottom: 50 + this.bottomPadding,
+            left: 50,
+            right: 50,
+          },
+        });
+      }
     }
     console.log(`🎯 Highlighted stop: ${stop_id}`);
+  }
+
+  /**
+   * Highlight specific pathway. Mirrors highlightStop/highlightRoute — used
+   * when navigation to a pathway originates from the side panel or a URL hash
+   * rather than an on-map click.
+   */
+  public highlightPathway(pathway_id: string): void {
+    this.interactionHandler?.setHighlightedStop(null);
+    this.layerManager?.clearHighlights();
+    this.routeRenderer?.clearHighlight();
+
+    this.applyFocusedObject({ type: 'pathway', id: pathway_id });
+
+    console.log(`🎯 Highlighted pathway: ${pathway_id}`);
   }
 
   /**

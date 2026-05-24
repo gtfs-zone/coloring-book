@@ -27,4 +27,10 @@ export const CONFIG = {
   // radius so the map shows them as distinct dots and pathway lines fan out
   // instead of collapsing onto the station center.
   MISSING_COORD_CIRCLE_RADIUS_METERS: 30,
+
+  // Map navigation — zoom level used when focusing a single stop or station.
+  // For stations with multiple child stops, this is the max zoom; fitBounds
+  // will zoom out further if children don't fit at this level so subsidiaries
+  // aren't cut off.
+  STOP_FOCUS_ZOOM: 19,
 } as const;
