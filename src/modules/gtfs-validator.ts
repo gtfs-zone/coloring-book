@@ -6,7 +6,7 @@ import {
   buildStopCoordResolver,
   hasValidCoords,
 } from '../utils/stop-coords.js';
-import type { Stops } from '../types/gtfs-entities.js';
+import type { Pathways, Stops } from '../types/gtfs-entities.js';
 
 interface ValidationMessage {
   level: 'error' | 'warning' | 'info';
@@ -302,7 +302,12 @@ export class GTFSValidator {
     // areas (4) may omit them and inherit position from their parent_station.
     // We accept missing coords for any location_type as long as a coord-having
     // ancestor exists; otherwise we error (for 0/1/2) or warn (for 3/4).
-    const resolveCoord = buildStopCoordResolver(stops as Stops[]);
+    const pathways =
+      this.gtfsParser.getFileDataSyncTyped(GTFS_TABLES.PATHWAYS) || [];
+    const resolveCoord = buildStopCoordResolver(
+      stops as Stops[],
+      pathways as Pathways[]
+    );
 
     stops.forEach((stop, index: number) => {
       const rowNum = index + 1;
