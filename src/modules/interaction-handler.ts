@@ -3,6 +3,8 @@ import {
   GeoJSONSource,
   MapMouseEvent,
   MapTouchEvent,
+  Point,
+  MapGeoJSONFeature,
 } from 'maplibre-gl';
 import { Stops } from '../types/gtfs-entities.js';
 import { MapMode } from './map-controller.js';
@@ -13,6 +15,8 @@ import { generateId } from '../utils/uuid.js';
 export interface InteractionCallbacks {
   onRouteClick?: (route_id: string) => void;
   onStopClick?: (stop_id: string) => void;
+  onPathwayClick?: (pathway_id: string) => void;
+  onPathwayCreated?: (pathway_id: string) => void;
   onModeChange?: (mode: MapMode) => void;
   onStopDragComplete?: (stop_id: string, lat: number, lng: number) => void;
   onStopCreated?: (stop_id: string) => void;
@@ -35,6 +39,12 @@ export class InteractionHandler {
   // Local copy of stops GeoJSON for drag — avoids reading MapLibre's private _data
   private stopsGeoJSON: GeoJSON.FeatureCollection | null = null;
 
+  // Callback to retrieve the currently expanded station id from MapController
+  private getExpandedStationId: (() => string | null) | null = null;
+
+  // First stop selected during ADD_PATHWAY mode
+  private addPathwayFirstStopId: string | null = null;
+
   constructor(map: MapLibreMap, gtfsParser: GTFSParser) {
     this.map = map;
     this.gtfsParser = gtfsParser;
@@ -50,6 +60,10 @@ export class InteractionHandler {
 
   public setStopsGeoJSON(data: GeoJSON.FeatureCollection): void {
     this.stopsGeoJSON = data;
+  }
+
+  public setGetExpandedStationId(fn: () => string | null): void {
+    this.getExpandedStationId = fn;
   }
 
   public setHighlightedStop(stop_id: string | null): void {
@@ -137,6 +151,9 @@ export class InteractionHandler {
       case MapMode.ADD_STOP:
         this.handleAddStopClick(e);
         break;
+      case MapMode.ADD_PATHWAY:
+        void this.handleAddPathwayClick(e);
+        break;
       case MapMode.NAVIGATE:
       default:
         this.handleNavigationClick(e);
@@ -145,16 +162,33 @@ export class InteractionHandler {
   }
 
   /**
-   * Handle navigation mode clicks (stops and routes)
+   * Query rendered features, restricting to layers that currently exist.
+   * MapLibre throws if any requested layer is missing, so callers that
+   * reference dynamically-added layers (e.g. pathways) must filter first.
+   */
+  private queryFeaturesOnLayers(
+    point: Point,
+    layers: string[]
+  ): MapGeoJSONFeature[] {
+    const existing = layers.filter((id) => !!this.map.getLayer(id));
+    if (existing.length === 0) {
+      return [];
+    }
+    return this.map.queryRenderedFeatures(point, { layers: existing });
+  }
+
+  /**
+   * Handle navigation mode clicks (stops, pathways, and routes)
    */
   private handleNavigationClick(e: MapMouseEvent): void {
-    // Query features at click point, prioritizing stops over routes
-    const stopFeatures = this.map.queryRenderedFeatures(e.point, {
-      layers: ['stops-clickarea', 'stops-background'],
-    });
+    // Query features at click point, prioritizing stops over pathways over routes
+    const stopFeatures = this.queryFeaturesOnLayers(e.point, [
+      'stops-clickarea',
+      'stops-background',
+    ]);
 
     if (stopFeatures.length > 0) {
-      // Handle stop click - this takes priority over routes
+      // Handle stop click - this takes priority over everything
       const stopFeature = stopFeatures[0];
       const stop_id = stopFeature.properties?.stop_id;
 
@@ -165,10 +199,26 @@ export class InteractionHandler {
       return; // Exit early to prevent route clicks
     }
 
-    // If no stops found, check for route features
-    const routeFeatures = this.map.queryRenderedFeatures(e.point, {
-      layers: ['routes-clickarea', 'routes-background'],
-    });
+    // Check for pathway features (only present when a station is expanded)
+    const pathwayFeatures = this.queryFeaturesOnLayers(e.point, [
+      'pathways-clickarea',
+      'pathways-lines',
+    ]);
+
+    if (pathwayFeatures.length > 0) {
+      const pathway_id = pathwayFeatures[0].properties?.pathway_id;
+      if (pathway_id && this.callbacks.onPathwayClick) {
+        console.log('clicked on pathway', pathway_id);
+        this.callbacks.onPathwayClick(pathway_id);
+      }
+      return;
+    }
+
+    // If no stops or pathways found, check for route features
+    const routeFeatures = this.queryFeaturesOnLayers(e.point, [
+      'routes-clickarea',
+      'routes-background',
+    ]);
 
     if (routeFeatures.length > 0) {
       // Handle route click
@@ -197,6 +247,22 @@ export class InteractionHandler {
 
     const { lng, lat } = e.lngLat;
     const suggestedId = generateId();
+    const expandedStationId = this.getExpandedStationId?.() ?? null;
+
+    const locationTypeSelect = expandedStationId
+      ? `
+        <label class="label mt-2"><span class="label-text">Location Type</span></label>
+        <select id="new-stop-type-select" class="select select-bordered w-full">
+          <option value="0">0 — Platform (stop within a station)</option>
+          <option value="2">2 — Entrance / Exit</option>
+          <option value="3">3 — Generic Node</option>
+          <option value="4">4 — Boarding Area</option>
+        </select>`
+      : '';
+
+    const parentInfo = expandedStationId
+      ? `<p class="text-xs opacity-60 mt-2">Will be added as a child of station <code>${expandedStationId}</code>.</p>`
+      : '';
 
     const bodyHtml = `
       <label class="label"><span class="label-text">Stop ID</span></label>
@@ -206,7 +272,9 @@ export class InteractionHandler {
         class="input input-bordered w-full font-mono"
         value="${suggestedId}"
       />
+      ${locationTypeSelect}
       <p class="text-xs opacity-60 mt-2">The Stop ID cannot be changed after creation.</p>
+      ${parentInfo}
       <p id="stop-id-error" class="text-xs text-error mt-1 hidden"></p>
     `;
 
@@ -231,13 +299,21 @@ export class InteractionHandler {
         return true;
       }
 
+      let locationType = 0;
+      if (expandedStationId) {
+        const typeSelect = document.getElementById(
+          'new-stop-type-select'
+        ) as HTMLSelectElement;
+        locationType = parseInt(typeSelect?.value ?? '0', 10);
+      }
+
       const newStop: Stops = {
         stop_id: stopId,
         stop_name: '',
         stop_lat: parseFloat(lat.toFixed(6)),
         stop_lon: parseFloat(lng.toFixed(6)),
-        parent_station: '',
-        location_type: 0,
+        parent_station: expandedStationId ?? '',
+        location_type: locationType,
       };
 
       console.log('Creating new stop:', newStop);
@@ -260,7 +336,7 @@ export class InteractionHandler {
     };
 
     showModal({
-      title: 'New Stop',
+      title: expandedStationId ? 'New Child Stop' : 'New Stop',
       body: bodyHtml,
       enterAction: 1,
       escapeAction: 0,
@@ -280,6 +356,163 @@ export class InteractionHandler {
         input.focus();
         input.select();
       },
+    });
+  }
+
+  /**
+   * Handle add pathway mode clicks (two-click: from_stop → to_stop → modal)
+   */
+  private async handleAddPathwayClick(e: MapMouseEvent): Promise<void> {
+    const stopFeatures = this.queryFeaturesOnLayers(e.point, [
+      'stops-clickarea',
+      'stops-background',
+    ]);
+
+    if (stopFeatures.length === 0) {
+      return;
+    }
+
+    const stop_id = stopFeatures[0].properties?.stop_id as string;
+    if (!stop_id) {
+      return;
+    }
+
+    const stops =
+      this.gtfsParser.getFileDataSyncTyped<Stops>('stops.txt') || [];
+    const clickedStop = stops.find((s) => s.stop_id === stop_id);
+    const locationType =
+      typeof clickedStop?.location_type === 'number'
+        ? clickedStop.location_type
+        : parseInt(clickedStop?.location_type ?? '0', 10) || 0;
+
+    if (locationType === 1) {
+      showModal({
+        title: 'Invalid stop',
+        body: '<p>Stations (location_type=1) cannot be pathway endpoints. Select a platform, entrance, generic node, or boarding area.</p>',
+        enterAction: 0,
+        escapeAction: 0,
+        actions: [{ label: 'OK', onClick: () => {} }],
+      });
+      return;
+    }
+
+    if (this.addPathwayFirstStopId === null) {
+      this.addPathwayFirstStopId = stop_id;
+      const { notifications } = await import('./notification-system.js');
+      notifications.showInfo(
+        `From: ${stop_id}. Now click the second stop to connect.`
+      );
+      return;
+    }
+
+    const fromStopId = this.addPathwayFirstStopId;
+    const toStopId = stop_id;
+    this.addPathwayFirstStopId = null;
+
+    if (fromStopId === toStopId) {
+      showModal({
+        title: 'Invalid pathway',
+        body: '<p>The two endpoints must be different stops.</p>',
+        enterAction: 0,
+        escapeAction: 0,
+        actions: [{ label: 'OK', onClick: () => {} }],
+      });
+      return;
+    }
+
+    const pathwayId = generateId();
+    const bodyHtml = `
+      <div class="space-y-2">
+        <div>
+          <div class="label-text text-sm opacity-70 mb-1">From Stop</div>
+          <div class="font-mono text-sm bg-base-200 px-3 py-2 rounded">${fromStopId}</div>
+        </div>
+        <div>
+          <div class="label-text text-sm opacity-70 mb-1">To Stop</div>
+          <div class="font-mono text-sm bg-base-200 px-3 py-2 rounded">${toStopId}</div>
+        </div>
+        <label class="form-control w-full">
+          <div class="label"><span class="label-text">Pathway Mode</span></div>
+          <select id="new-pathway-mode" class="select select-bordered select-sm w-full">
+            <option value="1">1 — Walkway</option>
+            <option value="2">2 — Stairs</option>
+            <option value="3">3 — Moving Sidewalk</option>
+            <option value="4">4 — Escalator</option>
+            <option value="5">5 — Elevator</option>
+            <option value="6">6 — Fare Gate</option>
+            <option value="7">7 — Exit Gate</option>
+          </select>
+        </label>
+        <label class="label cursor-pointer justify-start gap-3">
+          <input type="checkbox" id="new-pathway-bidirectional" class="checkbox checkbox-sm" checked />
+          <span class="label-text">Bidirectional</span>
+        </label>
+        <p id="pathway-error" class="text-xs text-error hidden"></p>
+      </div>
+    `;
+
+    const createPathway = async (): Promise<boolean | void> => {
+      const modeSelect = document.getElementById(
+        'new-pathway-mode'
+      ) as HTMLSelectElement;
+      const bidirEl = document.getElementById(
+        'new-pathway-bidirectional'
+      ) as HTMLInputElement;
+      const errorEl = document.getElementById('pathway-error');
+
+      const pathway_mode = parseInt(modeSelect.value, 10);
+      const is_bidirectional = bidirEl.checked ? 1 : 0;
+
+      if (pathway_mode === 7 && is_bidirectional === 1) {
+        if (errorEl) {
+          errorEl.textContent =
+            'Exit gates (mode 7) must not be bidirectional.';
+          errorEl.classList.remove('hidden');
+        }
+        return true;
+      }
+
+      const newPathway = {
+        pathway_id: pathwayId,
+        from_stop_id: fromStopId,
+        to_stop_id: toStopId,
+        pathway_mode,
+        is_bidirectional,
+      };
+
+      try {
+        await this.gtfsParser.createPathway(newPathway);
+        this.setMapMode(MapMode.NAVIGATE);
+        this.callbacks.onPathwayCreated?.(pathwayId);
+        console.log(`✅ Created pathway ${pathwayId}`);
+      } catch (error) {
+        console.error('Failed to create pathway:', error);
+        if (errorEl) {
+          errorEl.textContent = 'Failed to create pathway. See console.';
+          errorEl.classList.remove('hidden');
+        }
+        return true;
+      }
+    };
+
+    showModal({
+      title: 'New Pathway',
+      body: bodyHtml,
+      enterAction: 1,
+      escapeAction: 0,
+      actions: [
+        {
+          label: 'Cancel',
+          onClick: () => {
+            this.setMapMode(MapMode.NAVIGATE);
+          },
+        },
+        {
+          label: 'Create Pathway',
+          className: 'btn-primary',
+          onClick: createPathway,
+        },
+      ],
     });
   }
 
@@ -515,6 +748,7 @@ export class InteractionHandler {
 
     switch (mode) {
       case MapMode.ADD_STOP:
+      case MapMode.ADD_PATHWAY:
         canvas.style.cursor = 'crosshair';
         break;
       case MapMode.NAVIGATE:
@@ -529,6 +763,12 @@ export class InteractionHandler {
    */
   private handleModeChange(previousMode: MapMode, newMode: MapMode): void {
     console.log(`🔄 Map mode changed: ${previousMode} → ${newMode}`);
+    if (
+      previousMode === MapMode.ADD_PATHWAY &&
+      newMode !== MapMode.ADD_PATHWAY
+    ) {
+      this.addPathwayFirstStopId = null;
+    }
   }
 
   /**
@@ -561,6 +801,17 @@ export class InteractionHandler {
       this.currentMode === MapMode.ADD_STOP
         ? MapMode.NAVIGATE
         : MapMode.ADD_STOP;
+    this.setMapMode(newMode);
+  }
+
+  /**
+   * Toggle between add pathway mode and navigation mode
+   */
+  public toggleAddPathwayMode(): void {
+    const newMode =
+      this.currentMode === MapMode.ADD_PATHWAY
+        ? MapMode.NAVIGATE
+        : MapMode.ADD_PATHWAY;
     this.setMapMode(newMode);
   }
 

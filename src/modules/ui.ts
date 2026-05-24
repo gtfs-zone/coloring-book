@@ -20,6 +20,7 @@ import { GTFSParser } from './gtfs-parser.js';
 import { Editor } from './editor.js';
 import { BrowseNavigation } from './browse-navigation.js';
 import { ScheduleController } from './schedule-controller.js';
+import { getStopDisplay, renderOptionLabel } from '../utils/entity-display.js';
 
 function escapeHtml(text: string): string {
   return text
@@ -172,6 +173,13 @@ export class UIController {
     document.getElementById('add-stop-btn')?.addEventListener('click', () => {
       this.toggleAddStopMode();
     });
+
+    // Add Pathway button
+    document
+      .getElementById('add-pathway-btn')
+      ?.addEventListener('click', () => {
+        this.toggleAddPathwayMode();
+      });
 
     // Back to files button
     const backToFilesBtn = document.getElementById('back-to-files');
@@ -638,12 +646,13 @@ export class UIController {
             'Unknown';
         }
       } else if (objectType === 'Stop') {
-        objectName =
-          objectData.name ||
-          objectData.stop_name ||
-          objectData.id ||
-          objectData.stop_id ||
-          'Unknown';
+        if (objectData.stop_name || objectData.stop_id) {
+          objectName = renderOptionLabel(
+            getStopDisplay(objectData as Record<string, string>)
+          );
+        } else {
+          objectName = objectData.name || objectData.id || 'Unknown';
+        }
       } else if (objectType === 'Trip') {
         objectName = objectData.id || objectData.trip_id || 'Unknown';
       } else {
@@ -1255,6 +1264,12 @@ export class UIController {
       this.mapController.setModeChangeCallback(() => {
         this.updateMapToolButtonState();
       });
+      // Update pathway button when station expand state changes
+      this.mapController.setCallbacks({
+        onStationExpandChange: () => {
+          this.updateMapToolButtonState();
+        },
+      });
     }
   }
 
@@ -1275,6 +1290,18 @@ export class UIController {
   }
 
   /**
+   * Toggle add pathway mode on the map
+   */
+  toggleAddPathwayMode() {
+    if (!this.mapController) {
+      console.warn('Map controller not initialized');
+      return;
+    }
+    this.mapController.toggleAddPathwayMode();
+    this.updateMapToolButtonState();
+  }
+
+  /**
    * Update the map tool button states based on current map mode
    */
   updateMapToolButtonState() {
@@ -1284,7 +1311,18 @@ export class UIController {
     const mode = this.mapController.getCurrentMode();
     const pointerBtn = document.getElementById('pointer-btn');
     const addStopBtn = document.getElementById('add-stop-btn');
+    const addPathwayBtn = document.getElementById(
+      'add-pathway-btn'
+    ) as HTMLButtonElement | null;
     pointerBtn?.classList.toggle('btn-primary', mode === MapMode.NAVIGATE);
     addStopBtn?.classList.toggle('btn-primary', mode === MapMode.ADD_STOP);
+    if (addPathwayBtn) {
+      const hasExpandedStation = !!this.mapController.getExpandedStationId();
+      addPathwayBtn.disabled = !hasExpandedStation;
+      addPathwayBtn.classList.toggle(
+        'btn-primary',
+        mode === MapMode.ADD_PATHWAY
+      );
+    }
   }
 }

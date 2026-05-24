@@ -20,4 +20,10 @@ export const CONFIG = {
 
   // Patch system — how often to compress and store a full-state snapshot
   SNAPSHOT_INTERVAL: 50, // take a full snapshot every N patches
+
+  // Map navigation — zoom level used when focusing a single stop or station.
+  // For stations with multiple child stops, this is the max zoom; fitBounds
+  // will zoom out further if children don't fit at this level so subsidiaries
+  // aren't cut off.
+  STOP_FOCUS_ZOOM: 19,
 } as const;
