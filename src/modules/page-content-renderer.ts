@@ -113,6 +113,7 @@ export interface ContentRendererDependencies {
   mapController: {
     highlightRoute: (route_id: string) => void;
     highlightStop: (stop_id: string) => void;
+    highlightPathway: (pathway_id: string) => void;
     clearHighlights: () => void;
     focusOnAgency: (agency_id: string) => void;
     refreshStops: () => void;
@@ -1395,6 +1396,7 @@ export class PageContentRenderer {
   }
 
   private async renderPathway(pathway_id: string): Promise<string> {
+    this.dependencies.mapController.highlightPathway(pathway_id);
     return this.pathwayViewController.renderPathwayView(pathway_id);
   }
 
