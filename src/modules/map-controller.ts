@@ -215,6 +215,7 @@ export class MapController {
         }
         case 'stops':
           this.routeRenderer.invalidateStop(id, op.op);
+          this.layerManager.invalidateCoordResolver();
           this.layerManager.updateStopsData();
           break;
         default:
@@ -1121,6 +1122,7 @@ export class MapController {
         console.log(`✅ Updated coordinates for stop ${stop_id}`);
 
         // Update layer data
+        this.layerManager?.invalidateCoordResolver();
         this.layerManager?.updateStopsData();
 
         // Rebuild pathways if a station is expanded (stop drag may shift endpoints)
@@ -1152,6 +1154,7 @@ export class MapController {
     console.log(`Pathway ${pathway_id} created`);
     const expandedStation = this.deriveExpandedStation();
     if (expandedStation) {
+      this.layerManager?.invalidateCoordResolver();
       this.layerManager?.rebuildPathwaysSource(expandedStation);
     }
     if (this.pageStateManager) {
@@ -1167,6 +1170,7 @@ export class MapController {
     console.log(`Stop ${stop_id} created`);
 
     // Update layer data to show the new stop
+    this.layerManager?.invalidateCoordResolver();
     this.layerManager?.updateStopsData();
   }
 
@@ -1221,6 +1225,7 @@ export class MapController {
   }
 
   public refreshStops(): void {
+    this.layerManager?.invalidateCoordResolver();
     this.layerManager?.updateStopsData();
   }
 
