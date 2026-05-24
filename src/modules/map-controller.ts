@@ -556,10 +556,7 @@ export class MapController {
       .filter(
         (s) =>
           (s.stop_id === stationId || s.parent_station === stationId) &&
-          s.stop_lat !== null &&
-          s.stop_lat !== undefined &&
-          s.stop_lon !== null &&
-          s.stop_lon !== undefined
+          hasValidCoords(s)
       )
       .map((s) => [Number(s.stop_lon), Number(s.stop_lat)]);
 
