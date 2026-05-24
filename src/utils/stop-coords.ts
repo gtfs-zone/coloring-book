@@ -111,23 +111,32 @@ export function buildStopCoordResolver(
     return null;
   };
 
-  // Group every coord-less stop by its resolved coord-having ancestor.
+  // Single pass: classify each stop as orphan (no own coords) or pinned (has
+  // own coords). Orphans are bucketed by ancestor immediately; pinned candidates
+  // are deferred because pinnedByAncestor can only be seeded after
+  // orphansByAncestor is fully built.
   const orphansByAncestor = new Map<string, string[]>();
+  const pendingPinned: Array<[string, string]> = [];
   for (const s of stops) {
+    const stopId = String(s.stop_id);
     if (hasValidCoords(s)) {
-      continue;
+      const ancestor = findCoordAncestor(s);
+      if (ancestor) {
+        pendingPinned.push([stopId, String(ancestor.stop_id)]);
+      }
+    } else {
+      const ancestor = findCoordAncestor(s);
+      if (!ancestor) {
+        continue;
+      }
+      const ancestorId = String(ancestor.stop_id);
+      let bucket = orphansByAncestor.get(ancestorId);
+      if (!bucket) {
+        bucket = [];
+        orphansByAncestor.set(ancestorId, bucket);
+      }
+      bucket.push(stopId);
     }
-    const ancestor = findCoordAncestor(s);
-    if (!ancestor) {
-      continue;
-    }
-    const ancestorId = String(ancestor.stop_id);
-    let bucket = orphansByAncestor.get(ancestorId);
-    if (!bucket) {
-      bucket = [];
-      orphansByAncestor.set(ancestorId, bucket);
-    }
-    bucket.push(String(s.stop_id));
   }
 
   // For each ancestor, gather the IDs of its pinned (coord-having) children
@@ -137,17 +146,10 @@ export function buildStopCoordResolver(
   for (const ancestorId of orphansByAncestor.keys()) {
     pinnedByAncestor.set(ancestorId, new Set([ancestorId]));
   }
-  for (const s of stops) {
-    if (!hasValidCoords(s)) {
-      continue;
-    }
-    const ancestor = findCoordAncestor(s);
-    if (!ancestor) {
-      continue;
-    }
-    const pinned = pinnedByAncestor.get(String(ancestor.stop_id));
+  for (const [stopId, ancestorId] of pendingPinned) {
+    const pinned = pinnedByAncestor.get(ancestorId);
     if (pinned) {
-      pinned.add(String(s.stop_id));
+      pinned.add(stopId);
     }
   }
 
