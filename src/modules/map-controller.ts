@@ -836,20 +836,6 @@ export class MapController {
   }
 
   /**
-   * Get current highlight state
-   */
-  public getCurrentHighlight(): {
-    type: 'none' | 'route' | 'stop' | 'trip';
-    id: string | null;
-  } {
-    const obj = this.focusedObject;
-    if (obj.type === 'route' || obj.type === 'stop' || obj.type === 'trip') {
-      return { type: obj.type, id: obj.id };
-    }
-    return { type: 'none', id: null };
-  }
-
-  /**
    * Smoothly fly to show a specific route
    */
   private flyToRoute(route_id: string): void {
