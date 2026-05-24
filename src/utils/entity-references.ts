@@ -3,6 +3,7 @@ import {
   getServiceDisplay,
   getStopDisplay,
   renderCardLabel,
+  renderOptionLabel,
 } from './entity-display';
 
 export const ROUTE_REF_ROW = 'route-ref-row';
@@ -161,7 +162,9 @@ export function renderPathwayReference(
   opts: PathwayReferenceOpts
 ): string {
   const otherDisplay = opts.otherStop
-    ? getStopDisplay(opts.otherStop as Record<string, string>).primary
+    ? renderOptionLabel(
+        getStopDisplay(opts.otherStop as Record<string, string>)
+      )
     : String(opts.otherStopId);
 
   const primaryText = `${opts.modeLabel} ${opts.direction} ${otherDisplay}`;
