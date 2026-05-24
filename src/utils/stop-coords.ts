@@ -24,7 +24,6 @@
 import type { Pathways, Stops } from '../types/gtfs-entities';
 
 const MAX_PARENT_HOPS = 5;
-const METERS_PER_DEGREE_LAT = 111_320;
 const TUTTE_ITERATIONS = 50;
 
 /**
@@ -51,21 +50,6 @@ export function hasValidCoords(stop: Stops): boolean {
     return false;
   }
   return Number.isFinite(lat) && Number.isFinite(lon);
-}
-
-/**
- * Convert an (east, north) offset in meters at a given latitude to a (dLon, dLat)
- * pair in degrees. Flat-earth approximation — fine for offsets up to ~100m.
- */
-export function metersToLatLonOffset(
-  centerLat: number,
-  eastMeters: number,
-  northMeters: number
-): { dLat: number; dLon: number } {
-  const dLat = northMeters / METERS_PER_DEGREE_LAT;
-  const cosLat = Math.cos((centerLat * Math.PI) / 180);
-  const dLon = cosLat === 0 ? 0 : eastMeters / (METERS_PER_DEGREE_LAT * cosLat);
-  return { dLat, dLon };
 }
 
 /**
