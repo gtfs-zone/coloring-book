@@ -692,7 +692,7 @@ export class MapController {
         this.gtfsParser!.getFileDataSyncTyped<Stops>('stops.txt') || [];
       const stop = stops.find((s) => s.stop_id === stop_id);
 
-      if (stop && stop.stop_lat && stop.stop_lon) {
+      if (stop && hasValidCoords(stop)) {
         const lat = stop.stop_lat;
         const lon = stop.stop_lon;
 
@@ -762,7 +762,7 @@ export class MapController {
     const stopsLookup: { [key: string]: { lat: number; lon: number } } = {};
 
     stops.forEach((stop) => {
-      if (stop.stop_lat && stop.stop_lon) {
+      if (hasValidCoords(stop)) {
         stopsLookup[stop.stop_id] = {
           lat: stop.stop_lat,
           lon: stop.stop_lon,
@@ -859,7 +859,7 @@ export class MapController {
     // Get coordinates for all stops
     const coordinates: [number, number][] = [];
     stops.forEach((stop) => {
-      if (routeStops.has(stop.stop_id) && stop.stop_lat && stop.stop_lon) {
+      if (routeStops.has(stop.stop_id) && hasValidCoords(stop)) {
         coordinates.push([stop.stop_lon, stop.stop_lat]);
       }
     });
@@ -910,7 +910,7 @@ export class MapController {
     // Get coordinates for all stops
     const coordinates: [number, number][] = [];
     stops.forEach((stop) => {
-      if (allStops.has(stop.stop_id) && stop.stop_lat && stop.stop_lon) {
+      if (allStops.has(stop.stop_id) && hasValidCoords(stop)) {
         coordinates.push([stop.stop_lon, stop.stop_lat]);
       }
     });
