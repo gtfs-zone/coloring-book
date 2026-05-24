@@ -220,9 +220,10 @@ export function buildStopCoordResolver(
       // Check reachability to any pinned node via BFS within the station.
       const visited = new Set<string>([orphanId]);
       const queue: string[] = [orphanId];
+      let head = 0;
       let reachesPinned = false;
-      while (queue.length > 0) {
-        const cur = queue.shift()!;
+      while (head < queue.length) {
+        const cur = queue[head++];
         if (pinned.has(cur)) {
           reachesPinned = true;
           break;
