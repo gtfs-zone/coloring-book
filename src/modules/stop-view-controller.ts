@@ -49,6 +49,7 @@ export interface StopViewDependencies {
   };
   onStopClick?: (stop_id: string) => void;
   onPathwayClick?: (pathway_id: string) => void;
+  onTimetableClick?: (route_id: string, service_id: string) => void;
   onDeleteStop: (stop_id: string) => Promise<void>;
   getLevelOptions?: () => Promise<LevelOption[]>;
 }
@@ -563,14 +564,25 @@ export class StopViewController {
       'click',
       async (e) => {
         const btn = (e.target as Element).closest('.delete-stop-btn');
-        if (!btn) {
+        if (btn) {
+          console.log('[StopViewController] Delete button clicked');
+          const stop_id = btn.getAttribute('data-stop-id');
+          console.log('[StopViewController] stop_id from button:', stop_id);
+          if (stop_id) {
+            await this.dependencies.onDeleteStop(stop_id);
+          }
           return;
         }
-        console.log('[StopViewController] Delete button clicked');
-        const stop_id = btn.getAttribute('data-stop-id');
-        console.log('[StopViewController] stop_id from button:', stop_id);
-        if (stop_id) {
-          await this.dependencies.onDeleteStop(stop_id);
+        const serviceRefRow = (e.target as Element).closest(
+          `.${SERVICE_REF_ROW}`
+        );
+        if (serviceRefRow && this.dependencies.onTimetableClick) {
+          e.stopPropagation();
+          const route_id = serviceRefRow.getAttribute('data-route-id');
+          const service_id = serviceRefRow.getAttribute('data-service-id');
+          if (route_id && service_id) {
+            this.dependencies.onTimetableClick(route_id, service_id);
+          }
         }
       },
       { signal: this.deleteListenerAbortController.signal }
@@ -589,6 +601,4 @@ export class StopViewController {
   }
 }
 
-// SERVICE_REF_ROW is used by page-content-renderer's event delegation — re-export
-// so callers don't need to import entity-references directly for this class.
 export { SERVICE_REF_ROW };
