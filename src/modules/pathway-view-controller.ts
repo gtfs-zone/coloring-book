@@ -165,15 +165,13 @@ export class PathwayViewController {
     }
 
     // Delete pathway button
-    container.addEventListener('click', async (e) => {
-      const btn = (e.target as Element).closest('.delete-pathway-btn');
-      if (!btn) {
-        return;
-      }
-      const pathway_id = btn.getAttribute('data-pathway-id');
-      if (pathway_id) {
-        await this.dependencies.onDeletePathway(pathway_id);
-      }
+    container.querySelectorAll('.delete-pathway-btn').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const pathway_id = btn.getAttribute('data-pathway-id');
+        if (pathway_id) {
+          await this.dependencies.onDeletePathway(pathway_id);
+        }
+      });
     });
   }
 

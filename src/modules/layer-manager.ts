@@ -43,6 +43,13 @@ export class LayerManager {
   private focusedStopId: string | null = null;
   private focusedPathwayId: string | null = null;
 
+  private readonly onPathwayMouseEnter = () => {
+    this.map.getCanvas().style.cursor = 'pointer';
+  };
+  private readonly onPathwayMouseLeave = () => {
+    this.map.getCanvas().style.cursor = '';
+  };
+
   // Default options
   private defaultStopOptions: StopLayerOptions = {
     showBackground: true,
@@ -833,12 +840,8 @@ export class LayerManager {
       );
 
       ['pathways-lines', 'pathways-clickarea'].forEach((layerId) => {
-        this.map.on('mouseenter', layerId, () => {
-          this.map.getCanvas().style.cursor = 'pointer';
-        });
-        this.map.on('mouseleave', layerId, () => {
-          this.map.getCanvas().style.cursor = '';
-        });
+        this.map.on('mouseenter', layerId, this.onPathwayMouseEnter);
+        this.map.on('mouseleave', layerId, this.onPathwayMouseLeave);
       });
     }
 
@@ -854,6 +857,8 @@ export class LayerManager {
   public clearPathwaysLayer(): void {
     this.setFocusedPathway(null);
     ['pathways-clickarea', 'pathways-lines'].forEach((layerId) => {
+      this.map.off('mouseenter', layerId, this.onPathwayMouseEnter);
+      this.map.off('mouseleave', layerId, this.onPathwayMouseLeave);
       if (this.map.getLayer(layerId)) {
         this.map.removeLayer(layerId);
       }
