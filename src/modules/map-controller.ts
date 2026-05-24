@@ -359,12 +359,12 @@ export class MapController {
             clickAreaRadius: 15,
           });
 
-          // Restore highlights if any
+          // Restore highlights and expanded station/pathways if any
           const obj = this.focusedObject;
           if (obj.type === 'route') {
             this.routeRenderer.highlightRoute(obj.id);
-          } else if (obj.type === 'stop') {
-            this.layerManager.highlightStop(obj.id);
+          } else if (obj.type === 'stop' || obj.type === 'pathway') {
+            this.applyFocusedObject(obj);
           } else if (obj.type === 'trip') {
             this.layerManager.highlightTrip(obj.id);
           }
