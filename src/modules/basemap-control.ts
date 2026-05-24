@@ -163,9 +163,9 @@ export class BasemapControl {
       (s) => s.id !== this.currentBasemap
     );
 
-    // Create FAB structure with flower layout
+    // Create FAB structure with vertical labeled layout
     this.container.innerHTML = `
-      <div class="fab fab-flower bottom-0 right-0">
+      <div class="fab">
         <!-- Main FAB button (shows current basemap) -->
         <div tabindex="0" role="button" class="btn btn-lg btn-circle btn-neutral basemap-fab-main">
           ${currentStyle?.icon || basemapStyles[0].icon}
@@ -176,13 +176,16 @@ export class BasemapControl {
           ${currentStyle?.icon || basemapStyles[0].icon}
         </button>
 
-        <!-- Other basemap buttons that show up when FAB is open -->
+        <!-- Other basemap buttons with labels -->
         ${otherStyles
           .map(
             (style) => `
-          <button class="btn btn-lg btn-circle btn-base-100 basemap-btn" data-basemap="${style.id}" title="${style.name}">
-            ${style.icon}
-          </button>
+          <div class="flex items-center gap-2">
+            <span class="bg-base-100 text-base-content text-sm px-2 py-1 rounded-lg shadow whitespace-nowrap">${style.name}</span>
+            <button class="btn btn-lg btn-circle btn-base-100 basemap-btn" data-basemap="${style.id}">
+              ${style.icon}
+            </button>
+          </div>
         `
           )
           .join('')}
@@ -208,8 +211,10 @@ export class BasemapControl {
     // Add minimal custom styles
     const style = document.createElement('style');
     style.textContent = `
-      .basemap-control .fab-flower {
+      .basemap-control .fab {
         position: relative;
+        inset-inline-end: 0;
+        bottom: auto;
       }
 
       .basemap-control .projection-swap {
