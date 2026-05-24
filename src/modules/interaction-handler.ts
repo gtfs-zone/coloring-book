@@ -363,9 +363,10 @@ export class InteractionHandler {
    * Handle add pathway mode clicks (two-click: from_stop → to_stop → modal)
    */
   private async handleAddPathwayClick(e: MapMouseEvent): Promise<void> {
-    const stopFeatures = this.map.queryRenderedFeatures(e.point, {
-      layers: ['stops-clickarea', 'stops-background'],
-    });
+    const stopFeatures = this.queryFeaturesOnLayers(e.point, [
+      'stops-clickarea',
+      'stops-background',
+    ]);
 
     if (stopFeatures.length === 0) {
       return;

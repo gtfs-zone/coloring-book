@@ -2,6 +2,16 @@ import { showModal } from './modal-utils.js';
 import type { GTFSDatabase } from './gtfs-database.js';
 import type { PatchManager } from './patch-manager.js';
 
+function escapeHtml(text: unknown): string {
+  const div = document.createElement('div');
+  div.textContent = String(text ?? '');
+  return div.innerHTML;
+}
+
+function escapeAttr(text: unknown): string {
+  return escapeHtml(text).replace(/'/g, '&#39;').replace(/"/g, '&quot;');
+}
+
 export interface LevelOption {
   value: string;
   label: string;
@@ -23,7 +33,20 @@ export class LevelsController {
     const levels = await this.db.getAllRows('levels');
     return levels
       .slice()
-      .sort((a, b) => Number(a.level_index ?? 0) - Number(b.level_index ?? 0))
+      .sort((a, b) => {
+        const ai = Number(a.level_index ?? 0);
+        const bi = Number(b.level_index ?? 0);
+        if (!Number.isFinite(ai) && !Number.isFinite(bi)) {
+          return 0;
+        }
+        if (!Number.isFinite(ai)) {
+          return 1;
+        }
+        if (!Number.isFinite(bi)) {
+          return -1;
+        }
+        return ai - bi;
+      })
       .map((l) => ({
         value: String(l.level_id),
         label: l.level_name
@@ -41,15 +64,28 @@ export class LevelsController {
       }
       const rows = levels
         .slice()
-        .sort((a, b) => Number(a.level_index ?? 0) - Number(b.level_index ?? 0))
+        .sort((a, b) => {
+          const ai = Number(a.level_index ?? 0);
+          const bi = Number(b.level_index ?? 0);
+          if (!Number.isFinite(ai) && !Number.isFinite(bi)) {
+            return 0;
+          }
+          if (!Number.isFinite(ai)) {
+            return 1;
+          }
+          if (!Number.isFinite(bi)) {
+            return -1;
+          }
+          return ai - bi;
+        })
         .map(
           (l) => `
           <tr>
-            <td class="font-mono text-sm">${String(l.level_id)}</td>
-            <td>${String(l.level_index ?? '')}</td>
-            <td>${String(l.level_name ?? '')}</td>
+            <td class="font-mono text-sm">${escapeHtml(l.level_id)}</td>
+            <td>${escapeHtml(l.level_index ?? '')}</td>
+            <td>${escapeHtml(l.level_name ?? '')}</td>
             <td>
-              <button class="btn btn-xs btn-ghost text-error levels-delete-btn" data-level-id="${String(l.level_id)}">✕</button>
+              <button class="btn btn-xs btn-ghost text-error levels-delete-btn" data-level-id="${escapeAttr(l.level_id)}">✕</button>
             </td>
           </tr>`
         )
@@ -139,9 +175,14 @@ export class LevelsController {
             savedLevelIndex = levelIndex;
             savedLevelName = levelName;
 
-            if (!levelId || levelIndex === '') {
+            if (
+              !levelId ||
+              levelIndex === '' ||
+              Number.isNaN(Number(levelIndex))
+            ) {
               if (errEl) {
-                errEl.textContent = 'Level ID and Level Index are required.';
+                errEl.textContent =
+                  'Level ID and Level Index are required and must be a number.';
                 errEl.classList.remove('hidden');
               }
               return true;

@@ -6,6 +6,12 @@ import {
   renderOptionLabel,
 } from './entity-display';
 
+function escapeAttr(text: unknown): string {
+  const div = document.createElement('div');
+  div.textContent = String(text ?? '');
+  return div.innerHTML.replace(/'/g, '&#39;').replace(/"/g, '&quot;');
+}
+
 export const ROUTE_REF_ROW = 'route-ref-row';
 export const SERVICE_REF_ROW = 'service-ref-row';
 export const STOP_REF_ROW = 'stop-ref-row';
@@ -141,7 +147,7 @@ export function renderStopReference(
     ? `<div class="badge badge-outline badge-sm">${opts.locationTypeLabel}</div>`
     : '';
 
-  return `<div class="flex items-center gap-3 p-3 rounded-lg hover:bg-base-200 cursor-pointer transition-colors ${STOP_REF_ROW}" data-stop-id="${stop.stop_id}">
+  return `<div class="flex items-center gap-3 p-3 rounded-lg hover:bg-base-200 cursor-pointer transition-colors ${STOP_REF_ROW}" data-stop-id="${escapeAttr(stop.stop_id)}">
   <div class="flex-1 min-w-0">
     ${label}
   </div>
@@ -171,10 +177,10 @@ export function renderPathwayReference(
   const label = `<div class="font-medium truncate">${primaryText}</div>`;
 
   const viewStopBtn = opts.viewStopButton
-    ? `<button class="btn btn-xs btn-ghost ${ENTITY_REF_BTN}" data-stop-id="${opts.otherStopId}">View Stop</button>`
+    ? `<button class="btn btn-xs btn-ghost ${ENTITY_REF_BTN}" data-stop-id="${escapeAttr(opts.otherStopId)}">View Stop</button>`
     : '';
 
-  return `<div class="flex items-center gap-3 p-3 rounded-lg hover:bg-base-200 cursor-pointer transition-colors ${PATHWAY_REF_ROW}" data-pathway-id="${pathway.pathway_id}">
+  return `<div class="flex items-center gap-3 p-3 rounded-lg hover:bg-base-200 cursor-pointer transition-colors ${PATHWAY_REF_ROW}" data-pathway-id="${escapeAttr(pathway.pathway_id)}">
   <div class="flex-1 min-w-0">
     ${label}
   </div>
