@@ -232,6 +232,7 @@ export class LayerManager {
           parent_station: stop.parent_station ?? '',
           station_id: resolveStationId(stop),
           wheelchair_boarding: stop.wheelchair_boarding || '',
+          has_own_coords: hasValidCoords(stop),
         },
       });
     }
@@ -296,6 +297,8 @@ export class LayerManager {
         ],
         'circle-stroke-color': [
           'case',
+          ['==', ['get', 'has_own_coords'], false],
+          '#9ca3af', // No own lat/lon: grey stroke
           ['==', ['get', 'location_type'], 1],
           '#000000', // Station: black stroke
           options.strokeColor,
