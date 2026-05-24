@@ -135,7 +135,7 @@ export const basemapStyles: BasemapStyle[] = [
             'https://tiles.stadiamaps.com/tiles/stamen_watercolor/{z}/{x}/{y}.jpg',
           ],
           tileSize: 256,
-          maxzoom: 20,
+          maxzoom: 16,
           attribution: '© Stadia Maps © Stamen Design © OpenMapTiles',
         },
       },
