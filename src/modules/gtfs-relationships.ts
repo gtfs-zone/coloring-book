@@ -9,6 +9,7 @@ import {
   normalizeAgencyId,
   agencyRouteFilter,
 } from '../utils/agency-helpers.js';
+import { getStopDisplay, renderOptionLabel } from '../utils/entity-display.js';
 
 interface GTFSParserInterface {
   getFileDataSync: (filename: string) => GTFSDatabaseRecord[];
@@ -920,7 +921,9 @@ export class GTFSRelationships {
         })
         .map((stop) => ({
           id: stop.stop_id,
-          name: stop.stop_name || stop.stop_id,
+          name: renderOptionLabel(
+            getStopDisplay(stop as unknown as Record<string, string>)
+          ),
           code: stop.stop_code,
           lat: stop.stop_lat,
           lon: stop.stop_lon,
