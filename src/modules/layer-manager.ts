@@ -117,8 +117,9 @@ export class LayerManager {
 
     const finalOptions = { ...this.defaultStopOptions, ...options };
 
-    // Create GeoJSON for stops (resolver fans coord-less children around their
-    // ancestor station; stops with no resolvable coords are skipped + warned).
+    // Create GeoJSON for stops (resolver places coord-less children via Tutte
+    // layout over the pathway graph; stops with no resolvable coords or in
+    // orphan pathway components are skipped + warned).
     const stopsGeoJSON = this.createStopsGeoJSON(stops);
 
     // Check if source already exists before adding.
@@ -157,9 +158,10 @@ export class LayerManager {
   /**
    * Create GeoJSON data for stops.
    *
-   * Coord-less child stops are placed on a circle around their nearest
-   * coord-having ancestor (see buildStopCoordResolver). Stops with no own
-   * coords and no coord-having ancestor are skipped with a warning.
+   * Coord-less child stops are placed via Tutte's barycentric embedding over
+   * the pathway graph (see buildStopCoordResolver). Stops with no own coords
+   * and no coord-having ancestor, or in pathway components disconnected from
+   * any pinned sibling, are skipped with a warning.
    */
   private createStopsGeoJSON(stops: Stops[]): GeoJSON.FeatureCollection {
     const stopById = new Map<string, Stops>();
@@ -195,7 +197,9 @@ export class LayerManager {
       return '';
     };
 
-    const resolveCoord = buildStopCoordResolver(stops);
+    const pathways =
+      this.gtfsParser.getFileDataSyncTyped<Pathways>('pathways.txt') || [];
+    const resolveCoord = buildStopCoordResolver(stops, pathways);
 
     const features: GeoJSON.Feature[] = [];
     for (const stop of stops) {
@@ -703,10 +707,10 @@ export class LayerManager {
     const pathways =
       this.gtfsParser.getFileDataSyncTyped<Pathways>('pathways.txt') || [];
 
-    // Shared coord resolver: own coords if available, otherwise a circular
-    // position around the nearest coord-having ancestor (matches how stops
-    // are drawn so pathway endpoints align with the rendered child dots).
-    const resolveCoord = buildStopCoordResolver(stops);
+    // Shared coord resolver: own coords if available, otherwise a Tutte-layout
+    // position over the pathway graph (matches how stops are drawn so pathway
+    // endpoints align with the rendered child dots).
+    const resolveCoord = buildStopCoordResolver(stops, pathways);
 
     // Identify stop IDs that belong to this station
     const stationStopIds = new Set(
