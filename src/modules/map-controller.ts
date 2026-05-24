@@ -360,12 +360,14 @@ export class MapController {
             clickAreaRadius: 15,
           });
 
-          // Restore highlights and expanded station/pathways if any
+          // Restore highlights and expanded station/pathways if any.
+          // Reset focusedObject first so applyFocusedObject sees oldStation→newStation
+          // as a real change and re-expands the station (recreating the pathway layer).
           const obj = this.focusedObject;
+          this.focusedObject = { type: 'none' };
+          this.applyFocusedObject(obj);
           if (obj.type === 'route') {
             this.routeRenderer.highlightRoute(obj.id);
-          } else if (obj.type === 'stop' || obj.type === 'pathway') {
-            this.applyFocusedObject(obj);
           } else if (obj.type === 'trip') {
             this.layerManager.highlightTrip(obj.id);
           }
