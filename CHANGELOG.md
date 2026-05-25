@@ -1,3 +1,67 @@
+## v0.18.0 (2026-05-25)
+
+### Feat
+
+- add map key section to about modal
+- show coord-less stops with grey outline on map
+- lay out coord-less child stops via pathway graph instead of circle
+- append stop_id to child-stop labels universally
+- bump focused stop/station radii and trim setFocusedStop logs
+- split pathways into out/in sections and add boarding areas for platforms
+- split station child-stop list into grouped sections by location type
+- add renderStopReference and renderPathwayReference helpers in entity-references
+- breadcrumb depth + empty-click navigate-up for stops/pathways
+- route pathway endpoints through nearest coord-having ancestor
+- station icon white+X and ancestor-aware stops filter
+- **map**: feature-state pathway focus replaces hardcoded line-width
+- **map**: feature-state stop focus replaces stops-highlight layer
+- **pathways**: add pathway creation tool and stop pathways section (phase 5)
+- **pathways**: add pathway visualization and detail view (phase 4)
+- **map**: add station hierarchy and expanded view (phase 3)
+- **levels**: add levels management modal and level_id dropdown in stop view
+- **db**: add pathways and levels object stores, bump schema to v9
+- polish timeline — dynamic label width, weekday dots, DaisyUI tooltips on exception ticks
+- polish month grid — scrollable cells, full IDs, feed date markers
+- implement timeline/gantt tab in calendar modal
+- add calendar modal with month grid view
+
+### Fix
+
+- **calendar-modal**: fix timeline week order and add days-of-week tooltip
+- **basemap-control**: prevent invisible container from blocking map clicks
+- **entity-references**: escape route_id and service_id in data-* attrs
+- **interaction-handler**: route add-pathway click through queryFeaturesOnLayers
+- **map-controller**: replace falsy-zero stop coord checks with hasValidCoords
+- **pathway-view**: attach delete handler to button elements, not container
+- restore pathway layer after basemap change
+- restore pathways layer after basemap/projection switch
+- show id for pathways
+- drop empty-coord stops from station fly-to bounds
+- highlight pathway and zoom to station on side-panel/URL navigation
+- properly escape CSV writes and drop (0,0) from feed fit-bounds
+- render coord-less child stops in a circle around their station
+- use promoteId for stops/pathways so string ids work with feature-state
+- guard queryRenderedFeatures against missing dynamic layers
+- render station ✕ via map.addImage and instrument focus state
+- restore basemap FAB position within map container
+- revert watercolor maxzoom to 16, redesign basemap FAB to vertical with labels
+- correct maxzoom values based on live tile testing
+- add maxzoom to all raster sources and update satellite icon
+
+### Refactor
+
+- knip
+- **stop-view**: restore onTimetableClick to StopViewDependencies
+- remove unused getCurrentHighlight (lossy for pathway focus)
+- **stop-coords**: single-pass orphan/pinned classification
+- knip
+- replace station ✕ symbol layer with small black inner-dot
+- **map**: unified FocusedObject replaces expandedStationId + currentHighlight
+
+### Perf
+
+- **stop-coords**: cache coord resolver and fix O(n²) BFS
+
 ## v0.17.0 (2026-05-12)
 
 ### Feat
