@@ -42,6 +42,7 @@ interface PatchManagerRef {
 
 export class GTFSParser {
   private gtfsData: { [fileName: string]: GTFSFileData } = {};
+  private passthroughFiles: Map<string, string> = new Map();
   public gtfsDatabase: GTFSDatabase;
   private patchManager: PatchManagerRef | null = null;
 
@@ -69,7 +70,7 @@ export class GTFSParser {
       return '';
     }
 
-    const stringValue = String(value).trim();
+    const stringValue = String(value);
 
     // Detect field type from field name
     let shouldBeNumeric = false;
@@ -108,10 +109,6 @@ export class GTFSParser {
     if (shouldBeNumeric && stringValue !== '') {
       const num = parseFloat(stringValue);
       if (!isNaN(num)) {
-        // For latitude/longitude, preserve 6 decimal places
-        if (fieldName.includes('_lat') || fieldName.includes('_lon')) {
-          return parseFloat(num.toFixed(6));
-        }
         // For integers, remove decimal part
         if (Number.isInteger(num)) {
           return parseInt(stringValue, 10);
@@ -120,7 +117,6 @@ export class GTFSParser {
       }
     }
 
-    // Return trimmed string for non-numeric fields
     return stringValue;
   }
 
@@ -453,10 +449,12 @@ export class GTFSParser {
         fields.add(key);
       }
     }
-    return Papa.unparse({
-      fields: Array.from(fields),
-      data: rows,
-    });
+    return (
+      Papa.unparse({
+        fields: Array.from(fields),
+        data: rows,
+      }) + '\n'
+    );
   }
 
   /**
@@ -596,6 +594,17 @@ export class GTFSParser {
           );
         }
       }
+      // Restore passthrough files into the in-memory map.
+      const ptFiles = await this.gtfsDatabase.getAllPassthroughFiles();
+      this.passthroughFiles.clear();
+      for (const [fileName, rawContent] of Object.entries(ptFiles)) {
+        this.passthroughFiles.set(fileName, rawContent);
+      }
+      if (this.passthroughFiles.size > 0) {
+        console.log(
+          `[GTFSParser] Restored ${this.passthroughFiles.size} passthrough file(s)`
+        );
+      }
     } catch (error) {
       console.error('[GTFSParser] Failed to restore data:', error);
     }
@@ -604,6 +613,7 @@ export class GTFSParser {
   async initializeEmpty(): Promise<void> {
     await this.gtfsDatabase.clearDatabase();
     this.gtfsDatabase.clearVirtualTables();
+    this.passthroughFiles.clear();
 
     for (const filename of ALL_GTFS_FILES) {
       const content = makeHeaderOnlyCSV(filename);
@@ -669,30 +679,33 @@ export class GTFSParser {
         { type: 'module' }
       );
 
-      const { files: workerFiles, unknownFiles } =
-        await new Promise<WorkerDoneMessage>((resolve, reject) => {
-          worker.onmessage = (event: MessageEvent<WorkerOutbound>) => {
-            const msg = event.data;
-            if (msg.type === 'progress') {
-              feedProgressIndicator.updateProgress(
-                operation,
-                msg.progress,
-                msg.status
-              );
-            } else if (msg.type === 'done') {
-              worker.terminate();
-              resolve(msg);
-            } else if (msg.type === 'error') {
-              worker.terminate();
-              reject(new Error(msg.message));
-            }
-          };
-          worker.onerror = (err) => {
+      const {
+        files: workerFiles,
+        unknownFiles,
+        passthroughFiles,
+      } = await new Promise<WorkerDoneMessage>((resolve, reject) => {
+        worker.onmessage = (event: MessageEvent<WorkerOutbound>) => {
+          const msg = event.data;
+          if (msg.type === 'progress') {
+            feedProgressIndicator.updateProgress(
+              operation,
+              msg.progress,
+              msg.status
+            );
+          } else if (msg.type === 'done') {
             worker.terminate();
-            reject(new Error(err.message));
-          };
-          worker.postMessage({ type: 'parse', buffer }, [buffer]);
-        });
+            resolve(msg);
+          } else if (msg.type === 'error') {
+            worker.terminate();
+            reject(new Error(msg.message));
+          }
+        };
+        worker.onerror = (err) => {
+          worker.terminate();
+          reject(new Error(err.message));
+        };
+        worker.postMessage({ type: 'parse', buffer }, [buffer]);
+      });
 
       // Apply worker results on the main thread: set up virtual tables and persist blobs
       this.gtfsData = {};
@@ -722,6 +735,15 @@ export class GTFSParser {
             );
           }
           this.setupVirtual(tableName, fileResult.data);
+        }
+      }
+
+      // Save and cache passthrough files (unrecognized .txt files from the ZIP).
+      this.passthroughFiles.clear();
+      if (Object.keys(passthroughFiles).length > 0) {
+        await this.gtfsDatabase.savePassthroughFiles(passthroughFiles);
+        for (const [fileName, rawContent] of Object.entries(passthroughFiles)) {
+          this.passthroughFiles.set(fileName, rawContent);
         }
       }
 
@@ -1011,7 +1033,16 @@ export class GTFSParser {
         }
       }
 
-      return await zip.generateAsync({ type: 'blob' });
+      // Append passthrough files verbatim — no newline manipulation.
+      for (const [fileName, rawContent] of this.passthroughFiles) {
+        zip.file(fileName, rawContent);
+      }
+
+      return await zip.generateAsync({
+        type: 'blob',
+        compression: 'DEFLATE',
+        compressionOptions: { level: 6 },
+      });
     } catch (error) {
       console.error('Error exporting GTFS data:', error);
       throw error;

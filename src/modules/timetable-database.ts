@@ -239,7 +239,7 @@ export class TimetableDatabase {
       const newStopTime: Record<string, string | null> = {
         trip_id: trip_id,
         stop_id: stop_id,
-        stop_sequence: '1', // Temporary, will be renumbered
+        stop_sequence: '0', // Temporary, will be renumbered
         arrival_time: null,
         departure_time: null,
       };
@@ -259,7 +259,7 @@ export class TimetableDatabase {
       // Renumber sequences
       const renumberedStopTimes = sortedStopTimes.map((st, index) => ({
         ...st,
-        stop_sequence: index + 1,
+        stop_sequence: index,
       }));
 
       // Get old keys for deletion (only existing records, not the new one)
@@ -355,7 +355,7 @@ export class TimetableDatabase {
       const newStopTime = {
         trip_id: trip_id,
         stop_id: stop_id,
-        stop_sequence: 1, // Temporary, will be renumbered
+        stop_sequence: 0, // Temporary, will be renumbered
         arrival_time: newTime ?? '',
         departure_time: newTime ?? '',
       };
@@ -374,7 +374,7 @@ export class TimetableDatabase {
       // Renumber sequences
       const renumberedStopTimes = sortedStopTimes.map((st, index) => ({
         ...st,
-        stop_sequence: index + 1,
+        stop_sequence: index,
       }));
 
       // Get old keys for deletion (only existing records, not the new one)
@@ -553,7 +553,7 @@ export class TimetableDatabase {
         stopTime = {
           trip_id,
           stop_id,
-          stop_sequence: 1, // Temporary, will be set after sorting
+          stop_sequence: 0, // Temporary, will be set after sorting
           arrival_time: undefined,
           departure_time: undefined,
         };
@@ -584,7 +584,7 @@ export class TimetableDatabase {
     // Assign sequential stop_sequence numbers
     const finalStopTimes = sortedStopTimes.map((st, index) => ({
       ...st,
-      stop_sequence: index + 1,
+      stop_sequence: index,
     })) as unknown as StopTimes[];
 
     // Get ALL old stop_times for this trip

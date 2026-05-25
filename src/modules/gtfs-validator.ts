@@ -543,7 +543,10 @@ export class GTFSValidator {
         );
       }
 
-      if (!stopTime.stop_sequence) {
+      if (
+        stopTime.stop_sequence === null ||
+        stopTime.stop_sequence === undefined
+      ) {
         this.addError(
           `Row ${rowNum}: stop_sequence is required`,
           'MISSING_REQUIRED_FIELD',
