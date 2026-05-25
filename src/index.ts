@@ -31,6 +31,7 @@ import { showFaresModal } from './modules/fares-modal';
 import { ShapesManager } from './modules/shapes-manager';
 import { PanelResizer } from './modules/panel-resizer';
 import { LevelsController } from './modules/levels-controller';
+import { feedProgressIndicator } from './modules/feed-progress-indicator';
 import './styles/main.css';
 
 declare global {
@@ -127,6 +128,8 @@ export class GTFSEditor {
 
   private async init(): Promise<void> {
     try {
+      feedProgressIndicator.startLoading('boot', 'Opening database...');
+
       // Claim tab lock before any module initialization
       this.tabLock.init();
 
@@ -138,9 +141,11 @@ export class GTFSEditor {
 
       // Initialize GTFSParser database
       await this.gtfsParser.initialize();
+      feedProgressIndicator.updateProgress('boot', 60, 'Restoring patches...');
 
       // Restore state from patch history (snapshot + subsequent patches)
       await this.patchManager.initialize();
+      feedProgressIndicator.updateProgress('boot', 80, 'Building map...');
       this.historyController.initialize(this.patchManager);
       this.updateUndoRedoState();
 
@@ -337,6 +342,7 @@ export class GTFSEditor {
 
       this.uiController.updateFileList();
       await this.mapController.updateMap();
+      feedProgressIndicator.finishLoading('boot');
 
       if (this.browseNavigation) {
         this.browseNavigation.refresh();
@@ -349,6 +355,7 @@ export class GTFSEditor {
         exportBtn.disabled = false;
       }
     } catch (error) {
+      feedProgressIndicator.finishLoading('boot');
       console.error('Failed to initialize application:', error);
       notifications.showError(
         'Failed to initialize application. Please refresh the page and try again.'

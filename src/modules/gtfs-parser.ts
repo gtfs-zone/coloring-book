@@ -492,12 +492,19 @@ export class GTFSParser {
    * All .txt tables are blob-backed; .geojson files fall back to IDB rows.
    */
   async restoreDataFromDatabase(): Promise<void> {
+    const total = ALL_GTFS_FILES.length;
     try {
-      for (const filename of ALL_GTFS_FILES) {
+      for (let idx = 0; idx < ALL_GTFS_FILES.length; idx++) {
+        const filename = ALL_GTFS_FILES[idx];
         const tableName = this.getTableName(filename);
         try {
           if (filename.endsWith('.txt')) {
             const csv = await this.gtfsDatabase.getTableBlob(tableName);
+            feedProgressIndicator.updateProgress(
+              'boot',
+              5 + (idx / total) * 50,
+              `Restoring ${tableName}...`
+            );
             if (!csv) {
               continue;
             }
