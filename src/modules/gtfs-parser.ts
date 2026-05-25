@@ -69,7 +69,7 @@ export class GTFSParser {
       return '';
     }
 
-    const stringValue = String(value).trim();
+    const stringValue = String(value);
 
     // Detect field type from field name
     let shouldBeNumeric = false;
@@ -108,10 +108,6 @@ export class GTFSParser {
     if (shouldBeNumeric && stringValue !== '') {
       const num = parseFloat(stringValue);
       if (!isNaN(num)) {
-        // For latitude/longitude, preserve 6 decimal places
-        if (fieldName.includes('_lat') || fieldName.includes('_lon')) {
-          return parseFloat(num.toFixed(6));
-        }
         // For integers, remove decimal part
         if (Number.isInteger(num)) {
           return parseInt(stringValue, 10);
@@ -120,7 +116,6 @@ export class GTFSParser {
       }
     }
 
-    // Return trimmed string for non-numeric fields
     return stringValue;
   }
 

@@ -55,7 +55,7 @@ function parseFieldValue(fieldName: string, value: string): string | number {
     return '';
   }
 
-  const stringValue = String(value).trim();
+  const stringValue = String(value);
 
   let shouldBeNumeric = false;
   if (
@@ -90,9 +90,6 @@ function parseFieldValue(fieldName: string, value: string): string | number {
   if (shouldBeNumeric && stringValue !== '') {
     const num = parseFloat(stringValue);
     if (!isNaN(num)) {
-      if (fieldName.includes('_lat') || fieldName.includes('_lon')) {
-        return parseFloat(num.toFixed(6));
-      }
       if (Number.isInteger(num)) {
         return parseInt(stringValue, 10);
       }
