@@ -26,6 +26,7 @@ export interface WorkerDoneMessage {
   type: 'done';
   files: { [fileName: string]: WorkerFileResult };
   unknownFiles: string[];
+  passthroughFiles: { [fileName: string]: string };
 }
 
 export interface WorkerDoneRestoreMessage {
@@ -55,7 +56,7 @@ function parseFieldValue(fieldName: string, value: string): string | number {
     return '';
   }
 
-  const stringValue = String(value).trim();
+  const stringValue = String(value);
 
   let shouldBeNumeric = false;
   if (
@@ -90,9 +91,6 @@ function parseFieldValue(fieldName: string, value: string): string | number {
   if (shouldBeNumeric && stringValue !== '') {
     const num = parseFloat(stringValue);
     if (!isNaN(num)) {
-      if (fieldName.includes('_lat') || fieldName.includes('_lon')) {
-        return parseFloat(num.toFixed(6));
-      }
       if (Number.isInteger(num)) {
         return parseInt(stringValue, 10);
       }
@@ -163,6 +161,7 @@ self.onmessage = async (
     );
 
     const unknownFiles: string[] = [];
+    const passthroughFiles: { [fileName: string]: string } = {};
     const totalFiles = files.length;
     const resultFiles: { [fileName: string]: WorkerFileResult } = {};
 
@@ -171,6 +170,8 @@ self.onmessage = async (
 
       if (!isSupportedFile(fileName)) {
         unknownFiles.push(fileName);
+        passthroughFiles[fileName] =
+          await zipContent.files[fileName].async('text');
         continue;
       }
 
@@ -218,7 +219,7 @@ self.onmessage = async (
     }
 
     post({ type: 'progress', progress: 90, status: 'Finalizing...' });
-    post({ type: 'done', files: resultFiles, unknownFiles });
+    post({ type: 'done', files: resultFiles, unknownFiles, passthroughFiles });
   } catch (err) {
     self.postMessage({
       type: 'error',
