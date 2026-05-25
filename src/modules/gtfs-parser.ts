@@ -26,6 +26,7 @@ interface GTFSFileData<T = GTFSDatabaseRecord> {
 type GTFSTableName = keyof GTFSTableMap;
 
 interface PatchManagerRef {
+  readonly version: number;
   recordInsert(
     table: string,
     id: string,
@@ -404,8 +405,12 @@ export class GTFSParser {
     }, 3000);
   }
 
-  /** Flush all dirty blobs to IDB immediately. Called before export and on demand. */
-  async persistDirtyBlobs(): Promise<void> {
+  /**
+   * Flush all dirty blobs to IDB immediately. Called before export and on demand.
+   * If `version` is provided (or can be read from the current patchManager), records
+   * it in meta.blobVersion so the next restore can skip snapshot+replay entirely.
+   */
+  async persistDirtyBlobs(version?: number): Promise<void> {
     if (this.blobPersistTimer) {
       clearTimeout(this.blobPersistTimer);
       this.blobPersistTimer = null;
@@ -419,6 +424,11 @@ export class GTFSParser {
       await this.gtfsDatabase.saveTableBlob(tableName, JSON.stringify(rows));
     }
     this.blobDirty.clear();
+    // Record the version at which blobs were last fully flushed.
+    const v = version ?? this.patchManager?.version;
+    if (v !== undefined) {
+      await this.gtfsDatabase.setBlobVersion(v);
+    }
   }
 
   /**
@@ -611,8 +621,8 @@ export class GTFSParser {
     await this.gtfsDatabase.insertRows('feed_info', [seedRow]);
     // Flush immediately so the seed blob is in IDB before any patch is recorded.
     // This guarantees that a quick refresh (before the 3-second debounce) still
-    // has a row for patch replay to land on.
-    await this.persistDirtyBlobs();
+    // has a row for patch replay to land on. Fresh DB has no patches yet → version 0.
+    await this.persistDirtyBlobs(0);
   }
 
   async parseFile(
@@ -707,6 +717,9 @@ export class GTFSParser {
           this.setupVirtual(tableName, fileResult.data);
         }
       }
+
+      // A fresh import has no patches yet — blobs are current at version 0.
+      await this.gtfsDatabase.setBlobVersion(0);
 
       feedProgressIndicator.updateProgress(operation, 100, 'Complete!');
       feedProgressIndicator.finishLoading(operation);
