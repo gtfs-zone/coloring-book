@@ -23,7 +23,7 @@ export function getFileHeaders(filename: string): string[] {
 
 // Generate a headers-only CSV string for a given file
 export function makeHeaderOnlyCSV(filename: string): string {
-  return getFileHeaders(filename).join(',');
+  return getFileHeaders(filename).join(',') + '\n';
 }
 
 // Whether a filename is supported (appears in GTFS_FILES)
