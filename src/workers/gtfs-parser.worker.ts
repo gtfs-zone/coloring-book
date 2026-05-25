@@ -28,6 +28,11 @@ export interface WorkerDoneMessage {
   unknownFiles: string[];
 }
 
+export interface WorkerDoneRestoreMessage {
+  type: 'done-restore';
+  tables: { [tableName: string]: GTFSDatabaseRecord[] };
+}
+
 export interface WorkerProgressMessage {
   type: 'progress';
   progress: number;
@@ -42,6 +47,7 @@ export interface WorkerErrorMessage {
 export type WorkerOutbound =
   | WorkerProgressMessage
   | WorkerDoneMessage
+  | WorkerDoneRestoreMessage
   | WorkerErrorMessage;
 
 function parseFieldValue(fieldName: string, value: string): string | number {
@@ -110,16 +116,42 @@ function processParsedData(
 }
 
 self.onmessage = async (
-  event: MessageEvent<{ type: 'parse'; buffer: ArrayBuffer }>
+  event: MessageEvent<
+    | { type: 'parse'; buffer: ArrayBuffer }
+    | { type: 'restore'; blobs: { tableName: string; json: string }[] }
+  >
 ) => {
+  const post = (msg: WorkerOutbound) => self.postMessage(msg);
+
+  if (event.data.type === 'restore') {
+    try {
+      const { blobs } = event.data;
+      const tables: { [tableName: string]: GTFSDatabaseRecord[] } = {};
+      for (let i = 0; i < blobs.length; i++) {
+        const { tableName, json } = blobs[i];
+        post({
+          type: 'progress',
+          progress: (i / blobs.length) * 100,
+          status: `Restoring ${tableName}...`,
+        });
+        tables[tableName] = JSON.parse(json) as GTFSDatabaseRecord[];
+      }
+      post({ type: 'done-restore', tables });
+    } catch (err) {
+      post({
+        type: 'error',
+        message: err instanceof Error ? err.message : String(err),
+      });
+    }
+    return;
+  }
+
   if (event.data.type !== 'parse') {
     return;
   }
 
   try {
     const { buffer } = event.data;
-
-    const post = (msg: WorkerOutbound) => self.postMessage(msg);
 
     post({ type: 'progress', progress: 20, status: 'Extracting ZIP file...' });
 
