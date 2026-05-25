@@ -1,3 +1,9 @@
+## v0.19.1 (2026-05-26)
+
+### Fix
+
+- **layer-manager**: invalidate coord resolver on full map reload
+
 ## v0.19.0 (2026-05-25)
 
 ### Feat
