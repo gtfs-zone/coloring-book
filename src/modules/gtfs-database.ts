@@ -424,7 +424,7 @@ export class GTFSDatabase {
               // New schema (v10): stored as JSON, convert back to CSV for export
               const rows = JSON.parse(json) as Record<string, unknown>[];
               if (rows.length > 0) {
-                zip.file(`${tableName}.txt`, Papa.unparse(rows));
+                zip.file(`${tableName}.txt`, Papa.unparse(rows) + '\n');
               }
             }
           }

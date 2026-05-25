@@ -448,10 +448,12 @@ export class GTFSParser {
         fields.add(key);
       }
     }
-    return Papa.unparse({
-      fields: Array.from(fields),
-      data: rows,
-    });
+    return (
+      Papa.unparse({
+        fields: Array.from(fields),
+        data: rows,
+      }) + '\n'
+    );
   }
 
   /**
