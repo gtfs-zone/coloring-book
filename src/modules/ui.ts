@@ -274,7 +274,7 @@ export class UIController {
       const { unknownFiles } = await this.gtfsParser!.parseFile(file);
       if (unknownFiles.length > 0) {
         notifications.showWarning(
-          `Ignoring unknown files: ${unknownFiles.join(', ')}`
+          `Preserving ${unknownFiles.length} unrecognized file(s) for export: ${unknownFiles.join(', ')}`
         );
       }
 
@@ -404,7 +404,7 @@ export class UIController {
       const { unknownFiles } = await this.gtfsParser!.parseFromURL(url);
       if (unknownFiles.length > 0) {
         notifications.showWarning(
-          `Ignoring unknown files: ${unknownFiles.join(', ')}`
+          `Preserving ${unknownFiles.length} unrecognized file(s) for export: ${unknownFiles.join(', ')}`
         );
       }
 

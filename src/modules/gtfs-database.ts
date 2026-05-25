@@ -66,7 +66,8 @@ type GTFSStoreName =
   | 'patches'
   | 'snapshots'
   | 'meta'
-  | 'file_blobs';
+  | 'file_blobs'
+  | 'passthrough_files';
 
 // Keep for backwards compatibility and dynamic operations
 export interface GTFSDatabaseRecord {
@@ -184,6 +185,11 @@ export interface GTFSDBSchema extends DBSchema {
     key: string;
     value: { tableName: string; json: string };
   };
+  // Opaque passthrough for unrecognized files — preserved verbatim on export
+  passthrough_files: {
+    key: string;
+    value: { fileName: string; rawContent: string };
+  };
 }
 
 /**
@@ -207,7 +213,7 @@ export class GTFSDatabase {
   private db: IDBPDatabase<GTFSDBSchema> | null = null;
   private readonly dbName = CONFIG.DB_NAME;
   // Fixed schema version — bump only for schema changes; pre-upgrade modal handles export.
-  private readonly dbVersion = 10;
+  private readonly dbVersion = 11;
   /** Virtual table registry — large tables that bypass per-row IDB storage. */
   private virtualTables = new Map<string, VirtualTableHandlers>();
 
@@ -293,6 +299,7 @@ export class GTFSDatabase {
           db.createObjectStore('snapshots', { keyPath: 'version' });
           db.createObjectStore('meta', { keyPath: 'key' });
           db.createObjectStore('file_blobs', { keyPath: 'tableName' });
+          db.createObjectStore('passthrough_files', { keyPath: 'fileName' });
 
           GTFS_FILES.map((f) => f.filename).forEach((fileName) => {
             const tableName = this.getTableName(fileName);
@@ -427,6 +434,26 @@ export class GTFSDatabase {
                 zip.file(`${tableName}.txt`, Papa.unparse(rows) + '\n');
               }
             }
+          }
+          // Append passthrough files if the store exists (may be absent on pre-v11 schema)
+          if (db.objectStoreNames.contains('passthrough_files')) {
+            const ptReq = db
+              .transaction('passthrough_files', 'readonly')
+              .objectStore('passthrough_files')
+              .getAll();
+            await new Promise<void>((res) => {
+              ptReq.onsuccess = () => {
+                const ptEntries = ptReq.result as {
+                  fileName: string;
+                  rawContent: string;
+                }[];
+                for (const { fileName, rawContent } of ptEntries) {
+                  zip.file(fileName, rawContent);
+                }
+                res();
+              };
+              ptReq.onerror = () => res();
+            });
           }
           resolve(await zip.generateAsync({ type: 'blob' }));
         };
@@ -601,6 +628,27 @@ export class GTFSDatabase {
       console.error('Failed to clear database:', error);
       throw error;
     }
+  }
+
+  async savePassthroughFiles(files: Record<string, string>): Promise<void> {
+    if (!this.db) {
+      throw new Error('Database not initialized');
+    }
+    const tx = this.db.transaction('passthrough_files', 'readwrite');
+    await Promise.all(
+      Object.entries(files).map(([fileName, rawContent]) =>
+        tx.store.put({ fileName, rawContent })
+      )
+    );
+    await tx.done;
+  }
+
+  async getAllPassthroughFiles(): Promise<Record<string, string>> {
+    if (!this.db) {
+      throw new Error('Database not initialized');
+    }
+    const entries = await this.db.getAll('passthrough_files');
+    return Object.fromEntries(entries.map((e) => [e.fileName, e.rawContent]));
   }
 
   /**
