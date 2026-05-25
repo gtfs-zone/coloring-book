@@ -1038,7 +1038,11 @@ export class GTFSParser {
         zip.file(fileName, rawContent);
       }
 
-      return await zip.generateAsync({ type: 'blob' });
+      return await zip.generateAsync({
+        type: 'blob',
+        compression: 'DEFLATE',
+        compressionOptions: { level: 6 },
+      });
     } catch (error) {
       console.error('Error exporting GTFS data:', error);
       throw error;
