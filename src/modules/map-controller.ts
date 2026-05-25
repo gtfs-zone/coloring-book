@@ -420,6 +420,9 @@ export class MapController {
       opacity: 0.8,
     });
 
+    // Invalidate cached coord resolver so it rebuilds with the current feed's stops
+    this.layerManager!.invalidateCoordResolver();
+
     // Add stops using LayerManager
     this.layerManager!.addStopsLayer({
       showBackground: true,
