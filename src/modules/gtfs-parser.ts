@@ -11,6 +11,7 @@ import {
 } from './gtfs-file-registry.js';
 import type {
   WorkerDoneMessage,
+  WorkerDoneRestoreMessage,
   WorkerOutbound,
 } from '../workers/gtfs-parser.worker.js';
 import { GTFSTableMap, StopTimes } from '../types/gtfs-entities.js';
@@ -415,8 +416,7 @@ export class GTFSParser {
       if (rows.length === 0) {
         continue;
       }
-      const csv = this.generateCSVFromRows(fileName, rows);
-      await this.gtfsDatabase.saveTableBlob(tableName, csv);
+      await this.gtfsDatabase.saveTableBlob(tableName, JSON.stringify(rows));
     }
     this.blobDirty.clear();
   }
@@ -490,49 +490,93 @@ export class GTFSParser {
   /**
    * Restore GTFS data from blobs stored in IndexedDB.
    * All .txt tables are blob-backed; .geojson files fall back to IDB rows.
+   * Blob reads are parallelized; JSON parsing runs in a worker to stay off the main thread.
    */
   async restoreDataFromDatabase(): Promise<void> {
-    const total = ALL_GTFS_FILES.length;
     try {
-      for (let idx = 0; idx < ALL_GTFS_FILES.length; idx++) {
-        const filename = ALL_GTFS_FILES[idx];
-        const tableName = this.getTableName(filename);
-        try {
-          if (filename.endsWith('.txt')) {
-            const csv = await this.gtfsDatabase.getTableBlob(tableName);
-            feedProgressIndicator.updateProgress(
-              'boot',
-              5 + (idx / total) * 50,
-              `Restoring ${tableName}...`
-            );
-            if (!csv) {
-              continue;
-            }
-            const parsed = Papa.parse(csv, {
-              header: true,
-              skipEmptyLines: true,
-            });
-            const data = this.processParsedData(
-              parsed.data as Record<string, unknown>[]
-            );
-            this.gtfsData[filename] = {
-              content: '',
-              data,
-              errors: parsed.errors,
-            };
-            this.setupVirtual(tableName, data);
+      const txtFiles = ALL_GTFS_FILES.filter((f) => f.endsWith('.txt'));
+      const geojsonFiles = ALL_GTFS_FILES.filter((f) => f.endsWith('.geojson'));
 
-            console.log(
-              `[GTFSParser] Restored ${tableName} from blob: ${data.length} rows`
-            );
-          } else if (filename.endsWith('.geojson')) {
-            const rows = await this.gtfsDatabase.getAllRows(tableName);
-            if (rows.length > 0) {
-              this.gtfsData[filename] = { content: '', data: rows, errors: [] };
-            }
+      // Parallel IDB reads for all .txt blob tables
+      const blobEntries = await Promise.all(
+        txtFiles.map(async (filename) => {
+          const tableName = this.getTableName(filename);
+          const json = await this.gtfsDatabase.getTableBlob(tableName);
+          return { filename, tableName, json };
+        })
+      );
+
+      // GeoJSON tables fall back to per-row IDB reads (they're tiny)
+      for (const filename of geojsonFiles) {
+        try {
+          const tableName = this.getTableName(filename);
+          const rows = await this.gtfsDatabase.getAllRows(tableName);
+          if (rows.length > 0) {
+            this.gtfsData[filename] = { content: '', data: rows, errors: [] };
           }
         } catch (err) {
-          console.warn(`[GTFSParser] Failed to restore ${tableName}:`, err);
+          console.warn(`[GTFSParser] Failed to restore ${filename}:`, err);
+        }
+      }
+
+      const populated = blobEntries.filter(
+        (e): e is { filename: string; tableName: string; json: string } =>
+          e.json !== null && e.json.length > 0
+      );
+
+      if (populated.length === 0) {
+        return;
+      }
+
+      // Parse JSON blobs in the worker to keep main thread free
+      const worker = new Worker(
+        new URL('../workers/gtfs-parser.worker.ts', import.meta.url),
+        { type: 'module' }
+      );
+
+      const tables = await new Promise<WorkerDoneRestoreMessage['tables']>(
+        (resolve, reject) => {
+          worker.onmessage = (event: MessageEvent<WorkerOutbound>) => {
+            const msg = event.data;
+            if (msg.type === 'progress') {
+              feedProgressIndicator.updateProgress(
+                'boot',
+                5 + (msg.progress / 100) * 50,
+                msg.status
+              );
+            } else if (msg.type === 'done-restore') {
+              worker.terminate();
+              resolve(msg.tables);
+            } else if (msg.type === 'error') {
+              worker.terminate();
+              reject(new Error(msg.message));
+            }
+          };
+          worker.onerror = (err) => {
+            worker.terminate();
+            reject(new Error(err.message));
+          };
+          worker.postMessage({
+            type: 'restore',
+            blobs: populated.map(({ tableName, json }) => ({
+              tableName,
+              json,
+            })),
+          });
+        }
+      );
+
+      // Apply results on the main thread: set gtfsData and re-register virtual tables.
+      // The shared-array invariant requires that gtfsData[filename].data and the flat
+      // array passed to setupVirtual are the same reference.
+      for (const { filename, tableName } of populated) {
+        const rows = tables[tableName];
+        if (rows) {
+          this.gtfsData[filename] = { content: '', data: rows, errors: [] };
+          this.setupVirtual(tableName, rows);
+          console.log(
+            `[GTFSParser] Restored ${tableName} from blob: ${rows.length} rows`
+          );
         }
       }
     } catch (error) {
@@ -657,7 +701,7 @@ export class GTFSParser {
           if (fileResult.data.length > 0) {
             await this.gtfsDatabase.saveTableBlob(
               tableName,
-              fileResult.rawContent
+              JSON.stringify(fileResult.data)
             );
           }
           this.setupVirtual(tableName, fileResult.data);
