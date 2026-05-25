@@ -455,7 +455,13 @@ export class GTFSDatabase {
               ptReq.onerror = () => res();
             });
           }
-          resolve(await zip.generateAsync({ type: 'blob' }));
+          resolve(
+            await zip.generateAsync({
+              type: 'blob',
+              compression: 'DEFLATE',
+              compressionOptions: { level: 6 },
+            })
+          );
         };
         storeReq.onerror = () => {
           db.close();
