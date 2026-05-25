@@ -153,6 +153,7 @@ export class BasemapControl {
       gap: 12px;
       align-items: flex-end;
       flex-direction: row;
+      pointer-events: none;
     `;
 
     // Get current basemap
@@ -215,10 +216,22 @@ export class BasemapControl {
         position: relative;
         inset-inline-end: 0;
         bottom: auto;
+        pointer-events: none;
+      }
+
+      .basemap-control .fab button,
+      .basemap-control .fab [role="button"],
+      .basemap-control .fab label {
+        pointer-events: auto;
       }
 
       .basemap-control .projection-swap {
         flex-shrink: 0;
+        pointer-events: auto;
+      }
+
+      .basemap-control .shape-toggle-swap {
+        pointer-events: auto;
       }
     `;
     document.head.appendChild(style);
