@@ -35,6 +35,8 @@ import {
 import { ShapesManager } from './modules/shapes-manager';
 import { PanelResizer } from './modules/panel-resizer';
 import { LevelsController } from './modules/levels-controller';
+import { feedProgressIndicator } from './modules/feed-progress-indicator';
+import { CONFIG } from './config';
 import './styles/main.css';
 
 declare global {
@@ -42,6 +44,14 @@ declare global {
     gtfsEditor: GTFSEditor;
   }
   const __APP_VERSION__: string;
+}
+
+function runWhenIdle(fn: () => void): void {
+  if (typeof requestIdleCallback !== 'undefined') {
+    requestIdleCallback(fn);
+  } else {
+    setTimeout(fn, 0);
+  }
 }
 
 export class GTFSEditor {
@@ -131,6 +141,11 @@ export class GTFSEditor {
 
   private async init(): Promise<void> {
     try {
+      if (CONFIG.DEBUG_BOOT) {
+        console.time('[boot] total');
+      }
+      feedProgressIndicator.startLoading('boot', 'Opening database...');
+
       // Claim tab lock before any module initialization
       this.tabLock.init();
 
@@ -141,10 +156,31 @@ export class GTFSEditor {
       notifications.initialize();
 
       // Initialize GTFSParser database
+      if (CONFIG.DEBUG_BOOT) {
+        console.time('[boot] gtfs-parser.initialize');
+      }
       await this.gtfsParser.initialize();
+      if (CONFIG.DEBUG_BOOT) {
+        console.timeEnd('[boot] gtfs-parser.initialize');
+      }
+      feedProgressIndicator.updateProgress('boot', 60, 'Restoring patches...');
+
+      const exportBtn = document.getElementById(
+        'export-btn'
+      ) as HTMLButtonElement;
+      if (exportBtn) {
+        exportBtn.disabled = false;
+      }
 
       // Restore state from patch history (snapshot + subsequent patches)
+      if (CONFIG.DEBUG_BOOT) {
+        console.time('[boot] patch-manager.initialize');
+      }
       await this.patchManager.initialize();
+      if (CONFIG.DEBUG_BOOT) {
+        console.timeEnd('[boot] patch-manager.initialize');
+      }
+      feedProgressIndicator.updateProgress('boot', 80, 'Building map...');
       this.historyController.initialize(this.patchManager);
       this.updateUndoRedoState();
 
@@ -332,9 +368,6 @@ export class GTFSEditor {
       // Set up navigation event listener for automatic tab switching
       this.setupNavigationTabSwitching(bottomSheet);
 
-      // Run initial validation and update InfoDisplay
-      this.validateAndUpdateInfo();
-
       // Welcome overlay will be shown by default for empty state
       // It will be hidden when a feed is loaded via map-controller
 
@@ -353,20 +386,47 @@ export class GTFSEditor {
         await this.gtfsParser.initializeEmpty();
       }
 
+      if (CONFIG.DEBUG_BOOT) {
+        console.time('[boot] browse-navigation.refresh');
+      }
       this.uiController.updateFileList();
-      await this.mapController.updateMap();
-
-      if (this.browseNavigation) {
-        this.browseNavigation.refresh();
+      this.browseNavigation
+        .refresh()
+        .catch((e: unknown) =>
+          notifications.showError(
+            `Failed to refresh navigation: ${e instanceof Error ? e.message : String(e)}`
+          )
+        );
+      if (CONFIG.DEBUG_BOOT) {
+        console.timeEnd('[boot] browse-navigation.refresh');
+      }
+      feedProgressIndicator.finishLoading('boot');
+      if (CONFIG.DEBUG_BOOT) {
+        console.timeEnd('[boot] total');
       }
 
-      const exportBtn = document.getElementById(
-        'export-btn'
-      ) as HTMLButtonElement;
-      if (exportBtn) {
-        exportBtn.disabled = false;
-      }
+      runWhenIdle(() => {
+        if (CONFIG.DEBUG_BOOT) {
+          console.time('[boot] map-controller.updateMap');
+        }
+        this.mapController
+          .updateMap()
+          .then(() => {
+            if (CONFIG.DEBUG_BOOT) {
+              console.timeEnd('[boot] map-controller.updateMap');
+            }
+          })
+          .catch((e: unknown) =>
+            notifications.showError(
+              `Failed to update map: ${e instanceof Error ? e.message : String(e)}`
+            )
+          );
+      });
     } catch (error) {
+      feedProgressIndicator.finishLoading('boot');
+      if (CONFIG.DEBUG_BOOT) {
+        console.timeEnd('[boot] total');
+      }
       console.error('Failed to initialize application:', error);
       notifications.showError(
         'Failed to initialize application. Please refresh the page and try again.'
@@ -374,13 +434,9 @@ export class GTFSEditor {
     }
   }
 
+  // Not called on startup — invoke manually if the validation panel is opened.
   public validateAndUpdateInfo(): void {
-    // Run validation
     const validationResults = this.validator.validateFeed();
-
-    // Note: InfoDisplay is not used in the new UI structure
-    // Validation results are displayed in the object details view when relevant
-
     void validationResults;
   }
 

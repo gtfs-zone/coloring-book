@@ -11,6 +11,7 @@ import {
 } from './gtfs-file-registry.js';
 import type {
   WorkerDoneMessage,
+  WorkerDoneRestoreMessage,
   WorkerOutbound,
 } from '../workers/gtfs-parser.worker.js';
 import { GTFSTableMap, StopTimes } from '../types/gtfs-entities.js';
@@ -25,6 +26,7 @@ interface GTFSFileData<T = GTFSDatabaseRecord> {
 type GTFSTableName = keyof GTFSTableMap;
 
 interface PatchManagerRef {
+  readonly version: number;
   recordInsert(
     table: string,
     id: string,
@@ -403,8 +405,12 @@ export class GTFSParser {
     }, 3000);
   }
 
-  /** Flush all dirty blobs to IDB immediately. Called before export and on demand. */
-  async persistDirtyBlobs(): Promise<void> {
+  /**
+   * Flush all dirty blobs to IDB immediately. Called before export and on demand.
+   * If `version` is provided (or can be read from the current patchManager), records
+   * it in meta.blobVersion so the next restore can skip snapshot+replay entirely.
+   */
+  async persistDirtyBlobs(version?: number): Promise<void> {
     if (this.blobPersistTimer) {
       clearTimeout(this.blobPersistTimer);
       this.blobPersistTimer = null;
@@ -415,10 +421,14 @@ export class GTFSParser {
       if (rows.length === 0) {
         continue;
       }
-      const csv = this.generateCSVFromRows(fileName, rows);
-      await this.gtfsDatabase.saveTableBlob(tableName, csv);
+      await this.gtfsDatabase.saveTableBlob(tableName, JSON.stringify(rows));
     }
     this.blobDirty.clear();
+    // Record the version at which blobs were last fully flushed.
+    const v = version ?? this.patchManager?.version;
+    if (v !== undefined) {
+      await this.gtfsDatabase.setBlobVersion(v);
+    }
   }
 
   /**
@@ -490,42 +500,100 @@ export class GTFSParser {
   /**
    * Restore GTFS data from blobs stored in IndexedDB.
    * All .txt tables are blob-backed; .geojson files fall back to IDB rows.
+   * Blob reads are parallelized; JSON parsing runs in a worker to stay off the main thread.
    */
   async restoreDataFromDatabase(): Promise<void> {
     try {
-      for (const filename of ALL_GTFS_FILES) {
-        const tableName = this.getTableName(filename);
-        try {
-          if (filename.endsWith('.txt')) {
-            const csv = await this.gtfsDatabase.getTableBlob(tableName);
-            if (!csv) {
-              continue;
-            }
-            const parsed = Papa.parse(csv, {
-              header: true,
-              skipEmptyLines: true,
-            });
-            const data = this.processParsedData(
-              parsed.data as Record<string, unknown>[]
-            );
-            this.gtfsData[filename] = {
-              content: '',
-              data,
-              errors: parsed.errors,
-            };
-            this.setupVirtual(tableName, data);
+      const txtFiles = ALL_GTFS_FILES.filter((f) => f.endsWith('.txt'));
+      const geojsonFiles = ALL_GTFS_FILES.filter((f) => f.endsWith('.geojson'));
 
-            console.log(
-              `[GTFSParser] Restored ${tableName} from blob: ${data.length} rows`
-            );
-          } else if (filename.endsWith('.geojson')) {
-            const rows = await this.gtfsDatabase.getAllRows(tableName);
-            if (rows.length > 0) {
-              this.gtfsData[filename] = { content: '', data: rows, errors: [] };
-            }
+      // Parallel IDB reads for all .txt blob tables
+      const blobEntries = await Promise.all(
+        txtFiles.map(async (filename) => {
+          const tableName = this.getTableName(filename);
+          const json = await this.gtfsDatabase.getTableBlob(tableName);
+          return { filename, tableName, json };
+        })
+      );
+
+      // GeoJSON tables fall back to per-row IDB reads (they're tiny)
+      for (const filename of geojsonFiles) {
+        try {
+          const tableName = this.getTableName(filename);
+          const rows = await this.gtfsDatabase.getAllRows(tableName);
+          if (rows.length > 0) {
+            this.gtfsData[filename] = { content: '', data: rows, errors: [] };
           }
         } catch (err) {
-          console.warn(`[GTFSParser] Failed to restore ${tableName}:`, err);
+          console.warn(`[GTFSParser] Failed to restore ${filename}:`, err);
+        }
+      }
+
+      const populated = blobEntries.filter(
+        (e): e is { filename: string; tableName: string; json: string } =>
+          e.json !== null && e.json.length > 0
+      );
+
+      if (populated.length === 0) {
+        return;
+      }
+
+      // Parse JSON blobs in the worker to keep main thread free
+      const worker = new Worker(
+        new URL('../workers/gtfs-parser.worker.ts', import.meta.url),
+        { type: 'module' }
+      );
+
+      const tables = await new Promise<WorkerDoneRestoreMessage['tables']>(
+        (resolve, reject) => {
+          worker.onmessage = (event: MessageEvent<WorkerOutbound>) => {
+            const msg = event.data;
+            if (msg.type === 'progress') {
+              feedProgressIndicator.updateProgress(
+                'boot',
+                5 + (msg.progress / 100) * 50,
+                msg.status
+              );
+            } else if (msg.type === 'done-restore') {
+              worker.terminate();
+              resolve(msg.tables);
+            } else if (msg.type === 'error') {
+              worker.terminate();
+              reject(new Error(msg.message));
+            }
+          };
+          worker.onerror = (err) => {
+            worker.terminate();
+            reject(new Error(err.message));
+          };
+          worker.postMessage({
+            type: 'restore',
+            blobs: populated.map(({ tableName, json }) => ({
+              tableName,
+              json,
+            })),
+          });
+        }
+      );
+
+      // Apply results on the main thread: set gtfsData and re-register virtual tables.
+      // The shared-array invariant requires that gtfsData[filename].data and the flat
+      // array passed to setupVirtual are the same reference.
+      for (const { filename, tableName, json } of populated) {
+        const rows = tables[tableName];
+        if (rows) {
+          const isLarge = json.length > 1_000_000;
+          if (CONFIG.DEBUG_BOOT && isLarge) {
+            console.time(`[boot] setupVirtual ${tableName}`);
+          }
+          this.gtfsData[filename] = { content: '', data: rows, errors: [] };
+          this.setupVirtual(tableName, rows);
+          if (CONFIG.DEBUG_BOOT && isLarge) {
+            console.timeEnd(`[boot] setupVirtual ${tableName}`);
+          }
+          console.log(
+            `[GTFSParser] Restored ${tableName} from blob: ${rows.length} rows${isLarge ? ` (${(json.length / 1_000_000).toFixed(1)} MB)` : ''}`
+          );
         }
       }
     } catch (error) {
@@ -560,8 +628,8 @@ export class GTFSParser {
     await this.gtfsDatabase.insertRows('feed_info', [seedRow]);
     // Flush immediately so the seed blob is in IDB before any patch is recorded.
     // This guarantees that a quick refresh (before the 3-second debounce) still
-    // has a row for patch replay to land on.
-    await this.persistDirtyBlobs();
+    // has a row for patch replay to land on. Fresh DB has no patches yet → version 0.
+    await this.persistDirtyBlobs(0);
   }
 
   async parseFile(
@@ -650,12 +718,15 @@ export class GTFSParser {
           if (fileResult.data.length > 0) {
             await this.gtfsDatabase.saveTableBlob(
               tableName,
-              fileResult.rawContent
+              JSON.stringify(fileResult.data)
             );
           }
           this.setupVirtual(tableName, fileResult.data);
         }
       }
+
+      // A fresh import has no patches yet — blobs are current at version 0.
+      await this.gtfsDatabase.setBlobVersion(0);
 
       feedProgressIndicator.updateProgress(operation, 100, 'Complete!');
       feedProgressIndicator.finishLoading(operation);

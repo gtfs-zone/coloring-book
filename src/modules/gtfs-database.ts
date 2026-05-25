@@ -8,6 +8,7 @@
  */
 import { openDB, DBSchema, IDBPDatabase } from 'idb';
 import JSZip from 'jszip';
+import Papa from 'papaparse';
 import { GTFS_FILES } from '../types/gtfs.js';
 import { CONFIG } from '../config.js';
 import { databaseFallbackManager } from './database-fallback-manager.js';
@@ -171,15 +172,17 @@ export interface GTFSDBSchema extends DBSchema {
     key: number; // last patch version included in this snapshot
     value: SnapshotRecord;
   };
-  // Version pointer store
+  // Version pointer store — supports 'versions' and 'blobVersion' keys
   meta: {
     key: string;
-    value: { key: string; currentVersion: number; headVersion: number };
+    value:
+      | { key: 'versions'; currentVersion: number; headVersion: number }
+      | { key: 'blobVersion'; version: number };
   };
-  // Raw CSV blobs for all GTFS tables — avoids per-row IDB overhead
+  // Raw JSON blobs for all GTFS tables — avoids per-row IDB overhead
   file_blobs: {
     key: string;
-    value: { tableName: string; csv: string };
+    value: { tableName: string; json: string };
   };
 }
 
@@ -204,7 +207,7 @@ export class GTFSDatabase {
   private db: IDBPDatabase<GTFSDBSchema> | null = null;
   private readonly dbName = CONFIG.DB_NAME;
   // Fixed schema version — bump only for schema changes; pre-upgrade modal handles export.
-  private readonly dbVersion = 9;
+  private readonly dbVersion = 10;
   /** Virtual table registry — large tables that bypass per-row IDB storage. */
   private virtualTables = new Map<string, VirtualTableHandlers>();
 
@@ -405,16 +408,24 @@ export class GTFSDatabase {
           db.close();
           const entries = storeReq.result as {
             tableName: string;
-            csv: string;
+            csv?: string;
+            json?: string;
           }[];
           if (!entries?.length) {
             resolve(null);
             return;
           }
           const zip = new JSZip();
-          for (const { tableName, csv } of entries) {
+          for (const { tableName, csv, json } of entries) {
             if (csv) {
+              // Old schema (v9): stored as raw CSV
               zip.file(`${tableName}.txt`, csv);
+            } else if (json) {
+              // New schema (v10): stored as JSON, convert back to CSV for export
+              const rows = JSON.parse(json) as Record<string, unknown>[];
+              if (rows.length > 0) {
+                zip.file(`${tableName}.txt`, Papa.unparse(rows));
+              }
             }
           }
           resolve(await zip.generateAsync({ type: 'blob' }));
@@ -1044,17 +1055,17 @@ export class GTFSDatabase {
   }
 
   /**
-   * Persist raw CSV for a table into the file_blobs store.
+   * Persist JSON-serialized row array for a table into the file_blobs store.
    */
-  async saveTableBlob(tableName: string, csv: string): Promise<void> {
+  async saveTableBlob(tableName: string, json: string): Promise<void> {
     if (!this.db) {
       return;
     }
-    await this.db.put('file_blobs', { tableName, csv });
+    await this.db.put('file_blobs', { tableName, json });
   }
 
   /**
-   * Retrieve raw CSV for a table from the file_blobs store.
+   * Retrieve JSON-serialized row array for a table from the file_blobs store.
    * Returns null if no blob has been saved yet.
    */
   async getTableBlob(tableName: string): Promise<string | null> {
@@ -1062,7 +1073,7 @@ export class GTFSDatabase {
       return null;
     }
     const record = await this.db.get('file_blobs', tableName);
-    return record?.csv ?? null;
+    return record?.json ?? null;
   }
 
   /**
@@ -1748,9 +1759,13 @@ export class GTFSDatabase {
       return { currentVersion: 0, headVersion: 0 };
     }
     const entry = await this.db.get('meta', 'versions');
-    return entry
-      ? { currentVersion: entry.currentVersion, headVersion: entry.headVersion }
-      : { currentVersion: 0, headVersion: 0 };
+    if (entry && entry.key === 'versions') {
+      return {
+        currentVersion: entry.currentVersion,
+        headVersion: entry.headVersion,
+      };
+    }
+    return { currentVersion: 0, headVersion: 0 };
   }
 
   /**
@@ -1764,6 +1779,28 @@ export class GTFSDatabase {
       throw new Error('Database not initialized');
     }
     await this.db.put('meta', { key: 'versions', currentVersion, headVersion });
+  }
+
+  /**
+   * Get the version at which blobs were last fully persisted.
+   * Returns 0 if no record exists (treat as stale, fall through to snapshot path).
+   */
+  async getBlobVersion(): Promise<number> {
+    if (!this.db) {
+      return 0;
+    }
+    const entry = await this.db.get('meta', 'blobVersion');
+    return entry?.key === 'blobVersion' ? entry.version : 0;
+  }
+
+  /**
+   * Record the patch version at which all dirty blobs were last flushed.
+   */
+  async setBlobVersion(version: number): Promise<void> {
+    if (!this.db) {
+      throw new Error('Database not initialized');
+    }
+    await this.db.put('meta', { key: 'blobVersion', version });
   }
 
   /**
