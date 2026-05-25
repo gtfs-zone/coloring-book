@@ -1,3 +1,17 @@
+## v0.20.0 (2026-05-26)
+
+### Feat
+
+- **gtfs-parser**: preserve unrecognized files as passthrough for export
+
+### Fix
+
+- **ui**: replace levels button text label with icon-only square button
+- **gtfs-parser**: enable DEFLATE compression on ZIP export
+- **timetable-database**: use 0-based stop_sequence indexing
+- **gtfs-parser**: add trailing newline to all exported CSV files
+- **gtfs-parser**: preserve full coordinate precision and field whitespace on import
+
 ## v0.19.1 (2026-05-26)
 
 ### Fix
