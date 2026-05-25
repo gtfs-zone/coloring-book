@@ -1,4 +1,5 @@
 import { Routes, Stops } from '../types/gtfs-entities.js';
+import { getStopDisplay, renderOptionLabel } from '../utils/entity-display.js';
 
 interface SearchResults {
   stops: Stops[];
@@ -194,7 +195,7 @@ export class SearchController {
               <span class="text-lg flex-shrink-0">${stopIcon}</span>
               <div class="flex-1 min-w-0">
                 <div class="font-medium text-gray-900 truncate">
-                  ${stop.stop_name || stop.stop_id}
+                  ${renderOptionLabel(getStopDisplay(stop as unknown as Record<string, string>))}
                 </div>
                 ${stop.stop_code ? `<div class="text-sm text-gray-500">Code: ${stop.stop_code}</div>` : ''}
                 <div class="text-xs text-gray-400">
