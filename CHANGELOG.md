@@ -1,3 +1,21 @@
+## v0.19.0 (2026-05-25)
+
+### Feat
+
+- show FeedProgressIndicator during restore on page refresh
+
+### Fix
+
+- **route-renderer**: guard clearHighlight against uninitialized layers
+
+### Perf
+
+- add DEBUG_BOOT timing instrumentation for restore path
+- skip snapshot/patch replay when blobs are current at the stored version
+- defer map update to idle callback and unblock export/nav earlier
+- switch blob format from CSV to JSON and parse off main thread
+- drop startup validator call to eliminate redundant full-feed scan on boot
+
 ## v0.18.1 (2026-05-25)
 
 ### Fix
