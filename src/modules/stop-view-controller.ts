@@ -5,16 +5,25 @@
  * Provides a single-column layout showing stop properties and timetable relationships.
  */
 
-import type { Routes, Stops, Trips, StopTimes } from '../types/gtfs.js';
+import type {
+  Routes,
+  Stops,
+  Trips,
+  StopTimes,
+  Pathways,
+} from '../types/gtfs.js';
 import {
   renderEntityFields,
   type QueryOnlyDatabase,
 } from '../utils/field-component.js';
 import { GTFS_TABLES, StopsSchema } from '../types/gtfs.js';
 import { getStopDisplay, renderCardLabel } from '../utils/entity-display.js';
+import type { LevelOption } from './levels-controller.js';
 import { renderTrashIcon } from './modal-utils.js';
 import {
+  renderPathwayReference,
   renderServiceReference,
+  renderStopReference,
   SERVICE_REF_ROW,
 } from '../utils/entity-references.js';
 
@@ -28,14 +37,21 @@ interface StopRelations {
   timetableKeys: TimetableKey[];
 }
 
+function escapeAttr(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+}
+
 export interface StopViewDependencies {
   gtfsDatabase?: QueryOnlyDatabase;
   gtfsRelationships?: {
     getAgenciesServingStop?: (stop_id: string) => Promise<unknown[]>;
     getRoutesServingStop?: (stop_id: string) => Promise<unknown[]>;
   };
-  onTimetableClick: (route_id: string, service_id: string) => void;
+  onStopClick?: (stop_id: string) => void;
+  onPathwayClick?: (pathway_id: string) => void;
+  onTimetableClick?: (route_id: string, service_id: string) => void;
   onDeleteStop: (stop_id: string) => Promise<void>;
+  getLevelOptions?: () => Promise<LevelOption[]>;
 }
 
 export class StopViewController {
@@ -56,6 +72,12 @@ export class StopViewController {
       if (!stop) {
         return this.renderError('Stop not found.');
       }
+
+      const locationType =
+        typeof stop.location_type === 'number'
+          ? stop.location_type
+          : parseInt(stop.location_type ?? '0', 10) || 0;
+      const isStation = locationType === 1;
 
       const { routes, timetableKeys } = await this.fetchStopRelations(stop_id);
 
@@ -91,9 +113,58 @@ export class StopViewController {
         }
       }
 
+      const [levelOptions, childStops, connectedPathways] = await Promise.all([
+        this.dependencies.getLevelOptions?.() ?? Promise.resolve([]),
+        isStation
+          ? this.getChildStops(stop_id)
+          : Promise.resolve([] as Stops[]),
+        !isStation
+          ? this.getConnectedPathways(stop_id)
+          : Promise.resolve({ out: [] as Pathways[], in: [] as Pathways[] }),
+      ]);
+
+      // Build other-stop lookup and optional boarding-areas section for non-stations
+      let boardingAreasHtml = '';
+      const otherStopLookup = new Map<string, Stops>();
+      if (!isStation) {
+        const { out, in: inPathways } = connectedPathways as {
+          out: Pathways[];
+          in: Pathways[];
+        };
+        const otherStopIds = new Set<string>();
+        for (const p of [...out, ...inPathways]) {
+          otherStopIds.add(String(p.from_stop_id));
+          otherStopIds.add(String(p.to_stop_id));
+        }
+        otherStopIds.delete(stop_id);
+        if (this.dependencies.gtfsDatabase) {
+          for (const sid of otherStopIds) {
+            const rows = await this.dependencies.gtfsDatabase.queryRows(
+              'stops',
+              { stop_id: sid }
+            );
+            if (rows.length > 0) {
+              otherStopLookup.set(sid, rows[0] as Stops);
+            }
+          }
+        }
+        if (locationType === 0) {
+          boardingAreasHtml = await this.renderBoardingAreasSection(stop_id);
+        }
+      }
+
+      const { out: outPathways, in: inPathways } = connectedPathways as {
+        out: Pathways[];
+        in: Pathways[];
+      };
+
       const html = `
         <div class="p-4 space-y-4">
-          ${this.renderStopProperties(stop)}
+          ${this.renderStopProperties(stop, levelOptions)}
+          ${isStation ? this.renderChildStopsSections(childStops as Stops[]) : ''}
+          ${!isStation ? boardingAreasHtml : ''}
+          ${!isStation ? this.renderPathwaySection('Pathways Out', outPathways, 'to', otherStopLookup) : ''}
+          ${!isStation ? this.renderPathwaySection('Pathways In', inPathways, 'from', otherStopLookup) : ''}
           ${this.renderTimetablesSection(timetableKeys, routes, calendarByServiceId, calendarDatesByServiceId)}
         </div>
       `;
@@ -105,13 +176,42 @@ export class StopViewController {
     }
   }
 
-  private renderStopProperties(stop: Stops): string {
-    const fieldsHtml = renderEntityFields(
+  private renderStopProperties(
+    stop: Stops,
+    levelOptions: LevelOption[]
+  ): string {
+    let fieldsHtml = renderEntityFields(
       StopsSchema,
       stop as Record<string, string | number | undefined>,
       GTFS_TABLES.STOPS,
       this.currentStopId ?? ''
     );
+
+    // Replace the level_id text input with a <select> populated from levels
+    if (this.dependencies.getLevelOptions) {
+      const currentValue = String(stop.level_id ?? '');
+      const optionsHtml =
+        `<option value="">— no level —</option>` +
+        levelOptions
+          .map(
+            (opt) =>
+              `<option value="${escapeAttr(opt.value)}"${opt.value === currentValue ? ' selected' : ''}>${escapeAttr(opt.label)}</option>`
+          )
+          .join('');
+      const hint =
+        levelOptions.length === 0
+          ? `<div class="text-xs opacity-60 mt-1">Add levels via the Levels button in the nav bar.</div>`
+          : '';
+      // Match the input rendered by field-component for level_id
+      fieldsHtml = fieldsHtml.replace(
+        /<input([^>]*data-field="level_id"[^>]*)>/,
+        (_match, attrs) => {
+          // Strip value attribute — select uses <option selected> instead
+          const attrsClean = attrs.replace(/\s*value="[^"]*"/, '');
+          return `<select${attrsClean} class="select select-bordered select-sm w-full">${optionsHtml}</select>${hint}`;
+        }
+      );
+    }
 
     return `
       <div class="space-y-4">
@@ -172,6 +272,212 @@ export class StopViewController {
             </div>
           </div>
         </div>
+      </div>
+    `;
+  }
+
+  private async getChildStops(station_id: string): Promise<Stops[]> {
+    if (!this.dependencies.gtfsDatabase) {
+      return [];
+    }
+    try {
+      const rows = await this.dependencies.gtfsDatabase.queryRows('stops', {
+        parent_station: station_id,
+      });
+      return rows as Stops[];
+    } catch {
+      return [];
+    }
+  }
+
+  private readonly PATHWAY_MODE_LABELS: Record<number, string> = {
+    1: 'Walkway',
+    2: 'Stairs',
+    3: 'Moving Sidewalk',
+    4: 'Escalator',
+    5: 'Elevator',
+    6: 'Fare Gate',
+    7: 'Exit Gate',
+  };
+
+  private async getConnectedPathways(
+    stop_id: string
+  ): Promise<{ out: Pathways[]; in: Pathways[] }> {
+    if (!this.dependencies.gtfsDatabase) {
+      return { out: [], in: [] };
+    }
+    try {
+      const [fromRows, toRows] = await Promise.all([
+        this.dependencies.gtfsDatabase.queryRows('pathways', {
+          from_stop_id: stop_id,
+        }),
+        this.dependencies.gtfsDatabase.queryRows('pathways', {
+          to_stop_id: stop_id,
+        }),
+      ]);
+      return {
+        out: fromRows as Pathways[],
+        in: toRows as Pathways[],
+      };
+    } catch {
+      return { out: [], in: [] };
+    }
+  }
+
+  private renderPathwaySection(
+    title: string,
+    pathways: Pathways[],
+    direction: 'to' | 'from',
+    otherStopLookup: Map<string, Stops>
+  ): string {
+    if (pathways.length === 0) {
+      return '';
+    }
+    const rows = pathways
+      .map((p) => {
+        const otherStopId =
+          direction === 'to' ? String(p.to_stop_id) : String(p.from_stop_id);
+        const modeNum = Number(p.pathway_mode) || 0;
+        const modeLabel =
+          this.PATHWAY_MODE_LABELS[modeNum] ?? `Mode ${modeNum}`;
+        const otherStop = otherStopLookup.get(otherStopId) as
+          | Record<string, unknown>
+          | undefined;
+        return renderPathwayReference(p as unknown as Record<string, unknown>, {
+          modeLabel,
+          otherStop,
+          otherStopId,
+          direction,
+          viewStopButton: true,
+        });
+      })
+      .join('');
+    return `
+      <div class="space-y-2">
+        <h3 class="text-base font-semibold">${title}</h3>
+        <div class="card bg-base-100 shadow-lg">
+          <div class="card-body p-4">
+            <div class="space-y-1">${rows}</div>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  private async renderBoardingAreasSection(
+    platformId: string
+  ): Promise<string> {
+    if (!this.dependencies.gtfsDatabase) {
+      return '';
+    }
+    try {
+      const rows = await this.dependencies.gtfsDatabase.queryRows('stops', {
+        parent_station: platformId,
+      });
+      const boardingAreas = (rows as Stops[]).filter((s) => {
+        const lt =
+          typeof s.location_type === 'number'
+            ? s.location_type
+            : parseInt(s.location_type ?? '0', 10) || 0;
+        return lt === 4;
+      });
+      if (boardingAreas.length === 0) {
+        return '';
+      }
+      const rowsHtml = boardingAreas
+        .map((ba) =>
+          renderStopReference(ba as unknown as Record<string, unknown>)
+        )
+        .join('');
+      return `
+        <div class="space-y-2">
+          <h3 class="text-base font-semibold">Boarding Areas</h3>
+          <div class="card bg-base-100 shadow-lg">
+            <div class="card-body p-4">
+              <div class="space-y-1">${rowsHtml}</div>
+            </div>
+          </div>
+        </div>
+      `;
+    } catch {
+      return '';
+    }
+  }
+
+  private groupChildrenByLocationType(children: Stops[]): {
+    entrances: Stops[];
+    platforms: Stops[];
+    genericNodes: Stops[];
+  } {
+    const entrances: Stops[] = [];
+    const platforms: Stops[] = [];
+    const genericNodes: Stops[] = [];
+    for (const child of children) {
+      const locType =
+        typeof child.location_type === 'number'
+          ? child.location_type
+          : parseInt(child.location_type ?? '0', 10) || 0;
+      if (locType === 2) {
+        entrances.push(child);
+      } else if (locType === 0) {
+        platforms.push(child);
+      } else if (locType === 3) {
+        genericNodes.push(child);
+      }
+      // locType === 4 (boarding areas) silently skipped — they belong under platforms
+    }
+    return { entrances, platforms, genericNodes };
+  }
+
+  private renderTypedChildSection(title: string, children: Stops[]): string {
+    if (children.length === 0) {
+      return '';
+    }
+    const rows = children
+      .map((child) =>
+        renderStopReference(child as unknown as Record<string, unknown>)
+      )
+      .join('');
+    return `
+      <div class="space-y-2">
+        <h3 class="text-base font-semibold">${title}</h3>
+        <div class="card bg-base-100 shadow-lg">
+          <div class="card-body p-4">
+            <div class="space-y-1">${rows}</div>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  private renderChildStopsSections(children: Stops[]): string {
+    const { entrances, platforms, genericNodes } =
+      this.groupChildrenByLocationType(children);
+    const sections = [
+      this.renderTypedChildSection('Entrances / Exits', entrances),
+      this.renderTypedChildSection('Platforms', platforms),
+      this.renderTypedChildSection('Generic Nodes', genericNodes),
+    ]
+      .filter(Boolean)
+      .join('');
+
+    if (!sections) {
+      return `
+        <div class="space-y-4">
+          <h2 class="text-lg font-semibold">Child Stops</h2>
+          <div class="card bg-base-100 shadow-lg">
+            <div class="card-body p-4">
+              <div class="text-center py-4 opacity-70">No child stops defined.</div>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    return `
+      <div class="space-y-4">
+        <h2 class="text-lg font-semibold">Child Stops</h2>
+        ${sections}
       </div>
     `;
   }
@@ -258,14 +564,25 @@ export class StopViewController {
       'click',
       async (e) => {
         const btn = (e.target as Element).closest('.delete-stop-btn');
-        if (!btn) {
+        if (btn) {
+          console.log('[StopViewController] Delete button clicked');
+          const stop_id = btn.getAttribute('data-stop-id');
+          console.log('[StopViewController] stop_id from button:', stop_id);
+          if (stop_id) {
+            await this.dependencies.onDeleteStop(stop_id);
+          }
           return;
         }
-        console.log('[StopViewController] Delete button clicked');
-        const stop_id = btn.getAttribute('data-stop-id');
-        console.log('[StopViewController] stop_id from button:', stop_id);
-        if (stop_id) {
-          await this.dependencies.onDeleteStop(stop_id);
+        const serviceRefRow = (e.target as Element).closest(
+          `.${SERVICE_REF_ROW}`
+        );
+        if (serviceRefRow && this.dependencies.onTimetableClick) {
+          e.stopPropagation();
+          const route_id = serviceRefRow.getAttribute('data-route-id');
+          const service_id = serviceRefRow.getAttribute('data-service-id');
+          if (route_id && service_id) {
+            this.dependencies.onTimetableClick(route_id, service_id);
+          }
         }
       },
       { signal: this.deleteListenerAbortController.signal }
@@ -284,6 +601,4 @@ export class StopViewController {
   }
 }
 
-// SERVICE_REF_ROW is used by page-content-renderer's event delegation — re-export
-// so callers don't need to import entity-references directly for this class.
 export { SERVICE_REF_ROW };

@@ -34,6 +34,7 @@ import {
 } from './modules/calendar-modal';
 import { ShapesManager } from './modules/shapes-manager';
 import { PanelResizer } from './modules/panel-resizer';
+import { LevelsController } from './modules/levels-controller';
 import './styles/main.css';
 
 declare global {
@@ -63,6 +64,7 @@ export class GTFSEditor {
   public patchManager: PatchManager;
   public historyController: HistoryController;
   public tabLock: TabLockController;
+  public levelsController: LevelsController;
 
   constructor() {
     this.gtfsParser = new GTFSParser();
@@ -105,6 +107,7 @@ export class GTFSEditor {
     );
     this.historyController = new HistoryController();
     this.tabLock = new TabLockController();
+    this.levelsController = new LevelsController(this.gtfsParser.gtfsDatabase);
 
     const appContainer = document.querySelector<HTMLElement>('.app-container')!;
     new PanelResizer(appContainer, this.mapController);
@@ -112,6 +115,8 @@ export class GTFSEditor {
     // Inject patchManager so edit operations are recorded
     this.gtfsParser.setPatchManager(this.patchManager);
     this.editor.setPatchManager(this.patchManager);
+    this.levelsController.setPatchManager(this.patchManager);
+    this.browseNavigation.setLevelsController(this.levelsController);
     this.browseNavigation.setPatchManager(this.patchManager);
     this.scheduleController.setPatchManager(this.patchManager);
     this.serviceDaysController.setPatchManager(this.patchManager);
@@ -270,6 +275,13 @@ export class GTFSEditor {
       document
         .getElementById('about-btn')
         ?.addEventListener('click', openAbout);
+
+      // Wire levels button
+      document.getElementById('levels-btn')?.addEventListener('click', () => {
+        this.levelsController
+          .showLevelsModal()
+          .catch((e: unknown) => console.error('[levels] modal failed:', e));
+      });
 
       // Initialize theme controller
       this.themeController.initialize();

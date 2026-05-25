@@ -78,6 +78,7 @@ Vite is the primary build tool. The app version is injected at build time via `g
 - **Fail loudly**: Prefer throwing or logging errors over silent fallbacks. If something unexpected happens, we want to know.
 - **Virtual table copy-on-read invariant**: All query methods on virtual tables (`getAll`, `getById`, `query`) return shallow copies of the stored rows, not live references. This prevents silent aliasing bugs where a "before" snapshot is mutated by a later in-place write. Do not hold a long-lived reference to a query result and assume it will remain unchanged.
 - **All user edits go through the patch system**: Every user-initiated `updateRow`, `insertRows`, or `deleteRow` must be accompanied by a corresponding `patchManager.record*()` call. Direct DB writes are only for: internal initialization, patch replay, feed import, and backup restore.
+- **Stop display labels go through `getStopDisplay`**: All user-visible stop labels are rendered via `getStopDisplay()` in `src/utils/entity-display.ts` (paired with `renderOptionLabel`/`renderCardLabel`). Child stops (with a non-empty `parent_station`) show `Name (stop_id)`; stations and standalone stops show just the name. Do not inline-format stop labels.
 
 ## Conventions
 

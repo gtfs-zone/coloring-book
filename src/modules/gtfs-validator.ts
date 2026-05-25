@@ -2,6 +2,11 @@ import { GTFSDatabaseRecord } from './gtfs-database.js';
 import { GTFS_TABLES } from '../types/gtfs.js';
 import { GTFSFieldType } from '../types/gtfs-field-types.js';
 import { validateValue } from '../utils/field-formatters.js';
+import {
+  buildStopCoordResolver,
+  hasValidCoords,
+} from '../utils/stop-coords.js';
+import type { Pathways, Stops } from '../types/gtfs-entities.js';
 
 interface ValidationMessage {
   level: 'error' | 'warning' | 'info';
@@ -292,6 +297,17 @@ export class GTFSValidator {
     }
 
     const stop_ids = new Set();
+    // Per GTFS spec, lat/lon are only required for stops/platforms (0),
+    // stations (1), and entrances/exits (2). Generic nodes (3) and boarding
+    // areas (4) may omit them and inherit position from their parent_station.
+    // We accept missing coords for any location_type as long as a coord-having
+    // ancestor exists; otherwise we error (for 0/1/2) or warn (for 3/4).
+    const pathways =
+      this.gtfsParser.getFileDataSyncTyped(GTFS_TABLES.PATHWAYS) || [];
+    const resolveCoord = buildStopCoordResolver(
+      stops as Stops[],
+      pathways as Pathways[]
+    );
 
     stops.forEach((stop, index: number) => {
       const rowNum = index + 1;
@@ -326,17 +342,23 @@ export class GTFSValidator {
       }
 
       // Validate coordinates
+      const locType = String(stop.location_type ?? '0').trim() || '0';
+      const coordRequiredByType =
+        locType === '0' || locType === '1' || locType === '2';
+      const stopHasOwnCoords = hasValidCoords(stop as Stops);
+      const latHasValue =
+        stop.stop_lat !== null &&
+        stop.stop_lat !== undefined &&
+        !(typeof stop.stop_lat === 'string' && stop.stop_lat.trim() === '');
+      const lonHasValue =
+        stop.stop_lon !== null &&
+        stop.stop_lon !== undefined &&
+        !(typeof stop.stop_lon === 'string' && stop.stop_lon.trim() === '');
+
       if (
-        !stop.stop_lat ||
-        (typeof stop.stop_lat === 'string' && stop.stop_lat.trim() === '')
+        latHasValue &&
+        !this.isValidLatitude(stop.stop_lat as string | number)
       ) {
-        this.addError(
-          `Row ${rowNum}: stop_lat is required`,
-          'MISSING_REQUIRED_FIELD',
-          GTFS_TABLES.STOPS,
-          rowNum
-        );
-      } else if (!this.isValidLatitude(stop.stop_lat as string | number)) {
         this.addError(
           `Row ${rowNum}: stop_lat must be between -90.0 and 90.0`,
           'INVALID_COORDINATE',
@@ -344,24 +366,45 @@ export class GTFSValidator {
           rowNum
         );
       }
-
       if (
-        !stop.stop_lon ||
-        (typeof stop.stop_lon === 'string' && stop.stop_lon.trim() === '')
+        lonHasValue &&
+        !this.isValidLongitude(stop.stop_lon as string | number)
       ) {
-        this.addError(
-          `Row ${rowNum}: stop_lon is required`,
-          'MISSING_REQUIRED_FIELD',
-          GTFS_TABLES.STOPS,
-          rowNum
-        );
-      } else if (!this.isValidLongitude(stop.stop_lon as string | number)) {
         this.addError(
           `Row ${rowNum}: stop_lon must be between -180.0 and 180.0`,
           'INVALID_COORDINATE',
           GTFS_TABLES.STOPS,
           rowNum
         );
+      }
+
+      if (!stopHasOwnCoords) {
+        const hasAncestorCoords =
+          stop.stop_id !== undefined &&
+          stop.stop_id !== null &&
+          resolveCoord(String(stop.stop_id)) !== null;
+        if (coordRequiredByType && !hasAncestorCoords) {
+          this.addError(
+            `Row ${rowNum}: stop_lat/stop_lon are required for location_type=${locType} (no coord-having parent_station)`,
+            'MISSING_REQUIRED_FIELD',
+            GTFS_TABLES.STOPS,
+            rowNum
+          );
+        } else if (coordRequiredByType && hasAncestorCoords) {
+          this.addWarning(
+            `Row ${rowNum}: stop_lat/stop_lon missing for location_type=${locType}; rendering via parent_station coords`,
+            'MISSING_COORDS_INHERITED',
+            GTFS_TABLES.STOPS,
+            rowNum
+          );
+        } else if (!coordRequiredByType && !hasAncestorCoords) {
+          this.addWarning(
+            `Row ${rowNum}: stop has no own coords and no coord-having parent_station — will not render`,
+            'ORPHANED_STOP',
+            GTFS_TABLES.STOPS,
+            rowNum
+          );
+        }
       }
 
       // Validate location_type

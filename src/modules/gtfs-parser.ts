@@ -421,7 +421,15 @@ export class GTFSParser {
     this.blobDirty.clear();
   }
 
-  /** Generate CSV text from an in-memory row array. */
+  /**
+   * Generate CSV text from an in-memory row array.
+   *
+   * Uses Papa.unparse so commas, double-quotes, and newlines in field values
+   * are properly escaped. The header set is the union of keys across all
+   * rows (not just rows[0]) so columns added later — e.g. when the UI
+   * inserts a new stop with `location_type` set, but the original imported
+   * CSV didn't have that column — survive the round-trip.
+   */
   private generateCSVFromRows(
     fileName: string,
     rows: GTFSDatabaseRecord[]
@@ -429,13 +437,16 @@ export class GTFSParser {
     if (rows.length === 0) {
       return makeHeaderOnlyCSV(fileName);
     }
-    const headers = Object.keys(rows[0]);
-    return [
-      headers.join(','),
-      ...rows.map((row) =>
-        headers.map((h) => this.formatFieldForExport(h, row[h])).join(',')
-      ),
-    ].join('\n');
+    const fields = new Set<string>();
+    for (const row of rows) {
+      for (const key of Object.keys(row)) {
+        fields.add(key);
+      }
+    }
+    return Papa.unparse({
+      fields: Array.from(fields),
+      data: rows,
+    });
   }
 
   /**
@@ -867,33 +878,6 @@ export class GTFSParser {
   /**
    * Format field value for export (ensures proper formatting, no scientific notation)
    */
-  private formatFieldForExport(fieldName: string, value: unknown): string {
-    if (value === null || value === undefined) {
-      return '';
-    }
-
-    // Convert to string
-    const stringValue = String(value);
-
-    // For numeric fields, ensure proper formatting
-    if (typeof value === 'number') {
-      // Latitude/Longitude: always use 6 decimal places
-      if (fieldName.includes('_lat') || fieldName.includes('_lon')) {
-        return value.toFixed(6);
-      }
-
-      // Integers: no decimal point
-      if (Number.isInteger(value)) {
-        return String(value);
-      }
-
-      // Other floats: avoid scientific notation
-      return value.toString();
-    }
-
-    return stringValue;
-  }
-
   async exportAsZip() {
     try {
       // Ensure any pending blob edits are written before export
@@ -1269,6 +1253,53 @@ export class GTFSParser {
     console.log(
       `Stop ${stopId} coordinates updated successfully: ${lat}, ${lng}`
     );
+  }
+
+  /**
+   * Create a new pathway and add it to the GTFS data
+   */
+  async createPathway(pathway: GTFSDatabaseRecord): Promise<void> {
+    const fileName = GTFS_TABLES.PATHWAYS;
+    const tableName = this.getTableName(fileName);
+
+    if (!this.gtfsData[fileName]) {
+      this.gtfsData[fileName] = { content: '', data: [], errors: [] };
+    }
+
+    await this.gtfsDatabase.insertRows(tableName, [pathway]);
+
+    const pathwayId = String(pathway.pathway_id);
+    await this.patchManager?.recordInsert(
+      tableName,
+      pathwayId,
+      pathway as Record<string, unknown>
+    );
+
+    this.updatePathwaysFileContent();
+    console.log(`Pathway ${pathway.pathway_id} created successfully`);
+  }
+
+  /**
+   * Update the pathways.txt file content from in-memory data
+   */
+  private updatePathwaysFileContent(): void {
+    const fileName = GTFS_TABLES.PATHWAYS;
+    const pathwaysData = this.gtfsData[fileName];
+
+    if (!pathwaysData || !pathwaysData.data.length) {
+      return;
+    }
+
+    const allFields = new Set<string>();
+    pathwaysData.data.forEach((p) => {
+      Object.keys(p).forEach((field) => allFields.add(field));
+    });
+
+    const fieldNames = Array.from(allFields);
+    pathwaysData.content = Papa.unparse({
+      fields: fieldNames,
+      data: pathwaysData.data,
+    });
   }
 
   /**

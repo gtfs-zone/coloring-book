@@ -30,6 +30,12 @@ export interface BreadcrumbLookup {
   getRouteName: (route_id: string) => Promise<string>;
   getStopName: (stop_id: string) => Promise<string>;
   getAgencyIdForRoute: (route_id: string) => Promise<string>;
+  getStopAncestors: (
+    stop_id: string
+  ) => Promise<Array<{ stop_id: string; label: string }>>;
+  getPathwayAncestors: (
+    pathway_id: string
+  ) => Promise<Array<{ stop_id: string; label: string }>>;
 }
 
 /**
@@ -343,11 +349,20 @@ export class PageStateManager {
 
         case 'stop': {
           const stopName = await this.getObjectName('stop', pageState.stop_id);
+          const ancestors = this.breadcrumbLookup
+            ? await this.breadcrumbLookup.getStopAncestors(pageState.stop_id)
+            : [];
 
           breadcrumbs.push({
             label: 'Home',
             pageState: { type: 'home' },
           });
+          for (const ancestor of ancestors) {
+            breadcrumbs.push({
+              label: ancestor.label,
+              pageState: { type: 'stop', stop_id: ancestor.stop_id },
+            });
+          }
           breadcrumbs.push({
             label: stopName,
             pageState: { type: 'stop', stop_id: pageState.stop_id },
@@ -368,6 +383,33 @@ export class PageStateManager {
           breadcrumbs.push({
             label: serviceName,
             pageState: { type: 'service', service_id: pageState.service_id },
+          });
+          break;
+        }
+
+        case 'pathway': {
+          const pathwayAncestors = this.breadcrumbLookup
+            ? await this.breadcrumbLookup.getPathwayAncestors(
+                pageState.pathway_id
+              )
+            : [];
+
+          breadcrumbs.push({
+            label: 'Home',
+            pageState: { type: 'home' },
+          });
+          for (const ancestor of pathwayAncestors) {
+            breadcrumbs.push({
+              label: ancestor.label,
+              pageState: { type: 'stop', stop_id: ancestor.stop_id },
+            });
+          }
+          breadcrumbs.push({
+            label: `Pathway ${pageState.pathway_id}`,
+            pageState: {
+              type: 'pathway',
+              pathway_id: pageState.pathway_id,
+            },
           });
           break;
         }
@@ -458,6 +500,10 @@ export class PageStateManager {
         params.set('service', pageState.service_id);
         return params.toString();
 
+      case 'pathway':
+        params.set('pathway', pageState.pathway_id);
+        return params.toString();
+
       default:
         return '';
     }
@@ -474,6 +520,10 @@ export class PageStateManager {
 
     if (params.has('stop')) {
       return { type: 'stop', stop_id: params.get('stop')! };
+    }
+
+    if (params.has('pathway')) {
+      return { type: 'pathway', pathway_id: params.get('pathway')! };
     }
 
     if (params.has('service') && !params.has('route')) {

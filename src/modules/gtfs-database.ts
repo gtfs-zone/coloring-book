@@ -27,6 +27,8 @@ import {
   FeedInfo,
   FareAttributes,
   FareRules,
+  Pathways,
+  Levels,
   RiderCategories,
   FareMedia,
   FareProducts,
@@ -54,6 +56,8 @@ type GTFSStoreName =
   | 'feed_info'
   | 'fare_attributes'
   | 'fare_rules'
+  | 'pathways'
+  | 'levels'
   | 'rider_categories'
   | 'fare_media'
   | 'fare_products'
@@ -131,6 +135,16 @@ export interface GTFSDBSchema extends DBSchema {
   fare_rules: {
     key: string; // fare_id
     value: FareRules;
+  };
+  pathways: {
+    key: string; // pathway_id
+    value: Pathways;
+    indexes: { from_stop_id: string; to_stop_id: string; pathway_mode: number };
+  };
+  levels: {
+    key: string; // level_id
+    value: Levels;
+    indexes: { level_index: number };
   };
   rider_categories: {
     key: string;
@@ -518,6 +532,14 @@ export class GTFSDatabase {
       case 'fare_rules':
         // fare_id is now the primary key, no need for separate index
         store.createIndex('route_id', 'route_id', { unique: false });
+        break;
+      case 'pathways':
+        store.createIndex('from_stop_id', 'from_stop_id', { unique: false });
+        store.createIndex('to_stop_id', 'to_stop_id', { unique: false });
+        store.createIndex('pathway_mode', 'pathway_mode', { unique: false });
+        break;
+      case 'levels':
+        store.createIndex('level_index', 'level_index', { unique: false });
         break;
       case 'fare_media':
         store.createIndex('fare_media_name', 'fare_media_name', {
