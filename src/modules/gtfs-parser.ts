@@ -579,13 +579,20 @@ export class GTFSParser {
       // Apply results on the main thread: set gtfsData and re-register virtual tables.
       // The shared-array invariant requires that gtfsData[filename].data and the flat
       // array passed to setupVirtual are the same reference.
-      for (const { filename, tableName } of populated) {
+      for (const { filename, tableName, json } of populated) {
         const rows = tables[tableName];
         if (rows) {
+          const isLarge = json.length > 1_000_000;
+          if (CONFIG.DEBUG_BOOT && isLarge) {
+            console.time(`[boot] setupVirtual ${tableName}`);
+          }
           this.gtfsData[filename] = { content: '', data: rows, errors: [] };
           this.setupVirtual(tableName, rows);
+          if (CONFIG.DEBUG_BOOT && isLarge) {
+            console.timeEnd(`[boot] setupVirtual ${tableName}`);
+          }
           console.log(
-            `[GTFSParser] Restored ${tableName} from blob: ${rows.length} rows`
+            `[GTFSParser] Restored ${tableName} from blob: ${rows.length} rows${isLarge ? ` (${(json.length / 1_000_000).toFixed(1)} MB)` : ''}`
           );
         }
       }
