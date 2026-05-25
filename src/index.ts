@@ -32,6 +32,7 @@ import { ShapesManager } from './modules/shapes-manager';
 import { PanelResizer } from './modules/panel-resizer';
 import { LevelsController } from './modules/levels-controller';
 import { feedProgressIndicator } from './modules/feed-progress-indicator';
+import { CONFIG } from './config';
 import './styles/main.css';
 
 declare global {
@@ -136,6 +137,9 @@ export class GTFSEditor {
 
   private async init(): Promise<void> {
     try {
+      if (CONFIG.DEBUG_BOOT) {
+        console.time('[boot] total');
+      }
       feedProgressIndicator.startLoading('boot', 'Opening database...');
 
       // Claim tab lock before any module initialization
@@ -148,7 +152,13 @@ export class GTFSEditor {
       notifications.initialize();
 
       // Initialize GTFSParser database
+      if (CONFIG.DEBUG_BOOT) {
+        console.time('[boot] gtfs-parser.initialize');
+      }
       await this.gtfsParser.initialize();
+      if (CONFIG.DEBUG_BOOT) {
+        console.timeEnd('[boot] gtfs-parser.initialize');
+      }
       feedProgressIndicator.updateProgress('boot', 60, 'Restoring patches...');
 
       const exportBtn = document.getElementById(
@@ -159,7 +169,13 @@ export class GTFSEditor {
       }
 
       // Restore state from patch history (snapshot + subsequent patches)
+      if (CONFIG.DEBUG_BOOT) {
+        console.time('[boot] patch-manager.initialize');
+      }
       await this.patchManager.initialize();
+      if (CONFIG.DEBUG_BOOT) {
+        console.timeEnd('[boot] patch-manager.initialize');
+      }
       feedProgressIndicator.updateProgress('boot', 80, 'Building map...');
       this.historyController.initialize(this.patchManager);
       this.updateUndoRedoState();
@@ -352,6 +368,9 @@ export class GTFSEditor {
         await this.gtfsParser.initializeEmpty();
       }
 
+      if (CONFIG.DEBUG_BOOT) {
+        console.time('[boot] browse-navigation.refresh');
+      }
       this.uiController.updateFileList();
       this.browseNavigation
         .refresh()
@@ -360,11 +379,25 @@ export class GTFSEditor {
             `Failed to refresh navigation: ${e instanceof Error ? e.message : String(e)}`
           )
         );
+      if (CONFIG.DEBUG_BOOT) {
+        console.timeEnd('[boot] browse-navigation.refresh');
+      }
       feedProgressIndicator.finishLoading('boot');
+      if (CONFIG.DEBUG_BOOT) {
+        console.timeEnd('[boot] total');
+      }
 
       runWhenIdle(() => {
+        if (CONFIG.DEBUG_BOOT) {
+          console.time('[boot] map-controller.updateMap');
+        }
         this.mapController
           .updateMap()
+          .then(() => {
+            if (CONFIG.DEBUG_BOOT) {
+              console.timeEnd('[boot] map-controller.updateMap');
+            }
+          })
           .catch((e: unknown) =>
             notifications.showError(
               `Failed to update map: ${e instanceof Error ? e.message : String(e)}`
@@ -373,6 +406,9 @@ export class GTFSEditor {
       });
     } catch (error) {
       feedProgressIndicator.finishLoading('boot');
+      if (CONFIG.DEBUG_BOOT) {
+        console.timeEnd('[boot] total');
+      }
       console.error('Failed to initialize application:', error);
       notifications.showError(
         'Failed to initialize application. Please refresh the page and try again.'
