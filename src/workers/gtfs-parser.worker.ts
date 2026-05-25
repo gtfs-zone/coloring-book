@@ -26,6 +26,7 @@ export interface WorkerDoneMessage {
   type: 'done';
   files: { [fileName: string]: WorkerFileResult };
   unknownFiles: string[];
+  passthroughFiles: { [fileName: string]: string };
 }
 
 export interface WorkerDoneRestoreMessage {
@@ -160,6 +161,7 @@ self.onmessage = async (
     );
 
     const unknownFiles: string[] = [];
+    const passthroughFiles: { [fileName: string]: string } = {};
     const totalFiles = files.length;
     const resultFiles: { [fileName: string]: WorkerFileResult } = {};
 
@@ -168,6 +170,8 @@ self.onmessage = async (
 
       if (!isSupportedFile(fileName)) {
         unknownFiles.push(fileName);
+        passthroughFiles[fileName] =
+          await zipContent.files[fileName].async('text');
         continue;
       }
 
@@ -215,7 +219,7 @@ self.onmessage = async (
     }
 
     post({ type: 'progress', progress: 90, status: 'Finalizing...' });
-    post({ type: 'done', files: resultFiles, unknownFiles });
+    post({ type: 'done', files: resultFiles, unknownFiles, passthroughFiles });
   } catch (err) {
     self.postMessage({
       type: 'error',
