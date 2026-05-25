@@ -11,6 +11,7 @@ import {
   navigateToRoute,
   navigateToStop,
   navigateToService,
+  navigateToPathway,
   navigateToTimetable,
   addNavigationListener,
   getCurrentPageState,
@@ -61,6 +62,7 @@ export class BrowseNavigation {
   private mapController: {
     highlightTrip: (trip_id: string) => void;
     highlightStop: (stop_id: string) => void;
+    highlightPathway: (pathway_id: string) => void;
     clearHighlights: () => void;
     highlightRoute: (route_id: string) => void;
     fitToRoutes: (route_ids: string[]) => void;
@@ -94,6 +96,16 @@ export class BrowseNavigation {
   private isLoading: boolean = false;
   private lastRenderedPageState: PageState | null = null;
   private contentRenderer: PageContentRenderer | null = null;
+  private levelsController: {
+    getLevelOptions: () => Promise<{ value: string; label: string }[]>;
+  } | null = null;
+
+  setLevelsController(lc: {
+    getLevelOptions: () => Promise<{ value: string; label: string }[]>;
+  }): void {
+    this.levelsController = lc;
+  }
+
   private patchManager: {
     recordUpdate: (
       table: string,
@@ -200,6 +212,7 @@ export class BrowseNavigation {
     mapController: {
       highlightTrip: (trip_id: string) => void;
       highlightStop: (stop_id: string) => void;
+      highlightPathway: (pathway_id: string) => void;
       clearHighlights: () => void;
       highlightRoute: (route_id: string) => void;
       fitToRoutes: (route_ids: string[]) => void;
@@ -323,6 +336,8 @@ export class BrowseNavigation {
           this.mapController.highlightRoute?.(route_id),
         highlightStop: (stop_id: string) =>
           this.mapController.highlightStop(stop_id),
+        highlightPathway: (pathway_id: string) =>
+          this.mapController.highlightPathway(pathway_id),
         clearHighlights: () => this.mapController.clearHighlights(),
         focusOnAgency: (agency_id: string) =>
           this.highlightAgencyOnMap(agency_id),
@@ -333,6 +348,7 @@ export class BrowseNavigation {
       onRouteClick: (route_id: string) => navigateToRoute(route_id),
       onStopClick: (stop_id: string) => navigateToStop(stop_id),
       onServiceClick: (service_id: string) => navigateToService(service_id),
+      onPathwayClick: (pathway_id: string) => navigateToPathway(pathway_id),
       onTimetableClick: (
         route_id: string,
         service_id: string,
@@ -341,6 +357,9 @@ export class BrowseNavigation {
       onEntityCreated: () => this.render(),
       patchManager: this.patchManager ?? undefined,
       parser: this.gtfsRelationshipsInstance?.gtfsParser ?? undefined,
+      getLevelOptions: this.levelsController
+        ? () => this.levelsController!.getLevelOptions()
+        : undefined,
     };
 
     this.contentRenderer = new PageContentRenderer(dependencies);

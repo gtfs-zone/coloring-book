@@ -10,7 +10,16 @@ import {
 import { PageStateManager } from './page-state-manager.js';
 import { GTFSParser } from './gtfs-parser.js';
 import { PatchManager } from './patch-manager.js';
-import { Stops, StopTimes, Trips, Routes, Agency } from '../types/gtfs.js';
+import { hasValidCoords } from '../utils/stop-coords.js';
+import { CONFIG } from '../config.js';
+import {
+  Stops,
+  StopTimes,
+  Trips,
+  Routes,
+  Pathways,
+  Agency,
+} from '../types/gtfs.js';
 import {
   agencyRouteFilter,
   normalizeAgencyId,
@@ -22,14 +31,24 @@ import type { PatchRecord, SingleGTFSPatch } from '../types/patch.js';
 export enum MapMode {
   NAVIGATE = 'navigate',
   ADD_STOP = 'add_stop',
+  ADD_PATHWAY = 'add_pathway',
 }
+
+export type FocusedObject =
+  | { type: 'stop'; id: string }
+  | { type: 'pathway'; id: string }
+  | { type: 'route'; id: string }
+  | { type: 'trip'; id: string }
+  | { type: 'none' };
 
 // Callback interfaces
 interface MapControllerCallbacks {
   onRouteSelect?: (route_id: string) => void;
   onStopSelect?: (stop_id: string) => void;
+  onPathwaySelect?: (pathway_id: string) => void;
   onModeChange?: (mode: MapMode) => void;
   onEmptyClick?: () => void;
+  onStationExpandChange?: () => void;
 }
 
 /**
@@ -62,12 +81,7 @@ export class MapController {
   private isInitialized = false;
   private resizeTimeout: NodeJS.Timeout | null = null;
   private basemapChangeHandlerSet = false;
-
-  // Highlight state management - ensures mutual exclusivity
-  private currentHighlight: {
-    type: 'none' | 'route' | 'stop' | 'trip';
-    id: string | null;
-  } = { type: 'none', id: null };
+  private focusedObject: FocusedObject = { type: 'none' };
 
   private bottomPadding = 0;
 
@@ -201,6 +215,7 @@ export class MapController {
         }
         case 'stops':
           this.routeRenderer.invalidateStop(id, op.op);
+          this.layerManager.invalidateCoordResolver();
           this.layerManager.updateStopsData();
           break;
         default:
@@ -262,6 +277,11 @@ export class MapController {
       this.interactionHandler?.setStopsGeoJSON(data);
     };
 
+    // Let InteractionHandler read the expanded station id for contextual stop creation
+    this.interactionHandler.setGetExpandedStationId(() =>
+      this.getExpandedStationId()
+    );
+
     // Setup basemap change handler to re-add layers
     this.setupBasemapChangeHandler();
 
@@ -281,12 +301,13 @@ export class MapController {
     const interactionCallbacks: InteractionCallbacks = {
       onRouteClick: this.handleRouteClick.bind(this),
       onStopClick: this.handleStopClick.bind(this),
+      onPathwayClick: this.handlePathwayClick.bind(this),
+      onPathwayCreated: this.handlePathwayCreated.bind(this),
       onModeChange: this.handleModeChange.bind(this),
       onStopDragComplete: this.handleStopDragComplete.bind(this),
       onStopCreated: this.handleStopCreated.bind(this),
       onEmptyClick: () => {
-        this.clearHighlights();
-        this.callbacks.onEmptyClick?.();
+        void this.handleEmptyClick();
       },
     };
 
@@ -340,14 +361,16 @@ export class MapController {
             clickAreaRadius: 15,
           });
 
-          // Restore highlights if any
-          const currentHighlight = this.getCurrentHighlight();
-          if (currentHighlight.type === 'route' && currentHighlight.id) {
-            this.routeRenderer.highlightRoute(currentHighlight.id);
-          } else if (currentHighlight.type === 'stop' && currentHighlight.id) {
-            this.layerManager.highlightStop(currentHighlight.id);
-          } else if (currentHighlight.type === 'trip' && currentHighlight.id) {
-            this.layerManager.highlightTrip(currentHighlight.id);
+          // Restore highlights and expanded station/pathways if any.
+          // Reset focusedObject first so applyFocusedObject sees oldStation→newStation
+          // as a real change and re-expands the station (recreating the pathway layer).
+          const obj = this.focusedObject;
+          this.focusedObject = { type: 'none' };
+          this.applyFocusedObject(obj);
+          if (obj.type === 'route') {
+            this.routeRenderer.highlightRoute(obj.id);
+          } else if (obj.type === 'trip') {
+            this.layerManager.highlightTrip(obj.id);
           }
 
           console.log('✅ GTFS layers re-added after basemap change');
@@ -379,6 +402,10 @@ export class MapController {
     if (!this.isMapReady()) {
       return;
     }
+
+    // Reset focus state when feed changes
+    this.focusedObject = { type: 'none' };
+    this.layerManager?.setStopsFilter(null);
 
     // Ensure RouteRenderer is initialized (this waits for map style to load)
     await this.routeRenderer!.ensureInitialized();
@@ -439,20 +466,15 @@ export class MapController {
       return;
     }
 
-    const validStops = stops.filter(
-      (stop) =>
-        stop.stop_lat !== null &&
-        stop.stop_lon !== null &&
-        !isNaN(stop.stop_lat) &&
-        !isNaN(stop.stop_lon)
-    );
+    const validStops = stops.filter(hasValidCoords);
 
     if (validStops.length === 0) {
       return;
     }
 
     const coordinates = validStops.map(
-      (stop) => [stop.stop_lon!, stop.stop_lat!] as [number, number]
+      (stop) =>
+        [Number(stop.stop_lon), Number(stop.stop_lat)] as [number, number]
     );
 
     const bounds = coordinates.reduce(
@@ -471,6 +493,157 @@ export class MapController {
   }
 
   // ========================================
+  // FOCUS STATE MANAGEMENT
+  // ========================================
+
+  /**
+   * Derive the currently expanded station from the focused object.
+   * Returns the station stop_id, or null if no station should be expanded.
+   */
+  private deriveExpandedStation(): string | null {
+    const obj = this.focusedObject;
+    const stops =
+      this.gtfsParser?.getFileDataSyncTyped<Stops>('stops.txt') || [];
+
+    if (obj.type === 'stop') {
+      const stop = stops.find((s) => s.stop_id === obj.id);
+      if (!stop) {
+        return null;
+      }
+      const locationType =
+        typeof stop.location_type === 'number'
+          ? stop.location_type
+          : parseInt(stop.location_type ?? '0', 10) || 0;
+      if (locationType === 1) {
+        return stop.stop_id;
+      }
+      if (stop.parent_station) {
+        return stop.parent_station as string;
+      }
+      return null;
+    }
+
+    if (obj.type === 'pathway') {
+      const pathways =
+        this.gtfsParser?.getFileDataSyncTyped<Pathways>('pathways.txt') || [];
+      const pathway = pathways.find((p) => p.pathway_id === obj.id);
+      if (!pathway) {
+        return null;
+      }
+      const fromStop = stops.find((s) => s.stop_id === pathway.from_stop_id);
+      if (!fromStop) {
+        return null;
+      }
+      if (fromStop.parent_station) {
+        return fromStop.parent_station as string;
+      }
+      const lt =
+        typeof fromStop.location_type === 'number'
+          ? fromStop.location_type
+          : parseInt(fromStop.location_type ?? '0', 10) || 0;
+      if (lt === 1) {
+        return fromStop.stop_id as string;
+      }
+      return null;
+    }
+
+    return null;
+  }
+
+  /**
+   * Fly to the bounding box of a station and its children.
+   */
+  private flyToStation(stationId: string): void {
+    const stops =
+      this.gtfsParser!.getFileDataSyncTyped<Stops>('stops.txt') || [];
+    const coords: [number, number][] = stops
+      .filter(
+        (s) =>
+          (s.stop_id === stationId || s.parent_station === stationId) &&
+          hasValidCoords(s)
+      )
+      .map((s) => [Number(s.stop_lon), Number(s.stop_lat)]);
+
+    if (coords.length === 0) {
+      return;
+    }
+
+    if (coords.length === 1) {
+      this.map!.flyTo({
+        center: coords[0],
+        zoom: CONFIG.STOP_FOCUS_ZOOM,
+        duration: 1000,
+        essential: true,
+        padding: {
+          top: 80,
+          bottom: 80 + this.bottomPadding,
+          left: 80,
+          right: 80,
+        },
+      });
+    } else {
+      const bounds = coords
+        .slice(1)
+        .reduce(
+          (b, coord) => b.extend(coord),
+          new LngLatBounds(coords[0], coords[0])
+        );
+      this.map!.fitBounds(bounds, {
+        padding: {
+          top: 80,
+          bottom: 80 + this.bottomPadding,
+          left: 80,
+          right: 80,
+        },
+        maxZoom: CONFIG.STOP_FOCUS_ZOOM,
+        duration: 1000,
+        essential: true,
+      });
+    }
+  }
+
+  /**
+   * Set the focused object and apply any station expand/collapse side effects.
+   */
+  private applyFocusedObject(obj: FocusedObject): void {
+    const oldStation = this.deriveExpandedStation();
+    this.focusedObject = obj;
+    const newStation = this.deriveExpandedStation();
+    this.layerManager?.setFocusedStop(obj.type === 'stop' ? obj.id : null);
+
+    if (oldStation !== newStation) {
+      if (newStation) {
+        this.layerManager?.setStopsFilter([
+          'any',
+          ['==', ['get', 'stop_id'], newStation],
+          ['==', ['get', 'station_id'], newStation],
+        ] as unknown as import('maplibre-gl').FilterSpecification);
+        this.layerManager?.updatePathwaysLayer(newStation);
+        this.layerManager?.setFocusedPathway(
+          obj.type === 'pathway' ? obj.id : null
+        );
+        this.flyToStation(newStation);
+      } else {
+        this.layerManager?.setStopsFilter(null);
+        this.layerManager?.clearPathwaysLayer();
+      }
+      this.callbacks.onStationExpandChange?.();
+    } else if (newStation) {
+      // Station unchanged but focused object may have changed — update pathway highlight
+      this.layerManager?.setFocusedPathway(
+        obj.type === 'pathway' ? obj.id : null
+      );
+    }
+  }
+
+  /**
+   * Get the currently expanded station id (derived from focusedObject).
+   */
+  public getExpandedStationId(): string | null {
+    return this.deriveExpandedStation();
+  }
+
+  // ========================================
   // HIGHLIGHTING AND NAVIGATION METHODS
   // ========================================
 
@@ -478,11 +651,11 @@ export class MapController {
    * Highlight specific route
    */
   public highlightRoute(route_id: string): void {
-    // Clear any existing highlights first
-    this.clearHighlights();
+    this.interactionHandler?.setHighlightedStop(null);
+    this.layerManager?.clearHighlights();
+    this.routeRenderer?.clearHighlight();
 
-    // Set new highlight state
-    this.currentHighlight = { type: 'route', id: route_id };
+    this.applyFocusedObject({ type: 'route', id: route_id });
 
     this.routeRenderer?.highlightRoute(route_id);
 
@@ -495,15 +668,14 @@ export class MapController {
   /**
    * Highlight specific stop
    */
-  public highlightStop(stop_id: string, color = '#e74c3c', radius = 8): void {
-    // Clear any existing highlights first
-    this.clearHighlights();
+  public highlightStop(stop_id: string): void {
+    this.interactionHandler?.setHighlightedStop(null);
+    this.layerManager?.clearHighlights();
+    this.routeRenderer?.clearHighlight();
 
-    // Set new highlight state
-    this.currentHighlight = { type: 'stop', id: stop_id };
+    this.applyFocusedObject({ type: 'stop', id: stop_id });
 
     this.interactionHandler?.setHighlightedStop(stop_id);
-    this.layerManager?.highlightStop(stop_id, { color, radius });
 
     // Get routes that serve this stop and highlight them
     const routesAtStop = this.gtfsParser?.getRoutesForStop?.(stop_id) || [];
@@ -512,41 +684,60 @@ export class MapController {
       this.routeRenderer?.highlightRoutes(route_ids);
     }
 
-    // Smoothly fly to stop location
-    const stops =
-      this.gtfsParser!.getFileDataSyncTyped<Stops>('stops.txt') || [];
-    const stop = stops.find((s) => s.stop_id === stop_id);
+    // For child stops and stations, applyFocusedObject already flew to the
+    // expanded station via flyToStation — skip the individual-stop flyTo so
+    // it doesn't override the station fit. Only fly to the stop directly when
+    // no station is expanded (i.e. standalone stops).
+    if (this.getExpandedStationId() === null) {
+      const stops =
+        this.gtfsParser!.getFileDataSyncTyped<Stops>('stops.txt') || [];
+      const stop = stops.find((s) => s.stop_id === stop_id);
 
-    if (stop && stop.stop_lat && stop.stop_lon) {
-      const lat = stop.stop_lat;
-      const lon = stop.stop_lon;
+      if (stop && hasValidCoords(stop)) {
+        const lat = stop.stop_lat;
+        const lon = stop.stop_lon;
 
-      // Use flyTo for smooth animation with reduced zoom level
-      this.map!.flyTo({
-        center: [lon, lat],
-        zoom: Math.max(this.map!.getZoom(), 13), // Reduced from 15 to 13
-        duration: 1500, // 1.5 second animation
-        essential: true, // Ensure animation completes even if user interacts
-        padding: {
-          top: 50,
-          bottom: 50 + this.bottomPadding,
-          left: 50,
-          right: 50,
-        },
-      });
+        this.map!.flyTo({
+          center: [lon, lat],
+          zoom: CONFIG.STOP_FOCUS_ZOOM,
+          duration: 1500,
+          essential: true,
+          padding: {
+            top: 50,
+            bottom: 50 + this.bottomPadding,
+            left: 50,
+            right: 50,
+          },
+        });
+      }
     }
     console.log(`🎯 Highlighted stop: ${stop_id}`);
+  }
+
+  /**
+   * Highlight specific pathway. Mirrors highlightStop/highlightRoute — used
+   * when navigation to a pathway originates from the side panel or a URL hash
+   * rather than an on-map click.
+   */
+  public highlightPathway(pathway_id: string): void {
+    this.interactionHandler?.setHighlightedStop(null);
+    this.layerManager?.clearHighlights();
+    this.routeRenderer?.clearHighlight();
+
+    this.applyFocusedObject({ type: 'pathway', id: pathway_id });
+
+    console.log(`🎯 Highlighted pathway: ${pathway_id}`);
   }
 
   /**
    * Highlight trip path
    */
   public highlightTrip(trip_id: string, color = '#e74c3c'): void {
-    // Clear any existing highlights first
-    this.clearHighlights();
+    this.interactionHandler?.setHighlightedStop(null);
+    this.layerManager?.clearHighlights();
+    this.routeRenderer?.clearHighlight();
 
-    // Set new highlight state
-    this.currentHighlight = { type: 'trip', id: trip_id };
+    this.applyFocusedObject({ type: 'trip', id: trip_id });
 
     this.layerManager?.highlightTrip(trip_id, { color });
 
@@ -572,7 +763,7 @@ export class MapController {
     const stopsLookup: { [key: string]: { lat: number; lon: number } } = {};
 
     stops.forEach((stop) => {
-      if (stop.stop_lat && stop.stop_lon) {
+      if (hasValidCoords(stop)) {
         stopsLookup[stop.stop_id] = {
           lat: stop.stop_lat,
           lon: stop.stop_lon,
@@ -607,23 +798,42 @@ export class MapController {
   /**
    * Clear all highlights
    */
-  public clearHighlights(): void {
-    // Reset highlight state
-    this.currentHighlight = { type: 'none', id: null };
+  private async handleEmptyClick(): Promise<void> {
+    const obj = this.focusedObject;
+    const stops =
+      this.gtfsParser?.getFileDataSyncTyped<Stops>('stops.txt') || [];
+    const pathways =
+      this.gtfsParser?.getFileDataSyncTyped<Pathways>('pathways.txt') || [];
 
+    let parentStopId: string | null = null;
+    if (obj.type === 'stop') {
+      const stop = stops.find((s) => s.stop_id === obj.id);
+      parentStopId = stop?.parent_station ? String(stop.parent_station) : null;
+    } else if (obj.type === 'pathway') {
+      const pw = pathways.find((p) => p.pathway_id === obj.id);
+      const from = pw ? stops.find((s) => s.stop_id === pw.from_stop_id) : null;
+      parentStopId = from?.stop_id ?? null;
+    }
+
+    if (parentStopId) {
+      this.applyFocusedObject({ type: 'stop', id: parentStopId });
+      if (this.pageStateManager) {
+        await this.pageStateManager.setPageState({
+          type: 'stop',
+          stop_id: parentStopId,
+        });
+      }
+    } else {
+      this.clearHighlights();
+      this.callbacks.onEmptyClick?.();
+    }
+  }
+
+  public clearHighlights(): void {
     this.interactionHandler?.setHighlightedStop(null);
     this.layerManager?.clearHighlights();
     this.routeRenderer?.clearHighlight();
-  }
-
-  /**
-   * Get current highlight state
-   */
-  public getCurrentHighlight(): {
-    type: 'none' | 'route' | 'stop' | 'trip';
-    id: string | null;
-  } {
-    return { ...this.currentHighlight };
+    this.applyFocusedObject({ type: 'none' });
   }
 
   /**
@@ -650,7 +860,7 @@ export class MapController {
     // Get coordinates for all stops
     const coordinates: [number, number][] = [];
     stops.forEach((stop) => {
-      if (routeStops.has(stop.stop_id) && stop.stop_lat && stop.stop_lon) {
+      if (routeStops.has(stop.stop_id) && hasValidCoords(stop)) {
         coordinates.push([stop.stop_lon, stop.stop_lat]);
       }
     });
@@ -661,7 +871,6 @@ export class MapController {
         new LngLatBounds(coordinates[0], coordinates[0])
       );
 
-      // Use flyTo for smooth animation to route bounds
       this.map!.fitBounds(bounds, {
         padding: {
           top: 80,
@@ -669,8 +878,8 @@ export class MapController {
           left: 80,
           right: 80,
         },
-        duration: 2000, // 2 second animation for routes (longer than stops)
-        essential: true, // Ensure animation completes even if user interacts
+        duration: 2000,
+        essential: true,
       });
     }
   }
@@ -702,7 +911,7 @@ export class MapController {
     // Get coordinates for all stops
     const coordinates: [number, number][] = [];
     stops.forEach((stop) => {
-      if (allStops.has(stop.stop_id) && stop.stop_lat && stop.stop_lon) {
+      if (allStops.has(stop.stop_id) && hasValidCoords(stop)) {
         coordinates.push([stop.stop_lon, stop.stop_lat]);
       }
     });
@@ -773,6 +982,13 @@ export class MapController {
     this.interactionHandler?.toggleAddStopMode();
   }
 
+  /**
+   * Toggle add pathway mode
+   */
+  public toggleAddPathwayMode(): void {
+    this.interactionHandler?.toggleAddPathwayMode();
+  }
+
   // ========================================
   // UI INTEGRATION METHODS
   // ========================================
@@ -827,6 +1043,8 @@ export class MapController {
   private async handleRouteClick(route_id: string): Promise<void> {
     console.log('Route clicked:', route_id);
 
+    this.applyFocusedObject({ type: 'route', id: route_id });
+
     // Navigate using page state manager
     if (this.pageStateManager) {
       await this.pageStateManager.setPageState({ type: 'route', route_id });
@@ -843,6 +1061,8 @@ export class MapController {
    */
   private async handleStopClick(stop_id: string): Promise<void> {
     console.log('Stop clicked:', stop_id);
+
+    this.applyFocusedObject({ type: 'stop', id: stop_id });
 
     // Navigate using page state manager
     if (this.pageStateManager) {
@@ -867,6 +1087,26 @@ export class MapController {
   }
 
   /**
+   * Handle pathway click events
+   */
+  private async handlePathwayClick(pathway_id: string): Promise<void> {
+    console.log('Pathway clicked:', pathway_id);
+
+    this.applyFocusedObject({ type: 'pathway', id: pathway_id });
+
+    if (this.pageStateManager) {
+      await this.pageStateManager.setPageState({
+        type: 'pathway',
+        pathway_id,
+      });
+    }
+
+    if (this.callbacks.onPathwaySelect) {
+      this.callbacks.onPathwaySelect(pathway_id);
+    }
+  }
+
+  /**
    * Handle stop drag completion
    */
   private async handleStopDragComplete(
@@ -882,7 +1122,14 @@ export class MapController {
         console.log(`✅ Updated coordinates for stop ${stop_id}`);
 
         // Update layer data
+        this.layerManager?.invalidateCoordResolver();
         this.layerManager?.updateStopsData();
+
+        // Rebuild pathways if a station is expanded (stop drag may shift endpoints)
+        const expandedStation = this.deriveExpandedStation();
+        if (expandedStation) {
+          this.layerManager?.rebuildPathwaysSource(expandedStation);
+        }
       }
     } catch (error) {
       console.error(`Failed to update coordinates for stop ${stop_id}:`, error);
@@ -901,12 +1148,29 @@ export class MapController {
   }
 
   /**
+   * Handle pathway creation — rebuild pathways layer and navigate to the new pathway
+   */
+  private async handlePathwayCreated(pathway_id: string): Promise<void> {
+    console.log(`Pathway ${pathway_id} created`);
+    const expandedStation = this.deriveExpandedStation();
+    if (expandedStation) {
+      this.layerManager?.invalidateCoordResolver();
+      this.layerManager?.rebuildPathwaysSource(expandedStation);
+    }
+    if (this.pageStateManager) {
+      await this.pageStateManager.setPageState({ type: 'pathway', pathway_id });
+    }
+    this.callbacks.onPathwaySelect?.(pathway_id);
+  }
+
+  /**
    * Handle stop creation
    */
   private handleStopCreated(stop_id: string): void {
     console.log(`Stop ${stop_id} created`);
 
     // Update layer data to show the new stop
+    this.layerManager?.invalidateCoordResolver();
     this.layerManager?.updateStopsData();
   }
 
@@ -961,6 +1225,7 @@ export class MapController {
   }
 
   public refreshStops(): void {
+    this.layerManager?.invalidateCoordResolver();
     this.layerManager?.updateStopsData();
   }
 
@@ -1006,7 +1271,7 @@ export class MapController {
     this.gtfsParser = null;
     this.pageStateManager = null;
     this.callbacks = {};
-    this.currentHighlight = { type: 'none', id: null };
+    this.focusedObject = { type: 'none' };
     this.isInitialized = false;
 
     console.log('🧹 MapController destroyed');
@@ -1031,7 +1296,7 @@ export class MapController {
       mapCenter: this.map?.getCenter(),
       mapZoom: this.map?.getZoom(),
       routeDataCount: this.routeRenderer?.getRouteFeatures().length || 0,
-      currentHighlight: this.currentHighlight,
+      focusedObject: this.focusedObject,
     };
   }
 
