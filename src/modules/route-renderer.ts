@@ -490,6 +490,9 @@ export class RouteRenderer {
   }
 
   public clearHighlight(): void {
+    if (!this.initialized) {
+      return;
+    }
     this.map.setFilter('routes-highlight', ['==', 'route_id', '']);
   }
 

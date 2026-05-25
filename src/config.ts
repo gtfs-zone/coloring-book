@@ -26,4 +26,9 @@ export const CONFIG = {
   // will zoom out further if children don't fit at this level so subsidiaries
   // aren't cut off.
   STOP_FOCUS_ZOOM: 19,
+
+  // Boot timing — set to true locally to emit console.time measurements for each
+  // init stage. Leave false in production (logs are noisy and measured overhead
+  // accumulates in tight loops).
+  DEBUG_BOOT: false,
 } as const;
