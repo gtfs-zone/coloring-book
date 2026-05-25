@@ -44,6 +44,16 @@ export class PatchManager {
     this.currentVersion = currentVersion;
     this.headVersion = headVersion;
 
+    const blobVersion = await this.db.getBlobVersion();
+    if (blobVersion === currentVersion) {
+      // Blobs were persisted at the current version — the in-memory state loaded
+      // by GTFSParser.initialize() is already correct. Skip snapshot+replay entirely.
+      console.log(
+        `[PatchManager] Blob is current at version ${currentVersion}. Skipping snapshot restore.`
+      );
+      return;
+    }
+
     const snapshot = await this.db.getLatestSnapshot();
     if (snapshot) {
       const stateJson = await decompress(snapshot.state);
