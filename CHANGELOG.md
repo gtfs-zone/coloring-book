@@ -1,3 +1,9 @@
+## v0.18.1 (2026-05-25)
+
+### Fix
+
+- **layer-manager**: suppress coord warning for generic nodes and boarding areas
+
 ## v0.18.0 (2026-05-25)
 
 ### Feat
