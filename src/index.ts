@@ -319,9 +319,6 @@ export class GTFSEditor {
       // Set up navigation event listener for automatic tab switching
       this.setupNavigationTabSwitching(bottomSheet);
 
-      // Run initial validation and update InfoDisplay
-      this.validateAndUpdateInfo();
-
       // Welcome overlay will be shown by default for empty state
       // It will be hidden when a feed is loaded via map-controller
 
@@ -363,13 +360,9 @@ export class GTFSEditor {
     }
   }
 
+  // Not called on startup — invoke manually if the validation panel is opened.
   public validateAndUpdateInfo(): void {
-    // Run validation
     const validationResults = this.validator.validateFeed();
-
-    // Note: InfoDisplay is not used in the new UI structure
-    // Validation results are displayed in the object details view when relevant
-
     void validationResults;
   }
 
