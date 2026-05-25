@@ -41,6 +41,14 @@ declare global {
   const __APP_VERSION__: string;
 }
 
+function runWhenIdle(fn: () => void): void {
+  if (typeof requestIdleCallback !== 'undefined') {
+    requestIdleCallback(fn);
+  } else {
+    setTimeout(fn, 0);
+  }
+}
+
 export class GTFSEditor {
   public gtfsParser: GTFSParser;
   public mapController: MapController;
@@ -142,6 +150,13 @@ export class GTFSEditor {
       // Initialize GTFSParser database
       await this.gtfsParser.initialize();
       feedProgressIndicator.updateProgress('boot', 60, 'Restoring patches...');
+
+      const exportBtn = document.getElementById(
+        'export-btn'
+      ) as HTMLButtonElement;
+      if (exportBtn) {
+        exportBtn.disabled = false;
+      }
 
       // Restore state from patch history (snapshot + subsequent patches)
       await this.patchManager.initialize();
@@ -338,19 +353,24 @@ export class GTFSEditor {
       }
 
       this.uiController.updateFileList();
-      await this.mapController.updateMap();
+      this.browseNavigation
+        .refresh()
+        .catch((e: unknown) =>
+          notifications.showError(
+            `Failed to refresh navigation: ${e instanceof Error ? e.message : String(e)}`
+          )
+        );
       feedProgressIndicator.finishLoading('boot');
 
-      if (this.browseNavigation) {
-        this.browseNavigation.refresh();
-      }
-
-      const exportBtn = document.getElementById(
-        'export-btn'
-      ) as HTMLButtonElement;
-      if (exportBtn) {
-        exportBtn.disabled = false;
-      }
+      runWhenIdle(() => {
+        this.mapController
+          .updateMap()
+          .catch((e: unknown) =>
+            notifications.showError(
+              `Failed to update map: ${e instanceof Error ? e.message : String(e)}`
+            )
+          );
+      });
     } catch (error) {
       feedProgressIndicator.finishLoading('boot');
       console.error('Failed to initialize application:', error);
