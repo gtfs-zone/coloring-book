@@ -217,7 +217,12 @@ export class LayerManager {
     for (const stop of stops) {
       const coord = resolveCoord(String(stop.stop_id));
       if (!coord) {
-        if (!hasValidCoords(stop)) {
+        const locType =
+          typeof stop.location_type === 'number'
+            ? stop.location_type
+            : parseInt(stop.location_type ?? '0', 10) || 0;
+        const coordsOptional = locType === 3 || locType === 4;
+        if (!hasValidCoords(stop) && !coordsOptional) {
           console.warn(
             `[LayerManager] Skipping stop without resolvable coords: stop_id=${stop.stop_id} location_type=${stop.location_type ?? ''} parent_station=${stop.parent_station ?? ''}`
           );

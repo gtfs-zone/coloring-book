@@ -28,6 +28,10 @@ import { TabLockController } from './modules/tab-lock';
 import { humanLabel } from './utils/patch-label';
 import { showAboutModal } from './modules/about-modal';
 import { showFaresModal } from './modules/fares-modal';
+import {
+  showCalendarModal,
+  type CalendarModalDeps,
+} from './modules/calendar-modal';
 import { ShapesManager } from './modules/shapes-manager';
 import { PanelResizer } from './modules/panel-resizer';
 import { LevelsController } from './modules/levels-controller';
@@ -280,6 +284,20 @@ export class GTFSEditor {
             typeof showFaresModal
           >[0]['gtfsDatabase'],
           patchManager: this.patchManager,
+        });
+      });
+
+      // Wire calendar button to open Calendar modal
+      document.getElementById('calendar-btn')?.addEventListener('click', () => {
+        void showCalendarModal({
+          gtfsDatabase: this.gtfsParser
+            .gtfsDatabase as CalendarModalDeps['gtfsDatabase'],
+          onServiceClick: (service_id) => {
+            void this.pageStateManager.setPageState({
+              type: 'service',
+              service_id,
+            });
+          },
         });
       });
 
