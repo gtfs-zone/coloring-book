@@ -1,4 +1,5 @@
 import { showModal } from './modal-utils.js';
+import { formatDaysOfWeek } from '../utils/entity-references.js';
 
 export interface CalendarModalDeps {
   gtfsDatabase: {
@@ -240,10 +241,12 @@ function renderMonthGrid(
         : '';
 
     cells.push(`
-      <div class="min-h-16 p-1 rounded bg-base-200/20 border border-base-300/30">
+      <div class="min-h-16 p-1 rounded bg-base-200/20 border border-base-300/30 overflow-hidden">
         <div class="text-xs text-base-content/60 mb-0.5 flex items-center gap-0.5">${day}${feedStartBadge}${feedEndBadge}</div>
-        <div class="flex flex-col gap-0.5 max-h-24 overflow-y-auto">
-          ${chipsHtml}
+        <div class="max-h-24 overflow-y-auto">
+          <div class="flex flex-col gap-0.5">
+            ${chipsHtml}
+          </div>
         </div>
       </div>
     `);
@@ -285,15 +288,15 @@ const MONTH_ABBR = [
 ];
 const THREE_YEARS_MS = 3 * 365.25 * 24 * 60 * 60 * 1000;
 
-// Mon–Sun order for weekday dot display (differs from WEEKDAY_KEYS which is Sun-first)
+// Sun–Sat order for weekday dot display (matches WEEKDAY_KEYS)
 const WEEKDAY_DOT_KEYS = [
+  'sunday',
   'monday',
   'tuesday',
   'wednesday',
   'thursday',
   'friday',
   'saturday',
-  'sunday',
 ];
 
 function renderWeekdayDots(calendar: Record<string, unknown> | null): string {
@@ -301,6 +304,13 @@ function renderWeekdayDots(calendar: Record<string, unknown> | null): string {
     calendar && Number(calendar[k]) === 1 ? '●' : '○'
   ).join('');
   return `<span class="font-mono tracking-tight text-base-content/70">${dots}</span>`;
+}
+
+function getDaysTooltip(calendar: Record<string, unknown> | null): string {
+  if (!calendar) {
+    return 'No regular days';
+  }
+  return formatDaysOfWeek(calendar);
 }
 
 function formatHumanDate(gtfsDate: string): string {
@@ -445,7 +455,7 @@ function renderTimeline(data: ServiceDataMap): string {
         </span>
       </td>`;
 
-      const dotCell = `<td class="w-14 min-w-14 px-1 py-1 border-b border-base-300/30 text-xs">${renderWeekdayDots(sd.calendar)}</td>`;
+      const dotCell = `<td class="w-14 min-w-14 px-1 py-1 border-b border-base-300/30 text-xs tooltip tooltip-right" data-tip="${esc(getDaysTooltip(sd.calendar))}">${renderWeekdayDots(sd.calendar)}</td>`;
 
       return `<tr class="timeline-row cursor-pointer hover:bg-base-300/20" data-service-id="${esc(sid)}">${labelCell}${dotCell}${cells}</tr>`;
     })
@@ -463,7 +473,7 @@ function renderTimeline(data: ServiceDataMap): string {
           <thead>
             <tr>
               <th class="sticky left-0 z-10 bg-base-200 border-b border-base-300" style="width:${labelColPx}px;min-width:${labelColPx}px"></th>
-              <th class="w-14 min-w-14 px-1 py-0.5 border-b border-base-300 text-center"><span class="font-mono tracking-tight text-base-content/50 text-xs">M T W T F S S</span></th>
+              <th class="w-14 min-w-14 px-1 py-0.5 border-b border-base-300 text-center whitespace-nowrap"><span class="font-mono tracking-tight text-base-content/50 text-xs">SMTWTFS</span></th>
               ${headerHtml}
             </tr>
           </thead>
