@@ -9,7 +9,7 @@ import {
   CalendarDates,
   GTFSTableMap,
 } from '../types/gtfs-entities.js';
-import { notifications } from './notification-system';
+import { notify } from './notification-system';
 import { patchUpdate } from '../utils/patch-utils.js';
 import {
   HOLIDAY_PATTERNS,
@@ -1036,7 +1036,7 @@ export class ServiceDaysController {
     ) as HTMLSelectElement;
 
     if (!dateInput.value) {
-      notifications.showError('Please select a date', { duration: 3000 });
+      notify.error('Please select a date', { duration: 3000 });
       return;
     }
 
@@ -1151,7 +1151,7 @@ export class ServiceDaysController {
     if (indicator) {
       indicator.style.display = 'none';
     }
-    notifications.showError(message, { duration: 5000 });
+    notify.error(message, { duration: 5000 });
   }
 
   /**

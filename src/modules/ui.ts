@@ -1,4 +1,4 @@
-import { notifications } from './notification-system';
+import { notify } from './notification-system';
 import { showModal } from './modal-utils.js';
 import { showAtlasSearchModal } from './atlas-search.js';
 import {
@@ -273,7 +273,7 @@ export class UIController {
       // Parse the file
       const { unknownFiles } = await this.gtfsParser!.parseFile(file);
       if (unknownFiles.length > 0) {
-        notifications.showWarning(
+        notify.warning(
           `Preserving ${unknownFiles.length} unrecognized file(s) for export: ${unknownFiles.join(', ')}`
         );
       }
@@ -316,7 +316,7 @@ export class UIController {
       // Update map tool button states
       this.updateMapToolButtonState();
 
-      notifications.showSuccess(`Successfully loaded GTFS file: ${file.name}`);
+      notify.success(`Successfully loaded GTFS file: ${file.name}`);
 
       console.timeEnd('[GTFS] loadGTFSFile total');
     } catch (error) {
@@ -328,7 +328,7 @@ export class UIController {
         errorMessage += `: ${(error as Error).message}`;
       }
 
-      notifications.showError(errorMessage, {
+      notify.error(errorMessage, {
         actions: [
           {
             id: 'retry',
@@ -403,7 +403,7 @@ export class UIController {
 
       const { unknownFiles } = await this.gtfsParser!.parseFromURL(url);
       if (unknownFiles.length > 0) {
-        notifications.showWarning(
+        notify.warning(
           `Preserving ${unknownFiles.length} unrecognized file(s) for export: ${unknownFiles.join(', ')}`
         );
       }
@@ -426,11 +426,11 @@ export class UIController {
       // Update map tool button states
       this.updateMapToolButtonState();
 
-      notifications.showSuccess('Successfully loaded GTFS from URL');
+      notify.success('Successfully loaded GTFS from URL');
     } catch (error) {
       console.error('Error loading GTFS from URL:', error);
 
-      notifications.showError('Failed to load feed', {
+      notify.error('Failed to load feed', {
         autoHide: false,
         actions: [
           {
@@ -1188,10 +1188,10 @@ export class UIController {
         this.validateCallback();
       }
 
-      notifications.showSuccess('New empty GTFS feed created.');
+      notify.success('New empty GTFS feed created.');
     } catch (error) {
       console.error('Error creating new GTFS feed:', error);
-      notifications.showError(
+      notify.error(
         `Failed to create new GTFS feed: ${(error as Error).message}`
       );
     }
@@ -1207,18 +1207,14 @@ export class UIController {
           .getAllFileNames()
           .some((f) => (this.gtfsParser!.getFileDataSync(f)?.length ?? 0) > 0)
       ) {
-        notifications.showWarning(
-          'No GTFS data to export. Please add some data first.'
-        );
+        notify.warning('No GTFS data to export. Please add some data first.');
         return;
       }
 
       console.log('Exporting GTFS data...');
 
       // Show loading notification
-      loadingNotificationId = notifications.showLoading(
-        'Preparing GTFS export...'
-      );
+      loadingNotificationId = notify.loading('Preparing GTFS export...');
 
       // Save current file changes
       this.editor!.saveCurrentFileChanges();
@@ -1238,20 +1234,18 @@ export class UIController {
 
       // Remove loading notification and show success
       if (loadingNotificationId) {
-        notifications.removeNotification(loadingNotificationId);
+        notify.removeNotification(loadingNotificationId);
       }
-      notifications.showSuccess('GTFS data exported successfully!');
+      notify.success('GTFS data exported successfully!');
     } catch (error) {
       console.error('Error exporting GTFS:', error);
 
       // Remove loading notification
       if (loadingNotificationId) {
-        notifications.removeNotification(loadingNotificationId);
+        notify.removeNotification(loadingNotificationId);
       }
 
-      notifications.showError(
-        `Failed to export GTFS data: ${(error as Error).message}`
-      );
+      notify.error(`Failed to export GTFS data: ${(error as Error).message}`);
     }
   }
 
