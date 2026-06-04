@@ -25,6 +25,7 @@ import {
   normalizeAgencyId,
 } from '../utils/agency-helpers.js';
 import { BasemapControl } from './basemap-control.js';
+import { notify } from './notification-system.js';
 import type { PatchRecord, SingleGTFSPatch } from '../types/patch.js';
 
 // Map interaction modes
@@ -1140,10 +1141,7 @@ export class MapController {
       // Show error notification
       const errorMessage =
         error instanceof Error ? error.message : 'Unknown error';
-      this.showNotification(
-        `Failed to update stop coordinates: ${errorMessage}`,
-        'error'
-      );
+      notify.error(`Failed to update stop coordinates: ${errorMessage}`);
 
       // Refresh map to revert visual changes
       await this.updateMap();
@@ -1175,29 +1173,6 @@ export class MapController {
     // Update layer data to show the new stop
     this.layerManager?.invalidateCoordResolver();
     this.layerManager?.updateStopsData();
-  }
-
-  /**
-   * Show notification (integration with notification system)
-   */
-  private showNotification(
-    message: string,
-    type: 'success' | 'error' | 'warning' = 'success'
-  ): void {
-    import('./notification-system.js')
-      .then(({ notifications }) => {
-        if (type === 'success') {
-          notifications.showSuccess(message);
-        } else if (type === 'error') {
-          notifications.showError(message);
-        } else if (type === 'warning') {
-          notifications.showWarning(message);
-        }
-      })
-      .catch((err) => {
-        console.error('Failed to load notification system:', err);
-        console.log(`${type.toUpperCase()}: ${message}`);
-      });
   }
 
   // ========================================

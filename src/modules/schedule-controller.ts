@@ -6,7 +6,7 @@
 
 import { Stops, GTFSTableMap } from '../types/gtfs-entities.js';
 import { GTFSDatabaseRecord } from './gtfs-database.js';
-import { notifications } from './notification-system';
+import { notify } from './notification-system';
 import { TimeFormatter } from '../utils/time-formatter.js';
 import { TimetableDataProcessor } from './timetable-data-processor.js';
 import { TimetableRenderer } from './timetable-renderer.js';
@@ -615,11 +615,9 @@ export class ScheduleController {
       );
     } catch (error) {
       console.error('Failed to update trip property:', error);
-      notifications.show(
-        `Failed to update ${field} for trip ${trip_id}`,
-        'error',
-        { duration: 5000 }
-      );
+      notify.show(`Failed to update ${field} for trip ${trip_id}`, 'error', {
+        duration: 5000,
+      });
     }
   }
 
@@ -814,7 +812,7 @@ export class ScheduleController {
     message: string
   ): void {
     console.error(`Time error for ${trip_id}/${stop_id}: ${message}`);
-    notifications.showError(`Invalid time format: ${message}`, {
+    notify.error(`Invalid time format: ${message}`, {
       duration: 5000,
     });
   }
@@ -1160,7 +1158,7 @@ export class ScheduleController {
       });
 
       if (stops.length === 0) {
-        notifications.showError('Stop not found');
+        notify.error('Stop not found');
         return;
       }
 
@@ -1195,12 +1193,10 @@ export class ScheduleController {
       // Refresh the timetable to show the new pending stop row
       await this.refreshCurrentTimetable();
 
-      notifications.showSuccess(
-        `Stop added. Enter a time for at least one trip to save.`
-      );
+      notify.success(`Stop added. Enter a time for at least one trip to save.`);
     } catch (error) {
       console.error('Failed to add stop to timetable:', error);
-      notifications.showError('Failed to add stop to timetable');
+      notify.error('Failed to add stop to timetable');
     }
   }
 
@@ -1261,14 +1257,14 @@ export class ScheduleController {
 
     try {
       if (!this.currentRouteId || !this.currentServiceId) {
-        notifications.showError('No timetable loaded');
+        notify.error('No timetable loaded');
         return;
       }
 
       // Validate trip_id
       const validation = await this.validateTripId(trimmedId);
       if (!validation.isValid) {
-        notifications.showError(validation.errorMessage || 'Invalid trip ID');
+        notify.error(validation.errorMessage || 'Invalid trip ID');
         return;
       }
 
@@ -1291,13 +1287,13 @@ export class ScheduleController {
       );
       console.log('Trip saved to database:', tripData);
 
-      notifications.showSuccess(`Trip "${trimmedId}" created successfully`);
+      notify.success(`Trip "${trimmedId}" created successfully`);
 
       // Refresh the timetable to show the new trip column
       await this.refreshCurrentTimetable();
     } catch (error) {
       console.error('Failed to create trip:', error);
-      notifications.showError('Failed to create trip');
+      notify.error('Failed to create trip');
     }
   }
 
@@ -1363,7 +1359,7 @@ export class ScheduleController {
       });
 
       if (stops.length === 0) {
-        notifications.showError('Stop not found');
+        notify.error('Stop not found');
         return;
       }
 
@@ -1385,15 +1381,13 @@ export class ScheduleController {
         selectElement.value = '';
       }
 
-      notifications.showSuccess(
-        `Stop added. Enter a time for at least one trip to save.`
-      );
+      notify.success(`Stop added. Enter a time for at least one trip to save.`);
 
       // Refresh the timetable to show the new pending stop row
       await this.refreshCurrentTimetable();
     } catch (error) {
       console.error('Failed to add stop to timetable:', error);
-      notifications.showError('Failed to add stop to timetable');
+      notify.error('Failed to add stop to timetable');
     }
   }
 

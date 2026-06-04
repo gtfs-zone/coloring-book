@@ -35,7 +35,7 @@ import {
   type FormPatchDeps,
 } from '../utils/form-patch-bridge.js';
 import type { GTFSDatabaseRecord } from './gtfs-database.js';
-import { notifications } from './notification-system.js';
+import { notify } from './notification-system.js';
 import {
   getAgencyDisplay,
   getServiceDisplay,
@@ -834,7 +834,7 @@ export class PageContentRenderer {
     const inlineCreator = new InlineEntityCreator(
       this.dependencies
         .gtfsDatabase as unknown as import('./gtfs-database.js').GTFSDatabase,
-      notifications,
+      notify,
       () => {
         // Refresh the page after entity creation
         if (this.dependencies.onEntityCreated) {
