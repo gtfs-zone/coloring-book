@@ -1287,8 +1287,6 @@ export class ScheduleController {
       );
       console.log('Trip saved to database:', tripData);
 
-      notify.success(`Trip "${trimmedId}" created successfully`);
-
       // Refresh the timetable to show the new trip column
       await this.refreshCurrentTimetable();
     } catch (error) {
