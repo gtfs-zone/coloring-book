@@ -7,7 +7,7 @@
 import { StopTimes, GTFSTableMap } from '../types/gtfs-entities.js';
 import { StopTimesSchema } from '../types/gtfs.js';
 import { generateCompositeKeyFromRecord } from '../utils/gtfs-primary-keys.js';
-import { notifications } from './notification-system.js';
+import { notify } from './notification-system.js';
 
 interface GTFSParserInterface {
   gtfsDatabase: {
@@ -75,7 +75,7 @@ export class TimetableDatabase {
     if (!database) {
       const error = 'Database connection not available';
       console.error(error);
-      notifications.showError('Database connection lost');
+      notify.error('Database connection lost');
       throw new Error(error);
     }
 
@@ -87,7 +87,7 @@ export class TimetableDatabase {
     if (stopTimes.length === 0) {
       const error = `No stop_time found for trip ${trip_id}, stop ${stop_id}`;
       console.error('Database query failed:', error);
-      notifications.showError('Schedule record not found');
+      notify.error('Schedule record not found');
       throw new Error(error);
     }
 
@@ -116,7 +116,7 @@ export class TimetableDatabase {
     if (!database) {
       const error = 'Database connection not available';
       console.error(error);
-      notifications.showError('Database connection lost');
+      notify.error('Database connection lost');
       throw new Error(error);
     }
 
@@ -128,7 +128,7 @@ export class TimetableDatabase {
     if (stopTimes.length === 0) {
       const error = `No stop_time found for trip ${trip_id}, stop ${stop_id}`;
       console.error('Database query failed:', error);
-      notifications.showError('Schedule record not found');
+      notify.error('Schedule record not found');
       throw new Error(error);
     }
 
@@ -156,7 +156,7 @@ export class TimetableDatabase {
     if (!database) {
       const error = 'Database connection not available';
       console.error(error);
-      notifications.showError('Database connection lost');
+      notify.error('Database connection lost');
       throw new Error(error);
     }
 
@@ -168,7 +168,7 @@ export class TimetableDatabase {
     if (stopTimes.length === 0) {
       const error = `No stop_time found for trip ${trip_id}, stop ${stop_id}`;
       console.error('Database query failed:', error);
-      notifications.showError('Schedule record not found');
+      notify.error('Schedule record not found');
       throw new Error(error);
     }
 
@@ -201,9 +201,7 @@ export class TimetableDatabase {
     if (!database) {
       const error = 'Database connection not available';
       console.error(error);
-      notifications.showError(
-        'Unable to save changes - database connection lost'
-      );
+      notify.error('Unable to save changes - database connection lost');
       throw new Error(error);
     }
 
@@ -217,7 +215,7 @@ export class TimetableDatabase {
       if (!timeValidation.success) {
         const error = `Invalid time format: ${newTime}. Must be HH:MM:SS format.`;
         console.error('Time validation failed:', timeValidation.error);
-        notifications.showError(`Invalid time format: ${newTime}`);
+        notify.error(`Invalid time format: ${newTime}`);
         throw new Error(error);
       }
     }
@@ -274,7 +272,7 @@ export class TimetableDatabase {
         renumberedStopTimes as unknown as StopTimes[]
       );
 
-      notifications.showSuccess(`Added stop to trip`, { duration: 2000 });
+      notify.success(`Added stop to trip`, { duration: 2000 });
       return;
     }
 
@@ -318,9 +316,7 @@ export class TimetableDatabase {
     if (!database) {
       const error = 'Database connection not available';
       console.error(error);
-      notifications.showError(
-        'Unable to save changes - database connection lost'
-      );
+      notify.error('Unable to save changes - database connection lost');
       throw new Error(error);
     }
 
@@ -334,7 +330,7 @@ export class TimetableDatabase {
       if (!timeValidation.success) {
         const error = `Invalid time format: ${newTime}. Must be HH:MM:SS format.`;
         console.error('Time validation failed:', timeValidation.error);
-        notifications.showError(`Invalid time format: ${newTime}`);
+        notify.error(`Invalid time format: ${newTime}`);
         throw new Error(error);
       }
     }
@@ -390,7 +386,7 @@ export class TimetableDatabase {
         renumberedStopTimes
       );
 
-      notifications.showSuccess(`Added stop to trip`, { duration: 2000 });
+      notify.success(`Added stop to trip`, { duration: 2000 });
       return;
     }
 
@@ -425,7 +421,7 @@ export class TimetableDatabase {
     if (!database) {
       const error = 'Database connection not available';
       console.error(error);
-      notifications.showError('Database connection lost');
+      notify.error('Database connection lost');
       throw new Error(error);
     }
 
@@ -525,7 +521,7 @@ export class TimetableDatabase {
     if (!database) {
       const error = 'Database connection not available';
       console.error(error);
-      notifications.showError('Database connection lost');
+      notify.error('Database connection lost');
       throw new Error(error);
     }
 

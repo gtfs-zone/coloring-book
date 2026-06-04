@@ -1,4 +1,4 @@
-import { notifications } from './notification-system.js';
+import { notify } from './notification-system.js';
 
 export class KeyboardShortcuts {
   private gtfsEditor: {
@@ -151,7 +151,7 @@ export class KeyboardShortcuts {
         this.gtfsEditor.patchManager
           ?.undo()
           .catch((e: unknown) =>
-            notifications.showError(
+            notify.error(
               `Undo failed: ${e instanceof Error ? e.message : String(e)}`
             )
           );
@@ -166,7 +166,7 @@ export class KeyboardShortcuts {
         this.gtfsEditor.patchManager
           ?.redo()
           .catch((e: unknown) =>
-            notifications.showError(
+            notify.error(
               `Redo failed: ${e instanceof Error ? e.message : String(e)}`
             )
           );

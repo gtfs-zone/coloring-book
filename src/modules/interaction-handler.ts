@@ -398,10 +398,8 @@ export class InteractionHandler {
 
     if (this.addPathwayFirstStopId === null) {
       this.addPathwayFirstStopId = stop_id;
-      const { notifications } = await import('./notification-system.js');
-      notifications.showInfo(
-        `From: ${stop_id}. Now click the second stop to connect.`
-      );
+      const { notify } = await import('./notification-system.js');
+      notify.info(`From: ${stop_id}. Now click the second stop to connect.`);
       return;
     }
 
