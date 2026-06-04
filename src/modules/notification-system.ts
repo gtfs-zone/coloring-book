@@ -80,7 +80,7 @@ export class NotificationSystem {
     return notification.id;
   }
 
-  showError(message: string, options: NotificationOptions = {}): number {
+  error(message: string, options: NotificationOptions = {}): number {
     return this.show(message, 'error', {
       autoHide: true,
       duration: 8000,
@@ -88,7 +88,7 @@ export class NotificationSystem {
     });
   }
 
-  showWarning(message: string, options: NotificationOptions = {}): number {
+  warning(message: string, options: NotificationOptions = {}): number {
     return this.show(message, 'warning', {
       autoHide: true,
       duration: 6000,
@@ -96,7 +96,7 @@ export class NotificationSystem {
     });
   }
 
-  showSuccess(message: string, options: NotificationOptions = {}): number {
+  success(message: string, options: NotificationOptions = {}): number {
     return this.show(message, 'success', {
       autoHide: true,
       duration: 4000,
@@ -104,7 +104,7 @@ export class NotificationSystem {
     });
   }
 
-  showInfo(message: string, options: NotificationOptions = {}): number {
+  info(message: string, options: NotificationOptions = {}): number {
     return this.show(message, 'info', {
       autoHide: true,
       duration: 5000,
@@ -112,7 +112,7 @@ export class NotificationSystem {
     });
   }
 
-  showLoading(message: string, options: NotificationOptions = {}): number {
+  loading(message: string, options: NotificationOptions = {}): number {
     return this.show(message, 'loading', {
       autoHide: true,
       duration: 30000,
@@ -168,7 +168,7 @@ export class NotificationSystem {
     element.innerHTML = `
       ${iconMap[type] ?? ''}
       <div class="flex-1 min-w-0">
-        <span class="text-sm">${this.escapeHtml(message)}</span>
+        <span class="text-sm [overflow-wrap:anywhere]">${this.formatMessage(message)}</span>
         ${actionsHtml}
       </div>
       <button class="notification-close btn btn-ghost btn-xs btn-circle shrink-0">×</button>
@@ -261,7 +261,38 @@ export class NotificationSystem {
     div.textContent = text;
     return div.innerHTML;
   }
+
+  /**
+   * Lightly format a notification message for readability. Uses typography
+   * tiers (weight / monospace / opacity) rather than hue, so it stays legible
+   * on any colored alert background and across themes:
+   * - `"name/id"` (quoted entity token from humanLabel) → a monospace chip so
+   *   long ids are visually distinct from prose and wrap anywhere (#135).
+   * - `(field, field)` (changed-field summary) → muted monospace so GTFS keys
+   *   read as keys, not prose.
+   * - `created` / `updated` / `deleted` (change verbs) → bold, for quick scan.
+   * Everything else is plain escaped text. Purely presentational — the
+   * underlying wording stays identical to the Changes panel / undo-redo labels.
+   */
+  private formatMessage(message: string): string {
+    return message
+      .split(/("[^"]*"|\([^)]*\))/g)
+      .map((part) => {
+        if (part.length >= 2 && part.startsWith('"') && part.endsWith('"')) {
+          const inner = this.escapeHtml(part.slice(1, -1));
+          return `<code class="px-1 rounded bg-current/15 font-mono text-[0.85em] [overflow-wrap:anywhere]">${inner}</code>`;
+        }
+        if (part.length >= 2 && part.startsWith('(') && part.endsWith(')')) {
+          return `<span class="font-mono text-[0.85em] opacity-70 [overflow-wrap:anywhere]">${this.escapeHtml(part)}</span>`;
+        }
+        return this.escapeHtml(part).replace(
+          /\b(created|updated|deleted)\b/g,
+          '<strong class="font-semibold">$1</strong>'
+        );
+      })
+      .join('');
+  }
 }
 
 // Create a global instance
-export const notifications = new NotificationSystem();
+export const notify = new NotificationSystem();

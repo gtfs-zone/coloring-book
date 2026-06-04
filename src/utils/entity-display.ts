@@ -48,6 +48,51 @@ export function getServiceDisplay(
   return { primary: record['service_id'] ?? '' };
 }
 
+export function getTripDisplay(
+  record: Record<string, string>
+): EntityDisplayInfo {
+  const name = record['trip_short_name'] || record['trip_headsign'];
+  const id = record['trip_id'];
+  if (name) {
+    return { primary: name, secondary: id };
+  }
+  return { primary: id ?? '' };
+}
+
+/**
+ * Generic dispatcher — resolves the display info for any GTFS table row.
+ * Falls back to a best-effort `<table>_id` (or `<table>_name`) field, then
+ * an empty primary, for tables without a dedicated helper. Callers that only
+ * need a single string should read `.primary` (the human name, or the id when
+ * no name is present).
+ */
+export function getEntityDisplay(
+  table: string,
+  record: Record<string, string>
+): EntityDisplayInfo {
+  switch (table) {
+    case 'agency':
+      return getAgencyDisplay(record);
+    case 'stops':
+      return getStopDisplay(record);
+    case 'routes':
+      return getRouteDisplay(record);
+    case 'calendar':
+      return getServiceDisplay(record);
+    case 'trips':
+      return getTripDisplay(record);
+    default: {
+      const singular = table.replace(/s$/, '');
+      const name = record[`${singular}_name`];
+      const id = record[`${singular}_id`] ?? record['id'];
+      if (name) {
+        return { primary: name, secondary: id };
+      }
+      return { primary: id ?? '' };
+    }
+  }
+}
+
 /**
  * For cards, list items, and detail headers — secondary on its own line, muted.
  */

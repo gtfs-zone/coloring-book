@@ -3,7 +3,7 @@
  * Handles IndexedDB support detection and error recovery.
  */
 import { feedProgressIndicator } from './feed-progress-indicator.js';
-import { notifications } from './notification-system.js';
+import { notify } from './notification-system.js';
 import { showModal } from './modal-utils.js';
 
 export interface BrowserCapabilities {
@@ -265,14 +265,12 @@ export class DatabaseFallbackManager {
       });
 
       feedProgressIndicator.finishLoading('reset');
-      notifications.showSuccess(
-        'Database reset successfully. Reloading page...'
-      );
+      notify.success('Database reset successfully. Reloading page...');
 
       setTimeout(() => window.location.reload(), 1500);
     } catch (error) {
       feedProgressIndicator.finishLoading('reset');
-      notifications.showError(
+      notify.error(
         'Failed to reset database. Please clear browser data manually.'
       );
 
