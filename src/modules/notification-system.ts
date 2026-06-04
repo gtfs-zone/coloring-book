@@ -168,7 +168,7 @@ export class NotificationSystem {
     element.innerHTML = `
       ${iconMap[type] ?? ''}
       <div class="flex-1 min-w-0">
-        <span class="text-sm break-words [overflow-wrap:anywhere] hyphens-auto">${this.escapeHtml(message)}</span>
+        <span class="text-sm [overflow-wrap:anywhere]">${this.formatMessage(message)}</span>
         ${actionsHtml}
       </div>
       <button class="notification-close btn btn-ghost btn-xs btn-circle shrink-0">×</button>
@@ -260,6 +260,30 @@ export class NotificationSystem {
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
+  }
+
+  /**
+   * Lightly format a notification message for readability:
+   * - `"name/id"` (quoted entity token from humanLabel) → a monospace chip so
+   *   long ids are visually distinct from prose and wrap anywhere (#135).
+   * - `(field, field)` (changed-field summary) → muted text.
+   * Everything else is plain escaped text. Purely presentational — the
+   * underlying wording stays identical to the Changes panel / undo-redo labels.
+   */
+  private formatMessage(message: string): string {
+    return message
+      .split(/("[^"]*"|\([^)]*\))/g)
+      .map((part) => {
+        if (part.length >= 2 && part.startsWith('"') && part.endsWith('"')) {
+          const inner = this.escapeHtml(part.slice(1, -1));
+          return `<code class="px-1 py-0.5 rounded bg-black/20 font-mono text-[0.8em] [overflow-wrap:anywhere]">${inner}</code>`;
+        }
+        if (part.length >= 2 && part.startsWith('(') && part.endsWith(')')) {
+          return `<span class="opacity-70">${this.escapeHtml(part)}</span>`;
+        }
+        return this.escapeHtml(part);
+      })
+      .join('');
   }
 }
 
