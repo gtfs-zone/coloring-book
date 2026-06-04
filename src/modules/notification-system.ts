@@ -276,7 +276,7 @@ export class NotificationSystem {
       .map((part) => {
         if (part.length >= 2 && part.startsWith('"') && part.endsWith('"')) {
           const inner = this.escapeHtml(part.slice(1, -1));
-          return `<code class="px-1 py-0.5 rounded bg-black/20 font-mono text-[0.8em] [overflow-wrap:anywhere]">${inner}</code>`;
+          return `<code class="px-1 rounded bg-current/15 font-mono text-[0.85em] [overflow-wrap:anywhere]">${inner}</code>`;
         }
         if (part.length >= 2 && part.startsWith('(') && part.endsWith(')')) {
           return `<span class="opacity-70">${this.escapeHtml(part)}</span>`;
