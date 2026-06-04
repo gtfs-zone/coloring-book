@@ -80,7 +80,7 @@ export class NotificationSystem {
     return notification.id;
   }
 
-  showError(message: string, options: NotificationOptions = {}): number {
+  error(message: string, options: NotificationOptions = {}): number {
     return this.show(message, 'error', {
       autoHide: true,
       duration: 8000,
@@ -88,7 +88,7 @@ export class NotificationSystem {
     });
   }
 
-  showWarning(message: string, options: NotificationOptions = {}): number {
+  warning(message: string, options: NotificationOptions = {}): number {
     return this.show(message, 'warning', {
       autoHide: true,
       duration: 6000,
@@ -96,7 +96,7 @@ export class NotificationSystem {
     });
   }
 
-  showSuccess(message: string, options: NotificationOptions = {}): number {
+  success(message: string, options: NotificationOptions = {}): number {
     return this.show(message, 'success', {
       autoHide: true,
       duration: 4000,
@@ -104,7 +104,7 @@ export class NotificationSystem {
     });
   }
 
-  showInfo(message: string, options: NotificationOptions = {}): number {
+  info(message: string, options: NotificationOptions = {}): number {
     return this.show(message, 'info', {
       autoHide: true,
       duration: 5000,
@@ -112,7 +112,7 @@ export class NotificationSystem {
     });
   }
 
-  showLoading(message: string, options: NotificationOptions = {}): number {
+  loading(message: string, options: NotificationOptions = {}): number {
     return this.show(message, 'loading', {
       autoHide: true,
       duration: 30000,
@@ -168,7 +168,7 @@ export class NotificationSystem {
     element.innerHTML = `
       ${iconMap[type] ?? ''}
       <div class="flex-1 min-w-0">
-        <span class="text-sm">${this.escapeHtml(message)}</span>
+        <span class="text-sm break-words [overflow-wrap:anywhere] hyphens-auto">${this.escapeHtml(message)}</span>
         ${actionsHtml}
       </div>
       <button class="notification-close btn btn-ghost btn-xs btn-circle shrink-0">×</button>
@@ -264,4 +264,4 @@ export class NotificationSystem {
 }
 
 // Create a global instance
-export const notifications = new NotificationSystem();
+export const notify = new NotificationSystem();

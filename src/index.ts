@@ -14,7 +14,7 @@ import { FieldDescriptionsDisplay } from './modules/field-descriptions';
 import { ScheduleController } from './modules/schedule-controller';
 import { ServiceDaysController } from './modules/service-days-controller';
 import { ThemeController } from './modules/theme-controller';
-import { notifications } from './modules/notification-system';
+import { notify } from './modules/notification-system';
 import {
   initializePageStateWithGTFS,
   processURLCommands,
@@ -133,7 +133,7 @@ export class GTFSEditor {
 
     this.init().catch((error) => {
       console.error('Failed to initialize GTFSEditor:', error);
-      notifications.showError(
+      notify.error(
         'Failed to initialize application. Please refresh the page and try again.'
       );
     });
@@ -153,7 +153,7 @@ export class GTFSEditor {
       this.displayVersion();
 
       // Initialize notification system
-      notifications.initialize();
+      notify.initialize();
 
       // Initialize GTFSParser database
       if (CONFIG.DEBUG_BOOT) {
@@ -225,7 +225,7 @@ export class GTFSEditor {
       };
       const onUndoRedoJump = () => {
         refreshAfterUndoRedo().catch((e: unknown) =>
-          notifications.showError(
+          notify.error(
             `Failed to refresh after undo/redo: ${e instanceof Error ? e.message : String(e)}`
           )
         );
@@ -237,11 +237,11 @@ export class GTFSEditor {
       // Patch notifications + console logging
       this.patchManager.on('change', (r) => {
         console.log('[patch:change]', r);
-        notifications.showInfo(humanLabel(r?.patch), { duration: 3000 });
+        notify.info(humanLabel(r?.patch), { duration: 3000 });
         this.browseNavigation
           .refresh()
           .catch((e: unknown) =>
-            notifications.showError(
+            notify.error(
               `Failed to refresh after edit: ${e instanceof Error ? e.message : String(e)}`
             )
           );
@@ -249,14 +249,14 @@ export class GTFSEditor {
       });
       this.patchManager.on('undo', (r) => {
         console.log('[patch:undo]', r);
-        notifications.showInfo(`Undone: ${humanLabel(r?.patch)}`, {
+        notify.info(`Undone: ${humanLabel(r?.patch)}`, {
           duration: 3000,
         });
         this.updateUndoRedoState();
       });
       this.patchManager.on('redo', (r) => {
         console.log('[patch:redo]', r);
-        notifications.showInfo(`Redone: ${humanLabel(r?.patch)}`, {
+        notify.info(`Redone: ${humanLabel(r?.patch)}`, {
           duration: 3000,
         });
         this.updateUndoRedoState();
@@ -393,7 +393,7 @@ export class GTFSEditor {
       this.browseNavigation
         .refresh()
         .catch((e: unknown) =>
-          notifications.showError(
+          notify.error(
             `Failed to refresh navigation: ${e instanceof Error ? e.message : String(e)}`
           )
         );
@@ -417,7 +417,7 @@ export class GTFSEditor {
             }
           })
           .catch((e: unknown) =>
-            notifications.showError(
+            notify.error(
               `Failed to update map: ${e instanceof Error ? e.message : String(e)}`
             )
           );
@@ -428,7 +428,7 @@ export class GTFSEditor {
         console.timeEnd('[boot] total');
       }
       console.error('Failed to initialize application:', error);
-      notifications.showError(
+      notify.error(
         'Failed to initialize application. Please refresh the page and try again.'
       );
     }
@@ -544,13 +544,13 @@ export class GTFSEditor {
   public undoEdit(): void {
     const stackSize = this.patchManager.canUndo;
     if (!stackSize) {
-      notifications.showInfo('Nothing to undo');
+      notify.info('Nothing to undo');
       return;
     }
     this.patchManager
       .undo()
       .catch((e: unknown) =>
-        notifications.showError(
+        notify.error(
           `Undo failed: ${e instanceof Error ? e.message : String(e)}`
         )
       );
@@ -558,13 +558,13 @@ export class GTFSEditor {
 
   public redoEdit(): void {
     if (!this.patchManager.canRedo) {
-      notifications.showInfo('Nothing to redo');
+      notify.info('Nothing to redo');
       return;
     }
     this.patchManager
       .redo()
       .catch((e: unknown) =>
-        notifications.showError(
+        notify.error(
           `Redo failed: ${e instanceof Error ? e.message : String(e)}`
         )
       );
