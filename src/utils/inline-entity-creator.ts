@@ -4,7 +4,7 @@
  */
 
 import type { GTFSDatabase } from '../modules/gtfs-database';
-import type { NotificationSystem } from '../modules/notification-system';
+import { notify } from '../modules/notification-system';
 import {
   createDefaultAgency,
   createDefaultRoute,
@@ -22,7 +22,6 @@ interface PatchManagerLike {
 export class InlineEntityCreator {
   constructor(
     private database: GTFSDatabase,
-    private notificationSystem: NotificationSystem,
     private onEntityCreated: () => void,
     private patchManager?: PatchManagerLike
   ) {}
@@ -32,16 +31,15 @@ export class InlineEntityCreator {
    */
   private validateId(id: string, entityType: string): boolean {
     if (!id || id.trim() === '') {
-      this.notificationSystem.show(`${entityType} ID cannot be empty`, 'error');
+      notify.error(`${entityType} ID cannot be empty`);
       return false;
     }
 
     // Basic validation - could be extended
     const trimmedId = id.trim();
     if (trimmedId !== id) {
-      this.notificationSystem.show(
-        `${entityType} ID has leading/trailing spaces - they will be removed`,
-        'warning'
+      notify.warning(
+        `${entityType} ID has leading/trailing spaces - they will be removed`
       );
     }
 
@@ -62,10 +60,7 @@ export class InlineEntityCreator {
       // Check if agency already exists
       const existing = await this.database.getRow('agency', trimmedId);
       if (existing) {
-        this.notificationSystem.show(
-          `Agency "${trimmedId}" already exists`,
-          'error'
-        );
+        notify.error(`Agency "${trimmedId}" already exists`);
         return false;
       }
 
@@ -78,14 +73,12 @@ export class InlineEntityCreator {
         newAgency as unknown as Record<string, unknown>
       );
 
-      this.notificationSystem.show(`Agency "${trimmedId}" created`, 'success');
       this.onEntityCreated();
       return true;
     } catch (error) {
       console.error('Error creating agency:', error);
-      this.notificationSystem.show(
-        `Failed to create agency: ${error instanceof Error ? error.message : 'Unknown error'}`,
-        'error'
+      notify.error(
+        `Failed to create agency: ${error instanceof Error ? error.message : 'Unknown error'}`
       );
       return false;
     }
@@ -105,10 +98,7 @@ export class InlineEntityCreator {
       // Check if service already exists
       const existing = await this.database.getRow('calendar', trimmedId);
       if (existing) {
-        this.notificationSystem.show(
-          `Service "${trimmedId}" already exists`,
-          'error'
-        );
+        notify.error(`Service "${trimmedId}" already exists`);
         return false;
       }
 
@@ -121,14 +111,12 @@ export class InlineEntityCreator {
         newService as unknown as Record<string, unknown>
       );
 
-      this.notificationSystem.show(`Service "${trimmedId}" created`, 'success');
       this.onEntityCreated();
       return true;
     } catch (error) {
       console.error('Error creating service:', error);
-      this.notificationSystem.show(
-        `Failed to create service: ${error instanceof Error ? error.message : 'Unknown error'}`,
-        'error'
+      notify.error(
+        `Failed to create service: ${error instanceof Error ? error.message : 'Unknown error'}`
       );
       return false;
     }
@@ -148,10 +136,7 @@ export class InlineEntityCreator {
       // Check if route already exists
       const existing = await this.database.getRow('routes', trimmedId);
       if (existing) {
-        this.notificationSystem.show(
-          `Route "${trimmedId}" already exists`,
-          'error'
-        );
+        notify.error(`Route "${trimmedId}" already exists`);
         return false;
       }
 
@@ -173,14 +158,12 @@ export class InlineEntityCreator {
         newRoute as unknown as Record<string, unknown>
       );
 
-      this.notificationSystem.show(`Route "${trimmedId}" created`, 'success');
       this.onEntityCreated();
       return true;
     } catch (error) {
       console.error('Error creating route:', error);
-      this.notificationSystem.show(
-        `Failed to create route: ${error instanceof Error ? error.message : 'Unknown error'}`,
-        'error'
+      notify.error(
+        `Failed to create route: ${error instanceof Error ? error.message : 'Unknown error'}`
       );
       return false;
     }
