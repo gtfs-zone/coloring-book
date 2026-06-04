@@ -263,10 +263,14 @@ export class NotificationSystem {
   }
 
   /**
-   * Lightly format a notification message for readability:
+   * Lightly format a notification message for readability. Uses typography
+   * tiers (weight / monospace / opacity) rather than hue, so it stays legible
+   * on any colored alert background and across themes:
    * - `"name/id"` (quoted entity token from humanLabel) → a monospace chip so
    *   long ids are visually distinct from prose and wrap anywhere (#135).
-   * - `(field, field)` (changed-field summary) → muted text.
+   * - `(field, field)` (changed-field summary) → muted monospace so GTFS keys
+   *   read as keys, not prose.
+   * - `created` / `updated` / `deleted` (change verbs) → bold, for quick scan.
    * Everything else is plain escaped text. Purely presentational — the
    * underlying wording stays identical to the Changes panel / undo-redo labels.
    */
@@ -279,9 +283,12 @@ export class NotificationSystem {
           return `<code class="px-1 rounded bg-current/15 font-mono text-[0.85em] [overflow-wrap:anywhere]">${inner}</code>`;
         }
         if (part.length >= 2 && part.startsWith('(') && part.endsWith(')')) {
-          return `<span class="opacity-70">${this.escapeHtml(part)}</span>`;
+          return `<span class="font-mono text-[0.85em] opacity-70 [overflow-wrap:anywhere]">${this.escapeHtml(part)}</span>`;
         }
-        return this.escapeHtml(part);
+        return this.escapeHtml(part).replace(
+          /\b(created|updated|deleted)\b/g,
+          '<strong class="font-semibold">$1</strong>'
+        );
       })
       .join('');
   }
