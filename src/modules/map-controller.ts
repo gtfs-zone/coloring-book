@@ -12,14 +12,7 @@ import { GTFSParser } from './gtfs-parser.js';
 import { PatchManager } from './patch-manager.js';
 import { hasValidCoords } from '../utils/stop-coords.js';
 import { CONFIG } from '../config.js';
-import {
-  Stops,
-  StopTimes,
-  Trips,
-  Routes,
-  Pathways,
-  Agency,
-} from '../types/gtfs.js';
+import { Stops, StopTimes, Routes, Pathways, Agency } from '../types/gtfs.js';
 import {
   agencyRouteFilter,
   normalizeAgencyId,
@@ -859,22 +852,11 @@ export class MapController {
    * Smoothly fly to show a specific route
    */
   private flyToRoute(route_id: string): void {
-    const trips =
-      this.gtfsParser!.getFileDataSyncTyped<Trips>('trips.txt') || [];
-    const stopTimes =
-      this.gtfsParser!.getFileDataSyncTyped<StopTimes>('stop_times.txt') || [];
     const stops =
       this.gtfsParser!.getFileDataSyncTyped<Stops>('stops.txt') || [];
 
     // Find all stops for this route
-    const routeStops = new Set<string>();
-    const routeTrips = trips.filter((trip) => trip.route_id === route_id);
-    routeTrips.forEach((trip) => {
-      const tripStopTimes = stopTimes.filter(
-        (st) => st.trip_id === trip.trip_id
-      );
-      tripStopTimes.forEach((st) => routeStops.add(st.stop_id));
-    });
+    const routeStops = new Set(this.gtfsParser!.getStopIdsForRoute(route_id));
 
     // Get coordinates for all stops
     const coordinates: [number, number][] = [];
@@ -907,24 +889,15 @@ export class MapController {
    * Fit map to show specific routes
    */
   public fitToRoutes(route_ids: string[]): void {
-    const trips =
-      this.gtfsParser!.getFileDataSyncTyped<Trips>('trips.txt') || [];
-    const stopTimes =
-      this.gtfsParser!.getFileDataSyncTyped<StopTimes>('stop_times.txt') || [];
     const stops =
       this.gtfsParser!.getFileDataSyncTyped<Stops>('stops.txt') || [];
 
     // Find all stops for these routes
     const allStops = new Set<string>();
-
     route_ids.forEach((route_id) => {
-      const routeTrips = trips.filter((trip) => trip.route_id === route_id);
-      routeTrips.forEach((trip) => {
-        const tripStopTimes = stopTimes.filter(
-          (st) => st.trip_id === trip.trip_id
-        );
-        tripStopTimes.forEach((st) => allStops.add(st.stop_id));
-      });
+      for (const stop_id of this.gtfsParser!.getStopIdsForRoute(route_id)) {
+        allStops.add(stop_id);
+      }
     });
 
     // Get coordinates for all stops
