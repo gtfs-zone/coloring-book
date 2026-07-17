@@ -9,6 +9,7 @@ import {
 } from '../types/gtfs-entities.js';
 import type { GTFSParser } from './gtfs-parser.js';
 import type { PatchOp } from '../types/patch.js';
+import { CONFIG } from '../config.js';
 
 export interface RouteFeature extends GeoJSON.Feature {
   id: string;
@@ -41,10 +42,6 @@ const CASING_WIDTH_STOPS: Array<[number, number]> = [
   [13, 5.5],
   [16, 10.5],
 ];
-const SPOTLIGHT_ROUTE_DIM = 0.2;
-const SPOTLIGHT_LINE_BUMP = 1.35;
-const SPOTLIGHT_CASING_BUMP = 1.3;
-
 /**
  * Build a zoom-interpolated line-width expression. When `match` is given,
  * matched routes get their width multiplied by `bump` (the spotlight bump).
@@ -526,7 +523,7 @@ export class RouteRenderer {
 
   /**
    * Spotlight the given routes (or reset with null): non-matching routes dim
-   * to SPOTLIGHT_ROUTE_DIM opacity, matching routes get a width bump.
+   * to CONFIG.SPOTLIGHT_ROUTE_DIM opacity, matching routes get a width bump.
    */
   private applySpotlight(route_ids: string[] | null): void {
     if (!this.map.getLayer('routes-background')) {
@@ -545,7 +542,7 @@ export class RouteRenderer {
           'case',
           match,
           1,
-          SPOTLIGHT_ROUTE_DIM,
+          CONFIG.SPOTLIGHT_ROUTE_DIM,
         ] as unknown as ExpressionSpecification)
       : 1;
     this.map.setPaintProperty('routes-background', 'line-opacity', opacity);
@@ -553,12 +550,12 @@ export class RouteRenderer {
     this.map.setPaintProperty(
       'routes-background',
       'line-width',
-      zoomWidth(ROUTE_WIDTH_STOPS, match, SPOTLIGHT_LINE_BUMP)
+      zoomWidth(ROUTE_WIDTH_STOPS, match, CONFIG.SPOTLIGHT_LINE_BUMP)
     );
     this.map.setPaintProperty(
       'routes-casing',
       'line-width',
-      zoomWidth(CASING_WIDTH_STOPS, match, SPOTLIGHT_CASING_BUMP)
+      zoomWidth(CASING_WIDTH_STOPS, match, CONFIG.SPOTLIGHT_CASING_BUMP)
     );
   }
 

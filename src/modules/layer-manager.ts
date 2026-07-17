@@ -2,6 +2,7 @@ import { Map as MapLibreMap, GeoJSONSource } from 'maplibre-gl';
 import type { FilterSpecification, ExpressionSpecification } from 'maplibre-gl';
 import { Stops, StopTimes, Pathways } from '../types/gtfs-entities.js';
 import type { GTFSParser } from './gtfs-parser.js';
+import { CONFIG } from '../config.js';
 import {
   buildStopCoordResolver,
   hasValidCoords,
@@ -269,15 +270,26 @@ export class LayerManager {
     ['boolean', ['feature-state', 'onRoute'], false],
   ] as unknown as ExpressionSpecification;
 
-  // Opacity of non-route stops while a route spotlight is active
-  private static readonly SPOTLIGHT_STOP_DIM = 0.15;
+  /**
+   * Opacity expression that keeps special stops at full opacity and dims
+   * everything else to `dim`. Shared by `stopFadeOpacity`'s full-zoom branch
+   * and `setRouteStops`'s station-dot opacity so the two stay in lockstep.
+   */
+  private specialOrDim(dim: number): ExpressionSpecification {
+    return [
+      'case',
+      LayerManager.SPECIAL_STOP,
+      1,
+      dim,
+    ] as unknown as ExpressionSpecification;
+  }
 
   /**
    * Opacity expression for the stops layers. Plain stops (location_type 0)
-   * fade out below ~z12.5 so zoomed-out views show the network instead of a
-   * pile of dots; stations, child nodes, and special stops always render.
-   * When `dim` is set (route spotlight active), all non-special stops render
-   * at `dim` opacity at every zoom.
+   * fade out below ~CONFIG.STOP_FADE_ZOOM_MAX so zoomed-out views show the
+   * network instead of a pile of dots; stations, child nodes, and special
+   * stops always render. When `dim` is set (route spotlight active), all
+   * non-special stops render at `dim` opacity at every zoom.
    */
   private stopFadeOpacity(dim: number | null): ExpressionSpecification {
     const lowZoom = [
@@ -288,15 +300,14 @@ export class LayerManager {
       0,
       dim ?? 1,
     ];
-    const fullZoom =
-      dim === null ? 1 : ['case', LayerManager.SPECIAL_STOP, 1, dim];
+    const fullZoom = dim === null ? 1 : this.specialOrDim(dim);
     return [
       'interpolate',
       ['linear'],
       ['zoom'],
-      10.5,
+      CONFIG.STOP_FADE_ZOOM_MIN,
       lowZoom,
-      12.5,
+      CONFIG.STOP_FADE_ZOOM_MAX,
       fullZoom,
     ] as unknown as ExpressionSpecification;
   }
@@ -474,7 +485,7 @@ export class LayerManager {
           'interpolate',
           ['linear'],
           ['zoom'],
-          10.5,
+          CONFIG.STOP_FADE_ZOOM_MIN,
           [
             'case',
             LayerManager.SPECIAL_STOP,
@@ -483,7 +494,7 @@ export class LayerManager {
             0,
             r,
           ],
-          12.5,
+          CONFIG.STOP_FADE_ZOOM_MAX,
           r,
           // Stay larger than the biggest visual circle (focused station at
           // high zoom) so the clickarea is the sole hit-test layer.
@@ -720,7 +731,7 @@ export class LayerManager {
     }
     this.routeStopIds = this.map.getSource('stops') ? stop_ids : [];
 
-    const dim = stop_ids.length > 0 ? LayerManager.SPOTLIGHT_STOP_DIM : null;
+    const dim = stop_ids.length > 0 ? CONFIG.SPOTLIGHT_STOP_DIM : null;
     if (this.map.getLayer('stops-background')) {
       const fade = this.stopFadeOpacity(dim);
       this.map.setPaintProperty('stops-background', 'circle-opacity', fade);
@@ -734,14 +745,7 @@ export class LayerManager {
       this.map.setPaintProperty(
         'stops-station-dot',
         'circle-opacity',
-        dim === null
-          ? 1
-          : ([
-              'case',
-              LayerManager.SPECIAL_STOP,
-              1,
-              dim,
-            ] as unknown as ExpressionSpecification)
+        dim === null ? 1 : this.specialOrDim(dim)
       );
     }
   }
