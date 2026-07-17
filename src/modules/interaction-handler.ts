@@ -121,28 +121,26 @@ export class InteractionHandler {
     // cursor on highlighted stop. Only the clickarea is used for hit-testing:
     // its radius collapses to 0 for stops hidden by the low-zoom fade, so
     // invisible stops don't react to hover or clicks.
-    ['stops-clickarea'].forEach((layerId) => {
-      this.map.on('mouseenter', layerId, (e) => {
-        const features = this.map.queryRenderedFeatures(e.point, {
-          layers: [layerId],
-        });
-        const stop_id = features[0]?.properties?.stop_id;
-        if (
-          this.currentMode === MapMode.NAVIGATE &&
-          stop_id === this.highlightedStopId &&
-          !this.isDragging
-        ) {
-          this.map.getCanvas().style.cursor = 'grab';
-        } else if (this.currentMode === MapMode.NAVIGATE) {
-          this.map.getCanvas().style.cursor = 'pointer';
-        }
+    this.map.on('mouseenter', 'stops-clickarea', (e) => {
+      const features = this.map.queryRenderedFeatures(e.point, {
+        layers: ['stops-clickarea'],
       });
+      const stop_id = features[0]?.properties?.stop_id;
+      if (
+        this.currentMode === MapMode.NAVIGATE &&
+        stop_id === this.highlightedStopId &&
+        !this.isDragging
+      ) {
+        this.map.getCanvas().style.cursor = 'grab';
+      } else if (this.currentMode === MapMode.NAVIGATE) {
+        this.map.getCanvas().style.cursor = 'pointer';
+      }
+    });
 
-      this.map.on('mouseleave', layerId, () => {
-        if (!this.isDragging) {
-          this.updateCursor(this.currentMode);
-        }
-      });
+    this.map.on('mouseleave', 'stops-clickarea', () => {
+      if (!this.isDragging) {
+        this.updateCursor(this.currentMode);
+      }
     });
   }
 

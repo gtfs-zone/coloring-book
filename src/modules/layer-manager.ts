@@ -432,6 +432,12 @@ export class LayerManager {
       return;
     }
 
+    const focused: ExpressionSpecification = [
+      'boolean',
+      ['feature-state', 'focused'],
+      false,
+    ];
+
     this.map.addLayer({
       id: 'stops-station-dot',
       type: 'circle',
@@ -447,11 +453,11 @@ export class LayerManager {
           ['linear'],
           ['zoom'],
           11,
-          ['case', ['boolean', ['feature-state', 'focused'], false], 2.2, 1.3],
+          ['case', focused, 2.2, 1.3],
           16,
-          ['case', ['boolean', ['feature-state', 'focused'], false], 4.5, 2.6],
+          ['case', focused, 4.5, 2.6],
           19,
-          ['case', ['boolean', ['feature-state', 'focused'], false], 6, 3.8],
+          ['case', focused, 6, 3.8],
         ],
         'circle-color': '#111111',
         'circle-opacity': 1,
@@ -544,14 +550,12 @@ export class LayerManager {
   private addStopsHoverBehavior(): void {
     // Only the clickarea layer: its radius collapses for hidden stops, so
     // hovering an invisible stop doesn't show a pointer cursor.
-    ['stops-clickarea'].forEach((layerId) => {
-      this.map.on('mouseenter', layerId, () => {
-        this.map.getCanvas().style.cursor = 'pointer';
-      });
+    this.map.on('mouseenter', 'stops-clickarea', () => {
+      this.map.getCanvas().style.cursor = 'pointer';
+    });
 
-      this.map.on('mouseleave', layerId, () => {
-        this.map.getCanvas().style.cursor = '';
-      });
+    this.map.on('mouseleave', 'stops-clickarea', () => {
+      this.map.getCanvas().style.cursor = '';
     });
   }
 

@@ -199,4 +199,10 @@ const. Extract the same const (or reuse a shared one).
    moved to `CONFIG` (used by both layer-manager.ts and route-renderer.ts);
    the inline spotlight-dim expression in `setRouteStops` now reuses a new
    `specialOrDim()` helper shared with `stopFadeOpacity`.
-4. [ ] Findings #7–#8 (mechanical cleanups).
+4. [x] Findings #7–#8 (mechanical cleanups). Done: the single-element
+   `['stops-clickarea'].forEach(...)` wrappers in interaction-handler.ts
+   (`setupEventListeners`) and layer-manager.ts (`addStopsHoverBehavior`) are
+   now direct `this.map.on(event, 'stops-clickarea', ...)` calls; the
+   station-dot layer's `addStationDotLayer` now extracts the `focused`
+   feature-state expression into a local const, matching
+   `addStopsBackgroundLayer`.
