@@ -1,3 +1,23 @@
+## v0.21.0 (2026-07-17)
+
+### Feat
+
+- **map**: case route lines and add spotlight selection styling
+- **notifications**: unify change wording via humanLabel
+
+### Fix
+
+- **map**: make MapController the sole owner of route spotlight state
+- **notifications**: wrap long ids and highlight entity tokens
+
+### Refactor
+
+- **map**: drop single-element forEach wrappers, dedupe focused expr
+- **map**: reuse indexed getStopIdsForRoute in flyToRoute/fitToRoutes
+- **map**: centralize spotlight/fade constants in CONFIG
+- **notifications**: patch spot is sole emitter for entity creates
+- **notifications**: collapse to one notify API and fix toast overflow
+
 ## v0.20.0 (2026-05-26)
 
 ### Feat
