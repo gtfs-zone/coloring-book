@@ -345,21 +345,13 @@ export class MapController {
           this.routeRenderer.clearRoutes();
 
           // Re-render routes
-          await this.routeRenderer.renderRoutes({
-            lineWidth: 3,
-            opacity: 0.8,
-          });
+          await this.routeRenderer.renderRoutes();
 
-          // Re-add stops layer
+          // Re-add stops layer (styling comes from LayerManager defaults)
           this.layerManager.addStopsLayer({
             showBackground: true,
             showClickArea: true,
             enableHover: true,
-            backgroundColor: '#ffffff',
-            strokeColor: '#000000',
-            strokeWidth: 2,
-            radius: 4,
-            clickAreaRadius: 15,
           });
 
           // Restore highlights and expanded station/pathways if any.
@@ -370,6 +362,7 @@ export class MapController {
           this.applyFocusedObject(obj);
           if (obj.type === 'route') {
             this.routeRenderer.highlightRoute(obj.id);
+            this.layerManager.setRouteStops(this.getStopIdsForRoute(obj.id));
           } else if (obj.type === 'trip') {
             this.layerManager.highlightTrip(obj.id);
           }
@@ -411,29 +404,24 @@ export class MapController {
     // Ensure RouteRenderer is initialized (this waits for map style to load)
     await this.routeRenderer!.ensureInitialized();
 
+    // Reset any spotlight dimming left over from a selection in the old feed
+    this.routeRenderer!.clearHighlight();
+
     // Clear existing layers
     this.layerManager!.clearAllLayers();
     this.routeRenderer!.clearRoutes();
 
     // Wait for route rendering to complete
-    await this.routeRenderer!.renderRoutes({
-      lineWidth: 3,
-      opacity: 0.8,
-    });
+    await this.routeRenderer!.renderRoutes();
 
     // Invalidate cached coord resolver so it rebuilds with the current feed's stops
     this.layerManager!.invalidateCoordResolver();
 
-    // Add stops using LayerManager
+    // Add stops using LayerManager (styling comes from LayerManager defaults)
     this.layerManager!.addStopsLayer({
       showBackground: true,
       showClickArea: true,
       enableHover: true,
-      backgroundColor: '#ffffff',
-      strokeColor: '#000000',
-      strokeWidth: 2,
-      radius: 4,
-      clickAreaRadius: 15,
     });
 
     // Fit map to show all data
@@ -652,7 +640,28 @@ export class MapController {
   // ========================================
 
   /**
-   * Highlight specific route
+   * All stop_ids served by a route (via its trips' stop_times).
+   */
+  private getStopIdsForRoute(route_id: string): string[] {
+    const trips =
+      this.gtfsParser?.getFileDataSyncTyped<Trips>('trips.txt') || [];
+    const tripIds = new Set(
+      trips.filter((t) => t.route_id === route_id).map((t) => t.trip_id)
+    );
+    const stopTimes =
+      this.gtfsParser?.getFileDataSyncTyped<StopTimes>('stop_times.txt') || [];
+    const stop_ids = new Set<string>();
+    for (const st of stopTimes) {
+      if (tripIds.has(st.trip_id)) {
+        stop_ids.add(st.stop_id);
+      }
+    }
+    return [...stop_ids];
+  }
+
+  /**
+   * Highlight specific route: spotlight the route line and reveal all of its
+   * stops (visible and clickable at any zoom while selected).
    */
   public highlightRoute(route_id: string): void {
     this.interactionHandler?.setHighlightedStop(null);
@@ -662,6 +671,7 @@ export class MapController {
     this.applyFocusedObject({ type: 'route', id: route_id });
 
     this.routeRenderer?.highlightRoute(route_id);
+    this.layerManager?.setRouteStops(this.getStopIdsForRoute(route_id));
 
     // Smoothly fly to route bounds
     this.flyToRoute(route_id);
