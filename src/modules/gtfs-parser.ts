@@ -48,6 +48,8 @@ export class GTFSParser {
 
   // In-memory index for stop_times stop_id lookups (used by synchronous getRoutesForStop)
   private stopTimesByStopId = new Map<string, StopTimes[]>();
+  // In-memory index for stop_times trip_id lookups (used by synchronous getStopIdsForRoute)
+  private stopTimesByTripId = new Map<string, StopTimes[]>();
   // Dirty-blob tracking for deferred persistence
   private blobDirty = new Set<string>();
   private blobPersistTimer: ReturnType<typeof setTimeout> | null = null;
@@ -375,7 +377,8 @@ export class GTFSParser {
 
     if (tableName === 'stop_times') {
       this.stopTimesByStopId.clear();
-      fieldMaps.set('trip_id', new Map());
+      this.stopTimesByTripId.clear();
+      fieldMaps.set('trip_id', this.stopTimesByTripId);
       fieldMaps.set('stop_id', this.stopTimesByStopId);
     } else if (tableName === 'trips') {
       fieldMaps.set('route_id', new Map());
@@ -472,6 +475,24 @@ export class GTFSParser {
     );
     return this.getFileDataSyncTyped(GTFS_TABLES.STOP_TIMES).filter(
       (st) => st.stop_id === stop_id
+    );
+  }
+
+  /**
+   * Fast stop_times lookup by trip_id via in-memory index (used by synchronous getStopIdsForRoute).
+   * Returns shallow copies of the stored rows (copy-on-read invariant).
+   */
+  getStopTimesByTripId(trip_id: string): StopTimes[] {
+    const indexed = this.stopTimesByTripId.get(trip_id);
+    if (indexed) {
+      return indexed.map((r) => ({ ...r }));
+    }
+
+    console.warn(
+      '[GTFSParser] getStopTimesByTripId: index miss, falling back to linear scan'
+    );
+    return this.getFileDataSyncTyped(GTFS_TABLES.STOP_TIMES).filter(
+      (st) => st.trip_id === trip_id
     );
   }
 
@@ -1075,6 +1096,25 @@ export class GTFSParser {
     ];
 
     return routes.filter((route) => route_ids.includes(route.route_id));
+  }
+
+  /**
+   * All stop_ids served by a route (via its trips' stop_times). Inverse of
+   * getRoutesForStop; used for map spotlight highlighting.
+   */
+  getStopIdsForRoute(route_id: string): string[] {
+    const trips = this.getFileDataSyncTyped(GTFS_TABLES.TRIPS);
+    const tripIds = trips
+      .filter((trip) => String(trip.route_id ?? '') === route_id)
+      .map((trip) => trip.trip_id);
+
+    const stop_ids = new Set<string>();
+    for (const trip_id of tripIds) {
+      for (const st of this.getStopTimesByTripId(trip_id)) {
+        stop_ids.add(st.stop_id);
+      }
+    }
+    return [...stop_ids];
   }
 
   getWheelchairText(wheelchairBoarding: string) {

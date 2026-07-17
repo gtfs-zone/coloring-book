@@ -1,7 +1,8 @@
 import { Map as MapLibreMap, GeoJSONSource } from 'maplibre-gl';
-import type { FilterSpecification } from 'maplibre-gl';
+import type { FilterSpecification, ExpressionSpecification } from 'maplibre-gl';
 import { Stops, StopTimes, Pathways } from '../types/gtfs-entities.js';
 import type { GTFSParser } from './gtfs-parser.js';
+import { CONFIG } from '../config.js';
 import {
   buildStopCoordResolver,
   hasValidCoords,
@@ -42,6 +43,8 @@ export class LayerManager {
   private activeStopsFilter: FilterSpecification = DEFAULT_STOPS_FILTER;
   private focusedStopId: string | null = null;
   private focusedPathwayId: string | null = null;
+  // Stops of the currently spotlighted route (onRoute feature-state holders)
+  private routeStopIds: string[] = [];
 
   private _resolverDirty = true;
   private _cachedResolver:
@@ -61,9 +64,9 @@ export class LayerManager {
     showClickArea: true,
     enableHover: true,
     backgroundColor: '#ffffff',
-    strokeColor: '#000000',
+    strokeColor: '#37474f',
     strokeWidth: 2,
-    radius: 4,
+    radius: 5.5,
     clickAreaRadius: 15,
   };
 
@@ -258,13 +261,108 @@ export class LayerManager {
   }
 
   /**
-   * Add background stops layer
+   * A stop is "special" when it must stay visible and clickable at any zoom:
+   * either focused (clicked) or on the currently spotlighted route.
+   */
+  private static readonly SPECIAL_STOP: ExpressionSpecification = [
+    'any',
+    ['boolean', ['feature-state', 'focused'], false],
+    ['boolean', ['feature-state', 'onRoute'], false],
+  ] as unknown as ExpressionSpecification;
+
+  /**
+   * Opacity expression that keeps special stops at full opacity and dims
+   * everything else to `dim`. Shared by `stopFadeOpacity`'s full-zoom branch
+   * and `setRouteStops`'s station-dot opacity so the two stay in lockstep.
+   */
+  private specialOrDim(dim: number): ExpressionSpecification {
+    return [
+      'case',
+      LayerManager.SPECIAL_STOP,
+      1,
+      dim,
+    ] as unknown as ExpressionSpecification;
+  }
+
+  /**
+   * Opacity expression for the stops layers. Plain stops (location_type 0)
+   * fade out below ~CONFIG.STOP_FADE_ZOOM_MAX so zoomed-out views show the
+   * network instead of a pile of dots; stations, child nodes, and special
+   * stops always render. When `dim` is set (route spotlight active), all
+   * non-special stops render at `dim` opacity at every zoom.
+   */
+  private stopFadeOpacity(dim: number | null): ExpressionSpecification {
+    const lowZoom = [
+      'case',
+      LayerManager.SPECIAL_STOP,
+      1,
+      ['==', ['get', 'location_type'], 0],
+      0,
+      dim ?? 1,
+    ];
+    const fullZoom = dim === null ? 1 : this.specialOrDim(dim);
+    return [
+      'interpolate',
+      ['linear'],
+      ['zoom'],
+      CONFIG.STOP_FADE_ZOOM_MIN,
+      lowZoom,
+      CONFIG.STOP_FADE_ZOOM_MAX,
+      fullZoom,
+    ] as unknown as ExpressionSpecification;
+  }
+
+  /**
+   * Per-location-type circle radius wrapped in the focused feature-state
+   * case, evaluated at one zoom stop. `scale` is the multiplier relative to
+   * the reference zoom (z16); focused stops render ~1.7x larger. Stations are
+   * the largest so they read as hubs; child node types sit in between.
+   */
+  private stopRadiusAt(
+    plainRadius: number,
+    scale: number
+  ): ExpressionSpecification {
+    const byType = (mult: number) => [
+      'case',
+      ['==', ['get', 'location_type'], 1],
+      8 * scale * mult,
+      ['==', ['get', 'location_type'], 2],
+      4.5 * scale * mult,
+      ['==', ['get', 'location_type'], 3],
+      4.5 * scale * mult,
+      ['==', ['get', 'location_type'], 4],
+      5 * scale * mult,
+      plainRadius * scale * mult,
+    ];
+    return [
+      'case',
+      ['boolean', ['feature-state', 'focused'], false],
+      byType(1.7),
+      byType(1),
+    ] as unknown as ExpressionSpecification;
+  }
+
+  /**
+   * Add background stops layer.
+   *
+   * Cased transit look: circles scale with zoom (top-level zoom interpolate —
+   * MapLibre requires zoom as input to a top-level interpolate/step only),
+   * plain stops fade out below ~z12.5 so zoomed-out views show the network
+   * instead of a pile of dots, and stations stay visible at all zooms.
+   * Focused stops grow and get an accent-colored ring.
    */
   private addStopsBackgroundLayer(options: StopLayerOptions): void {
     // Check if layer already exists
     if (this.map.getLayer('stops-background')) {
       return;
     }
+
+    const focused: ExpressionSpecification = [
+      'boolean',
+      ['feature-state', 'focused'],
+      false,
+    ];
+    const fadeOpacity = this.stopFadeOpacity(null);
 
     this.map.addLayer({
       id: 'stops-background',
@@ -273,32 +371,17 @@ export class LayerManager {
       filter: this.activeStopsFilter,
       paint: {
         'circle-radius': [
-          'case',
-          ['boolean', ['feature-state', 'focused'], false],
-          [
-            'case',
-            ['==', ['get', 'location_type'], 1],
-            12,
-            ['==', ['get', 'location_type'], 2],
-            10,
-            ['==', ['get', 'location_type'], 3],
-            10,
-            ['==', ['get', 'location_type'], 4],
-            13,
-            options.radius * 2,
-          ],
-          [
-            'case',
-            ['==', ['get', 'location_type'], 1],
-            6,
-            ['==', ['get', 'location_type'], 2],
-            5,
-            ['==', ['get', 'location_type'], 3],
-            5,
-            ['==', ['get', 'location_type'], 4],
-            7,
-            options.radius,
-          ],
+          'interpolate',
+          ['linear'],
+          ['zoom'],
+          11,
+          this.stopRadiusAt(options.radius, 0.45),
+          13.5,
+          this.stopRadiusAt(options.radius, 0.7),
+          16,
+          this.stopRadiusAt(options.radius, 1),
+          19,
+          this.stopRadiusAt(options.radius, 1.5),
         ],
         'circle-color': [
           'case',
@@ -314,20 +397,27 @@ export class LayerManager {
         ],
         'circle-stroke-color': [
           'case',
+          focused,
+          '#e74c3c', // Focused: accent ring
           ['==', ['get', 'has_own_coords'], false],
           '#9ca3af', // No own lat/lon: grey stroke
           ['==', ['get', 'location_type'], 1],
-          '#000000', // Station: black stroke
-          options.strokeColor,
+          '#111111', // Station: near-black stroke
+          options.strokeColor, // Plain stops: dark slate casing
         ],
         'circle-stroke-width': [
-          'case',
-          ['boolean', ['feature-state', 'focused'], false],
-          5,
-          options.strokeWidth,
+          'interpolate',
+          ['linear'],
+          ['zoom'],
+          11,
+          ['case', focused, 2.5, 1.2],
+          16,
+          ['case', focused, 3.5, options.strokeWidth],
+          19,
+          ['case', focused, 4.5, options.strokeWidth + 0.8],
         ],
-        'circle-opacity': 1,
-        'circle-stroke-opacity': 1,
+        'circle-opacity': fadeOpacity,
+        'circle-stroke-opacity': fadeOpacity,
       },
     });
   }
@@ -342,6 +432,12 @@ export class LayerManager {
       return;
     }
 
+    const focused: ExpressionSpecification = [
+      'boolean',
+      ['feature-state', 'focused'],
+      false,
+    ];
+
     this.map.addLayer({
       id: 'stops-station-dot',
       type: 'circle',
@@ -353,12 +449,17 @@ export class LayerManager {
       ] as unknown as FilterSpecification,
       paint: {
         'circle-radius': [
-          'case',
-          ['boolean', ['feature-state', 'focused'], false],
-          5,
-          2.5,
+          'interpolate',
+          ['linear'],
+          ['zoom'],
+          11,
+          ['case', focused, 2.2, 1.3],
+          16,
+          ['case', focused, 4.5, 2.6],
+          19,
+          ['case', focused, 6, 3.8],
         ],
-        'circle-color': '#000000',
+        'circle-color': '#111111',
         'circle-opacity': 1,
         'circle-stroke-width': 0,
       },
@@ -366,7 +467,12 @@ export class LayerManager {
   }
 
   /**
-   * Add invisible click areas for stops
+   * Add invisible click areas for stops.
+   *
+   * The hit radius mirrors the visible layer's fade: it collapses to 0 where
+   * plain stops are fully faded out, so invisible stops are simply not
+   * returned by queryRenderedFeatures — no JS-side visibility predicate to
+   * keep in sync. Special (focused / on-route) stops keep a full hit area.
    */
   private addStopsClickAreaLayer(options: StopLayerOptions): void {
     // Check if layer already exists
@@ -374,13 +480,33 @@ export class LayerManager {
       return;
     }
 
+    const r = options.clickAreaRadius;
     this.map.addLayer({
       id: 'stops-clickarea',
       type: 'circle',
       source: 'stops',
       filter: this.activeStopsFilter,
       paint: {
-        'circle-radius': options.clickAreaRadius,
+        'circle-radius': [
+          'interpolate',
+          ['linear'],
+          ['zoom'],
+          CONFIG.STOP_FADE_ZOOM_MIN,
+          [
+            'case',
+            LayerManager.SPECIAL_STOP,
+            r,
+            ['==', ['get', 'location_type'], 0],
+            0,
+            r,
+          ],
+          CONFIG.STOP_FADE_ZOOM_MAX,
+          r,
+          // Stay larger than the biggest visual circle (focused station at
+          // high zoom) so the clickarea is the sole hit-test layer.
+          19,
+          r * 1.6,
+        ] as unknown as ExpressionSpecification,
         'circle-color': 'transparent',
         'circle-opacity': 0,
       },
@@ -422,14 +548,14 @@ export class LayerManager {
    * Add hover behavior for stops
    */
   private addStopsHoverBehavior(): void {
-    ['stops-background', 'stops-clickarea'].forEach((layerId) => {
-      this.map.on('mouseenter', layerId, () => {
-        this.map.getCanvas().style.cursor = 'pointer';
-      });
+    // Only the clickarea layer: its radius collapses for hidden stops, so
+    // hovering an invisible stop doesn't show a pointer cursor.
+    this.map.on('mouseenter', 'stops-clickarea', () => {
+      this.map.getCanvas().style.cursor = 'pointer';
+    });
 
-      this.map.on('mouseleave', layerId, () => {
-        this.map.getCanvas().style.cursor = '';
-      });
+    this.map.on('mouseleave', 'stops-clickarea', () => {
+      this.map.getCanvas().style.cursor = '';
     });
   }
 
@@ -591,10 +717,51 @@ export class LayerManager {
   }
 
   /**
+   * Spotlight the stops of a route: mark them with the onRoute feature-state
+   * (always visible + clickable at any zoom, see stopFadeOpacity /
+   * addStopsClickAreaLayer) and dim all other stops. Pass an empty array to
+   * clear the spotlight.
+   */
+  public setRouteStops(stop_ids: string[]): void {
+    console.log(`[LayerManager] Spotlighting ${stop_ids.length} route stops`);
+
+    if (this.map.getSource('stops')) {
+      for (const id of this.routeStopIds) {
+        this.map.setFeatureState({ source: 'stops', id }, { onRoute: false });
+      }
+      for (const id of stop_ids) {
+        this.map.setFeatureState({ source: 'stops', id }, { onRoute: true });
+      }
+    }
+    this.routeStopIds = this.map.getSource('stops') ? stop_ids : [];
+
+    const dim = stop_ids.length > 0 ? CONFIG.SPOTLIGHT_STOP_DIM : null;
+    if (this.map.getLayer('stops-background')) {
+      const fade = this.stopFadeOpacity(dim);
+      this.map.setPaintProperty('stops-background', 'circle-opacity', fade);
+      this.map.setPaintProperty(
+        'stops-background',
+        'circle-stroke-opacity',
+        fade
+      );
+    }
+    if (this.map.getLayer('stops-station-dot')) {
+      this.map.setPaintProperty(
+        'stops-station-dot',
+        'circle-opacity',
+        dim === null ? 1 : this.specialOrDim(dim)
+      );
+    }
+  }
+
+  /**
    * Clear all highlights
    */
   public clearHighlights(): void {
     this.setFocusedStop(null);
+    if (this.routeStopIds.length > 0) {
+      this.setRouteStops([]);
+    }
     const highlightLayers = ['trip-highlight', 'stops-highlight'];
 
     highlightLayers.forEach((layerId) => {

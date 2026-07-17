@@ -12,14 +12,7 @@ import { GTFSParser } from './gtfs-parser.js';
 import { PatchManager } from './patch-manager.js';
 import { hasValidCoords } from '../utils/stop-coords.js';
 import { CONFIG } from '../config.js';
-import {
-  Stops,
-  StopTimes,
-  Trips,
-  Routes,
-  Pathways,
-  Agency,
-} from '../types/gtfs.js';
+import { Stops, StopTimes, Routes, Pathways, Agency } from '../types/gtfs.js';
 import {
   agencyRouteFilter,
   normalizeAgencyId,
@@ -83,6 +76,8 @@ export class MapController {
   private resizeTimeout: NodeJS.Timeout | null = null;
   private basemapChangeHandlerSet = false;
   private focusedObject: FocusedObject = { type: 'none' };
+  // Sole owner of the route spotlight (line dimming + revealed stops). Null when cleared.
+  private spotlightRouteIds: string[] | null = null;
 
   private bottomPadding = 0;
 
@@ -345,21 +340,13 @@ export class MapController {
           this.routeRenderer.clearRoutes();
 
           // Re-render routes
-          await this.routeRenderer.renderRoutes({
-            lineWidth: 3,
-            opacity: 0.8,
-          });
+          await this.routeRenderer.renderRoutes();
 
-          // Re-add stops layer
+          // Re-add stops layer (styling comes from LayerManager defaults)
           this.layerManager.addStopsLayer({
             showBackground: true,
             showClickArea: true,
             enableHover: true,
-            backgroundColor: '#ffffff',
-            strokeColor: '#000000',
-            strokeWidth: 2,
-            radius: 4,
-            clickAreaRadius: 15,
           });
 
           // Restore highlights and expanded station/pathways if any.
@@ -368,9 +355,10 @@ export class MapController {
           const obj = this.focusedObject;
           this.focusedObject = { type: 'none' };
           this.applyFocusedObject(obj);
-          if (obj.type === 'route') {
-            this.routeRenderer.highlightRoute(obj.id);
-          } else if (obj.type === 'trip') {
+          // Re-apply whatever spotlight was active before the basemap swap,
+          // regardless of which focus type produced it.
+          this.applySpotlight(this.spotlightRouteIds);
+          if (obj.type === 'trip') {
             this.layerManager.highlightTrip(obj.id);
           }
 
@@ -406,34 +394,30 @@ export class MapController {
 
     // Reset focus state when feed changes
     this.focusedObject = { type: 'none' };
+    this.spotlightRouteIds = null;
     this.layerManager?.setStopsFilter(null);
 
     // Ensure RouteRenderer is initialized (this waits for map style to load)
     await this.routeRenderer!.ensureInitialized();
+
+    // Reset any spotlight dimming left over from a selection in the old feed
+    this.routeRenderer!.clearHighlight();
 
     // Clear existing layers
     this.layerManager!.clearAllLayers();
     this.routeRenderer!.clearRoutes();
 
     // Wait for route rendering to complete
-    await this.routeRenderer!.renderRoutes({
-      lineWidth: 3,
-      opacity: 0.8,
-    });
+    await this.routeRenderer!.renderRoutes();
 
     // Invalidate cached coord resolver so it rebuilds with the current feed's stops
     this.layerManager!.invalidateCoordResolver();
 
-    // Add stops using LayerManager
+    // Add stops using LayerManager (styling comes from LayerManager defaults)
     this.layerManager!.addStopsLayer({
       showBackground: true,
       showClickArea: true,
       enableHover: true,
-      backgroundColor: '#ffffff',
-      strokeColor: '#000000',
-      strokeWidth: 2,
-      radius: 4,
-      clickAreaRadius: 15,
     });
 
     // Fit map to show all data
@@ -652,16 +636,43 @@ export class MapController {
   // ========================================
 
   /**
-   * Highlight specific route
+   * Sole owner of the route spotlight: dims non-matching route lines and
+   * reveals the given routes' stops (visible/clickable at any zoom). Pass
+   * null to clear. Callers must not call routeRenderer.highlightRoute(s) or
+   * layerManager.setRouteStops directly — go through this method so the two
+   * halves never get applied separately.
+   */
+  private applySpotlight(route_ids: string[] | null): void {
+    this.spotlightRouteIds =
+      route_ids && route_ids.length > 0 ? route_ids : null;
+
+    if (this.spotlightRouteIds) {
+      this.routeRenderer?.highlightRoutes(this.spotlightRouteIds);
+      const stop_ids = new Set<string>();
+      for (const route_id of this.spotlightRouteIds) {
+        for (const stop_id of this.gtfsParser?.getStopIdsForRoute(route_id) ??
+          []) {
+          stop_ids.add(stop_id);
+        }
+      }
+      this.layerManager?.setRouteStops([...stop_ids]);
+    } else {
+      this.routeRenderer?.clearHighlight();
+      this.layerManager?.setRouteStops([]);
+    }
+  }
+
+  /**
+   * Highlight specific route: spotlight the route line and reveal all of its
+   * stops (visible and clickable at any zoom while selected).
    */
   public highlightRoute(route_id: string): void {
     this.interactionHandler?.setHighlightedStop(null);
     this.layerManager?.clearHighlights();
-    this.routeRenderer?.clearHighlight();
 
     this.applyFocusedObject({ type: 'route', id: route_id });
 
-    this.routeRenderer?.highlightRoute(route_id);
+    this.applySpotlight([route_id]);
 
     // Smoothly fly to route bounds
     this.flyToRoute(route_id);
@@ -675,18 +686,15 @@ export class MapController {
   public highlightStop(stop_id: string): void {
     this.interactionHandler?.setHighlightedStop(null);
     this.layerManager?.clearHighlights();
-    this.routeRenderer?.clearHighlight();
 
     this.applyFocusedObject({ type: 'stop', id: stop_id });
 
     this.interactionHandler?.setHighlightedStop(stop_id);
 
-    // Get routes that serve this stop and highlight them
+    // Get routes that serve this stop and spotlight them (line + their stops)
     const routesAtStop = this.gtfsParser?.getRoutesForStop?.(stop_id) || [];
-    if (routesAtStop.length > 0) {
-      const route_ids = routesAtStop.map((route) => route.route_id as string);
-      this.routeRenderer?.highlightRoutes(route_ids);
-    }
+    const route_ids = routesAtStop.map((route) => route.route_id as string);
+    this.applySpotlight(route_ids.length > 0 ? route_ids : null);
 
     // For child stops and stations, applyFocusedObject already flew to the
     // expanded station via flyToStation — skip the individual-stop flyTo so
@@ -726,7 +734,7 @@ export class MapController {
   public highlightPathway(pathway_id: string): void {
     this.interactionHandler?.setHighlightedStop(null);
     this.layerManager?.clearHighlights();
-    this.routeRenderer?.clearHighlight();
+    this.applySpotlight(null);
 
     this.applyFocusedObject({ type: 'pathway', id: pathway_id });
 
@@ -739,7 +747,7 @@ export class MapController {
   public highlightTrip(trip_id: string, color = '#e74c3c'): void {
     this.interactionHandler?.setHighlightedStop(null);
     this.layerManager?.clearHighlights();
-    this.routeRenderer?.clearHighlight();
+    this.applySpotlight(null);
 
     this.applyFocusedObject({ type: 'trip', id: trip_id });
 
@@ -836,7 +844,7 @@ export class MapController {
   public clearHighlights(): void {
     this.interactionHandler?.setHighlightedStop(null);
     this.layerManager?.clearHighlights();
-    this.routeRenderer?.clearHighlight();
+    this.applySpotlight(null);
     this.applyFocusedObject({ type: 'none' });
   }
 
@@ -844,22 +852,11 @@ export class MapController {
    * Smoothly fly to show a specific route
    */
   private flyToRoute(route_id: string): void {
-    const trips =
-      this.gtfsParser!.getFileDataSyncTyped<Trips>('trips.txt') || [];
-    const stopTimes =
-      this.gtfsParser!.getFileDataSyncTyped<StopTimes>('stop_times.txt') || [];
     const stops =
       this.gtfsParser!.getFileDataSyncTyped<Stops>('stops.txt') || [];
 
     // Find all stops for this route
-    const routeStops = new Set<string>();
-    const routeTrips = trips.filter((trip) => trip.route_id === route_id);
-    routeTrips.forEach((trip) => {
-      const tripStopTimes = stopTimes.filter(
-        (st) => st.trip_id === trip.trip_id
-      );
-      tripStopTimes.forEach((st) => routeStops.add(st.stop_id));
-    });
+    const routeStops = new Set(this.gtfsParser!.getStopIdsForRoute(route_id));
 
     // Get coordinates for all stops
     const coordinates: [number, number][] = [];
@@ -892,24 +889,15 @@ export class MapController {
    * Fit map to show specific routes
    */
   public fitToRoutes(route_ids: string[]): void {
-    const trips =
-      this.gtfsParser!.getFileDataSyncTyped<Trips>('trips.txt') || [];
-    const stopTimes =
-      this.gtfsParser!.getFileDataSyncTyped<StopTimes>('stop_times.txt') || [];
     const stops =
       this.gtfsParser!.getFileDataSyncTyped<Stops>('stops.txt') || [];
 
     // Find all stops for these routes
     const allStops = new Set<string>();
-
     route_ids.forEach((route_id) => {
-      const routeTrips = trips.filter((trip) => trip.route_id === route_id);
-      routeTrips.forEach((trip) => {
-        const tripStopTimes = stopTimes.filter(
-          (st) => st.trip_id === trip.trip_id
-        );
-        tripStopTimes.forEach((st) => allStops.add(st.stop_id));
-      });
+      for (const stop_id of this.gtfsParser!.getStopIdsForRoute(route_id)) {
+        allStops.add(stop_id);
+      }
     });
 
     // Get coordinates for all stops
@@ -957,7 +945,7 @@ export class MapController {
     const agencyRouteIds = agencyRoutes.map((r) => r.route_id);
 
     this.clearHighlights();
-    this.routeRenderer?.highlightRoutes(agencyRouteIds);
+    this.applySpotlight(agencyRouteIds);
     this.fitToRoutes(agencyRouteIds);
   }
 

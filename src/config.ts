@@ -27,6 +27,20 @@ export const CONFIG = {
   // aren't cut off.
   STOP_FOCUS_ZOOM: 19,
 
+  // Map spotlight — zoom range over which plain stops fade in/out. Shared
+  // between LayerManager's fade-opacity expression and its click-area hit
+  // radius so hidden stops are never hoverable/clickable.
+  STOP_FADE_ZOOM_MIN: 10.5,
+  STOP_FADE_ZOOM_MAX: 12.5,
+
+  // Map spotlight — opacity/width treatment applied when a route (and its
+  // stops) is selected. Non-matching routes/stops dim; the matched route's
+  // line and casing get a width bump.
+  SPOTLIGHT_STOP_DIM: 0.15,
+  SPOTLIGHT_ROUTE_DIM: 0.2,
+  SPOTLIGHT_LINE_BUMP: 1.35,
+  SPOTLIGHT_CASING_BUMP: 1.3,
+
   // Boot timing — set to true locally to emit console.time measurements for each
   // init stage. Leave false in production (logs are noisy and measured overhead
   // accumulates in tight loops).
