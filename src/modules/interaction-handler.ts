@@ -117,8 +117,11 @@ export class InteractionHandler {
     this.map.on('touchmove', this.handleTouchMove.bind(this));
     this.map.on('touchend', this.handleTouchEnd.bind(this));
 
-    // Always-on hover handlers for stop layers — show grab cursor on highlighted stop
-    ['stops-background', 'stops-clickarea'].forEach((layerId) => {
+    // Always-on hover handlers for the stop clickarea layer — show grab
+    // cursor on highlighted stop. Only the clickarea is used for hit-testing:
+    // its radius collapses to 0 for stops hidden by the low-zoom fade, so
+    // invisible stops don't react to hover or clicks.
+    ['stops-clickarea'].forEach((layerId) => {
       this.map.on('mouseenter', layerId, (e) => {
         const features = this.map.queryRenderedFeatures(e.point, {
           layers: [layerId],
@@ -184,7 +187,6 @@ export class InteractionHandler {
     // Query features at click point, prioritizing stops over pathways over routes
     const stopFeatures = this.queryFeaturesOnLayers(e.point, [
       'stops-clickarea',
-      'stops-background',
     ]);
 
     if (stopFeatures.length > 0) {
@@ -365,7 +367,6 @@ export class InteractionHandler {
   private async handleAddPathwayClick(e: MapMouseEvent): Promise<void> {
     const stopFeatures = this.queryFeaturesOnLayers(e.point, [
       'stops-clickarea',
-      'stops-background',
     ]);
 
     if (stopFeatures.length === 0) {
@@ -523,7 +524,7 @@ export class InteractionHandler {
     }
 
     const features = this.map.queryRenderedFeatures(e.point, {
-      layers: ['stops-clickarea', 'stops-background'],
+      layers: ['stops-clickarea'],
     });
 
     if (features.length === 0) {
@@ -642,7 +643,7 @@ export class InteractionHandler {
     }
 
     const features = this.map.queryRenderedFeatures(e.point, {
-      layers: ['stops-clickarea', 'stops-background'],
+      layers: ['stops-clickarea'],
     });
 
     if (features.length === 0) {

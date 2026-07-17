@@ -1,4 +1,5 @@
 import { Map as MapLibreMap } from 'maplibre-gl';
+import type { ExpressionSpecification } from 'maplibre-gl';
 import {
   Routes,
   Trips,
@@ -16,17 +17,52 @@ export interface RouteFeature extends GeoJSON.Feature {
     route_id: string;
     route_data: Routes;
     color: string;
+    colorDark: string;
     route_short_name?: string;
     route_long_name?: string;
     trip_ids: string[];
   };
 }
 
-export interface RouteRenderingOptions {
-  lineWidth: number;
-  opacity: number;
-  clickable: boolean;
+// Zoom-interpolated line widths for the cased route look. The casing is a
+// darker outline drawn underneath the colored line so routes read as crisp
+// ribbons over the basemap at any zoom.
+//
+// Selection uses a "spotlight" treatment instead of extra highlight layers:
+// non-selected routes dim to low opacity and the selected route gets a width
+// bump, both as paint-expression updates on the two base layers.
+const ROUTE_WIDTH_STOPS: Array<[number, number]> = [
+  [10, 1.5],
+  [13, 3.5],
+  [16, 7.5],
+];
+const CASING_WIDTH_STOPS: Array<[number, number]> = [
+  [10, 3],
+  [13, 5.5],
+  [16, 10.5],
+];
+const SPOTLIGHT_ROUTE_DIM = 0.2;
+const SPOTLIGHT_LINE_BUMP = 1.35;
+const SPOTLIGHT_CASING_BUMP = 1.3;
+
+/**
+ * Build a zoom-interpolated line-width expression. When `match` is given,
+ * matched routes get their width multiplied by `bump` (the spotlight bump).
+ */
+function zoomWidth(
+  widthStops: Array<[number, number]>,
+  match: ExpressionSpecification | null,
+  bump: number
+): ExpressionSpecification {
+  const expr: unknown[] = ['interpolate', ['linear'], ['zoom']];
+  for (const [zoom, width] of widthStops) {
+    expr.push(zoom, match ? ['case', match, width * bump, width] : width);
+  }
+  return expr as unknown as ExpressionSpecification;
 }
+
+const ROUTE_LINE_WIDTH = zoomWidth(ROUTE_WIDTH_STOPS, null, 1);
+const ROUTE_CASING_WIDTH = zoomWidth(CASING_WIDTH_STOPS, null, 1);
 
 export class RouteRenderer {
   private map: MapLibreMap;
@@ -52,12 +88,6 @@ export class RouteRenderer {
 
   // RAF-based coalescing
   private dirtyFlag = false;
-
-  private defaultOptions: RouteRenderingOptions = {
-    lineWidth: 3,
-    opacity: 0.7,
-    clickable: true,
-  };
 
   constructor(map: MapLibreMap, gtfsParser: GTFSParser) {
     this.map = map;
@@ -109,13 +139,28 @@ export class RouteRenderer {
     });
 
     this.map.addLayer({
+      id: 'routes-casing',
+      type: 'line',
+      source: 'routes',
+      paint: {
+        'line-color': ['get', 'colorDark'],
+        'line-width': ROUTE_CASING_WIDTH,
+        'line-opacity': 1,
+      },
+      layout: {
+        'line-cap': 'round',
+        'line-join': 'round',
+      },
+    });
+
+    this.map.addLayer({
       id: 'routes-background',
       type: 'line',
       source: 'routes',
       paint: {
         'line-color': ['get', 'color'],
-        'line-width': this.defaultOptions.lineWidth,
-        'line-opacity': this.defaultOptions.opacity,
+        'line-width': ROUTE_LINE_WIDTH,
+        'line-opacity': 1,
       },
       layout: {
         'line-cap': 'round',
@@ -131,22 +176,6 @@ export class RouteRenderer {
         'line-color': 'transparent',
         'line-width': 15,
         'line-opacity': 0,
-      },
-      layout: {
-        'line-cap': 'round',
-        'line-join': 'round',
-      },
-    });
-
-    this.map.addLayer({
-      id: 'routes-highlight',
-      type: 'line',
-      source: 'routes',
-      filter: ['==', 'route_id', ''],
-      paint: {
-        'line-color': ['get', 'color'],
-        'line-width': 8,
-        'line-opacity': 1,
       },
       layout: {
         'line-cap': 'round',
@@ -390,6 +419,7 @@ export class RouteRenderer {
               route_id,
               route_data: route,
               color: routeColor,
+              colorDark: this.getCasingColor(routeColor),
               route_short_name: route.route_short_name,
               route_long_name: route.route_long_name,
               trip_ids: [trip.trip_id],
@@ -428,15 +458,38 @@ export class RouteRenderer {
     return `hsl(${hue}, 70%, 50%)`;
   }
 
+  /**
+   * Derive the casing color for a route line: a darker shade of the route
+   * color. Handles both #rrggbb (from routes.txt) and hsl(...) (hash
+   * fallback from getRouteColor).
+   */
+  private getCasingColor(color: string): string {
+    const hslMatch = color.match(/^hsl\((\d+),\s*(\d+)%,\s*(\d+)%\)$/);
+    if (hslMatch) {
+      const lightness = Math.round(parseInt(hslMatch[3], 10) * 0.55);
+      return `hsl(${hslMatch[1]}, ${hslMatch[2]}%, ${lightness}%)`;
+    }
+    if (/^#[0-9A-Fa-f]{6}$/.test(color)) {
+      const n = parseInt(color.slice(1), 16);
+      const darken = (v: number) => Math.round(v * 0.55);
+      return (
+        '#' +
+        [darken((n >> 16) & 255), darken((n >> 8) & 255), darken(n & 255)]
+          .map((v) => v.toString(16).padStart(2, '0'))
+          .join('')
+      );
+    }
+    console.warn(`[RouteRenderer] Unrecognized route color format: ${color}`);
+    return '#333333';
+  }
+
   public setRenderMode(mode: 'shapes' | 'stops'): void {
     console.log(`[RouteRenderer] Setting render mode: ${mode}`);
     this.renderMode = mode;
     void this.renderRoutes();
   }
 
-  public async renderRoutes(
-    _options: Partial<RouteRenderingOptions> = {}
-  ): Promise<void> {
+  public async renderRoutes(): Promise<void> {
     console.log('[RouteRenderer] Rendering routes...');
 
     await this.ensureInitialized();
@@ -471,13 +524,51 @@ export class RouteRenderer {
     this.invalidateAll();
   }
 
+  /**
+   * Spotlight the given routes (or reset with null): non-matching routes dim
+   * to SPOTLIGHT_ROUTE_DIM opacity, matching routes get a width bump.
+   */
+  private applySpotlight(route_ids: string[] | null): void {
+    if (!this.map.getLayer('routes-background')) {
+      return;
+    }
+    const match: ExpressionSpecification | null =
+      route_ids && route_ids.length > 0
+        ? ([
+            'in',
+            ['get', 'route_id'],
+            ['literal', route_ids],
+          ] as unknown as ExpressionSpecification)
+        : null;
+    const opacity = match
+      ? ([
+          'case',
+          match,
+          1,
+          SPOTLIGHT_ROUTE_DIM,
+        ] as unknown as ExpressionSpecification)
+      : 1;
+    this.map.setPaintProperty('routes-background', 'line-opacity', opacity);
+    this.map.setPaintProperty('routes-casing', 'line-opacity', opacity);
+    this.map.setPaintProperty(
+      'routes-background',
+      'line-width',
+      zoomWidth(ROUTE_WIDTH_STOPS, match, SPOTLIGHT_LINE_BUMP)
+    );
+    this.map.setPaintProperty(
+      'routes-casing',
+      'line-width',
+      zoomWidth(CASING_WIDTH_STOPS, match, SPOTLIGHT_CASING_BUMP)
+    );
+  }
+
   public highlightRoute(route_id: string): void {
     if (this.routeFeatures.size === 0) {
       return;
     }
 
     console.log(`[RouteRenderer] Highlighting route: ${route_id}`);
-    this.map.setFilter('routes-highlight', ['==', 'route_id', route_id]);
+    this.applySpotlight([route_id]);
   }
 
   public highlightRoutes(route_ids: string[]): void {
@@ -486,14 +577,14 @@ export class RouteRenderer {
     }
 
     console.log(`[RouteRenderer] Highlighting ${route_ids.length} routes`);
-    this.map.setFilter('routes-highlight', ['in', 'route_id', ...route_ids]);
+    this.applySpotlight(route_ids);
   }
 
   public clearHighlight(): void {
     if (!this.initialized) {
       return;
     }
-    this.map.setFilter('routes-highlight', ['==', 'route_id', '']);
+    this.applySpotlight(null);
   }
 
   /**
@@ -653,6 +744,7 @@ export class RouteRenderer {
           route_id,
           route_data: route,
           color: routeColor,
+          colorDark: this.getCasingColor(routeColor),
           route_short_name: route.route_short_name,
           route_long_name: route.route_long_name,
           trip_ids: [trip_id],
@@ -707,6 +799,7 @@ export class RouteRenderer {
         const feat = this.routeFeatures.get(fk);
         if (feat) {
           feat.properties.color = newColor;
+          feat.properties.colorDark = this.getCasingColor(newColor);
           feat.properties.route_data = route;
           feat.properties.route_short_name = route.route_short_name;
           feat.properties.route_long_name = route.route_long_name;
@@ -962,14 +1055,14 @@ export class RouteRenderer {
   public destroy(): void {
     this.clearRoutes();
 
-    if (this.map.getLayer('routes-highlight')) {
-      this.map.removeLayer('routes-highlight');
-    }
     if (this.map.getLayer('routes-clickarea')) {
       this.map.removeLayer('routes-clickarea');
     }
     if (this.map.getLayer('routes-background')) {
       this.map.removeLayer('routes-background');
+    }
+    if (this.map.getLayer('routes-casing')) {
+      this.map.removeLayer('routes-casing');
     }
     if (this.map.getSource('routes')) {
       this.map.removeSource('routes');
