@@ -1,3 +1,9 @@
+## v0.21.1 (2026-08-02)
+
+### Fix
+
+- **scs**: fold pairwise with an iterative two-sequence DP
+
 ## v0.21.0 (2026-07-17)
 
 ### Feat
