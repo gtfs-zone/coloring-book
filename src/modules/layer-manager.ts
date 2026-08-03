@@ -285,14 +285,34 @@ export class LayerManager {
   }
 
   /**
-   * Opacity expression for the stops layers. Plain stops (location_type 0)
-   * fade out below ~CONFIG.STOP_FADE_ZOOM_MAX so zoomed-out views show the
-   * network instead of a pile of dots; stations, child nodes, and special
-   * stops always render. When `dim` is set (route spotlight active), all
-   * non-special stops render at `dim` opacity at every zoom.
+   * Everything that isn't a special stop is gone. Used as the bottom stop of
+   * both fade bands, below which the map shows routes only.
+   */
+  private specialOnly(): ExpressionSpecification {
+    return [
+      'case',
+      LayerManager.SPECIAL_STOP,
+      1,
+      0,
+    ] as unknown as ExpressionSpecification;
+  }
+
+  /**
+   * Opacity expression for the stops layers. Two nested fade bands, both
+   * driven by zoom:
+   *
+   *   < STATION_FADE_ZOOM_MIN   nothing but special stops
+   *   ~ STATION_FADE_ZOOM_MAX   stations and child nodes have faded in
+   *   ~ STOP_FADE_ZOOM_MAX      plain stops (location_type 0) have faded in
+   *
+   * Stations get the gentler band because they're far more spaced out — a
+   * zoomed-out view of them still reads as a network, where the same view of
+   * every plain stop reads as a pile of dots. Special stops (focused, or on
+   * the spotlighted route) are exempt at every zoom. When `dim` is set (route
+   * spotlight active), non-special stops top out at `dim` rather than 1.
    */
   private stopFadeOpacity(dim: number | null): ExpressionSpecification {
-    const lowZoom = [
+    const stationsOnly = [
       'case',
       LayerManager.SPECIAL_STOP,
       1,
@@ -305,10 +325,31 @@ export class LayerManager {
       'interpolate',
       ['linear'],
       ['zoom'],
+      CONFIG.STATION_FADE_ZOOM_MIN,
+      this.specialOnly(),
+      CONFIG.STATION_FADE_ZOOM_MAX,
+      stationsOnly,
       CONFIG.STOP_FADE_ZOOM_MIN,
-      lowZoom,
+      stationsOnly,
       CONFIG.STOP_FADE_ZOOM_MAX,
       fullZoom,
+    ] as unknown as ExpressionSpecification;
+  }
+
+  /**
+   * Opacity for the station-dot layer, which is filtered to location_type 1 and
+   * so only needs the station band. Without this the white station circle
+   * fades out at low zoom and leaves its black center dot floating.
+   */
+  private stationFadeOpacity(dim: number | null): ExpressionSpecification {
+    return [
+      'interpolate',
+      ['linear'],
+      ['zoom'],
+      CONFIG.STATION_FADE_ZOOM_MIN,
+      this.specialOnly(),
+      CONFIG.STATION_FADE_ZOOM_MAX,
+      dim === null ? 1 : this.specialOrDim(dim),
     ] as unknown as ExpressionSpecification;
   }
 
@@ -460,7 +501,7 @@ export class LayerManager {
           ['case', focused, 6, 3.8],
         ],
         'circle-color': '#111111',
-        'circle-opacity': 1,
+        'circle-opacity': this.stationFadeOpacity(null),
         'circle-stroke-width': 0,
       },
     });
@@ -491,6 +532,17 @@ export class LayerManager {
           'interpolate',
           ['linear'],
           ['zoom'],
+          CONFIG.STATION_FADE_ZOOM_MIN,
+          ['case', LayerManager.SPECIAL_STOP, r, 0],
+          CONFIG.STATION_FADE_ZOOM_MAX,
+          [
+            'case',
+            LayerManager.SPECIAL_STOP,
+            r,
+            ['==', ['get', 'location_type'], 0],
+            0,
+            r,
+          ],
           CONFIG.STOP_FADE_ZOOM_MIN,
           [
             'case',
@@ -749,7 +801,7 @@ export class LayerManager {
       this.map.setPaintProperty(
         'stops-station-dot',
         'circle-opacity',
-        dim === null ? 1 : this.specialOrDim(dim)
+        this.stationFadeOpacity(dim)
       );
     }
   }
