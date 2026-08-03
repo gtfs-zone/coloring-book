@@ -13,7 +13,7 @@ jobs:
       - name: Install dependencies
         run: |
           apk add --no-cache nodejs npm git
-          npm install -g pnpm
+          npm install -g pnpm@11.20.0
 
       - name: Checkout
         uses: actions/checkout@v6

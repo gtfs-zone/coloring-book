@@ -4,7 +4,7 @@
   "description": "A fast, simple editor for GTFS transit data - inspired by geojson.io",
   "main": "src/index.html",
   "type": "module",
-  "packageManager": "pnpm@10.33.3",
+  "packageManager": "pnpm@11.20.0",
   "scripts": {
     "version": "tsx scripts/get-version.ts",
     "prebuild": "tsx scripts/get-version.ts > .version",
@@ -87,8 +87,5 @@
     "src/**/*.{css,scss,html}": [
       "prettier --write"
     ]
-  },
-  "pnpm": {
-    "onlyBuiltDependencies": ["esbuild"]
   }
 }
