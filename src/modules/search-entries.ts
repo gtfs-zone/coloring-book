@@ -54,6 +54,8 @@ export async function buildSearchEntries(
         stop['stop_code'],
         stop['stop_desc']
       ),
+      // Stations outrank routes, which outrank plain stops.
+      priority: Number(stop['location_type']) === 1 ? 0 : 2,
     });
   }
 
@@ -77,6 +79,7 @@ export async function buildSearchEntries(
         route_id,
         route['route_desc']
       ),
+      priority: 1,
     });
   }
 
@@ -91,6 +94,7 @@ export async function buildSearchEntries(
       primary: getAgencyDisplay(agency).primary,
       secondary: agency_id,
       haystack: haystack(agency['agency_name'], agency_id),
+      priority: 2,
     });
   }
 
