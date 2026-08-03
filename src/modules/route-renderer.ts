@@ -11,6 +11,10 @@ import type { GTFSParser } from './gtfs-parser.js';
 import type { PatchOp } from '../types/patch.js';
 import { CONFIG } from '../config.js';
 import { routeSortKey } from './route-sort.js';
+import {
+  routeColor as deriveRouteColor,
+  casingColor as deriveCasingColor,
+} from '../utils/route-colors.js';
 
 export interface RouteFeature extends GeoJSON.Feature {
   id: string;
@@ -332,7 +336,7 @@ export class RouteRenderer {
 
     for (const route of routes) {
       const route_id = route.route_id;
-      const routeColor = this.getRouteColor(route_id, route.route_color);
+      const routeColor = deriveRouteColor(route_id, route.route_color);
       const routeTrips = tripsByRoute.get(route_id) ?? [];
       const sortKey = routeSortKey(route.route_type, routeTrips.length);
 
@@ -427,7 +431,7 @@ export class RouteRenderer {
               route_id,
               route_data: route,
               color: routeColor,
-              colorDark: this.getCasingColor(routeColor),
+              colorDark: deriveCasingColor(routeColor),
               route_short_name: route.route_short_name,
               route_long_name: route.route_long_name,
               trip_ids: [trip.trip_id],
@@ -446,50 +450,6 @@ export class RouteRenderer {
     console.log(
       `[RouteRenderer] Index build complete: ${tripsProcessed} trips → ${this.routeFeatures.size} features (${((1 - this.routeFeatures.size / Math.max(tripsProcessed, 1)) * 100).toFixed(1)}% dedupe)`
     );
-  }
-
-  private getRouteColor(route_id: string, gtfsRouteColor?: string): string {
-    if (
-      gtfsRouteColor &&
-      gtfsRouteColor.length === 6 &&
-      /^[0-9A-Fa-f]+$/.test(gtfsRouteColor)
-    ) {
-      return `#${gtfsRouteColor}`;
-    }
-
-    let hash = 0;
-    for (let i = 0; i < route_id.length; i++) {
-      const char = route_id.charCodeAt(i);
-      hash = (hash << 5) - hash + char;
-      hash = hash & hash;
-    }
-    const hue = Math.abs(hash) % 360;
-    return `hsl(${hue}, 70%, 50%)`;
-  }
-
-  /**
-   * Derive the casing color for a route line: a darker shade of the route
-   * color. Handles both #rrggbb (from routes.txt) and hsl(...) (hash
-   * fallback from getRouteColor).
-   */
-  private getCasingColor(color: string): string {
-    const hslMatch = color.match(/^hsl\((\d+),\s*(\d+)%,\s*(\d+)%\)$/);
-    if (hslMatch) {
-      const lightness = Math.round(parseInt(hslMatch[3], 10) * 0.55);
-      return `hsl(${hslMatch[1]}, ${hslMatch[2]}%, ${lightness}%)`;
-    }
-    if (/^#[0-9A-Fa-f]{6}$/.test(color)) {
-      const n = parseInt(color.slice(1), 16);
-      const darken = (v: number) => Math.round(v * 0.55);
-      return (
-        '#' +
-        [darken((n >> 16) & 255), darken((n >> 8) & 255), darken(n & 255)]
-          .map((v) => v.toString(16).padStart(2, '0'))
-          .join('')
-      );
-    }
-    console.warn(`[RouteRenderer] Unrecognized route color format: ${color}`);
-    return '#333333';
   }
 
   public setRenderMode(mode: 'shapes' | 'stops'): void {
@@ -795,7 +755,7 @@ export class RouteRenderer {
       if (!route) {
         return;
       }
-      const routeColor = this.getRouteColor(route_id, route.route_color);
+      const routeColor = deriveRouteColor(route_id, route.route_color);
 
       this.tripsByGeomKey!.set(featureKey, {
         route_id,
@@ -809,7 +769,7 @@ export class RouteRenderer {
           route_id,
           route_data: route,
           color: routeColor,
-          colorDark: this.getCasingColor(routeColor),
+          colorDark: deriveCasingColor(routeColor),
           route_short_name: route.route_short_name,
           route_long_name: route.route_long_name,
           trip_ids: [trip_id],
@@ -860,7 +820,7 @@ export class RouteRenderer {
       if (!route) {
         return;
       }
-      const newColor = this.getRouteColor(route_id, route.route_color);
+      const newColor = deriveRouteColor(route_id, route.route_color);
       const featureKeys = this.routeToFeatureKeys?.get(route_id);
       if (!featureKeys) {
         return;
@@ -869,7 +829,7 @@ export class RouteRenderer {
         const feat = this.routeFeatures.get(fk);
         if (feat) {
           feat.properties.color = newColor;
-          feat.properties.colorDark = this.getCasingColor(newColor);
+          feat.properties.colorDark = deriveCasingColor(newColor);
           feat.properties.route_data = route;
           feat.properties.route_short_name = route.route_short_name;
           feat.properties.route_long_name = route.route_long_name;
