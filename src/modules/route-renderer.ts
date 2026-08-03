@@ -10,6 +10,7 @@ import {
 import type { GTFSParser } from './gtfs-parser.js';
 import type { PatchOp } from '../types/patch.js';
 import { CONFIG } from '../config.js';
+import { routeSortKey } from './route-sort.js';
 
 export interface RouteFeature extends GeoJSON.Feature {
   id: string;
@@ -22,6 +23,10 @@ export interface RouteFeature extends GeoJSON.Feature {
     route_short_name?: string;
     route_long_name?: string;
     trip_ids: string[];
+    // line-sort-key: mode rank blended with the route's total trip count. Every
+    // feature of a route carries the same value, so a route's segments never
+    // reorder against each other. See route-sort.ts.
+    sortKey: number;
   };
 }
 
@@ -147,6 +152,7 @@ export class RouteRenderer {
       layout: {
         'line-cap': 'round',
         'line-join': 'round',
+        'line-sort-key': ['get', 'sortKey'],
       },
     });
 
@@ -162,6 +168,7 @@ export class RouteRenderer {
       layout: {
         'line-cap': 'round',
         'line-join': 'round',
+        'line-sort-key': ['get', 'sortKey'],
       },
     });
 
@@ -177,6 +184,9 @@ export class RouteRenderer {
       layout: {
         'line-cap': 'round',
         'line-join': 'round',
+        // Sorted identically to the drawn layers so queryRenderedFeatures()[0]
+        // resolves to whichever route visually reads as on top.
+        'line-sort-key': ['get', 'sortKey'],
       },
     });
 
@@ -324,6 +334,7 @@ export class RouteRenderer {
       const route_id = route.route_id;
       const routeColor = this.getRouteColor(route_id, route.route_color);
       const routeTrips = tripsByRoute.get(route_id) ?? [];
+      const sortKey = routeSortKey(route.route_type, routeTrips.length);
 
       for (const trip of routeTrips) {
         tripsProcessed++;
@@ -420,6 +431,7 @@ export class RouteRenderer {
               route_short_name: route.route_short_name,
               route_long_name: route.route_long_name,
               trip_ids: [trip.trip_id],
+              sortKey,
             },
           });
         } else {
@@ -557,6 +569,29 @@ export class RouteRenderer {
       'line-width',
       zoomWidth(CASING_WIDTH_STOPS, match, CONFIG.SPOTLIGHT_CASING_BUMP)
     );
+
+    // Lift the spotlighted routes above everything else. line-sort-key is a
+    // layout property, so it cannot read feature-state — but the same literal
+    // route_id match used for opacity works here unchanged. Layout changes
+    // force a tile re-layout, which is fine once per selection but must never
+    // be driven from hover.
+    const sortKey: ExpressionSpecification = match
+      ? ([
+          'case',
+          match,
+          CONFIG.SPOTLIGHT_SORT_KEY,
+          ['get', 'sortKey'],
+        ] as unknown as ExpressionSpecification)
+      : (['get', 'sortKey'] as unknown as ExpressionSpecification);
+    for (const id of [
+      'routes-casing',
+      'routes-background',
+      'routes-clickarea',
+    ]) {
+      if (this.map.getLayer(id)) {
+        this.map.setLayoutProperty(id, 'line-sort-key', sortKey);
+      }
+    }
   }
 
   public highlightRoute(route_id: string): void {
@@ -604,6 +639,37 @@ export class RouteRenderer {
   // ========================================
 
   /**
+   * Recompute the line-sort-key for every feature of a route after its trip
+   * set or route_type changed. The key uses the route's *total* trip count, so
+   * all of its features must be rewritten together — otherwise one route's
+   * segments would sort against each other.
+   */
+  private refreshRouteSortKey(route_id: string): void {
+    const featureKeys = this.routeToFeatureKeys?.get(route_id);
+    if (!featureKeys || featureKeys.size === 0) {
+      return;
+    }
+
+    let tripCount = 0;
+    let routeType: unknown;
+    for (const fk of featureKeys) {
+      const feat = this.routeFeatures.get(fk);
+      if (feat) {
+        tripCount += feat.properties.trip_ids.length;
+        routeType = feat.properties.route_data.route_type;
+      }
+    }
+
+    const sortKey = routeSortKey(routeType, tripCount);
+    for (const fk of featureKeys) {
+      const feat = this.routeFeatures.get(fk);
+      if (feat) {
+        feat.properties.sortKey = sortKey;
+      }
+    }
+  }
+
+  /**
    * Remove a trip from its current feature bucket. If the bucket becomes empty,
    * removes the feature entirely. Updates all reverse indexes.
    */
@@ -646,6 +712,8 @@ export class RouteRenderer {
         feat.properties.trip_ids = [...bucket.trip_ids];
       }
     }
+
+    this.refreshRouteSortKey(bucket.route_id);
   }
 
   /**
@@ -745,6 +813,9 @@ export class RouteRenderer {
           route_short_name: route.route_short_name,
           route_long_name: route.route_long_name,
           trip_ids: [trip_id],
+          // Placeholder — refreshRouteSortKey below recomputes it from the
+          // route's full trip set once this feature is in the index.
+          sortKey: 0,
         },
       });
 
@@ -757,6 +828,7 @@ export class RouteRenderer {
     }
 
     this.tripToFeatureKey!.set(trip_id, featureKey);
+    this.refreshRouteSortKey(route_id);
   }
 
   /**
@@ -778,7 +850,8 @@ export class RouteRenderer {
         forwardChanges &&
         !('route_color' in forwardChanges) &&
         !('route_short_name' in forwardChanges) &&
-        !('route_long_name' in forwardChanges)
+        !('route_long_name' in forwardChanges) &&
+        !('route_type' in forwardChanges)
       ) {
         return;
       }
@@ -802,6 +875,8 @@ export class RouteRenderer {
           feat.properties.route_long_name = route.route_long_name;
         }
       }
+      // route_data now carries the new route_type; recompute paint order.
+      this.refreshRouteSortKey(route_id);
       console.log(
         `[RouteRenderer] invalidateRoute route_id=${route_id} op=update → updated ${featureKeys.size} features`
       );
