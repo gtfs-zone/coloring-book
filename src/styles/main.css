@@ -123,23 +123,6 @@ body {
     outline: none !important;
   }
 
-  /* Search results styles */
-  .search-results {
-    z-index: 1000;
-    max-height: 24rem;
-    overflow-y: auto;
-  }
-
-  .search-result-item {
-    transition: colors 0.15s ease;
-  }
-
-  .search-section-header {
-    position: sticky;
-    top: 0;
-    z-index: 10;
-  }
-
   /* Welcome overlay improvements */
   #map-overlay {
     transition: opacity 0.15s ease;

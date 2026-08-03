@@ -8,6 +8,7 @@ import { GTFSRelationships } from './modules/gtfs-relationships';
 import { BrowseNavigation } from './modules/browse-navigation';
 import { InfoDisplay } from './modules/info-display';
 import { SearchController } from './modules/search-controller';
+import { buildSearchEntries } from './modules/search-entries';
 import { GTFSValidator } from './modules/gtfs-validator';
 import { KeyboardShortcuts } from './modules/keyboard-shortcuts';
 import { FieldDescriptionsDisplay } from './modules/field-descriptions';
@@ -22,6 +23,7 @@ import {
 } from './modules/page-state-integration';
 import { PageStateManager } from './modules/page-state-manager';
 import { navigateToTimetable } from './modules/navigation-actions';
+import type { PageState } from './types/page-state';
 import { PatchManager } from './modules/patch-manager';
 import { HistoryController } from './modules/history-controller';
 import { TabLockController } from './modules/tab-lock';
@@ -63,7 +65,7 @@ export class GTFSEditor {
   public relationships: GTFSRelationships;
   public infoDisplay: InfoDisplay;
   public browseNavigation: BrowseNavigation;
-  public searchController: SearchController;
+  public searchController: SearchController<PageState>;
   public validator: GTFSValidator;
   public keyboardShortcuts: KeyboardShortcuts;
   public fieldDescriptions: FieldDescriptionsDisplay;
@@ -95,10 +97,10 @@ export class GTFSEditor {
       this.scheduleController,
       this.serviceDaysController
     );
-    this.searchController = new SearchController(
-      this.gtfsParser,
-      this.mapController
-    );
+    this.searchController = new SearchController<PageState>({
+      getEntries: () => buildSearchEntries(this.gtfsParser),
+      onSelect: (state) => this.focusSearchResult(state),
+    });
     this.validator = new GTFSValidator(this.gtfsParser);
     this.keyboardShortcuts = new KeyboardShortcuts(this);
     this.fieldDescriptions = FieldDescriptionsDisplay.integrate();
@@ -438,6 +440,20 @@ export class GTFSEditor {
   public validateAndUpdateInfo(): void {
     const validationResults = this.validator.validateFeed();
     void validationResults;
+  }
+
+  /**
+   * A search result behaves exactly like clicking the object on the map or in
+   * the sidebar: highlight it (which flies the map and sets the focused
+   * object), then move page state so the sidebar and the URL follow.
+   */
+  private focusSearchResult(state: PageState): void {
+    if (state.type === 'stop') {
+      this.mapController.highlightStop(state.stop_id);
+    } else if (state.type === 'route') {
+      this.mapController.highlightRoute(state.route_id);
+    }
+    void this.pageStateManager.setPageState(state);
   }
 
   /**
