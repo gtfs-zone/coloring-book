@@ -9,17 +9,10 @@ import {
   normalizeAgencyId,
   agencyRouteFilter,
 } from '../utils/agency-helpers.js';
-import { getStopDisplay, renderOptionLabel } from '../utils/entity-display.js';
 
 interface GTFSParserInterface {
   getFileDataSync: (filename: string) => GTFSDatabaseRecord[];
   gtfsDatabase: GTFSDatabase;
-  searchStops: (query: string) => GTFSDatabaseRecord[];
-  searchRoutes: (query: string) => GTFSDatabaseRecord[];
-  searchAll: (query: string) => {
-    stops: GTFSDatabaseRecord[];
-    routes: GTFSDatabaseRecord[];
-  };
 }
 
 export class GTFSRelationships {
@@ -892,111 +885,6 @@ export class GTFSRelationships {
       console.error('Error getting trip by ID from IndexedDB:', error);
       // Fallback to sync method
       return this.getTripById(trip_id);
-    }
-  }
-
-  /**
-   * Search stops by name/ID using IndexedDB (async)
-   */
-  async searchStopsAsync(query: string) {
-    try {
-      if (!query || query.trim().length < 2) {
-        return [];
-      }
-
-      const stops = await this.gtfsDatabase.getAllRows('stops');
-      const lowerQuery = query.toLowerCase();
-
-      return stops
-        .filter((stop) => {
-          const stopName = (stop.stop_name || '').toLowerCase();
-          const stop_id = (stop.stop_id || '').toLowerCase();
-          const stopCode = (stop.stop_code || '').toLowerCase();
-
-          return (
-            stopName.includes(lowerQuery) ||
-            stop_id.includes(lowerQuery) ||
-            stopCode.includes(lowerQuery)
-          );
-        })
-        .map((stop) => ({
-          id: stop.stop_id,
-          name: renderOptionLabel(
-            getStopDisplay(stop as unknown as Record<string, string>)
-          ),
-          code: stop.stop_code,
-          lat: stop.stop_lat,
-          lon: stop.stop_lon,
-          desc: stop.stop_desc,
-        }))
-        .slice(0, 10); // Limit to 10 results
-    } catch (error) {
-      console.error('Error searching stops from IndexedDB:', error);
-      // Fallback to sync method from gtfsParser
-      return this.gtfsParser.searchStops(query);
-    }
-  }
-
-  /**
-   * Search routes by name/ID using IndexedDB (async)
-   */
-  async searchRoutesAsync(query: string) {
-    try {
-      if (!query || query.trim().length < 2) {
-        return [];
-      }
-
-      const routes = await this.gtfsDatabase.getAllRows('routes');
-      const lowerQuery = query.toLowerCase();
-
-      return routes
-        .filter((route) => {
-          const routeName = (route.route_long_name || '').toLowerCase();
-          const routeShortName = (route.route_short_name || '').toLowerCase();
-          const route_id = (route.route_id || '').toLowerCase();
-
-          return (
-            routeName.includes(lowerQuery) ||
-            routeShortName.includes(lowerQuery) ||
-            route_id.includes(lowerQuery)
-          );
-        })
-        .map((route) => ({
-          id: route.route_id,
-          shortName: route.route_short_name,
-          longName: route.route_long_name,
-          type: route.route_type,
-          color: route.route_color,
-          textColor: route.route_text_color,
-          agency_id: route.agency_id,
-        }))
-        .slice(0, 10); // Limit to 10 results
-    } catch (error) {
-      console.error('Error searching routes from IndexedDB:', error);
-      // Fallback to sync method from gtfsParser
-      return this.gtfsParser.searchRoutes(query);
-    }
-  }
-
-  /**
-   * Combined search for stops and routes (async)
-   */
-  async searchAllAsync(query: string) {
-    try {
-      if (!query || query.trim().length < 2) {
-        return { stops: [], routes: [] };
-      }
-
-      const [stops, routes] = await Promise.all([
-        this.searchStopsAsync(query),
-        this.searchRoutesAsync(query),
-      ]);
-
-      return { stops, routes };
-    } catch (error) {
-      console.error('Error performing combined search from IndexedDB:', error);
-      // Fallback to sync method from gtfsParser
-      return this.gtfsParser.searchAll(query);
     }
   }
 
