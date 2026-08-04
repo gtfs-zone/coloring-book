@@ -27,8 +27,6 @@ import {
   RowDot,
   endpointThreshold,
   isEndpoint,
-  endpointNote,
-  isMinority,
 } from './route-strip.js';
 import { RouteSequence } from './route-sequence.js';
 import { RouteGraph } from './route-graph.js';
@@ -279,8 +277,8 @@ export class TimetableRenderer {
 
         return `
         <tr class="trip-property-row" data-property="${config.field}">
-          <th class="stop-name min-w-[200px] p-2 font-medium border-r border-base-300 bg-base-100">
-            <div class="stop-name-text">${renderFieldLabelContent(config)}</div>
+          <th class="stop-name max-w-[320px] p-2 font-medium border-r border-base-300 bg-base-100">
+            <div class="stop-name-text truncate">${renderFieldLabelContent(config)}</div>
           </th>
           ${cells}
           ${newTripCell}
@@ -412,14 +410,14 @@ export class TimetableRenderer {
     return `
       <thead>
         <tr class="z-[2]">
-          <th class="stop-header min-w-[200px] p-2 text-left bg-base-100">
+          <th class="stop-header max-w-[320px] p-2 text-left bg-base-100">
             Stop
           </th>
           ${tripHeaders}
           ${newTripHeader}
         </tr>
         <tr class="z-[2]">
-          <th class="stop-header min-w-[200px] p-2 text-left bg-base-100"></th>
+          <th class="stop-header max-w-[320px] p-2 text-left bg-base-100"></th>
           ${tripActionCells}
           <td class="trip-header text-center min-w-[120px] p-2 text-xs"></td>
         </tr>
@@ -462,7 +460,6 @@ export class TimetableRenderer {
     const stats = sequence.stopStats[index];
     const threshold = endpointThreshold(sequence.totalTrips);
     const endpoint = isEndpoint(stats, threshold);
-    const minority = isMinority(stats, sequence.totalTrips);
     const revisit = sequence.stops[index].occurrence;
 
     const dot: RowDot = {
@@ -476,13 +473,6 @@ export class TimetableRenderer {
       dot
     );
 
-    const note = endpointNote(stats, threshold);
-    const noteHtml = note
-      ? `<span class="text-xs opacity-60 tabular-nums shrink-0">${escapeHtml(note)}</span>`
-      : '';
-    const minorityHtml = minority
-      ? `<span class="text-xs opacity-50 tabular-nums shrink-0">${stats.serves} of ${sequence.totalTrips} trips</span>`
-      : '';
     const revisitHtml =
       revisit > 0
         ? `<span class="opacity-50 text-xs ml-1">(visit ${revisit + 1})</span>`
@@ -496,12 +486,10 @@ export class TimetableRenderer {
           title="Served by ${stats.serves} of ${sequence.totalTrips} trips"
         >
           <span
-            class="stop-label-span flex-1 min-w-0 truncate cursor-pointer rounded px-1 hover:bg-base-200${minority ? ' opacity-60' : ''}"
+            class="stop-label-span flex-1 min-w-0 truncate cursor-pointer rounded px-1 hover:bg-base-200"
             data-stop-id="${escapeHtml(stop.stop_id)}"
             title="Change stop"
           >${label}${revisitHtml}</span>
-          ${noteHtml}
-          ${minorityHtml}
         </div>
       </div>
     `;
@@ -580,7 +568,7 @@ export class TimetableRenderer {
 
         return `
         <tr class="${rowClass}">
-          <th class="stop-name relative p-2 pl-0 font-medium border-r border-base-300 bg-base-100">
+          <th class="stop-name relative max-w-[320px] px-2 pl-0 font-medium border-r border-base-300 bg-base-100">
             ${this.renderStopLabelCell(stop, stopIndex, graph as RouteGraph, sequence as RouteSequence, color)}
           </th>
           ${timeCells}
@@ -596,7 +584,7 @@ export class TimetableRenderer {
       .join('');
     const newStopRow = `
       <tr>
-        <th class="stop-name p-2 border-r border-base-300 bg-base-100">
+        <th class="stop-name max-w-[320px] p-2 border-r border-base-300 bg-base-100">
           <button
             class="add-stop-btn btn btn-ghost btn-sm w-full justify-start opacity-70 hover:opacity-100"
           >Add stop...</button>
