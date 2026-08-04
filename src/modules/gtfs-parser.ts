@@ -383,6 +383,11 @@ export class GTFSParser {
     } else if (tableName === 'trips') {
       fieldMaps.set('route_id', new Map());
       fieldMaps.set('service_id', new Map());
+    } else if (tableName === 'stops') {
+      // Without this, every queryRows('stops', { stop_id }) is a linear scan
+      // that clones a matching row out of a 10,000-row table. The timetable
+      // did one per stop on the route.
+      fieldMaps.set('stop_id', new Map());
     } else if (tableName === 'agency') {
       fieldMaps.set('agency_id', new Map());
     } else if (tableName === 'routes') {
@@ -394,6 +399,9 @@ export class GTFSParser {
 
   /** Mark a table's blob as needing re-persistence and schedule a debounced flush. */
   invalidateBlobForTable(tableName: string): void {
+    if (tableName === 'shapes') {
+      this.shapeIdsCache = null;
+    }
     this.blobDirty.add(tableName);
     if (this.blobPersistTimer) {
       clearTimeout(this.blobPersistTimer);
@@ -495,6 +503,29 @@ export class GTFSParser {
       (st) => st.trip_id === trip_id
     );
   }
+
+  /**
+   * The distinct shape_ids in the feed, sorted.
+   *
+   * Callers only ever want the id set, and reading the shapes table to get it
+   * copies every shape point — 394,557 rows on the MBTA feed to derive 1,200
+   * ids. Cached until a shapes edit invalidates it.
+   */
+  getShapeIds(): string[] {
+    if (this.shapeIdsCache) {
+      return this.shapeIdsCache;
+    }
+    const ids = new Set<string>();
+    for (const row of this.getFileDataSyncTyped(GTFS_TABLES.SHAPES)) {
+      if (row.shape_id) {
+        ids.add(String(row.shape_id));
+      }
+    }
+    this.shapeIdsCache = Array.from(ids).sort();
+    return this.shapeIdsCache;
+  }
+
+  private shapeIdsCache: string[] | null = null;
 
   async initialize(): Promise<void> {
     await this.gtfsDatabase.initialize();
@@ -659,7 +690,7 @@ export class GTFSParser {
     await this.gtfsDatabase.insertRows('feed_info', [seedRow]);
     // Flush immediately so the seed blob is in IDB before any patch is recorded.
     // This guarantees that a quick refresh (before the 3-second debounce) still
-    // has a row for patch replay to land on. Fresh DB has no patches yet → version 0.
+    // has a row for patch replay to land on. Fresh DB has no patches yet, version 0.
     await this.persistDirtyBlobs(0);
   }
 

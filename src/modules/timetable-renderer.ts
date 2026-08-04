@@ -17,7 +17,8 @@ import {
   renderFieldLabelContent,
 } from '../utils/field-component.js';
 import { TripsSchema, GTFS_TABLES } from '../types/gtfs.js';
-import { getStopDisplay, renderOptionLabel } from '../utils/entity-display.js';
+import { getStopDisplay, renderCardLabel } from '../utils/entity-display.js';
+import { escapeHtml } from '../utils/escape-html.js';
 import { renderTrashIcon } from './modal-utils.js';
 
 function getBrouterProfile(routeType: string | number): string {
@@ -191,11 +192,6 @@ export class TimetableRenderer {
     data: TimetableData,
     pendingStopId?: string
   ): string {
-    console.log('DEBUG: renderTimetableContent called with:', {
-      trips: data.trips?.length || 0,
-      selectedDirectionId: data.selectedDirectionId,
-    });
-
     // Always render the table structure, even when empty
     return `
       <div class="flex-1 overflow-x-auto">
@@ -217,8 +213,6 @@ export class TimetableRenderer {
   private generateTripPropertyConfigs(
     sampleTrip: Record<string, unknown>
   ): FieldConfig[] {
-    console.log('🔍 Sample trip:', sampleTrip);
-
     // Generate all field configs from TripsSchema
     const allConfigs = generateFieldConfigsFromSchema(
       TripsSchema,
@@ -226,21 +220,11 @@ export class TimetableRenderer {
       GTFS_TABLES.TRIPS
     );
 
-    console.log(
-      '🔍 All configs:',
-      allConfigs.map((c) => c.field)
-    );
-
     // Filter out fields that shouldn't be editable in the timetable
     // route_id and service_id are fixed (timetable is already filtered by these)
     // trip_id is the primary key
     const editableConfigs = allConfigs.filter(
       (config) => !['route_id', 'service_id', 'trip_id'].includes(config.field)
-    );
-
-    console.log(
-      '🔍 Editable configs:',
-      editableConfigs.map((c) => c.field)
     );
 
     return editableConfigs;
@@ -320,7 +304,7 @@ export class TimetableRenderer {
         `<option value=""${value === '' ? ' selected' : ''}>— none —</option>`,
         ...this.availableShapeIds.map((sid) => {
           const selected = String(value) === sid ? ' selected' : '';
-          return `<option value="${this.escapeHtml(sid)}"${selected}>${this.escapeHtml(sid)}</option>`;
+          return `<option value="${escapeHtml(sid)}"${selected}>${escapeHtml(sid)}</option>`;
         }),
       ].join('');
       return `
@@ -342,7 +326,7 @@ export class TimetableRenderer {
         ...config.options.map((opt) => {
           const selected =
             String(value) === String(opt.value) ? 'selected' : '';
-          return `<option value="${this.escapeHtml(String(opt.value))}" ${selected}>${this.escapeHtml(opt.label)}</option>`;
+          return `<option value="${escapeHtml(String(opt.value))}" ${selected}>${escapeHtml(opt.label)}</option>`;
         }),
       ].join('');
 
@@ -369,7 +353,7 @@ export class TimetableRenderer {
             data-trip-id="${trip_id}"
             data-field="${config.field}"
             data-table="trips.txt"
-            value="${this.escapeHtml(String(value))}"
+            value="${escapeHtml(String(value))}"
             onchange="gtfsEditor.scheduleController.updateTripProperty('${trip_id}', '${config.field}', this.value)" />
         </td>
       `;
@@ -384,8 +368,8 @@ export class TimetableRenderer {
             data-trip-id="${trip_id}"
             data-field="${config.field}"
             data-table="trips.txt"
-            value="${this.escapeHtml(String(value))}"
-            placeholder="${this.escapeHtml(config.label)}"
+            value="${escapeHtml(String(value))}"
+            placeholder="${escapeHtml(config.label)}"
             onchange="gtfsEditor.scheduleController.updateTripProperty('${trip_id}', '${config.field}', this.value)" />
         </td>
       `;
@@ -417,12 +401,12 @@ export class TimetableRenderer {
           data.route.route_type ?? ''
         );
         const brouterLink = brouterUrl
-          ? `<a href="${brouterUrl}" target="_blank" rel="noopener" class="btn btn-xs btn-outline mt-1" title="Open in brouter">↗</a>`
+          ? `<a href="${brouterUrl}" target="_blank" rel="noopener" class="btn btn-xs btn-outline mt-1" title="Open in brouter">-&gt;</a>`
           : '';
         return `
           <td class="trip-header text-center min-w-[80px] p-2 text-xs font-mono">
-            ${this.escapeHtml(trip.trip_id)}
-            <button class="btn btn-xs btn-error btn-outline delete-trip-btn mt-1" data-trip-id="${this.escapeHtml(trip.trip_id)}" title="Delete">${renderTrashIcon('h-3 w-3')}</button>
+            ${escapeHtml(trip.trip_id)}
+            <button class="btn btn-xs btn-error btn-outline delete-trip-btn mt-1" data-trip-id="${escapeHtml(trip.trip_id)}" title="Delete">${renderTrashIcon('h-3 w-3')}</button>
             ${brouterLink}
           </td>
         `;
@@ -456,6 +440,34 @@ export class TimetableRenderer {
   }
 
   /**
+   * Render one stop row's label cell.
+   *
+   * This used to be a `<select>` listing every stop in the feed, repeated in
+   * every row — 226,556 `<option>` nodes for the MBTA Red Line and 721,000 for
+   * a 70-stop bus route, which was the single largest cost in the view. The
+   * label is now static text; the picker is built once, on demand, when the
+   * swap button is clicked (see ScheduleController.openStopPicker).
+   *
+   * @param stop - The stop this row represents
+   * @returns HTML string for the row's stop label cell
+   */
+  private renderStopLabelCell(stop: Stops): string {
+    const label = renderCardLabel(
+      getStopDisplay(stop as unknown as Record<string, string>)
+    );
+    return `
+      <div class="flex items-center gap-1 min-w-0">
+        <span class="flex-1 min-w-0 truncate">${label}</span>
+        <button
+          class="btn btn-ghost btn-xs px-1 opacity-40 hover:opacity-100 change-stop-btn"
+          data-stop-id="${escapeHtml(stop.stop_id)}"
+          title="Change stop"
+        >&lt;-&gt;</button>
+      </div>
+    `;
+  }
+
+  /**
    * Render timetable body with stops and trip time cells
    *
    * Creates table body with one row per stop and time cells for each trip.
@@ -474,19 +486,12 @@ export class TimetableRenderer {
       return '<tbody></tbody>';
     }
 
-    console.log('\n=== RENDERING TIMETABLE BODY ===');
-    console.log(`Number of stops to render: ${data.stops.length}`);
-    console.log(`Number of trips to render: ${data.trips.length}`);
-    console.log('Stop IDs in rendering order:');
-    data.stops.forEach((stop, idx) => {
-      console.log(`  [${idx}] ${stop.stop_id} - ${stop.stop_name}`);
-    });
+    console.log(
+      `[TimetableRenderer] rendering ${data.stops.length} stops x ${data.trips.length} trips`
+    );
 
     const rows = data.stops
       .map((stop, stopIndex) => {
-        console.log(
-          `\n--- Rendering row for stop [${stopIndex}]: ${stop.stop_id} ---`
-        );
         const isPendingStop =
           pendingStopId !== undefined &&
           stop.stop_id === pendingStopId &&
@@ -495,16 +500,13 @@ export class TimetableRenderer {
           ? 'opacity-60 border-dashed border-2 border-warning'
           : '';
         const timeCells = data.trips
-          .map((trip, tripIndex) => {
+          .map((trip) => {
             // Use stopIndex as the key for all time lookups
             // stopIndex = position in the supersequence (same as position in data.stops array)
             // This handles duplicate stops correctly (e.g., circular routes)
             const stop_id = stop.stop_id;
             const supersequencePosition = stopIndex;
 
-            console.log(
-              `  Trip ${tripIndex} (${trip.trip_id}): Looking up position=${supersequencePosition}, stop_id='${stop_id}'`
-            );
             const editableStopTime = trip.editableStopTimes?.get(
               supersequencePosition
             );
@@ -512,26 +514,6 @@ export class TimetableRenderer {
               trip.arrival_times?.get(supersequencePosition) || undefined;
             const departure_time =
               trip.departure_times?.get(supersequencePosition) || undefined;
-
-            console.log(`    arrival_time: ${arrival_time || 'NONE'}`);
-            console.log(`    departure_time: ${departure_time || 'NONE'}`);
-            console.log(
-              `    editableStopTime: ${editableStopTime ? 'YES' : 'NO'}`
-            );
-
-            if (!arrival_time && !departure_time) {
-              console.log(
-                `    ⚠️  NO TIMES FOUND for position=${supersequencePosition}, stop_id='${stop_id}' in trip ${trip.trip_id}`
-              );
-              console.log(
-                `    Available positions in arrival_times:`,
-                Array.from(trip.arrival_times?.keys() || [])
-              );
-              console.log(
-                `    Available positions in departure_times:`,
-                Array.from(trip.departure_times?.keys() || [])
-              );
-            }
 
             return this.cellRenderer.renderStackedArrivalDepartureCell(
               trip.trip_id,
@@ -550,13 +532,7 @@ export class TimetableRenderer {
         return `
         <tr class="${rowClass}">
           <th class="stop-name p-2 font-medium border-r border-base-300 bg-base-100">
-            <select
-              class="select select-xs w-full font-medium"
-              data-old-stop-id="${this.escapeHtml(stop.stop_id)}"
-              onchange="gtfsEditor.scheduleController.changeStopAtRow(this.dataset.oldStopId, this.value, this)"
-            >
-              ${data.allStops.map((s) => `<option value="${this.escapeHtml(s.stop_id)}"${s.stop_id === stop.stop_id ? ' selected' : ''}>${this.escapeHtml(renderOptionLabel(getStopDisplay(s as unknown as Record<string, string>)))}</option>`).join('')}
-            </select>
+            ${this.renderStopLabelCell(stop)}
           </th>
           ${timeCells}
           ${newTripCell}
@@ -572,8 +548,9 @@ export class TimetableRenderer {
     const newStopRow = `
       <tr>
         <th class="stop-name p-2 border-r border-base-300 bg-base-100">
-          <select class="select select-sm w-full" id="new-stop-select"
-                  onchange="gtfsEditor.scheduleController.addStopFromSelector(this.value)">
+          <!-- Options are filled in on first interaction, not on render: the
+               feed can hold tens of thousands of stops. -->
+          <select class="select select-sm w-full" id="new-stop-select" data-stop-options="pending">
             <option value="">Add stop...</option>
           </select>
         </th>
@@ -625,20 +602,5 @@ export class TimetableRenderer {
         </div>
       </div>
     `;
-  }
-
-  /**
-   * Escape HTML characters in text
-   *
-   * Prevents XSS by escaping user-provided text content.
-   * Uses DOM API for safe HTML escaping.
-   *
-   * @param text - Raw text that may contain HTML characters
-   * @returns HTML-safe escaped text
-   */
-  private escapeHtml(text: string): string {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
   }
 }

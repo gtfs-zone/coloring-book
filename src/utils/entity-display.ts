@@ -1,3 +1,5 @@
+import { escapeHtml } from './escape-html.js';
+
 export interface EntityDisplayInfo {
   primary: string; // shown prominently (name, short name, or ID as fallback)
   secondary?: string; // shown as subtext/parens — only set if different from primary
@@ -95,16 +97,21 @@ export function getEntityDisplay(
 
 /**
  * For cards, list items, and detail headers — secondary on its own line, muted.
+ *
+ * Returns markup, so it escapes its own values: callers cannot escape the
+ * result without also escaping the tags this adds.
  */
 export function renderCardLabel(info: EntityDisplayInfo): string {
   if (info.secondary) {
-    return `<span>${info.primary}<br><span class="text-xs opacity-60">${info.secondary}</span></span>`;
+    return `<span>${escapeHtml(info.primary)}<br><span class="text-xs opacity-60">${escapeHtml(info.secondary)}</span></span>`;
   }
-  return `<span>${info.primary}</span>`;
+  return `<span>${escapeHtml(info.primary)}</span>`;
 }
 
 /**
  * For dropdowns and inline text — secondary in parens on the same line.
+ *
+ * Returns plain text, not markup. Callers are responsible for escaping it.
  */
 export function renderOptionLabel(info: EntityDisplayInfo): string {
   if (info.secondary) {
