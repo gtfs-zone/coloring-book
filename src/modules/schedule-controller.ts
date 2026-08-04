@@ -1,7 +1,7 @@
 /**
  * Schedule Controller Module
  * Handles timetable view for routes showing aligned trips in a standard train schedule format
- * Accessed via Objects tab → Route → Service ID
+ * Accessed via Objects tab -> Route -> Service ID
  */
 
 import { Stops, GTFSTableMap } from '../types/gtfs-entities.js';
@@ -15,6 +15,7 @@ import { TimetableDatabase } from './timetable-database.js';
 import { generateCompositeKeyFromRecord } from '../utils/gtfs-primary-keys.js';
 import { patchUpdate } from '../utils/patch-utils.js';
 import { getStopDisplay, renderOptionLabel } from '../utils/entity-display.js';
+import { escapeHtml } from '../utils/escape-html.js';
 import { showModal } from './modal-utils.js';
 
 // Enhanced GTFS interfaces using standard GTFS property names
@@ -39,6 +40,8 @@ interface EnhancedTrip {
 interface GTFSParserInterface {
   getFileDataSync(filename: string): GTFSDatabaseRecord[];
   setInMemoryFileData(fileName: string, data: Record<string, unknown>[]): void;
+  /** Distinct shape_ids, cached — see GTFSParser.getShapeIds. */
+  getShapeIds(): string[];
   gtfsDatabase: {
     queryRows<T extends keyof GTFSTableMap>(
       tableName: T,
@@ -92,6 +95,10 @@ interface PatchManagerInterface {
     ops: Array<{ table: string; id: string; record: Record<string, unknown> }>,
     label: string
   ): Promise<void>;
+  on(
+    event: 'undo' | 'redo' | 'change' | 'jump',
+    listener: (record?: unknown) => void
+  ): void;
 }
 
 interface GTFSRelationships {
@@ -173,6 +180,128 @@ export class ScheduleController {
       },
       { capture: true, passive: true }
     );
+
+    this.installStopPickerHandlers();
+  }
+
+  /**
+   * Delegated handlers for the two stop pickers in the timetable.
+   *
+   * Bound to `document` once, rather than to the timetable container on every
+   * render: the container's innerHTML is replaced wholesale by several
+   * different call sites, and re-binding after each of them was both easy to
+   * forget and easy to leak.
+   */
+  private installStopPickerHandlers(): void {
+    // The "add stop" select at the bottom of the table fills itself on first
+    // interaction — see buildStopOptions for why it is not filled on render.
+    document.addEventListener('focusin', (e) => {
+      const select = (e.target as Element)?.closest?.(
+        '#new-stop-select[data-stop-options="pending"]'
+      ) as HTMLSelectElement | null;
+      if (select) {
+        void this.fillStopOptions(select, '');
+      }
+    });
+
+    document.addEventListener('change', (e) => {
+      const select = (e.target as Element)?.closest?.(
+        '#new-stop-select'
+      ) as HTMLSelectElement | null;
+      if (select?.value) {
+        void this.addStopFromSelector(select.value);
+      }
+    });
+
+    document.addEventListener('click', (e) => {
+      const btn = (e.target as Element)?.closest?.('.change-stop-btn');
+      if (btn instanceof HTMLElement) {
+        void this.openStopPicker(btn);
+      }
+    });
+  }
+
+  /**
+   * Swap a row's stop label for a picker, on demand.
+   *
+   * The picker is built only for the row the user actually clicked. Rendering
+   * one per row is what made this view unusable: a 70-stop bus route on a feed
+   * with 10,000 stops emitted 721,000 `<option>` elements.
+   */
+  private async openStopPicker(btn: HTMLElement): Promise<void> {
+    const oldStopId = btn.dataset.stopId;
+    const cell = btn.parentElement;
+    if (!oldStopId || !cell || cell.querySelector('select')) {
+      return;
+    }
+
+    const label = cell.firstElementChild as HTMLElement | null;
+    const select = document.createElement('select');
+    select.className = 'select select-xs w-full font-medium';
+    select.innerHTML = '<option value="">Loading...</option>';
+    label?.classList.add('hidden');
+    btn.classList.add('hidden');
+    cell.prepend(select);
+
+    await this.fillStopOptions(select, oldStopId);
+    select.focus();
+
+    const restore = (): void => {
+      select.remove();
+      label?.classList.remove('hidden');
+      btn.classList.remove('hidden');
+    };
+
+    select.addEventListener('change', () => {
+      const newStopId = select.value;
+      restore();
+      if (newStopId && newStopId !== oldStopId) {
+        void this.changeStopAtRow(oldStopId, newStopId);
+      }
+    });
+    select.addEventListener('blur', restore);
+  }
+
+  /**
+   * Cached `<option>` markup for every stop in the feed.
+   *
+   * Built at most once per feed and reused by both pickers. Cleared by
+   * invalidateStopOptions when the stops table changes.
+   */
+  private stopOptionsHtml: string | null = null;
+
+  /** Drop the cached stop options; call after any edit to stops.txt. */
+  public invalidateStopOptions(): void {
+    this.stopOptionsHtml = null;
+  }
+
+  private async fillStopOptions(
+    select: HTMLSelectElement,
+    selectedStopId: string
+  ): Promise<void> {
+    if (this.stopOptionsHtml === null) {
+      const stops = await this.gtfsParser.gtfsDatabase.queryRows('stops', {});
+      console.log(
+        `[ScheduleController] building stop picker options for ${stops.length} stops`
+      );
+      this.stopOptionsHtml = stops
+        .map(
+          (stop) =>
+            `<option value="${escapeHtml(stop.stop_id)}">${escapeHtml(
+              renderOptionLabel(
+                getStopDisplay(stop as unknown as Record<string, string>)
+              )
+            )}</option>`
+        )
+        .join('');
+    }
+
+    const placeholder = selectedStopId
+      ? '<option value="">Change stop...</option>'
+      : '<option value="">Add stop...</option>';
+    select.innerHTML = placeholder + this.stopOptionsHtml;
+    select.value = selectedStopId;
+    select.dataset.stopOptions = 'ready';
   }
 
   /** Reset tracked scroll when navigating to a different timetable. */
@@ -183,6 +312,13 @@ export class ScheduleController {
 
   setPatchManager(pm: PatchManagerInterface): void {
     this.patchManager = pm;
+
+    // The stop picker's option markup is cached across renders, so any edit
+    // that could rename or add a stop has to drop it. Rebuilding is cheap and
+    // only happens on the next time a picker is opened.
+    for (const event of ['change', 'undo', 'redo', 'jump'] as const) {
+      pm.on(event, () => this.invalidateStopOptions());
+    }
   }
 
   // ===== PUBLIC EDITING METHODS =====
@@ -582,7 +718,7 @@ export class ScheduleController {
       ) {
         processedValue = newValue ? parseInt(newValue, 10) : null;
       } else if (newValue === '') {
-        // Empty string → null for optional fields
+        // Empty string becomes null for optional fields
         processedValue = null;
       }
 
@@ -836,11 +972,9 @@ export class ScheduleController {
     direction_id?: string
   ): Promise<string> {
     try {
-      console.log('DEBUG: renderSchedule called with:', {
-        route_id,
-        service_id,
-        direction_id,
-      });
+      console.log(
+        `[ScheduleController] renderSchedule route=${route_id} service=${service_id} direction=${direction_id ?? '(default)'}`
+      );
 
       // Store current state for refresh functionality
       this.currentRouteId = route_id;
@@ -885,83 +1019,18 @@ export class ScheduleController {
         } as Stops);
       }
 
-      console.log('DEBUG: Timetable data generated:', {
-        tripsCount: timetableData.trips.length,
-        stopsCount: timetableData.stops.length,
-        hasPendingStop: !!this.pendingStop,
-      });
+      // Distinct shape_ids for the per-trip shape dropdown. Reading the whole
+      // shapes table here copied 394,557 rows on the MBTA feed to derive 1,200
+      // ids; the parser keeps the id set indexed instead.
+      this.renderer.availableShapeIds = this.gtfsParser.getShapeIds();
 
-      const shapeRows = await this.gtfsParser.gtfsDatabase.queryRows(
-        'shapes',
-        {}
-      );
-      const shapeIdSet = new Set(shapeRows.map((r) => String(r.shape_id)));
-      this.renderer.availableShapeIds = Array.from(shapeIdSet).sort();
-
-      const html = this.renderer.renderTimetableHTML(
+      return this.renderer.renderTimetableHTML(
         timetableData,
         this.pendingStop?.stop_id
       );
-
-      // After rendering, populate the new-stop-select dropdown
-      setTimeout(() => {
-        this.populateNewStopSelect();
-      }, 0);
-
-      return html;
     } catch (error) {
       console.error('Error rendering schedule:', error);
       return this.renderer.renderErrorHTML('Failed to generate schedule view');
-    }
-  }
-
-  /**
-   * Populate the new stop selector with available stops
-   *
-   * Called after rendering to fill the dropdown with stops not in the timetable.
-   */
-  private async populateNewStopSelect(): Promise<void> {
-    const selectElement = document.getElementById(
-      'new-stop-select'
-    ) as HTMLSelectElement;
-    if (!selectElement) {
-      return;
-    }
-
-    try {
-      if (!this.currentRouteId || !this.currentServiceId) {
-        return;
-      }
-
-      // Get all stops from the database
-      const allStops = await this.gtfsParser.gtfsDatabase.queryRows(
-        'stops',
-        {}
-      );
-
-      // Reset select to default option
-      selectElement.innerHTML = '<option value="">Add stop...</option>';
-
-      if (allStops.length === 0) {
-        selectElement.innerHTML +=
-          '<option value="" disabled>No stops in database</option>';
-        return;
-      }
-
-      // Add stops as options
-      const options = allStops
-        .map(
-          (stop) => `
-          <option value="${stop.stop_id}">
-            ${this.escapeHtml(renderOptionLabel(getStopDisplay(stop as unknown as Record<string, string>)))}
-          </option>
-        `
-        )
-        .join('');
-
-      selectElement.innerHTML += options;
-    } catch (error) {
-      console.error('Failed to populate new stop select:', error);
     }
   }
 
@@ -1029,189 +1098,6 @@ export class ScheduleController {
         { signal: this.deleteTripAbortController.signal }
       );
     }
-  }
-
-  /**
-   * Open the add stop dropdown and populate with available stops
-   *
-   * Fetches all stops that are not currently in the timetable and populates
-   * the dropdown menu with them. Used when user clicks the + button.
-   *
-   * @param route_id - GTFS route identifier
-   * @param service_id - GTFS service identifier
-   */
-  public async openAddStopDropdown(
-    route_id: string,
-    service_id: string
-  ): Promise<void> {
-    console.log('=== openAddStopDropdown called ===');
-    console.log('route_id:', route_id);
-    console.log('service_id:', service_id);
-    console.log('currentDirectionId:', this.currentDirectionId);
-
-    // Don't allow adding another stop if there's already a pending stop
-    // (button should be disabled, but check anyway as fallback)
-    if (this.pendingStop) {
-      return;
-    }
-
-    // Get all stops from the database
-    const allStops = await this.gtfsParser.gtfsDatabase.queryRows('stops', {});
-    console.log('Total stops in database:', allStops.length);
-
-    // Populate the dropdown
-    this.populateAddStopList(allStops);
-
-    // Show the dropdown
-    const dropdownContainer = document.getElementById(
-      'add-stop-dropdown-container'
-    );
-    if (dropdownContainer) {
-      dropdownContainer.style.display = 'block';
-      // Position near the button
-      const addStopBtn = document.getElementById('add-stop-btn');
-      if (addStopBtn) {
-        const rect = addStopBtn.getBoundingClientRect();
-        dropdownContainer.style.top = `${rect.bottom + 5}px`;
-        dropdownContainer.style.right = `${window.innerWidth - rect.right}px`;
-      }
-      // Focus the select
-      const selectElement = document.getElementById(
-        'add-stop-select'
-      ) as HTMLSelectElement;
-      if (selectElement) {
-        selectElement.focus();
-      }
-    }
-  }
-
-  /**
-   * Populate the add stop dropdown list
-   *
-   * Renders the list of available stops in the dropdown select.
-   *
-   * @param stops - Array of stops to display
-   */
-  private populateAddStopList(stops: Stops[]): void {
-    console.log('=== populateAddStopList called ===');
-    const selectElement = document.getElementById(
-      'add-stop-select'
-    ) as HTMLSelectElement;
-    console.log('Select element found:', !!selectElement);
-    if (!selectElement) {
-      console.error('add-stop-select element not found in DOM');
-      return;
-    }
-
-    // Reset select to default option
-    selectElement.innerHTML = '<option value="">Choose a stop...</option>';
-
-    if (stops.length === 0) {
-      console.log('No available stops to add');
-      selectElement.innerHTML +=
-        '<option value="" disabled>No stops in database</option>';
-      return;
-    }
-
-    console.log('Adding', stops.length, 'stops to dropdown');
-    console.log(
-      'First 3 stops:',
-      stops.slice(0, 3).map((s) => ({ id: s.stop_id, name: s.stop_name }))
-    );
-
-    // Add stops as options
-    const options = stops
-      .map(
-        (stop) => `
-        <option value="${stop.stop_id}">
-          ${this.escapeHtml(renderOptionLabel(getStopDisplay(stop as unknown as Record<string, string>)))}
-        </option>
-      `
-      )
-      .join('');
-
-    selectElement.innerHTML += options;
-  }
-
-  /**
-   * Add a stop to the timetable UI (not saved to database until time is entered)
-   *
-   * Adds a new row to the timetable for the selected stop. The stop is only
-   * saved in UI state until the user enters at least one time. When a time is
-   * entered, the stop_time will be created in the database for that specific trip.
-   *
-   * Only one pending stop is allowed at a time - user must add a time before
-   * adding another stop.
-   *
-   * @param stop_id - GTFS stop identifier to add
-   */
-  public async addStopToAllTrips(stop_id: string): Promise<void> {
-    try {
-      if (!this.currentRouteId || !this.currentServiceId) {
-        console.error('No current timetable to add stop to');
-        return;
-      }
-
-      // Get stop name for display
-      const stops = await this.gtfsParser.gtfsDatabase.queryRows('stops', {
-        stop_id,
-      });
-
-      if (stops.length === 0) {
-        notify.error('Stop not found');
-        return;
-      }
-
-      const stop = stops[0];
-
-      // Set pending stop (UI state only, not saved to database)
-      this.pendingStop = {
-        stop_id: stop.stop_id,
-        stop_name: stop.stop_name || stop.stop_id,
-      };
-
-      console.log(
-        `Added pending stop ${stop_id} to UI (not saved to database)`
-      );
-
-      // Reset the select element
-      const selectElement = document.getElementById(
-        'add-stop-select'
-      ) as HTMLSelectElement;
-      if (selectElement) {
-        selectElement.value = '';
-      }
-
-      // Close the dropdown
-      const dropdownContainer = document.getElementById(
-        'add-stop-dropdown-container'
-      );
-      if (dropdownContainer) {
-        dropdownContainer.style.display = 'none';
-      }
-
-      // Refresh the timetable to show the new pending stop row
-      await this.refreshCurrentTimetable();
-
-      notify.success(`Stop added. Enter a time for at least one trip to save.`);
-    } catch (error) {
-      console.error('Failed to add stop to timetable:', error);
-      notify.error('Failed to add stop to timetable');
-    }
-  }
-
-  /**
-   * Escape HTML characters in text
-   *
-   * Prevents XSS by escaping user-provided text content.
-   *
-   * @param text - Raw text that may contain HTML characters
-   * @returns HTML-safe escaped text
-   */
-  private escapeHtml(text: string): string {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
   }
 
   // Track pending stop that hasn't been saved to database yet
@@ -1398,12 +1284,10 @@ export class ScheduleController {
    *
    * @param oldStopId - The stop being replaced
    * @param newStopId - The new stop to assign
-   * @param selectEl - The <select> element (used to reset value on error)
    */
   public async changeStopAtRow(
     oldStopId: string,
-    newStopId: string,
-    selectEl: HTMLSelectElement
+    newStopId: string
   ): Promise<void> {
     if (oldStopId === newStopId) {
       return;
@@ -1413,13 +1297,11 @@ export class ScheduleController {
       console.error(
         '[ScheduleController] changeStopAtRow: no timetable loaded'
       );
-      selectEl.value = oldStopId;
       return;
     }
 
     if (!this.patchManager) {
       console.error('[ScheduleController] changeStopAtRow: no patch manager');
-      selectEl.value = oldStopId;
       return;
     }
 
@@ -1427,7 +1309,6 @@ export class ScheduleController {
       console.error(
         '[ScheduleController] changeStopAtRow: no direction selected'
       );
-      selectEl.value = oldStopId;
       return;
     }
 
@@ -1469,7 +1350,7 @@ export class ScheduleController {
         console.warn(
           `[ScheduleController] changeStopAtRow: no stop_times found for stop ${oldStopId}`
         );
-        selectEl.value = oldStopId;
+        notify.error('No stop times reference that stop in this direction');
         return;
       }
 
@@ -1483,14 +1364,14 @@ export class ScheduleController {
         data.route.route_short_name ||
         data.route.route_long_name ||
         data.route.route_id;
-      const label = `Changed stop "${oldName}" → "${newName}" (Route ${routeLabel}, Direction ${this.currentDirectionId})`;
+      const label = `Changed stop "${oldName}" -> "${newName}" (Route ${routeLabel}, Direction ${this.currentDirectionId})`;
 
       await this.patchManager.recordBatch(ops, label);
 
       await this.refreshCurrentTimetable();
     } catch (error) {
       console.error('[ScheduleController] changeStopAtRow failed:', error);
-      selectEl.value = oldStopId;
+      notify.error('Failed to change stop');
     }
   }
 
