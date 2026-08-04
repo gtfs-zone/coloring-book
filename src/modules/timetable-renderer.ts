@@ -570,20 +570,18 @@ export class TimetableRenderer {
   /**
    * Get display name for direction
    *
-   * Determines the best display name for a direction tab.
-   * Uses headsign if available, falls back to formatted direction ID.
+   * `direction.name` is already the dominant trip_headsign (or a terminal
+   * stop / bare direction id fallback) from directionsForRoute - no further
+   * formatting needed here.
    *
-   * @param direction - Direction info with ID and optional headsign
+   * @param direction - Direction info with ID and label
    * @returns Human-readable direction name for display
    */
   private getDirectionDisplayName(direction: DirectionInfo): string {
     if (direction.tripCount === 0) {
-      return `Direction ${direction.id}: No trips`;
+      return `${direction.name}: No trips`;
     }
-    if (direction.lastStopName) {
-      return `Direction ${direction.id}: To ${direction.lastStopName}`;
-    }
-    return `Direction ${direction.id}`;
+    return direction.name;
   }
 
   /**

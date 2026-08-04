@@ -717,25 +717,16 @@ export class ScheduleController {
       this.currentRouteId = route_id;
       this.currentServiceId = service_id;
 
-      // Get all available directions for this route and service
-      const fetchedDirections =
+      // Get all available directions for this route and service, busiest first
+      const availableDirections =
         await this.dataProcessor.getAvailableDirectionsAsync(
           route_id,
           service_id
         );
 
-      // Always show exactly Direction 0 and Direction 1, padding missing ones with 0 trips
-      const availableDirections = ['0', '1'].map(
-        (id) =>
-          fetchedDirections.find((d) => d.id === id) ?? {
-            id,
-            name: `Direction ${id}`,
-            tripCount: 0,
-          }
-      );
-
-      // Use provided direction_id or Direction 0 as default
-      const selectedDirection = direction_id ?? availableDirections[0].id;
+      // Use provided direction_id or the busiest direction as default
+      const selectedDirection =
+        direction_id ?? availableDirections[0]?.id ?? '0';
       this.currentDirectionId = selectedDirection;
 
       const cacheKey = this.timetableDataCacheKey(
