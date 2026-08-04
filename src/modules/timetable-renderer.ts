@@ -20,6 +20,9 @@ import { TripsSchema, GTFS_TABLES } from '../types/gtfs.js';
 import { getStopDisplay, renderCardLabel } from '../utils/entity-display.js';
 import { escapeHtml } from '../utils/escape-html.js';
 import { renderTrashIcon } from './modal-utils.js';
+import { routeColor } from '../utils/route-colors.js';
+import { railCell, rowPaths, RowDot } from './route-strip.js';
+import { RouteGraph } from './route-graph.js';
 
 function getBrouterProfile(routeType: string | number): string {
   const t = Number(routeType);
@@ -442,29 +445,54 @@ export class TimetableRenderer {
   }
 
   /**
-   * Render one stop row's label cell.
+   * Render one stop row's rail + label cell.
    *
-   * This used to be a `<select>` listing every stop in the feed, repeated in
-   * every row (226,556 `<option>` nodes for the MBTA Red Line and 721,000 for
-   * a 70-stop bus route), which was the single largest cost in the view. The
-   * label is now static text; the picker is built once, on demand, when the
-   * swap button is clicked (see ScheduleController.openStopPicker).
+   * The rail is the strip visualisation: an SVG of the route's branch
+   * geometry for this row, laid under the stop label and swap button. No
+   * vehicle chips sit in the gaps in coloring-book (that is test-track's
+   * concern), so every row is a plain stop row with no lead-in/lead-out
+   * extension needed.
+   *
+   * The label itself used to come from a `<select>` listing every stop in the
+   * feed, repeated in every row (226,556 `<option>` nodes for the MBTA Red
+   * Line and 721,000 for a 70-stop bus route), which was the single largest
+   * cost in the view. The label is now static text; the picker is built once,
+   * on demand, when the swap button is clicked (see
+   * ScheduleController.openStopPicker).
    *
    * @param stop - The stop this row represents
-   * @returns HTML string for the row's stop label cell
+   * @param index - The stop's position in the route sequence / graph
+   * @param graph - The route's lane layout
+   * @param color - The route's rail color
+   * @returns HTML string for the row's rail + stop label cell
    */
-  private renderStopLabelCell(stop: Stops): string {
+  private renderStopLabelCell(
+    stop: Stops,
+    index: number,
+    graph: RouteGraph,
+    color: string
+  ): string {
     const label = renderCardLabel(
       getStopDisplay(stop as unknown as Record<string, string>)
     );
+    const dot: RowDot = { kind: 'open', lane: graph.rows[index].lane };
+    const rail = railCell(
+      color,
+      graph.laneCount,
+      rowPaths(graph, index, { kind: 'stop', leadIn: false, leadOut: false }),
+      dot
+    );
     return `
-      <div class="flex items-center gap-1 min-w-0">
-        <span class="flex-1 min-w-0 truncate">${label}</span>
-        <button
-          class="btn btn-ghost btn-xs px-1 opacity-40 hover:opacity-100 change-stop-btn"
-          data-stop-id="${escapeHtml(stop.stop_id)}"
-          title="Change stop"
-        >&lt;-&gt;</button>
+      <div class="flex items-stretch gap-2 min-w-0">
+        ${rail}
+        <div class="flex items-center gap-1 min-w-0 flex-1">
+          <span class="flex-1 min-w-0 truncate">${label}</span>
+          <button
+            class="btn btn-ghost btn-xs px-1 opacity-40 hover:opacity-100 change-stop-btn"
+            data-stop-id="${escapeHtml(stop.stop_id)}"
+            title="Change stop"
+          >&lt;-&gt;</button>
+        </div>
       </div>
     `;
   }
@@ -491,6 +519,14 @@ export class TimetableRenderer {
     console.log(
       `[TimetableRenderer] rendering ${data.stops.length} stops x ${data.trips.length} trips`
     );
+
+    const graph = data.graph;
+    if (data.stops.length > 0 && !graph) {
+      throw new Error(
+        '[TimetableRenderer] stops present without a route graph - generateTimetableData should always produce one alongside stops'
+      );
+    }
+    const color = routeColor(data.route.route_id, data.route.route_color);
 
     const rows = data.stops
       .map((stop, stopIndex) => {
@@ -533,8 +569,8 @@ export class TimetableRenderer {
 
         return `
         <tr class="${rowClass}">
-          <th class="stop-name p-2 font-medium border-r border-base-300 bg-base-100">
-            ${this.renderStopLabelCell(stop)}
+          <th class="stop-name relative p-2 pl-0 font-medium border-r border-base-300 bg-base-100">
+            ${this.renderStopLabelCell(stop, stopIndex, graph as RouteGraph, color)}
           </th>
           ${timeCells}
           ${newTripCell}
