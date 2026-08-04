@@ -50,6 +50,8 @@ export class GTFSParser {
   private stopTimesByStopId = new Map<string, StopTimes[]>();
   // In-memory index for stop_times trip_id lookups (used by synchronous getStopIdsForRoute)
   private stopTimesByTripId = new Map<string, StopTimes[]>();
+  // In-memory index for trips route_id lookups (used by synchronous getTripsByRouteId)
+  private tripsByRouteId = new Map<string, GTFSDatabaseRecord[]>();
   // Dirty-blob tracking for deferred persistence
   private blobDirty = new Set<string>();
   private blobPersistTimer: ReturnType<typeof setTimeout> | null = null;
@@ -381,7 +383,8 @@ export class GTFSParser {
       fieldMaps.set('trip_id', this.stopTimesByTripId);
       fieldMaps.set('stop_id', this.stopTimesByStopId);
     } else if (tableName === 'trips') {
-      fieldMaps.set('route_id', new Map());
+      this.tripsByRouteId.clear();
+      fieldMaps.set('route_id', this.tripsByRouteId);
       fieldMaps.set('service_id', new Map());
     } else if (tableName === 'stops') {
       // Without this, every queryRows('stops', { stop_id }) is a linear scan
@@ -501,6 +504,24 @@ export class GTFSParser {
     );
     return this.getFileDataSyncTyped(GTFS_TABLES.STOP_TIMES).filter(
       (st) => st.trip_id === trip_id
+    );
+  }
+
+  /**
+   * Fast trips lookup by route_id via in-memory index (used by the route-source
+   * adapter). Returns shallow copies of the stored rows (copy-on-read invariant).
+   */
+  getTripsByRouteId(route_id: string): GTFSDatabaseRecord[] {
+    const indexed = this.tripsByRouteId.get(route_id);
+    if (indexed) {
+      return indexed.map((r) => ({ ...r }));
+    }
+
+    console.warn(
+      '[GTFSParser] getTripsByRouteId: index miss, falling back to linear scan'
+    );
+    return this.getFileDataSyncTyped(GTFS_TABLES.TRIPS).filter(
+      (t) => String(t.route_id ?? '') === route_id
     );
   }
 
