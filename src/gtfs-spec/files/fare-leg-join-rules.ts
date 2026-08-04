@@ -4,7 +4,7 @@ export const fareLegJoinRulesSpec: GTFSFileSpec = {
   filename: 'fare_leg_join_rules.txt',
   presence: 'Optional',
   description:
-    'Defines rules for combining consecutive fare legs into a single effective fare leg for fare calculation purposes. When two consecutive legs match a join rule, they are treated as one leg — allowing the combined leg to match a different fare_leg_rules.txt entry than either individual leg would. Part of the Fares v2 model.',
+    'Defines rules for combining consecutive fare legs into a single effective fare leg for fare calculation purposes. When two consecutive legs match a join rule, they are treated as one leg, allowing the combined leg to match a different fare_leg_rules.txt entry than either individual leg would. Part of the Fares v2 model.',
   fields: [
     {
       name: 'from_leg_group_id',

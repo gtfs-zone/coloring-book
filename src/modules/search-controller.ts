@@ -6,7 +6,7 @@
  * through `onSelect()`. That is what lets the same file be vendored verbatim
  * into sibling apps whose data layer and `PageState` union differ.
  *
- * Entries are rebuilt on every (debounced) query — always fresh, no cache to
+ * Entries are rebuilt on every (debounced) query, always fresh, no cache to
  * invalidate against the patch system. If typing ever feels laggy on a large
  * feed, the fix is to cache the entry list in the adapter and invalidate it on
  * feed load/reset and on patch writes; nothing in here has to change.
@@ -15,7 +15,7 @@
 import uFuzzy from '@leeoniya/ufuzzy';
 
 export interface SearchEntry<T> {
-  /** Handed back to `onSelect` untouched — the app's own focus descriptor. */
+  /** Handed back to `onSelect` untouched, the app's own focus descriptor. */
   payload: T;
   /** Marker HTML, from the helpers below. */
   icon: string;
@@ -51,7 +51,7 @@ function esc(s: string): string {
 
 // ─── Markers ──────────────────────────────────────────────────────────────────
 //
-// These mirror how the map paints the same objects — see the `circle-color`
+// These mirror how the map paints the same objects, see the `circle-color`
 // expressions in `layer-manager.ts`, which is the source of truth for the
 // palette. Change one, change the other. Every marker carries a hairline ring
 // because feed colors (and the white station fill) routinely collide with the
@@ -77,7 +77,7 @@ export function stopMarker(location_type?: string | number): string {
   return dotMarker(fill);
 }
 
-/** A plain filled circle — plain stops, and realtime vehicles in route color. */
+/** A plain filled circle: plain stops, and realtime vehicles in route color. */
 export function dotMarker(color: string): string {
   return `<span class="inline-block shrink-0 rounded-full" style="width:11px;height:11px;background:${esc(color)};${RING}"></span>`;
 }
@@ -170,7 +170,7 @@ export class SearchController<T> {
       entries = await this.opts.getEntries();
     } catch (error) {
       console.error('[Search] Failed to build entries:', error);
-      this.renderMessage('Search failed — see the console');
+      this.renderMessage('Search failed, see the console');
       return;
     }
     if (id !== this.requestId) {
@@ -182,7 +182,7 @@ export class SearchController<T> {
       query
     );
     // `info.idx` maps an info slot back to its haystack index, and `order` is
-    // those slots in rank order — so `info.idx[order[i]]` is the entry index.
+    // those slots in rank order, so `info.idx[order[i]]` is the entry index.
     const ranked = info && order ? order.map((o) => info.idx[o]) : (idxs ?? []);
 
     // Stable sort: entries with equal priority keep uFuzzy's quality order.

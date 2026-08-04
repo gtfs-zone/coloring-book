@@ -146,7 +146,7 @@ export class BottomSheetController {
     const fullH = vph * FULL_VH;
 
     if (velocity < -VELOCITY_THRESHOLD || h < halfH / 2) {
-      // Strongly downward or very low — dismiss
+      // Strongly downward or very low: dismiss
       this.fireDismissCallbacks();
       return 'closed';
     }
@@ -243,7 +243,7 @@ export class BottomSheetController {
     if (!this.active) {
       return;
     }
-    // Programmatic close — does not fire dismiss callbacks
+    // Programmatic close: does not fire dismiss callbacks
     this.setSnap('closed', true);
   }
 }

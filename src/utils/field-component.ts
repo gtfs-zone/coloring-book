@@ -59,7 +59,7 @@ export interface FieldConfig {
   tableName?: string;
   /** Custom tooltip override (if not using Zod description) */
   tooltip?: string;
-  /** Whether the field is required (hard Required only — drives HTML required attribute) */
+  /** Whether the field is required (hard Required only, drives HTML required attribute) */
   required?: boolean;
   /** Spec presence level for this field */
   presence?: GTFSPresence;
@@ -659,7 +659,7 @@ export interface QueryOnlyDatabase {
 /**
  * Render form fields for a GTFS entity from already-fetched row data.
  *
- * Always sets recordId so form-patch-bridge can record the edit — making it
+ * Always sets recordId so form-patch-bridge can record the edit, making it
  * impossible to forget the recordId when this helper is used.
  *
  * @param schema - Zod schema for the entity
@@ -686,7 +686,7 @@ export function renderEntityFields(
  * Render form fields for a GTFS entity, fetching raw row data from the database.
  *
  * Always uses raw snake_case row data (matching the schema), always sets recordId,
- * and always looks up the correct schema — making the correct pattern the only option.
+ * and always looks up the correct schema, making the correct pattern the only option.
  *
  * @param tableName - GTFS table name including extension (e.g. 'routes.txt')
  * @param id - Primary key value for the entity

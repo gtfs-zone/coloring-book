@@ -353,11 +353,11 @@ export class ServiceDaysController {
 
       if (existingRecord) {
         if (existingRecord.exception_type === exception_type) {
-          // Already the correct type — no-op
+          // Already the correct type, no-op
           this.showSaveSuccess('exceptions');
           return;
         }
-        // Different type — update in place
+        // Different type, update in place
         const key = `${service_id}:${gtfsDate}`;
         await this.gtfsParser.gtfsDatabase.updateRow('calendar_dates', key, {
           exception_type,
@@ -373,7 +373,7 @@ export class ServiceDaysController {
         ]);
         this.showSaveSuccess('exceptions');
         console.log(
-          `[ServiceDaysController] Updated exception for service ${service_id} on ${gtfsDate} (type ${existingRecord.exception_type} → ${exception_type})`
+          `[ServiceDaysController] Updated exception for service ${service_id} on ${gtfsDate} (type ${existingRecord.exception_type} -> ${exception_type})`
         );
       } else {
         const exceptionData: CalendarDates = {
@@ -606,7 +606,7 @@ export class ServiceDaysController {
                 class="btn btn-ghost btn-xs"
                 onclick="window.gtfsEditor.serviceDaysController.removePatternGroup('${service_id}', '${pattern.id}', ${exception_type})"
               >
-                ✕
+                ×
               </button>
             </div>
           `;
@@ -669,7 +669,7 @@ export class ServiceDaysController {
               class="btn btn-ghost btn-xs"
               onclick="window.gtfsEditor.serviceDaysController.removeException('${service_id}', '${exception.date}')"
             >
-              ✕
+              ×
             </button>
           </div>
         `;

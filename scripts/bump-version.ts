@@ -49,7 +49,7 @@ function main() {
 
   writeFileSync(packageJsonPath, JSON.stringify(packageJson, null, 2) + '\n');
 
-  console.log(`Version bumped: ${currentVersion} → ${newVersion} (${bumpType})`);
+  console.log(`Version bumped: ${currentVersion} -> ${newVersion} (${bumpType})`);
 }
 
 main();

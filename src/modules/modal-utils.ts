@@ -17,11 +17,11 @@ export interface ModalAction {
  * Buttons are disabled while the action's onClick promise is pending.
  * If onClick returns true, the modal stays open (for validation failures).
  *
- * `enterAction` — index of the action triggered by Enter (skipped when focused
+ * `enterAction`: index of the action triggered by Enter (skipped when focused
  *   element is a <button> or <textarea>).
- * `escapeAction` — index of the action triggered by Escape; also controls
+ * `escapeAction`: index of the action triggered by Escape; also controls
  *   whether the X button is rendered.
- * `onMount` — called after the modal is in the DOM; receives a `close`
+ * `onMount`: called after the modal is in the DOM; receives a `close`
  *   callback so the mount handler can close the modal programmatically.
  */
 export async function showModal(options: {
@@ -39,7 +39,7 @@ export async function showModal(options: {
     modal.className = 'modal modal-open';
     modal.innerHTML = `
       <div class="modal-box relative max-h-[80vh] flex flex-col ${options.boxClassName ?? ''}">
-        ${options.escapeAction !== undefined ? '<button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2" data-dismiss>✕</button>' : ''}
+        ${options.escapeAction !== undefined ? '<button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2" data-dismiss>×</button>' : ''}
         <h3 class="font-bold text-lg">${options.title}</h3>
         <div class="flex-1 overflow-y-auto py-4">${options.body}</div>
         <div class="modal-action">
