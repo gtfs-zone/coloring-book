@@ -581,11 +581,9 @@ export class TimetableRenderer {
     const newStopRow = `
       <tr>
         <th class="stop-name p-2 border-r border-base-300 bg-base-100">
-          <!-- Options are filled in on first interaction, not on render: the
-               feed can hold tens of thousands of stops. -->
-          <select class="select select-sm w-full" id="new-stop-select" data-stop-options="pending">
-            <option value="">Add stop...</option>
-          </select>
+          <button
+            class="add-stop-btn btn btn-ghost btn-sm w-full justify-start opacity-70 hover:opacity-100"
+          >Add stop...</button>
         </th>
         ${newStopTimeCells}
         <td class="text-center p-2"></td>
