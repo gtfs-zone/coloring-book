@@ -19,6 +19,7 @@ import type { RouteSourceTrip } from './route-source.js';
 import {
   routeSequence,
   clearRouteSequenceCache,
+  directionsForRoute,
   RouteSequence,
 } from './route-sequence.js';
 import { routeGraph, RouteGraph } from './route-graph.js';
@@ -62,7 +63,6 @@ export interface DirectionInfo {
   id: string;
   name: string;
   tripCount: number;
-  lastStopName?: string;
 }
 
 /**
@@ -83,31 +83,8 @@ export interface TimetableData {
   graph?: RouteGraph;
 }
 
-// Enhanced GTFS interfaces using standard GTFS property names
-interface EnhancedTrip {
-  // Shorthand properties
-  id: string;
-  headsign?: string;
-  shortName?: string;
-  // Original GTFS properties
-  trip_id: string;
-  route_id: string;
-  service_id: string;
-  trip_headsign?: string;
-  trip_short_name?: string;
-  direction_id?: string;
-  block_id?: string;
-  shape_id?: string;
-  wheelchair_accessible?: string;
-  bikes_allowed?: string;
-}
-
 interface GTFSRelationships {
   getCalendarForService(service_id: string): Record<string, unknown> | null;
-  getTripsForRoute(route_id: string): EnhancedTrip[];
-  getTripsForRouteAsync(route_id: string): Promise<EnhancedTrip[]>;
-  getStopTimesForTrip(trip_id: string): Record<string, unknown>[];
-  getStopById(stop_id: string): Record<string, unknown> | null;
   getStopByIdAsync(stop_id: string): Promise<Record<string, unknown> | null>;
 }
 
@@ -160,25 +137,6 @@ export class TimetableDataProcessor {
       clearRouteSequenceCache(this.routeSource);
       this.routeSource = null;
     }
-  }
-
-  /**
-   * Get stop times for a trip from the database (includes any edits)
-   *
-   * This method reads from the database instead of the cached relationships layer,
-   * ensuring that any user edits are reflected in the timetable rendering.
-   *
-   * @param trip_id - GTFS trip identifier
-   * @returns Promise resolving to array of stop times from database
-   */
-  private async getStopTimesFromDatabase(
-    trip_id: string
-  ): Promise<StopTimes[]> {
-    const stopTimes = await this.gtfsParser.gtfsDatabase.queryRows(
-      'stop_times',
-      { trip_id }
-    );
-    return stopTimes;
   }
 
   /**
@@ -398,9 +356,10 @@ export class TimetableDataProcessor {
   /**
    * Get available directions for a route and service
    *
-   * Analyzes all trips for the given route and service to determine
-   * which direction_id values are available. Groups trips by direction
-   * and counts the number of trips per direction.
+   * Labels each direction by its dominant trip_headsign (falling back to
+   * terminal stop, then a bare "Direction N") rather than a generic
+   * "Direction 0"/"Direction 1", and needs no per-direction stop_times fetch
+   * to do it.
    *
    * @param route_id - GTFS route identifier
    * @param service_id - GTFS service identifier
@@ -410,65 +369,12 @@ export class TimetableDataProcessor {
     route_id: string,
     service_id: string
   ): Promise<DirectionInfo[]> {
-    // Get all trips for this route and service
-    const allTrips = await this.relationships.getTripsForRouteAsync(route_id);
-    const trips = allTrips.filter(
-      (trip: EnhancedTrip) => trip.service_id === service_id
-    );
-
-    // Group trips by direction ID
-    const directionMap = new Map<string, number>();
-    trips.forEach((trip: EnhancedTrip) => {
-      const dirId = String(trip.direction_id ?? '0');
-      directionMap.set(dirId, (directionMap.get(dirId) || 0) + 1);
-    });
-
-    // Group trips by direction for last-stop lookup
-    const directionTrips = new Map<string, EnhancedTrip[]>();
-    trips.forEach((trip: EnhancedTrip) => {
-      const dirId = String(trip.direction_id ?? '0');
-      const existing = directionTrips.get(dirId) || [];
-      existing.push(trip);
-      directionTrips.set(dirId, existing);
-    });
-
-    // Convert to DirectionInfo array, sorted by direction ID
-    const directions: DirectionInfo[] = await Promise.all(
-      Array.from(directionMap.entries())
-        .sort(([a], [b]) => a.localeCompare(b))
-        .map(async ([id, tripCount]) => {
-          let lastStopName: string | undefined;
-          if (tripCount > 0) {
-            const dirTrips = directionTrips.get(id) || [];
-            if (dirTrips.length > 0) {
-              const representativeTrip = dirTrips[0];
-              const stopTimes = await this.getStopTimesFromDatabase(
-                representativeTrip.id
-              );
-              const sorted = stopTimes.sort(
-                (a: StopTimes, b: StopTimes) =>
-                  parseInt(String(a.stop_sequence)) -
-                  parseInt(String(b.stop_sequence))
-              );
-              const lastStopTime = sorted[sorted.length - 1];
-              if (lastStopTime) {
-                const stop = await this.relationships.getStopByIdAsync(
-                  lastStopTime.stop_id
-                );
-                lastStopName = stop?.stop_name as string | undefined;
-              }
-            }
-          }
-          return {
-            id,
-            name: this.getDirectionName(id),
-            tripCount,
-            lastStopName,
-          };
-        })
-    );
-
-    return directions;
+    const source = this.getRouteSource();
+    return directionsForRoute(source, route_id, service_id).map((d) => ({
+      id: d.direction_id,
+      name: d.label,
+      tripCount: d.tripCount,
+    }));
   }
 
   /**

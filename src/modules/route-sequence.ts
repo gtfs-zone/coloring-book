@@ -368,13 +368,17 @@ function directionLabel(
  * Feeds that omit `direction_id` entirely collapse to a single unnamed
  * direction rather than being forced into a 0/1 split that the data does not
  * support.
+ *
+ * `serviceId` scopes trip counts and labels to one calendar service; omit it
+ * for the feed-wide view.
  */
 export function directionsForRoute(
   source: RouteSource,
-  routeId: string
+  routeId: string,
+  serviceId?: string
 ): DirectionInfo[] {
   const byDirection = new Map<string, RouteSourceTrip[]>();
-  for (const trip of source.tripsForRoute(routeId)) {
+  for (const trip of source.tripsForRoute(routeId, serviceId)) {
     const key = trip.direction_id ?? '';
     let list = byDirection.get(key);
     if (!list) {
