@@ -16,10 +16,13 @@ import { TimetableRenderer } from './timetable-renderer.js';
 import { TimetableDatabase } from './timetable-database.js';
 import { generateCompositeKeyFromRecord } from '../utils/gtfs-primary-keys.js';
 import { patchUpdate } from '../utils/patch-utils.js';
-import { getStopDisplay, renderOptionLabel } from '../utils/entity-display.js';
+import { getStopDisplay } from '../utils/entity-display.js';
 import { escapeHtml } from '../utils/escape-html.js';
 import { showModal } from './modal-utils.js';
-import { showOptionPickerModal } from './option-picker-modal.js';
+import {
+  showOptionPickerModal,
+  OptionPickerItem,
+} from './option-picker-modal.js';
 import { getEnumOptions } from '../types/gtfs-enums.js';
 
 // Enhanced GTFS interfaces using standard GTFS property names
@@ -160,7 +163,7 @@ export class ScheduleController {
    */
   private installTimetablePickers(): void {
     // The "add stop" select at the bottom of the table fills itself on first
-    // interaction, see buildStopOptions for why it is not filled on render.
+    // interaction, see fillStopOptions for why it is not filled on render.
     document.addEventListener('focusin', (e) => {
       const stopSelect = (e.target as Element)?.closest?.(
         '#new-stop-select[data-stop-options="pending"]'
@@ -181,9 +184,9 @@ export class ScheduleController {
     });
 
     document.addEventListener('click', (e) => {
-      const btn = (e.target as Element)?.closest?.('.change-stop-btn');
-      if (btn instanceof HTMLElement) {
-        void this.openStopPicker(btn);
+      const stopLabel = (e.target as Element)?.closest?.('.stop-label-span');
+      if (stopLabel instanceof HTMLElement) {
+        void this.openStopPicker(stopLabel);
         return;
       }
 
@@ -281,44 +284,29 @@ export class ScheduleController {
   }
 
   /**
-   * Swap a row's stop label for a picker, on demand.
+   * Open the searchable stop-picker modal for a row's stop label.
    *
-   * The picker is built only for the row the user actually clicked. Rendering
-   * one per row is what made this view unusable: a 70-stop bus route on a feed
-   * with 10,000 stops emitted 721,000 `<option>` elements.
+   * On pick, hands off to the existing `changeStopAtRow` (patch recording,
+   * SCS re-alignment) unchanged - this only changes how the new stop_id
+   * reaches it.
    */
-  private async openStopPicker(btn: HTMLElement): Promise<void> {
-    const oldStopId = btn.dataset.stopId;
-    const cell = btn.parentElement;
-    if (!oldStopId || !cell || cell.querySelector('select')) {
+  private async openStopPicker(labelSpan: HTMLElement): Promise<void> {
+    const oldStopId = labelSpan.dataset.stopId;
+    if (!oldStopId) {
       return;
     }
 
-    const label = cell.firstElementChild as HTMLElement | null;
-    const select = document.createElement('select');
-    select.className = 'select select-xs w-full font-medium';
-    select.innerHTML = '<option value="">Loading...</option>';
-    label?.classList.add('hidden');
-    btn.classList.add('hidden');
-    cell.prepend(select);
-
-    await this.fillStopOptions(select, oldStopId);
-    select.focus();
-
-    const restore = (): void => {
-      select.remove();
-      label?.classList.remove('hidden');
-      btn.classList.remove('hidden');
-    };
-
-    select.addEventListener('change', () => {
-      const newStopId = select.value;
-      restore();
-      if (newStopId && newStopId !== oldStopId) {
-        void this.changeStopAtRow(oldStopId, newStopId);
-      }
+    const options = await this.getStopOptions();
+    const picked = await showOptionPickerModal({
+      title: 'Change stop',
+      options,
+      selectedValue: oldStopId,
+      searchable: true,
     });
-    select.addEventListener('blur', restore);
+
+    if (picked !== null && picked !== oldStopId) {
+      void this.changeStopAtRow(oldStopId, picked);
+    }
   }
 
   /**
@@ -517,10 +505,15 @@ export class ScheduleController {
   }
 
   /**
-   * Cached `<option>` markup for every stop in the feed.
-   *
-   * Built at most once per feed and reused by both pickers. Cleared by
-   * invalidateCaches when the stops table changes.
+   * Cached structured stop list for the searchable stop-picker modal.
+   * Built at most once per feed. Cleared by invalidateCaches when the stops
+   * table changes.
+   */
+  private stopOptions: OptionPickerItem[] | null = null;
+
+  /**
+   * Cached `<option>` markup for the "Add stop" `<select>`. Cleared by
+   * invalidateCaches alongside stopOptions.
    */
   private stopOptionsHtml: string | null = null;
 
@@ -544,9 +537,26 @@ export class ScheduleController {
 
   /** Drop the cached picker options and timetable data; call after any edit that could change them. */
   public invalidateCaches(): void {
+    this.stopOptions = null;
     this.stopOptionsHtml = null;
     this.timetableDataCache.clear();
     this.dataProcessor.invalidateRouteSource();
+  }
+
+  private async getStopOptions(): Promise<OptionPickerItem[]> {
+    if (this.stopOptions === null) {
+      const stops = await this.gtfsParser.gtfsDatabase.queryRows('stops', {});
+      console.log(
+        `[ScheduleController] building stop picker options for ${stops.length} stops`
+      );
+      this.stopOptions = stops.map((stop) => ({
+        value: stop.stop_id,
+        primary: getStopDisplay(stop as unknown as Record<string, string>)
+          .primary,
+        secondary: stop.stop_id,
+      }));
+    }
+    return this.stopOptions;
   }
 
   private async fillStopOptions(
@@ -555,24 +565,17 @@ export class ScheduleController {
   ): Promise<void> {
     if (this.stopOptionsHtml === null) {
       const stops = await this.gtfsParser.gtfsDatabase.queryRows('stops', {});
-      console.log(
-        `[ScheduleController] building stop picker options for ${stops.length} stops`
-      );
       this.stopOptionsHtml = stops
         .map(
           (stop) =>
             `<option value="${escapeHtml(stop.stop_id)}">${escapeHtml(
-              renderOptionLabel(
-                getStopDisplay(stop as unknown as Record<string, string>)
-              )
+              getStopDisplay(stop as unknown as Record<string, string>).primary
             )}</option>`
         )
         .join('');
     }
 
-    const placeholder = selectedStopId
-      ? '<option value="">Change stop...</option>'
-      : '<option value="">Add stop...</option>';
+    const placeholder = '<option value="">Add stop...</option>';
     select.innerHTML = placeholder + this.stopOptionsHtml;
     select.value = selectedStopId;
     select.dataset.stopOptions = 'ready';
