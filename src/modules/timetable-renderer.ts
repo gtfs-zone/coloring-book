@@ -75,7 +75,6 @@ function buildBrouterUrl(
  */
 export class TimetableRenderer {
   private cellRenderer: TimetableCellRenderer;
-  public availableShapeIds: string[] = [];
 
   constructor() {
     this.cellRenderer = new TimetableCellRenderer();
@@ -300,13 +299,14 @@ export class TimetableRenderer {
     const inputId = `trip-prop-${trip_id}-${config.field}`;
 
     if (config.field === 'shape_id') {
-      const optionsHtml = [
-        `<option value=""${value === '' ? ' selected' : ''}>- none -</option>`,
-        ...this.availableShapeIds.map((sid) => {
-          const selected = String(value) === sid ? ' selected' : '';
-          return `<option value="${escapeHtml(sid)}"${selected}>${escapeHtml(sid)}</option>`;
-        }),
-      ].join('');
+      // Only the blank option and the trip's own current value are rendered
+      // up front. The full shape_id list (1,163 on the MBTA feed x every trip
+      // column = ~196,000 <option> nodes) is filled in on demand by
+      // ScheduleController's delegated focusin handler.
+      const currentOptionHtml =
+        value === ''
+          ? ''
+          : `<option value="${escapeHtml(String(value))}" selected>${escapeHtml(String(value))}</option>`;
       return `
         <td class="text-center p-2">
           <select
@@ -315,8 +315,10 @@ export class TimetableRenderer {
             data-trip-id="${trip_id}"
             data-field="${config.field}"
             data-table="trips.txt"
+            data-shape-options="pending"
             onchange="gtfsEditor.scheduleController.updateTripProperty('${trip_id}', '${config.field}', this.value)">
-            ${optionsHtml}
+            <option value=""${value === '' ? ' selected' : ''}>- none -</option>
+            ${currentOptionHtml}
           </select>
         </td>
       `;
