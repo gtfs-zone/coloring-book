@@ -162,31 +162,16 @@ export class ScheduleController {
    * forget and easy to leak.
    */
   private installTimetablePickers(): void {
-    // The "add stop" select at the bottom of the table fills itself on first
-    // interaction, see fillStopOptions for why it is not filled on render.
-    document.addEventListener('focusin', (e) => {
-      const stopSelect = (e.target as Element)?.closest?.(
-        '#new-stop-select[data-stop-options="pending"]'
-      ) as HTMLSelectElement | null;
-      if (stopSelect) {
-        void this.fillStopOptions(stopSelect, '');
-        return;
-      }
-    });
-
-    document.addEventListener('change', (e) => {
-      const select = (e.target as Element)?.closest?.(
-        '#new-stop-select'
-      ) as HTMLSelectElement | null;
-      if (select?.value) {
-        void this.addStopFromSelector(select.value);
-      }
-    });
-
     document.addEventListener('click', (e) => {
       const stopLabel = (e.target as Element)?.closest?.('.stop-label-span');
       if (stopLabel instanceof HTMLElement) {
         void this.openStopPicker(stopLabel);
+        return;
+      }
+
+      const addStopBtn = (e.target as Element)?.closest?.('.add-stop-btn');
+      if (addStopBtn instanceof HTMLElement) {
+        void this.openAddStopPicker();
         return;
       }
 
@@ -306,6 +291,24 @@ export class ScheduleController {
 
     if (picked !== null && picked !== oldStopId) {
       void this.changeStopAtRow(oldStopId, picked);
+    }
+  }
+
+  /**
+   * Open the searchable stop-picker modal for the "Add stop" row.
+   *
+   * On pick, hands off to the existing `addStopFromSelector` unchanged.
+   */
+  private async openAddStopPicker(): Promise<void> {
+    const options = await this.getStopOptions();
+    const picked = await showOptionPickerModal({
+      title: 'Add stop',
+      options,
+      searchable: true,
+    });
+
+    if (picked) {
+      void this.addStopFromSelector(picked);
     }
   }
 
@@ -512,12 +515,6 @@ export class ScheduleController {
   private stopOptions: OptionPickerItem[] | null = null;
 
   /**
-   * Cached `<option>` markup for the "Add stop" `<select>`. Cleared by
-   * invalidateCaches alongside stopOptions.
-   */
-  private stopOptionsHtml: string | null = null;
-
-  /**
    * Cached `TimetableData` keyed by `route_id|service_id|direction_id`.
    *
    * `generateTimetableData` redoes SCS alignment across every trip on the
@@ -538,7 +535,6 @@ export class ScheduleController {
   /** Drop the cached picker options and timetable data; call after any edit that could change them. */
   public invalidateCaches(): void {
     this.stopOptions = null;
-    this.stopOptionsHtml = null;
     this.timetableDataCache.clear();
     this.dataProcessor.invalidateRouteSource();
   }
@@ -557,28 +553,6 @@ export class ScheduleController {
       }));
     }
     return this.stopOptions;
-  }
-
-  private async fillStopOptions(
-    select: HTMLSelectElement,
-    selectedStopId: string
-  ): Promise<void> {
-    if (this.stopOptionsHtml === null) {
-      const stops = await this.gtfsParser.gtfsDatabase.queryRows('stops', {});
-      this.stopOptionsHtml = stops
-        .map(
-          (stop) =>
-            `<option value="${escapeHtml(stop.stop_id)}">${escapeHtml(
-              getStopDisplay(stop as unknown as Record<string, string>).primary
-            )}</option>`
-        )
-        .join('');
-    }
-
-    const placeholder = '<option value="">Add stop...</option>';
-    select.innerHTML = placeholder + this.stopOptionsHtml;
-    select.value = selectedStopId;
-    select.dataset.stopOptions = 'ready';
   }
 
   /** Reset tracked scroll when navigating to a different timetable. */
@@ -1151,14 +1125,6 @@ export class ScheduleController {
       };
 
       console.log(`Set pending stop: ${stop.stop_id} - ${stop.stop_name}`);
-
-      // Reset the selector
-      const selectElement = document.getElementById(
-        'new-stop-select'
-      ) as HTMLSelectElement;
-      if (selectElement) {
-        selectElement.value = '';
-      }
 
       notify.success(`Stop added. Enter a time for at least one trip to save.`);
 
