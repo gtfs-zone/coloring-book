@@ -8,7 +8,10 @@ import { Stops, GTFSTableMap } from '../types/gtfs-entities.js';
 import { GTFSDatabaseRecord } from './gtfs-database.js';
 import { notify } from './notification-system';
 import { TimeFormatter } from '../utils/time-formatter.js';
-import { TimetableDataProcessor } from './timetable-data-processor.js';
+import {
+  TimetableDataProcessor,
+  TimetableData,
+} from './timetable-data-processor.js';
 import { TimetableRenderer } from './timetable-renderer.js';
 import { TimetableDatabase } from './timetable-database.js';
 import { generateCompositeKeyFromRecord } from '../utils/gtfs-primary-keys.js';
@@ -357,17 +360,36 @@ export class ScheduleController {
    * Cached `<option>` markup for every stop in the feed.
    *
    * Built at most once per feed and reused by both pickers. Cleared by
-   * invalidatePickerCaches when the stops table changes.
+   * invalidateCaches when the stops table changes.
    */
   private stopOptionsHtml: string | null = null;
 
   /** Cached `<option>` markup for every shape_id in the feed. */
   private shapeOptionsHtml: string | null = null;
 
-  /** Drop the cached picker options; call after any edit that could change them. */
-  public invalidatePickerCaches(): void {
+  /**
+   * Cached `TimetableData` keyed by `route_id|service_id|direction_id`.
+   *
+   * `generateTimetableData` redoes SCS alignment across every trip on the
+   * route; most navigation within the same route/service/direction (tab
+   * switches, cell edits that call refreshCurrentTimetable) doesn't need
+   * that recomputed. Cleared by invalidateCaches on any patch event.
+   */
+  private timetableDataCache = new Map<string, TimetableData>();
+
+  private timetableDataCacheKey(
+    route_id: string,
+    service_id: string,
+    direction_id: string
+  ): string {
+    return `${route_id}|${service_id}|${direction_id}`;
+  }
+
+  /** Drop the cached picker options and timetable data; call after any edit that could change them. */
+  public invalidateCaches(): void {
     this.stopOptionsHtml = null;
     this.shapeOptionsHtml = null;
+    this.timetableDataCache.clear();
   }
 
   private async fillStopOptions(
@@ -445,11 +467,11 @@ export class ScheduleController {
   setPatchManager(pm: PatchManagerInterface): void {
     this.patchManager = pm;
 
-    // The picker option markup is cached across renders, so any edit that
-    // could rename/add a stop or shape has to drop it. Rebuilding is cheap
-    // and only happens the next time a picker is opened.
+    // The picker option markup and TimetableData are cached across renders,
+    // so any edit has to drop them. Rebuilding is cheap and only happens on
+    // the next render/picker-open.
     for (const event of ['change', 'undo', 'redo', 'jump'] as const) {
-      pm.on(event, () => this.invalidatePickerCaches());
+      pm.on(event, () => this.invalidateCaches());
     }
   }
 
@@ -751,11 +773,25 @@ export class ScheduleController {
       const selectedDirection = direction_id ?? availableDirections[0].id;
       this.currentDirectionId = selectedDirection;
 
-      const timetableData = await this.dataProcessor.generateTimetableData(
+      const cacheKey = this.timetableDataCacheKey(
         route_id,
         service_id,
         selectedDirection
       );
+      let cached = this.timetableDataCache.get(cacheKey);
+      if (!cached) {
+        cached = await this.dataProcessor.generateTimetableData(
+          route_id,
+          service_id,
+          selectedDirection
+        );
+        this.timetableDataCache.set(cacheKey, cached);
+      }
+      // Copy before mutating: the cached object is reused by later renders.
+      const timetableData: TimetableData = {
+        ...cached,
+        stops: [...cached.stops],
+      };
 
       // Add direction information to timetable data
       timetableData.availableDirections = availableDirections;
