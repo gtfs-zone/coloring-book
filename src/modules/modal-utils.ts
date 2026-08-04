@@ -6,6 +6,14 @@ export function renderUploadIcon(sizeClass = 'h-4 w-4'): string {
   return `<svg xmlns="http://www.w3.org/2000/svg" class="${sizeClass}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>`;
 }
 
+/**
+ * Route-waypoints icon: start/end pins connected by a path, matching the
+ * "open in brouter" affordance without spending a wide `->` text link.
+ */
+export function renderRouteWaypointsIcon(sizeClass = 'h-4 w-4'): string {
+  return `<svg xmlns="http://www.w3.org/2000/svg" class="${sizeClass}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 4a2 2 0 100 4 2 2 0 000-4zM18 16a2 2 0 100 4 2 2 0 000-4z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 8v3a3 3 0 003 3h6a3 3 0 013 3v-1" /></svg>`;
+}
+
 export interface ModalAction {
   label: string;
   className?: string;
