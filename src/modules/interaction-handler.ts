@@ -142,6 +142,21 @@ export class InteractionHandler {
         this.updateCursor(this.currentMode);
       }
     });
+
+    // Pointer cursor over routes. Routes are not draggable, so this is a
+    // plain pointer/reset pair; still gated on !isDragging so it doesn't
+    // stomp the 'grabbing' cursor if a route passes under a dragged stop.
+    this.map.on('mouseenter', 'routes-clickarea', () => {
+      if (this.currentMode === MapMode.NAVIGATE && !this.isDragging) {
+        this.map.getCanvas().style.cursor = 'pointer';
+      }
+    });
+
+    this.map.on('mouseleave', 'routes-clickarea', () => {
+      if (!this.isDragging) {
+        this.updateCursor(this.currentMode);
+      }
+    });
   }
 
   /**
