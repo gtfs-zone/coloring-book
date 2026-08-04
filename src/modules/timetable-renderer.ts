@@ -21,7 +21,16 @@ import { getStopDisplay, renderCardLabel } from '../utils/entity-display.js';
 import { escapeHtml } from '../utils/escape-html.js';
 import { renderTrashIcon } from './modal-utils.js';
 import { routeColor } from '../utils/route-colors.js';
-import { railCell, rowPaths, RowDot } from './route-strip.js';
+import {
+  railCell,
+  rowPaths,
+  RowDot,
+  endpointThreshold,
+  isEndpoint,
+  endpointNote,
+  isMinority,
+} from './route-strip.js';
+import { RouteSequence } from './route-sequence.js';
 import { RouteGraph } from './route-graph.js';
 
 function getBrouterProfile(routeType: string | number): string {
@@ -463,6 +472,7 @@ export class TimetableRenderer {
    * @param stop - The stop this row represents
    * @param index - The stop's position in the route sequence / graph
    * @param graph - The route's lane layout
+   * @param sequence - The route's canonical stop order and per-stop stats
    * @param color - The route's rail color
    * @returns HTML string for the row's rail + stop label cell
    */
@@ -470,23 +480,51 @@ export class TimetableRenderer {
     stop: Stops,
     index: number,
     graph: RouteGraph,
+    sequence: RouteSequence,
     color: string
   ): string {
     const label = renderCardLabel(
       getStopDisplay(stop as unknown as Record<string, string>)
     );
-    const dot: RowDot = { kind: 'open', lane: graph.rows[index].lane };
+    const stats = sequence.stopStats[index];
+    const threshold = endpointThreshold(sequence.totalTrips);
+    const endpoint = isEndpoint(stats, threshold);
+    const minority = isMinority(stats, sequence.totalTrips);
+    const revisit = sequence.stops[index].occurrence;
+
+    const dot: RowDot = {
+      kind: endpoint ? 'solid' : 'open',
+      lane: graph.rows[index].lane,
+    };
     const rail = railCell(
       color,
       graph.laneCount,
       rowPaths(graph, index, { kind: 'stop', leadIn: false, leadOut: false }),
       dot
     );
+
+    const note = endpointNote(stats, threshold);
+    const noteHtml = note
+      ? `<span class="text-xs opacity-60 tabular-nums shrink-0">${escapeHtml(note)}</span>`
+      : '';
+    const minorityHtml = minority
+      ? `<span class="text-xs opacity-50 tabular-nums shrink-0">${stats.serves} of ${sequence.totalTrips} trips</span>`
+      : '';
+    const revisitHtml =
+      revisit > 0
+        ? `<span class="opacity-50 text-xs ml-1">(visit ${revisit + 1})</span>`
+        : '';
+
     return `
       <div class="flex items-stretch gap-2 min-w-0">
         ${rail}
-        <div class="flex items-center gap-1 min-w-0 flex-1">
-          <span class="flex-1 min-w-0 truncate">${label}</span>
+        <div
+          class="flex items-center gap-1 min-w-0 flex-1"
+          title="Served by ${stats.serves} of ${sequence.totalTrips} trips"
+        >
+          <span class="flex-1 min-w-0 truncate${minority ? ' opacity-60' : ''}">${label}${revisitHtml}</span>
+          ${noteHtml}
+          ${minorityHtml}
           <button
             class="btn btn-ghost btn-xs px-1 opacity-40 hover:opacity-100 change-stop-btn"
             data-stop-id="${escapeHtml(stop.stop_id)}"
@@ -521,9 +559,10 @@ export class TimetableRenderer {
     );
 
     const graph = data.graph;
-    if (data.stops.length > 0 && !graph) {
+    const sequence = data.sequence;
+    if (data.stops.length > 0 && (!graph || !sequence)) {
       throw new Error(
-        '[TimetableRenderer] stops present without a route graph - generateTimetableData should always produce one alongside stops'
+        '[TimetableRenderer] stops present without a route graph/sequence - generateTimetableData should always produce both alongside stops'
       );
     }
     const color = routeColor(data.route.route_id, data.route.route_color);
@@ -570,7 +609,7 @@ export class TimetableRenderer {
         return `
         <tr class="${rowClass}">
           <th class="stop-name relative p-2 pl-0 font-medium border-r border-base-300 bg-base-100">
-            ${this.renderStopLabelCell(stop, stopIndex, graph as RouteGraph, color)}
+            ${this.renderStopLabelCell(stop, stopIndex, graph as RouteGraph, sequence as RouteSequence, color)}
           </th>
           ${timeCells}
           ${newTripCell}
