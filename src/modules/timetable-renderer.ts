@@ -423,9 +423,8 @@ export class TimetableRenderer {
    * The label itself used to come from a `<select>` listing every stop in the
    * feed, repeated in every row (226,556 `<option>` nodes for the MBTA Red
    * Line and 721,000 for a 70-stop bus route), which was the single largest
-   * cost in the view. The label is now static text; the picker is built once,
-   * on demand, when the swap button is clicked (see
-   * ScheduleController.openStopPicker).
+   * cost in the view. The label is now static text; clicking it opens the
+   * searchable stop picker modal (see ScheduleController.openStopPicker).
    *
    * @param stop - The stop this row represents
    * @param index - The stop's position in the route sequence / graph
@@ -480,14 +479,13 @@ export class TimetableRenderer {
           class="flex items-center gap-1 min-w-0 flex-1"
           title="Served by ${stats.serves} of ${sequence.totalTrips} trips"
         >
-          <span class="flex-1 min-w-0 truncate${minority ? ' opacity-60' : ''}">${label}${revisitHtml}</span>
-          ${noteHtml}
-          ${minorityHtml}
-          <button
-            class="btn btn-ghost btn-xs px-1 opacity-40 hover:opacity-100 change-stop-btn"
+          <span
+            class="stop-label-span flex-1 min-w-0 truncate cursor-pointer rounded px-1 hover:bg-base-200${minority ? ' opacity-60' : ''}"
             data-stop-id="${escapeHtml(stop.stop_id)}"
             title="Change stop"
-          >&lt;-&gt;</button>
+          >${label}${revisitHtml}</span>
+          ${noteHtml}
+          ${minorityHtml}
         </div>
       </div>
     `;
