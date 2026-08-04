@@ -222,6 +222,92 @@ export class ScheduleController {
       const btn = (e.target as Element)?.closest?.('.change-stop-btn');
       if (btn instanceof HTMLElement) {
         void this.openStopPicker(btn);
+        return;
+      }
+
+      const span = (e.target as Element)?.closest?.('.time-span');
+      if (span instanceof HTMLElement) {
+        this.openTimeEditor(span);
+      }
+    });
+  }
+
+  /**
+   * Swap a time cell's display span for a live input, on click.
+   *
+   * Mirrors openStopPicker: the input is built only for the cell the user
+   * clicked. Committing restores the span synchronously (so at most one
+   * input is ever live) and fires the database update in the background -
+   * on success it arrives via the timetable's own refreshCurrentTimetable();
+   * on validation failure the restored span still shows the pre-edit value,
+   * which is correct since nothing was written.
+   */
+  private openTimeEditor(span: HTMLElement): void {
+    if (document.querySelector('.time-input-live')) {
+      return;
+    }
+
+    const { tripId, stopId, timeType, position, stopSequence } = span.dataset;
+    if (
+      !tripId ||
+      !stopId ||
+      (timeType !== 'arrival' && timeType !== 'departure')
+    ) {
+      return;
+    }
+
+    const originalText = span.textContent ?? '';
+    const currentValue = originalText === '--:--:--' ? '' : originalText;
+
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className =
+      'time-input-live input input-xs w-20 text-center font-mono';
+    input.value = currentValue;
+    input.placeholder = '--:--:--';
+    input.pattern =
+      '^([01]?[0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]$|^(2[4-9]|[3-9][0-9]):[0-5][0-9]:[0-5][0-9]$';
+    input.title = 'Enter time in HH:MM:SS format';
+
+    span.replaceWith(input);
+    input.focus();
+    input.select();
+
+    let settled = false;
+    const commit = (): void => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      const value = input.value;
+      input.replaceWith(span);
+      if (value !== currentValue) {
+        void this.updateArrivalDepartureTime(
+          tripId,
+          stopId,
+          timeType,
+          value,
+          position,
+          stopSequence
+        );
+      }
+    };
+    const cancel = (): void => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      input.replaceWith(span);
+    };
+
+    input.addEventListener('blur', commit);
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        input.blur();
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        cancel();
       }
     });
   }
