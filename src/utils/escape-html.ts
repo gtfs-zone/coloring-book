@@ -1,8 +1,8 @@
 /**
  * HTML escaping for the string-building renderers.
  *
- * The obvious implementation — `createElement('div')`, set `textContent`, read
- * `innerHTML` — allocates a detached DOM node per call, and the timetable calls
+ * The obvious implementation (`createElement('div')`, set `textContent`, read
+ * `innerHTML`) allocates a detached DOM node per call, and the timetable calls
  * this once per rendered token. On the MBTA feed that was ~450,000 detached
  * divs for a single Red Line timetable, which cost more than everything else
  * the view did put together. A regex over five characters is the whole job.

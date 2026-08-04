@@ -1,5 +1,5 @@
 /**
- * Patch Manager — append-only patch log with undo/redo support.
+ * Patch Manager: append-only patch log with undo/redo support.
  *
  * INVARIANT: All user-initiated writes MUST go through this module
  * (recordUpdate / recordInsert / recordDelete). Direct database writes that
@@ -46,7 +46,7 @@ export class PatchManager {
 
     const blobVersion = await this.db.getBlobVersion();
     if (blobVersion === currentVersion) {
-      // Blobs were persisted at the current version — the in-memory state loaded
+      // Blobs were persisted at the current version, the in-memory state loaded
       // by GTFSParser.initialize() is already correct. Skip snapshot+replay entirely.
       console.log(
         `[PatchManager] Blob is current at version ${currentVersion}. Skipping snapshot restore.`
@@ -78,7 +78,7 @@ export class PatchManager {
     // No pre-clearing needed: the blob loaded by GTFSParser.initialize() already
     // reflects the correct current state (original feed + all applied patches).
     // applyPatchForward routes inserts through vt.insert, which has a byId
-    // deduplication guard — so replaying an insert patch whose row is already
+    // deduplication guard, so replaying an insert patch whose row is already
     // present in the blob is a safe no-op. Delete patches are also safe: vt.delete
     // returns early if the row is not found in byId.
     const patches = await this.db.getPatchesAfter(snapshot?.version ?? 0);
@@ -95,7 +95,7 @@ export class PatchManager {
    * Apply a patch in the forward direction (mutates memory + IndexedDB).
    *
    * All in-memory state is maintained exclusively via db.* calls, which route
-   * through the virtual table handlers. Do not add direct array mutations here —
+   * through the virtual table handlers. Do not add direct array mutations here,
    * the virtual table's flat array IS gtfsData[fileName].data (same reference),
    * so bypassing the virtual table corrupts the byId index and fieldMaps.
    */
@@ -142,10 +142,10 @@ export class PatchManager {
     const { source, inverse } = patch;
 
     if (patch.op === 'insert') {
-      // Inverse of insert → delete by id
+      // Inverse of insert: delete by id
       await this.db.deleteRow(source.table, source.id);
     } else if (patch.op === 'delete') {
-      // Inverse of delete → re-insert full record
+      // Inverse of delete: re-insert full record
       const record = (inverse as { record: Record<string, unknown> })
         .record as GTFSDatabaseRecord;
       await this.db.insertRows(source.table, [record]);

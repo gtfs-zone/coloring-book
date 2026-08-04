@@ -69,7 +69,7 @@ export function showAboutModal(
   shortcuts: Array<{ key: string; description: string }>
 ): Promise<void> {
   const body = `
-    <p>edit.gtfs.zone is a browser-based GTFS transit data editor inspired by geojson.io. All data stays in your browser — no server, no account required.</p>
+    <p>edit.gtfs.zone is a browser-based GTFS transit data editor inspired by geojson.io. All data stays in your browser. No server, no account required.</p>
 
     <div class="divider text-sm font-semibold opacity-60">Version &amp; Source</div>
     <ul class="list-none space-y-1 text-sm">
@@ -86,8 +86,8 @@ export function showAboutModal(
 
     <div class="divider text-sm font-semibold opacity-60">Resources</div>
     <ul class="list-none space-y-1 text-sm">
-      <li><a href="https://gtfs.org/reference/" target="_blank" rel="noopener noreferrer" class="link">GTFS Spec Reference</a> — Official file format and field reference</li>
-      <li><a href="https://www.transit.land/" target="_blank" rel="noopener noreferrer" class="link">TransitLand Atlas</a> — Real-world GTFS feeds (used by the Load → From TransitLand Atlas feature)</li>
+      <li><a href="https://gtfs.org/reference/" target="_blank" rel="noopener noreferrer" class="link">GTFS Spec Reference</a>: Official file format and field reference</li>
+      <li><a href="https://www.transit.land/" target="_blank" rel="noopener noreferrer" class="link">TransitLand Atlas</a>, real-world GTFS feeds (used by the Load -> From TransitLand Atlas feature)</li>
     </ul>
   `;
 

@@ -70,13 +70,13 @@ if (process.env.GITHUB_TOKEN) {
   headers['Authorization'] = `Bearer ${process.env.GITHUB_TOKEN}`;
   console.log('[atlas] Using GITHUB_TOKEN for authentication');
 } else {
-  console.warn('[atlas] No GITHUB_TOKEN found — unauthenticated (60 req/hr limit)');
+  console.warn('[atlas] No GITHUB_TOKEN found: unauthenticated (60 req/hr limit)');
 }
 
 async function githubFetch(url: string): Promise<unknown> {
   const res = await fetch(url, { headers });
   if (!res.ok) {
-    throw new Error(`GitHub API error: ${res.status} ${res.statusText} — ${url}`);
+    throw new Error(`GitHub API error: ${res.status} ${res.statusText} (${url})`);
   }
   return res.json();
 }
@@ -88,7 +88,7 @@ async function main() {
   )) as GitHubTree;
 
   if (tree.truncated) {
-    console.warn('[atlas] Warning: GitHub tree response was truncated — some files may be missing');
+    console.warn('[atlas] Warning: GitHub tree response was truncated, some files may be missing');
   }
 
   const feedFiles = tree.tree.filter(

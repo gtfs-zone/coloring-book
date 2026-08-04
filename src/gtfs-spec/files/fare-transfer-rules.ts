@@ -4,7 +4,7 @@ export const fareTransferRulesSpec: GTFSFileSpec = {
   filename: 'fare_transfer_rules.txt',
   presence: 'Optional',
   description:
-    'Fare rules for transfers between fare legs. Defines how fares are combined and priced when a rider transfers between legs matching different fare leg rule groups. Part of the Fares v2 model — separate from the legacy Fares v1 model (fare_attributes.txt, fare_rules.txt).',
+    'Fare rules for transfers between fare legs. Defines how fares are combined and priced when a rider transfers between legs matching different fare leg rule groups. Part of the Fares v2 model, separate from the legacy Fares v1 model (fare_attributes.txt, fare_rules.txt).',
   fields: [
     {
       name: 'fare_transfer_rule_id',

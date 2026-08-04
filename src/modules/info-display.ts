@@ -68,7 +68,7 @@ export class InfoDisplay {
     this.container.innerHTML = `
       <div class="p-4 overflow-y-auto h-full">
         <div class="mb-4">
-          <h3 class="text-lg font-semibold text-slate-800 mb-2">🏢 Agency Details</h3>
+          <h3 class="text-lg font-semibold text-slate-800 mb-2">Agency Details</h3>
           <div class="bg-slate-50 rounded-lg p-4">
             <h4 class="font-medium text-slate-800 mb-3">${this.escapeHtml(agency.name as string)}</h4>
             
@@ -129,7 +129,7 @@ export class InfoDisplay {
     this.container.innerHTML = `
       <div class="p-4 overflow-y-auto h-full">
         <div class="mb-4">
-          <h3 class="text-lg font-semibold text-slate-800 mb-2">🚌 Route Details</h3>
+          <h3 class="text-lg font-semibold text-slate-800 mb-2">Route Details</h3>
           <div class="bg-slate-50 rounded-lg p-4">
             <h4 class="font-medium text-slate-800 mb-3">
               ${route.route_short_name ? this.escapeHtml(route.route_short_name as string) + ' - ' : ''}${this.escapeHtml((route.route_long_name || route.route_id) as string)}
@@ -195,7 +195,7 @@ export class InfoDisplay {
     this.container.innerHTML = `
       <div class="p-4 overflow-y-auto h-full">
         <div class="mb-4">
-          <h3 class="text-lg font-semibold text-slate-800 mb-2">🚐 Trip Details</h3>
+          <h3 class="text-lg font-semibold text-slate-800 mb-2">Trip Details</h3>
           <div class="bg-slate-50 rounded-lg p-4">
             <h4 class="font-medium text-slate-800 mb-3">${trip.trip_id}</h4>
             
@@ -252,7 +252,7 @@ export class InfoDisplay {
     this.container.innerHTML = `
       <div class="p-4 overflow-y-auto h-full">
         <div class="mb-4">
-          <h3 class="text-lg font-semibold text-slate-800 mb-2">🚏 Stop Details</h3>
+          <h3 class="text-lg font-semibold text-slate-800 mb-2">Stop Details</h3>
           <div class="bg-slate-50 rounded-lg p-4">
             <h4 class="font-medium text-slate-800 mb-3">${this.escapeHtml(stop.name as string)}</h4>
 
@@ -325,10 +325,10 @@ export class InfoDisplay {
           ? 'red'
           : 'yellow';
       const statusIcon = summary.isValid
-        ? '✅'
+        ? ''
         : summary.errorCount > 0
-          ? '❌'
-          : '⚠️';
+          ? ''
+          : '';
 
       validationSection = `
         <div class="bg-${statusColor}-50 border border-${statusColor}-200 rounded-lg p-4 mb-6">
@@ -363,7 +363,7 @@ export class InfoDisplay {
     }
     this.container.innerHTML = `
       <div class="p-4 overflow-y-auto h-full">
-        <h3 class="text-lg font-semibold text-slate-800 mb-4">📊 Feed Overview</h3>
+        <h3 class="text-lg font-semibold text-slate-800 mb-4">Feed Overview</h3>
         
         ${validationSection}
         
@@ -466,9 +466,9 @@ export class InfoDisplay {
     this.container.innerHTML = `
       <div class="p-4 overflow-y-auto h-full">
         <div class="flex items-center justify-between mb-4">
-          <h3 class="text-lg font-semibold text-slate-800">🔍 Validation Results</h3>
+          <h3 class="text-lg font-semibold text-slate-800">Validation Results</h3>
           <button id="back-to-overview" class="btn btn-link btn-sm text-info">
-            ← Back to Overview
+            &lt;- Back to Overview
           </button>
         </div>
         
@@ -489,8 +489,8 @@ export class InfoDisplay {
           </div>
         </div>
         
-        ${renderIssues(errors, 'Errors', '❌', 'red')}
-        ${renderIssues(warnings, 'Warnings', '⚠️', 'yellow')}
+        ${renderIssues(errors, 'Errors', '', 'red')}
+        ${renderIssues(warnings, 'Warnings', '', 'yellow')}
         ${renderIssues(info, 'Information', 'ℹ️', 'blue')}
         
         ${
@@ -516,7 +516,7 @@ export class InfoDisplay {
     }
     this.container.innerHTML = `
       <div class="p-4 text-center">
-        <div class="text-red-500 text-lg mb-2">⚠️</div>
+        <div class="text-red-500 text-lg mb-2"></div>
         <div class="text-slate-700">${message}</div>
       </div>
     `;

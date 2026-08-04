@@ -191,7 +191,7 @@ export class StopViewController {
     if (this.dependencies.getLevelOptions) {
       const currentValue = String(stop.level_id ?? '');
       const optionsHtml =
-        `<option value="">— no level —</option>` +
+        `<option value="">- no level -</option>` +
         levelOptions
           .map(
             (opt) =>
@@ -206,7 +206,7 @@ export class StopViewController {
       fieldsHtml = fieldsHtml.replace(
         /<input([^>]*data-field="level_id"[^>]*)>/,
         (_match, attrs) => {
-          // Strip value attribute — select uses <option selected> instead
+          // Strip value attribute, select uses <option selected> instead
           const attrsClean = attrs.replace(/\s*value="[^"]*"/, '');
           return `<select${attrsClean} class="select select-bordered select-sm w-full">${optionsHtml}</select>${hint}`;
         }
@@ -424,7 +424,7 @@ export class StopViewController {
       } else if (locType === 3) {
         genericNodes.push(child);
       }
-      // locType === 4 (boarding areas) silently skipped — they belong under platforms
+      // locType === 4 (boarding areas) silently skipped, they belong under platforms
     }
     return { entrances, platforms, genericNodes };
   }
@@ -553,7 +553,7 @@ export class StopViewController {
   }
 
   addEventListeners(container: HTMLElement): void {
-    // Delete stop button — use event delegation so clicks on the SVG child
+    // Delete stop button, use event delegation so clicks on the SVG child
     // element are caught correctly. Use an AbortController to prevent the
     // listener from accumulating across re-renders of the same container.
     if (this.deleteListenerAbortController) {

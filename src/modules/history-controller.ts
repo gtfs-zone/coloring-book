@@ -61,7 +61,7 @@ function renderFieldDiffs(patch: GTFSPatch): string {
     return Object.entries(before)
       .map(
         ([field, bVal]) =>
-          `<div class="text-xs mt-0.5"><span class="opacity-60">${escHtml(field)}:</span> <span class="line-through opacity-50">"${escHtml(bVal)}"</span> → <span>"${escHtml(after[field])}"</span></div>`
+          `<div class="text-xs mt-0.5"><span class="opacity-60">${escHtml(field)}:</span> <span class="line-through opacity-50">"${escHtml(bVal)}"</span> -&gt; <span>"${escHtml(after[field])}"</span></div>`
       )
       .join('');
   }
@@ -133,7 +133,7 @@ export class HistoryController {
 
     panel.innerHTML = '';
 
-    // Patch list — newest first, with baseline row at the bottom
+    // Patch list: newest first, with baseline row at the bottom
     const ul = document.createElement('ul');
     ul.className = 'divide-y divide-base-300';
 
@@ -184,7 +184,7 @@ export class HistoryController {
       }
     }
 
-    // Baseline row — always shown at the bottom, styled as a peer of patch cards
+    // Baseline row: always shown at the bottom, styled as a peer of patch cards
     const isOrigin = currentVersion === 0;
     const baselineLi = document.createElement('li');
     baselineLi.className = [

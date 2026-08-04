@@ -731,7 +731,7 @@ export class PageContentRenderer {
       });
     });
 
-    // Service reference row clicks → timetable (route page) or service page (home)
+    // Service reference row clicks go to timetable (route page) or service page (home)
     const serviceRefRows = container.querySelectorAll(`.${SERVICE_REF_ROW}`);
     serviceRefRows.forEach((row) => {
       row.addEventListener('click', () => {
@@ -745,7 +745,7 @@ export class PageContentRenderer {
       });
     });
 
-    // "View ..." button clicks — handles stops and services
+    // "View ..." button clicks: handles stops and services
     const entityRefBtns = container.querySelectorAll(`.${ENTITY_REF_BTN}`);
     entityRefBtns.forEach((btn) => {
       btn.addEventListener('click', (e) => {
@@ -762,7 +762,7 @@ export class PageContentRenderer {
       });
     });
 
-    // Stop reference row clicks → stop page
+    // Stop reference row clicks go to stop page
     const stopRefRows = container.querySelectorAll(`.${STOP_REF_ROW}`);
     stopRefRows.forEach((row) => {
       row.addEventListener('click', () => {
@@ -773,7 +773,7 @@ export class PageContentRenderer {
       });
     });
 
-    // Pathway reference row clicks → pathway page
+    // Pathway reference row clicks go to pathway page
     const pathwayRefRows = container.querySelectorAll(`.${PATHWAY_REF_ROW}`);
     pathwayRefRows.forEach((row) => {
       row.addEventListener('click', () => {
@@ -1335,7 +1335,7 @@ export class PageContentRenderer {
     })) as Record<string, unknown>[];
 
     const doDelete = async (cascade: boolean) => {
-      // Do all DB deletions first — no 'change' events fire during this phase
+      // Do all DB deletions first, no 'change' events fire during this phase
       if (cascade) {
         for (const st of stopTimes) {
           const key = generateCompositeKeyFromRecord('stop_times', st);
@@ -1344,7 +1344,7 @@ export class PageContentRenderer {
       }
       await db.deleteRow!('stops', stop_id);
 
-      // Record as one atomic batch patch → one 'change' event, one notification
+      // Record as one atomic batch patch: one 'change' event, one notification
       const deleteOps = [
         ...(cascade
           ? stopTimes.map((st) => ({

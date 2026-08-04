@@ -40,7 +40,7 @@ interface EnhancedTrip {
 interface GTFSParserInterface {
   getFileDataSync(filename: string): GTFSDatabaseRecord[];
   setInMemoryFileData(fileName: string, data: Record<string, unknown>[]): void;
-  /** Distinct shape_ids, cached — see GTFSParser.getShapeIds. */
+  /** Distinct shape_ids, cached, see GTFSParser.getShapeIds. */
   getShapeIds(): string[];
   gtfsDatabase: {
     queryRows<T extends keyof GTFSTableMap>(
@@ -165,7 +165,7 @@ export class ScheduleController {
 
     // Capture-phase scroll listener: fires synchronously when the user scrolls
     // the timetable, before any edit handlers run.  This is the only reliable
-    // way to read scrollLeft — DOM reads inside async handlers always see 0.
+    // way to read scrollLeft, DOM reads inside async handlers always see 0.
     document.addEventListener(
       'scroll',
       (e) => {
@@ -194,7 +194,7 @@ export class ScheduleController {
    */
   private installStopPickerHandlers(): void {
     // The "add stop" select at the bottom of the table fills itself on first
-    // interaction — see buildStopOptions for why it is not filled on render.
+    // interaction, see buildStopOptions for why it is not filled on render.
     document.addEventListener('focusin', (e) => {
       const select = (e.target as Element)?.closest?.(
         '#new-stop-select[data-stop-options="pending"]'
@@ -420,7 +420,7 @@ export class ScheduleController {
         await this.database.updateLinkedTimes(trip_id, stop_id, null);
         console.log(`Cleared both times for ${trip_id}/${stop_id}`);
 
-        // Update input value immediately — use supersequencePosition to target the correct row
+        // Update input value immediately, use supersequencePosition to target the correct row
         const input = document.querySelector(
           `input[data-trip-id="${trip_id}"][data-stop-id="${stop_id}"][data-time-type="linked"]${positionSelector}`
         ) as HTMLInputElement;
@@ -482,7 +482,7 @@ export class ScheduleController {
       // Clear pending stop if this was the first time entered
       this.clearPendingStopIfMatches(stop_id);
 
-      // Update input value immediately — use supersequencePosition to target the correct row
+      // Update input value immediately, use supersequencePosition to target the correct row
       const input = document.querySelector(
         `input[data-trip-id="${trip_id}"][data-stop-id="${stop_id}"][data-time-type="linked"]${positionSelector}`
       ) as HTMLInputElement;
@@ -646,7 +646,7 @@ export class ScheduleController {
       // Clear pending stop if this was the first time entered
       this.clearPendingStopIfMatches(stop_id);
 
-      // Update input value immediately — use supersequencePosition to target the correct row
+      // Update input value immediately, use supersequencePosition to target the correct row
       const input = document.querySelector(
         `input[data-trip-id="${trip_id}"][data-stop-id="${stop_id}"][data-time-type="${timeType}"]${positionSelector}`
       ) as HTMLInputElement;
@@ -1053,7 +1053,7 @@ export class ScheduleController {
       direction_id: this.currentDirectionId,
     });
 
-    // Use the value tracked by the scroll listener — the DOM is unreliable here
+    // Use the value tracked by the scroll listener, the DOM is unreliable here
     // because the browser resets scrollLeft during every async DB await.
     const savedScrollLeft = this.timetableScrollLeft;
     const savedScrollTop = this.timetableScrollTop;

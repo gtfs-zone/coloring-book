@@ -48,7 +48,7 @@ export const stopTimesSpec: GTFSFileSpec = {
       type: 'Foreign ID',
       presence: 'Conditionally Forbidden',
       presenceCondition:
-        'Forbidden if stop_times.stop_id or stop_times.location_id is defined. stop_id, location_group_id, and location_id are mutually exclusive — exactly one must be defined.',
+        'Forbidden if stop_times.stop_id or stop_times.location_id is defined. stop_id, location_group_id, and location_id are mutually exclusive. Exactly one must be defined.',
       description:
         'Identifies the serviced location group that indicates groups of stops where riders may request pickup or drop off. stop_id, location_group_id, and location_id are mutually exclusive.',
       foreignKey: { file: 'location_groups.txt', field: 'location_group_id' },
@@ -58,7 +58,7 @@ export const stopTimesSpec: GTFSFileSpec = {
       type: 'Foreign ID',
       presence: 'Conditionally Forbidden',
       presenceCondition:
-        'Forbidden if stop_times.stop_id or stop_times.location_group_id is defined. stop_id, location_group_id, and location_id are mutually exclusive — exactly one must be defined.',
+        'Forbidden if stop_times.stop_id or stop_times.location_group_id is defined. stop_id, location_group_id, and location_id are mutually exclusive. Exactly one must be defined.',
       description:
         'Identifies the GeoJSON location that corresponds to a flexible service zone used on the trip. References an id from locations.geojson. stop_id, location_group_id, and location_id are mutually exclusive.',
       foreignKey: { file: 'locations.geojson', field: 'id' },

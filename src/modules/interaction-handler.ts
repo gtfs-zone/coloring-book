@@ -36,7 +36,7 @@ export class InteractionHandler {
   // Currently highlighted stop (draggable in NAVIGATE mode)
   private highlightedStopId: string | null = null;
 
-  // Local copy of stops GeoJSON for drag — avoids reading MapLibre's private _data
+  // Local copy of stops GeoJSON for drag: avoids reading MapLibre's private _data
   private stopsGeoJSON: GeoJSON.FeatureCollection | null = null;
 
   // Callback to retrieve the currently expanded station id from MapController
@@ -117,7 +117,7 @@ export class InteractionHandler {
     this.map.on('touchmove', this.handleTouchMove.bind(this));
     this.map.on('touchend', this.handleTouchEnd.bind(this));
 
-    // Always-on hover handlers for the stop clickarea layer — show grab
+    // Always-on hover handlers for the stop clickarea layer: show grab
     // cursor on highlighted stop. Only the clickarea is used for hit-testing:
     // its radius collapses to 0 for stops hidden by the low-zoom fade, so
     // invisible stops don't react to hover or clicks.
@@ -253,10 +253,10 @@ export class InteractionHandler {
       ? `
         <label class="label mt-2"><span class="label-text">Location Type</span></label>
         <select id="new-stop-type-select" class="select select-bordered w-full">
-          <option value="0">0 — Platform (stop within a station)</option>
-          <option value="2">2 — Entrance / Exit</option>
-          <option value="3">3 — Generic Node</option>
-          <option value="4">4 — Boarding Area</option>
+          <option value="0">0: Platform (stop within a station)</option>
+          <option value="2">2: Entrance / Exit</option>
+          <option value="3">3: Generic Node</option>
+          <option value="4">4: Boarding Area</option>
         </select>`
       : '';
 
@@ -325,7 +325,7 @@ export class InteractionHandler {
           this.callbacks.onStopClick(stopId);
         }
         console.log(
-          `✅ Created stop ${stopId} at ${lat.toFixed(6)}, ${lng.toFixed(6)}`
+          `Created stop ${stopId} at ${lat.toFixed(6)}, ${lng.toFixed(6)}`
         );
       } catch (error) {
         console.error('Failed to create stop:', error);
@@ -360,7 +360,7 @@ export class InteractionHandler {
   }
 
   /**
-   * Handle add pathway mode clicks (two-click: from_stop → to_stop → modal)
+   * Handle add pathway mode clicks (two-click: from_stop -> to_stop -> modal)
    */
   private async handleAddPathwayClick(e: MapMouseEvent): Promise<void> {
     const stopFeatures = this.queryFeaturesOnLayers(e.point, [
@@ -431,13 +431,13 @@ export class InteractionHandler {
         <label class="form-control w-full">
           <div class="label"><span class="label-text">Pathway Mode</span></div>
           <select id="new-pathway-mode" class="select select-bordered select-sm w-full">
-            <option value="1">1 — Walkway</option>
-            <option value="2">2 — Stairs</option>
-            <option value="3">3 — Moving Sidewalk</option>
-            <option value="4">4 — Escalator</option>
-            <option value="5">5 — Elevator</option>
-            <option value="6">6 — Fare Gate</option>
-            <option value="7">7 — Exit Gate</option>
+            <option value="1">1: Walkway</option>
+            <option value="2">2: Stairs</option>
+            <option value="3">3: Moving Sidewalk</option>
+            <option value="4">4: Escalator</option>
+            <option value="5">5: Elevator</option>
+            <option value="6">6: Fare Gate</option>
+            <option value="7">7: Exit Gate</option>
           </select>
         </label>
         <label class="label cursor-pointer justify-start gap-3">
@@ -481,7 +481,7 @@ export class InteractionHandler {
         await this.gtfsParser.createPathway(newPathway);
         this.setMapMode(MapMode.NAVIGATE);
         this.callbacks.onPathwayCreated?.(pathwayId);
-        console.log(`✅ Created pathway ${pathwayId}`);
+        console.log(`Created pathway ${pathwayId}`);
       } catch (error) {
         console.error('Failed to create pathway:', error);
         if (errorEl) {
@@ -759,7 +759,7 @@ export class InteractionHandler {
    * Handle mode change logic
    */
   private handleModeChange(previousMode: MapMode, newMode: MapMode): void {
-    console.log(`🔄 Map mode changed: ${previousMode} → ${newMode}`);
+    console.log(`Map mode changed: ${previousMode} -> ${newMode}`);
     if (
       previousMode === MapMode.ADD_PATHWAY &&
       newMode !== MapMode.ADD_PATHWAY
@@ -843,6 +843,6 @@ export class InteractionHandler {
     this.map.off('touchmove', this.handleTouchMove);
     this.map.off('touchend', this.handleTouchEnd);
 
-    console.log('🧹 Interaction handler destroyed');
+    console.log('Interaction handler destroyed');
   }
 }

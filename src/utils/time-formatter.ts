@@ -27,9 +27,9 @@ export class TimeFormatter {
    * @param timeInput - Time string in various formats
    * @returns Normalized time string in HH:MM:SS format
    * @example
-   * castTimeToHHMMSS('9:30') → '09:30:00'
-   * castTimeToHHMMSS('14:45') → '14:45:00'
-   * castTimeToHHMMSS('25:30:00') → '25:30:00' (next-day service)
+   * castTimeToHHMMSS('9:30') -> '09:30:00'
+   * castTimeToHHMMSS('14:45') -> '14:45:00'
+   * castTimeToHHMMSS('25:30:00') -> '25:30:00' (next-day service)
    */
   static castTimeToHHMMSS(timeInput: string): string {
     const trimmed = timeInput.trim();
@@ -75,9 +75,9 @@ export class TimeFormatter {
    * @param time - Time string in HH:MM:SS or HH:MM format
    * @returns Formatted time string in HH:MM format, or empty string if invalid
    * @example
-   * formatTime('09:30:45') → '09:30'
-   * formatTime('25:30:00') → '25:30' (next-day service)
-   * formatTime('') → ''
+   * formatTime('09:30:45') -> '09:30'
+   * formatTime('25:30:00') -> '25:30' (next-day service)
+   * formatTime('') -> ''
    */
   static formatTime(time: string): string {
     if (!time) {
@@ -111,9 +111,9 @@ export class TimeFormatter {
    * @param time - Time string in various formats
    * @returns Formatted time string in HH:MM:SS format, or empty string if invalid
    * @example
-   * formatTimeWithSeconds('09:30') → '09:30:00'
-   * formatTimeWithSeconds('25:30:45') → '25:30:45'
-   * formatTimeWithSeconds('') → ''
+   * formatTimeWithSeconds('09:30') -> '09:30:00'
+   * formatTimeWithSeconds('25:30:45') -> '25:30:45'
+   * formatTimeWithSeconds('') -> ''
    */
   static formatTimeWithSeconds(time: string): string {
     if (!time) {
@@ -149,9 +149,9 @@ export class TimeFormatter {
    * @param minutes - Number of minutes to add (can be negative)
    * @returns New time string with minutes added, preserving seconds
    * @example
-   * addMinutesToTime('23:45:30', 30) → '24:15:30' (next-day service)
-   * addMinutesToTime('10:30:00', -15) → '10:15:00'
-   * addMinutesToTime('', 60) → '00:00:00'
+   * addMinutesToTime('23:45:30', 30) -> '24:15:30' (next-day service)
+   * addMinutesToTime('10:30:00', -15) -> '10:15:00'
+   * addMinutesToTime('', 60) -> '00:00:00'
    */
   static addMinutesToTime(timeString: string, minutes: number): string {
     if (!timeString) {

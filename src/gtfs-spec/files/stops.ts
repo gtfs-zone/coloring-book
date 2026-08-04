@@ -52,7 +52,7 @@ export const stopsSpec: GTFSFileSpec = {
       presenceCondition:
         'Required for locations that are stops (location_type=0), stations (location_type=1), or entrances/exits (location_type=2), otherwise optional.',
       description:
-        'Latitude of the location. For stops/platforms (location_type=0) and boarding areas (location_type=4), the coordinates must be those of the bus pole — if it exists — and otherwise of where travelers board the vehicle (on the sidewalk or the platform, and not on the roadway or the track where the vehicle stops).',
+        'Latitude of the location. For stops/platforms (location_type=0) and boarding areas (location_type=4), the coordinates must be those of the bus pole (if it exists) and otherwise of where travelers board the vehicle (on the sidewalk or the platform, and not on the roadway or the track where the vehicle stops).',
     },
     {
       name: 'stop_lon',
@@ -61,7 +61,7 @@ export const stopsSpec: GTFSFileSpec = {
       presenceCondition:
         'Required for locations that are stops (location_type=0), stations (location_type=1), or entrances/exits (location_type=2), otherwise optional.',
       description:
-        'Longitude of the location. For stops/platforms (location_type=0) and boarding areas (location_type=4), the coordinates must be those of the bus pole — if it exists — and otherwise of where travelers board the vehicle (on the sidewalk or the platform, and not on the roadway or the track where the vehicle stops).',
+        'Longitude of the location. For stops/platforms (location_type=0) and boarding areas (location_type=4), the coordinates must be those of the bus pole (if it exists) and otherwise of where travelers board the vehicle (on the sidewalk or the platform, and not on the roadway or the track where the vehicle stops).',
     },
     {
       name: 'zone_id',

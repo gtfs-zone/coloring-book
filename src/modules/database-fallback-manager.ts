@@ -159,7 +159,7 @@ export class DatabaseFallbackManager {
 
   /**
    * Show a database error modal with error details and recovery options.
-   * Optionally accepts an export function — when provided, an "Export & Clear" button is shown.
+   * Optionally accepts an export function: when provided, an "Export & Clear" button is shown.
    */
   showDatabaseError(
     error: Error | unknown,

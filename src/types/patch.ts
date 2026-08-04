@@ -4,10 +4,10 @@
 
 export type PatchOp = 'insert' | 'update' | 'delete';
 
-/** Direction-specific payload — one of three shapes. */
+/** Direction-specific payload, one of three shapes. */
 export type PatchData =
   | { record: Record<string, unknown> } // full row (insert forward / delete inverse)
-  | { changes: Record<string, unknown> } // field map (update — just the after/before values)
+  | { changes: Record<string, unknown> } // field map (update, just the after/before values)
   | { id: string }; // key-only (insert inverse / delete forward)
 
 /** A single semantic change to one GTFS record. */
@@ -42,5 +42,5 @@ export interface SnapshotRecord {
   timestamp: number; // Date.now()
 }
 
-/** Full GTFS state — table name → array of row objects. */
+/** Full GTFS state: table name -> array of row objects. */
 export type GTFSState = Record<string, Record<string, unknown>[]>;

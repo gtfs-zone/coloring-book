@@ -6,7 +6,7 @@ import {
   mapGTFSTypeString,
 } from '../types/gtfs-field-types';
 
-// Local file info type — mirrors GTFSFileInfo in gtfs.ts to avoid circular deps in Phase 15
+// Local file info type: mirrors GTFSFileInfo in gtfs.ts to avoid circular deps in Phase 15
 interface GTFSAdapterFileInfo {
   filename: string;
   presence: GTFSPresence;
@@ -33,7 +33,7 @@ export function deriveGTFSPrimaryKeys(spec: GTFSSpec): Record<string, string> {
 }
 
 // ─── Field type strings ───────────────────────────────────────────────────────
-// Builds filename → fieldName → GTFS type string.
+// Builds filename -> fieldName -> GTFS type string.
 // For Foreign ID fields that have a foreignKey, emits the full
 // "Foreign ID referencing file.field" string to match the legacy format
 // that mapGTFSTypeString and GTFS_FIELD_TYPES consumers expect.
@@ -62,7 +62,7 @@ export function deriveGTFSFieldTypes(
 // ─── Enum registry ────────────────────────────────────────────────────────────
 // Collects all enumValues across all files, keyed by field name.
 // When the same field name appears in multiple files (e.g. continuous_pickup
-// in routes.txt and stop_times.txt) the first occurrence wins — the spec
+// in routes.txt and stop_times.txt) the first occurrence wins, since the spec
 // guarantees they are identical.
 
 interface GTFSAdapterEnumOption {
@@ -153,7 +153,7 @@ function buildBaseValidator(
     field.enumValues &&
     field.enumValues.length > 0
   ) {
-    // Numeric enum → z.number(); mixed or string enum → z.string()
+    // Numeric enum -> z.number(); mixed or string enum -> z.string()
     const allNumeric = field.enumValues.every(
       (v) => typeof v.value === 'number'
     );
@@ -167,7 +167,7 @@ function buildBaseValidator(
   }
 
   // Fallback: use mapGTFSTypeString to normalize compound or variant type
-  // strings (e.g. "Non-null integer" → Integer, "Text or URL or Email" → Text)
+  // strings (e.g. "Non-null integer" -> Integer, "Text or URL or Email" -> Text)
   const normalizedType = mapGTFSTypeString(field.type);
   const normalizedMeta = fieldTypeMeta[normalizedType];
   if (normalizedMeta) {
@@ -178,7 +178,7 @@ function buildBaseValidator(
 }
 
 // ─── Field spec lookup ────────────────────────────────────────────────────────
-// Builds filename → fieldName → GTFSFieldSpec for presence/condition lookups.
+// Builds filename -> fieldName -> GTFSFieldSpec for presence/condition lookups.
 
 export function deriveGTFSFieldSpecs(
   spec: GTFSSpec

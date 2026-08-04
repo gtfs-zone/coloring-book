@@ -167,7 +167,7 @@ export class LayerManager {
     }
 
     const featureCount = stopsGeoJSON.features.length;
-    console.log(`🗺️ Added ${featureCount} stops to map`);
+    console.log(`Added ${featureCount} stops to map`);
   }
 
   /**
@@ -305,7 +305,7 @@ export class LayerManager {
    *   ~ STATION_FADE_ZOOM_MAX   stations and child nodes have faded in
    *   ~ STOP_FADE_ZOOM_MAX      plain stops (location_type 0) have faded in
    *
-   * Stations get the gentler band because they're far more spaced out — a
+   * Stations get the gentler band because they're far more spaced out, a
    * zoomed-out view of them still reads as a network, where the same view of
    * every plain stop reads as a pile of dots. Special stops (focused, or on
    * the spotlighted route) are exempt at every zoom. When `dim` is set (route
@@ -386,8 +386,8 @@ export class LayerManager {
   /**
    * Add background stops layer.
    *
-   * Cased transit look: circles scale with zoom (top-level zoom interpolate —
-   * MapLibre requires zoom as input to a top-level interpolate/step only),
+   * Cased transit look: circles scale with zoom (top-level zoom interpolate,
+   * since MapLibre requires zoom as input to a top-level interpolate/step only),
    * plain stops fade out below ~z12.5 so zoomed-out views show the network
    * instead of a pile of dots, and stations stay visible at all zooms.
    * Focused stops grow and get an accent-colored ring.
@@ -512,7 +512,7 @@ export class LayerManager {
    *
    * The hit radius mirrors the visible layer's fade: it collapses to 0 where
    * plain stops are fully faded out, so invisible stops are simply not
-   * returned by queryRenderedFeatures — no JS-side visibility predicate to
+   * returned by queryRenderedFeatures: no JS-side visibility predicate to
    * keep in sync. Special (focused / on-route) stops keep a full hit area.
    */
   private addStopsClickAreaLayer(options: StopLayerOptions): void {
@@ -684,9 +684,7 @@ export class LayerManager {
       this.addTripHighlightLayers(tripPath, tripStopsFeatures, finalOptions);
     }
 
-    console.log(
-      `🎯 Highlighted trip: ${trip_id} with ${tripPath.length} stops`
-    );
+    console.log(`Highlighted trip: ${trip_id} with ${tripPath.length} stops`);
   }
 
   /**
@@ -935,7 +933,7 @@ export class LayerManager {
     const stopsGeoJSON = this.createStopsGeoJSON(stops);
     stopsSource.setData(stopsGeoJSON);
     this.onStopsDataUpdated?.(stopsGeoJSON);
-    console.log(`🔄 Updated stops data: ${stopsGeoJSON.features.length} stops`);
+    console.log(`Updated stops data: ${stopsGeoJSON.features.length} stops`);
   }
 
   /**

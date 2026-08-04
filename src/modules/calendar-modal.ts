@@ -462,7 +462,7 @@ function renderTimeline(data: ServiceDataMap): string {
     .join('');
 
   const warningHtml = truncated
-    ? `<div class="text-xs text-warning mb-2">Date range exceeds 3 years — display truncated.</div>`
+    ? `<div class="text-xs text-warning mb-2">Date range exceeds 3 years: display truncated.</div>`
     : '';
 
   return `

@@ -27,7 +27,7 @@ function typeLabel(table: string): string {
 /**
  * Resolve the display name for a patch's entity from whatever row data the
  * patch carries (full record on insert/delete, just changed fields on update),
- * falling back to the raw id when no name field is present. Synchronous — no DB
+ * falling back to the raw id when no name field is present. Synchronous, no DB
  * lookups.
  */
 function resolveName(
@@ -62,7 +62,7 @@ export function humanLabel(patch: GTFSPatch | undefined): string {
       .record;
     return `${type} "${resolveName(source.table, record, source.id)}" deleted`;
   }
-  // update — only changed fields are available; name falls back to id
+  // update, only changed fields are available; name falls back to id
   const changes = (patch.forward as { changes: Record<string, unknown> })
     .changes;
   const name = resolveName(source.table, changes, source.id);

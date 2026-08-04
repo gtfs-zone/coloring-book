@@ -2,7 +2,7 @@ import { escapeHtml } from './escape-html.js';
 
 export interface EntityDisplayInfo {
   primary: string; // shown prominently (name, short name, or ID as fallback)
-  secondary?: string; // shown as subtext/parens — only set if different from primary
+  secondary?: string; // shown as subtext/parens, only set if different from primary
 }
 
 // Rule: secondary is only set when there is a meaningful human-readable primary
@@ -62,7 +62,7 @@ export function getTripDisplay(
 }
 
 /**
- * Generic dispatcher — resolves the display info for any GTFS table row.
+ * Generic dispatcher, resolves the display info for any GTFS table row.
  * Falls back to a best-effort `<table>_id` (or `<table>_name`) field, then
  * an empty primary, for tables without a dedicated helper. Callers that only
  * need a single string should read `.primary` (the human name, or the id when
@@ -96,7 +96,7 @@ export function getEntityDisplay(
 }
 
 /**
- * For cards, list items, and detail headers — secondary on its own line, muted.
+ * For cards, list items, and detail headers, secondary on its own line, muted.
  *
  * Returns markup, so it escapes its own values: callers cannot escape the
  * result without also escaping the tags this adds.
@@ -109,7 +109,7 @@ export function renderCardLabel(info: EntityDisplayInfo): string {
 }
 
 /**
- * For dropdowns and inline text — secondary in parens on the same line.
+ * For dropdowns and inline text, secondary in parens on the same line.
  *
  * Returns plain text, not markup. Callers are responsible for escaping it.
  */

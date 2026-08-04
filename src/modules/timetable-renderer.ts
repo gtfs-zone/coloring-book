@@ -301,7 +301,7 @@ export class TimetableRenderer {
 
     if (config.field === 'shape_id') {
       const optionsHtml = [
-        `<option value=""${value === '' ? ' selected' : ''}>— none —</option>`,
+        `<option value=""${value === '' ? ' selected' : ''}>- none -</option>`,
         ...this.availableShapeIds.map((sid) => {
           const selected = String(value) === sid ? ' selected' : '';
           return `<option value="${escapeHtml(sid)}"${selected}>${escapeHtml(sid)}</option>`;
@@ -443,8 +443,8 @@ export class TimetableRenderer {
    * Render one stop row's label cell.
    *
    * This used to be a `<select>` listing every stop in the feed, repeated in
-   * every row — 226,556 `<option>` nodes for the MBTA Red Line and 721,000 for
-   * a 70-stop bus route, which was the single largest cost in the view. The
+   * every row (226,556 `<option>` nodes for the MBTA Red Line and 721,000 for
+   * a 70-stop bus route), which was the single largest cost in the view. The
    * label is now static text; the picker is built once, on demand, when the
    * swap button is clicked (see ScheduleController.openStopPicker).
    *
