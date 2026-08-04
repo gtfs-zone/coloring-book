@@ -296,7 +296,12 @@ export class TimetableRenderer {
    * Generate human-readable label from snake_case field name
    */
   /**
-   * Render individual property cell with appropriate input type
+   * Render individual property cell as a clickable text span
+   *
+   * Mirrors the time-cell click-to-edit pattern: a static span carries the
+   * data the delegated handler in ScheduleController needs to swap it for
+   * the right editor (inline input, inline enum menu, or the searchable
+   * shape_id modal) on click. See installTimetablePickers.
    *
    * @param trip - Trip object containing the property value
    * @param config - Field configuration for this property
@@ -307,87 +312,40 @@ export class TimetableRenderer {
     config: FieldConfig
   ): string {
     const trip_id = trip.trip_id as string;
-    const value = trip[config.field] ?? '';
-    const inputId = `trip-prop-${trip_id}-${config.field}`;
+    const rawValue = trip[config.field];
+    const value =
+      rawValue === null || rawValue === undefined ? '' : String(rawValue);
+
+    let fieldKind: 'text' | 'number' | 'enum' | 'shape';
+    let display: string;
 
     if (config.field === 'shape_id') {
-      // Only the blank option and the trip's own current value are rendered
-      // up front. The full shape_id list (1,163 on the MBTA feed x every trip
-      // column = ~196,000 <option> nodes) is filled in on demand by
-      // ScheduleController's delegated focusin handler.
-      const currentOptionHtml =
-        value === ''
-          ? ''
-          : `<option value="${escapeHtml(String(value))}" selected>${escapeHtml(String(value))}</option>`;
-      return `
-        <td class="text-center p-2">
-          <select
-            id="${inputId}"
-            class="select select-xs w-full"
-            data-trip-id="${trip_id}"
-            data-field="${config.field}"
-            data-table="trips.txt"
-            data-shape-options="pending"
-            onchange="gtfsEditor.scheduleController.updateTripProperty('${trip_id}', '${config.field}', this.value)">
-            <option value=""${value === '' ? ' selected' : ''}>- none -</option>
-            ${currentOptionHtml}
-          </select>
-        </td>
-      `;
+      fieldKind = 'shape';
+      display = value;
     } else if (config.type === 'select' && config.options) {
-      const optionsHtml = [
-        '<option value="">-</option>',
-        ...config.options.map((opt) => {
-          const selected =
-            String(value) === String(opt.value) ? 'selected' : '';
-          return `<option value="${escapeHtml(String(opt.value))}" ${selected}>${escapeHtml(opt.label)}</option>`;
-        }),
-      ].join('');
-
-      return `
-        <td class="text-center p-2">
-          <select
-            id="${inputId}"
-            class="select select-xs w-full"
-            data-trip-id="${trip_id}"
-            data-field="${config.field}"
-            data-table="trips.txt"
-            onchange="gtfsEditor.scheduleController.updateTripProperty('${trip_id}', '${config.field}', this.value)">
-            ${optionsHtml}
-          </select>
-        </td>
-      `;
+      fieldKind = 'enum';
+      const option = config.options.find((opt) => String(opt.value) === value);
+      display = option ? option.label : '';
     } else if (config.type === 'number') {
-      return `
-        <td class="text-center p-2">
-          <input
-            id="${inputId}"
-            type="number"
-            class="input input-xs w-full text-center"
-            data-trip-id="${trip_id}"
-            data-field="${config.field}"
-            data-table="trips.txt"
-            value="${escapeHtml(String(value))}"
-            onchange="gtfsEditor.scheduleController.updateTripProperty('${trip_id}', '${config.field}', this.value)" />
-        </td>
-      `;
+      fieldKind = 'number';
+      display = value;
     } else {
-      // text input
-      return `
-        <td class="text-center p-2">
-          <input
-            id="${inputId}"
-            type="text"
-            class="input input-xs w-full text-center"
-            data-trip-id="${trip_id}"
-            data-field="${config.field}"
-            data-table="trips.txt"
-            value="${escapeHtml(String(value))}"
-            placeholder="${escapeHtml(config.label)}"
-            onchange="gtfsEditor.scheduleController.updateTripProperty('${trip_id}', '${config.field}', this.value)" />
-        </td>
-      `;
+      fieldKind = 'text';
+      display = value;
     }
+
+    return `
+      <td class="text-center p-2">
+        <span
+          class="trip-prop-span inline-block max-w-full truncate cursor-pointer rounded px-1 hover:bg-base-200"
+          data-trip-id="${trip_id}"
+          data-field="${config.field}"
+          data-table="trips.txt"
+          data-field-kind="${fieldKind}"
+          data-value="${escapeHtml(value)}"
+        >${escapeHtml(display) || '-'}</span>
+      </td>
+    `;
   }
 
   /**
