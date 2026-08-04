@@ -19,6 +19,8 @@ import { patchUpdate } from '../utils/patch-utils.js';
 import { getStopDisplay, renderOptionLabel } from '../utils/entity-display.js';
 import { escapeHtml } from '../utils/escape-html.js';
 import { showModal } from './modal-utils.js';
+import { showOptionPickerModal } from './option-picker-modal.js';
+import { getEnumOptions } from '../types/gtfs-enums.js';
 
 // Enhanced GTFS interfaces using standard GTFS property names
 
@@ -167,13 +169,6 @@ export class ScheduleController {
         void this.fillStopOptions(stopSelect, '');
         return;
       }
-
-      const shapeSelect = (e.target as Element)?.closest?.(
-        'select[data-shape-options="pending"]'
-      ) as HTMLSelectElement | null;
-      if (shapeSelect) {
-        this.fillShapeOptions(shapeSelect);
-      }
     });
 
     document.addEventListener('change', (e) => {
@@ -195,6 +190,12 @@ export class ScheduleController {
       const span = (e.target as Element)?.closest?.('.time-span');
       if (span instanceof HTMLElement) {
         this.openTimeEditor(span);
+        return;
+      }
+
+      const propSpan = (e.target as Element)?.closest?.('.trip-prop-span');
+      if (propSpan instanceof HTMLElement) {
+        this.handleTripPropClick(propSpan);
       }
     });
   }
@@ -210,7 +211,7 @@ export class ScheduleController {
    * which is correct since nothing was written.
    */
   private openTimeEditor(span: HTMLElement): void {
-    if (document.querySelector('.time-input-live')) {
+    if (document.querySelector('.editor-input-live')) {
       return;
     }
 
@@ -229,7 +230,7 @@ export class ScheduleController {
     const input = document.createElement('input');
     input.type = 'text';
     input.className =
-      'time-input-live input input-xs w-20 text-center font-mono';
+      'time-input-live editor-input-live input input-xs w-20 text-center font-mono';
     input.value = currentValue;
     input.placeholder = '--:--:--';
     input.pattern =
@@ -321,15 +322,207 @@ export class ScheduleController {
   }
 
   /**
+   * Dispatch a click on a `.trip-prop-span` to the right editor, by
+   * `data-field-kind`: a live input for text/number, a lightweight inline
+   * menu for enums, or the searchable shape_id modal.
+   */
+  private handleTripPropClick(span: HTMLElement): void {
+    const { fieldKind } = span.dataset;
+    if (fieldKind === 'enum') {
+      this.openTripPropEnumMenu(span);
+    } else if (fieldKind === 'shape') {
+      void this.openTripPropShapePicker(span);
+    } else {
+      this.openTripPropEditor(span);
+    }
+  }
+
+  /**
+   * Swap a trip-property span for a live input, on click.
+   *
+   * Mirrors openTimeEditor: at most one editor (time or property) is ever
+   * live at a time, guarded by the shared `.editor-input-live` marker class.
+   */
+  private openTripPropEditor(span: HTMLElement): void {
+    if (document.querySelector('.editor-input-live')) {
+      return;
+    }
+
+    const { tripId, field, fieldKind, value } = span.dataset;
+    if (!tripId || !field) {
+      return;
+    }
+
+    const currentValue = value ?? '';
+
+    const input = document.createElement('input');
+    input.type = fieldKind === 'number' ? 'number' : 'text';
+    input.className = 'editor-input-live input input-xs w-full text-center';
+    input.value = currentValue;
+
+    span.replaceWith(input);
+    input.focus();
+    input.select();
+
+    let settled = false;
+    const commit = (): void => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      const newValue = input.value;
+      input.replaceWith(span);
+      if (newValue !== currentValue) {
+        span.textContent = newValue || '-';
+        span.dataset.value = newValue;
+        void this.updateTripProperty(tripId, field, newValue);
+      }
+    };
+    const cancel = (): void => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      input.replaceWith(span);
+    };
+
+    input.addEventListener('blur', commit);
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        input.blur();
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        cancel();
+      }
+    });
+  }
+
+  /**
+   * Open a small inline menu of enum options anchored under the clicked
+   * span - `direction_id`, `wheelchair_accessible`, `bikes_allowed`. Per the
+   * plan's decision, small enums get this lighter picker instead of the
+   * searchable modal.
+   */
+  private openTripPropEnumMenu(span: HTMLElement): void {
+    document
+      .querySelectorAll('.trip-prop-enum-menu')
+      .forEach((el) => el.remove());
+
+    const { tripId, field, value } = span.dataset;
+    if (!tripId || !field) {
+      return;
+    }
+
+    const enumOptions = getEnumOptions(field) ?? [];
+    const currentValue = value ?? '';
+    const rows: { value: string; label: string }[] = [
+      { value: '', label: '- none -' },
+      ...enumOptions.map((opt) => ({
+        value: String(opt.value),
+        label: opt.label,
+      })),
+    ];
+
+    const rect = span.getBoundingClientRect();
+    const menu = document.createElement('div');
+    menu.className =
+      'trip-prop-enum-menu fixed z-50 bg-base-100 border border-base-300 rounded-lg shadow-lg py-1 min-w-40 max-h-72 overflow-y-auto';
+    menu.style.top = `${rect.bottom + window.scrollY + 2}px`;
+    menu.style.left = `${rect.left + window.scrollX}px`;
+    menu.innerHTML = rows
+      .map((row) => {
+        const activeClass =
+          row.value === currentValue ? ' bg-base-200 font-medium' : '';
+        return `<div class="px-3 py-1.5 text-sm cursor-pointer hover:bg-base-200${activeClass}" data-value="${escapeHtml(row.value)}">${escapeHtml(row.label)}</div>`;
+      })
+      .join('');
+    document.body.appendChild(menu);
+
+    const close = (): void => {
+      menu.remove();
+      document.removeEventListener('mousedown', onOutside, true);
+      document.removeEventListener('keydown', onKeydown, true);
+    };
+    const onOutside = (e: MouseEvent): void => {
+      if (!menu.contains(e.target as Node)) {
+        close();
+      }
+    };
+    const onKeydown = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        close();
+      }
+    };
+
+    menu.addEventListener('click', (e) => {
+      const row = (e.target as Element).closest(
+        '[data-value]'
+      ) as HTMLElement | null;
+      if (!row) {
+        return;
+      }
+      const newValue = row.dataset.value ?? '';
+      close();
+      if (newValue !== currentValue) {
+        const picked = rows.find((r) => r.value === newValue);
+        span.textContent = picked?.label || '-';
+        span.dataset.value = newValue;
+        void this.updateTripProperty(tripId, field, newValue);
+      }
+    });
+
+    document.addEventListener('mousedown', onOutside, true);
+    document.addEventListener('keydown', onKeydown, true);
+  }
+
+  /**
+   * Open the searchable shape_id modal for a trip property span.
+   *
+   * A dangling shape_id (not in `getShapeIds()`) is included as its own
+   * option so the picker cannot silently blank the trip's real value.
+   */
+  private async openTripPropShapePicker(span: HTMLElement): Promise<void> {
+    const { tripId, value } = span.dataset;
+    if (!tripId) {
+      return;
+    }
+
+    const currentValue = value ?? '';
+    const shapeIds = this.gtfsParser.getShapeIds();
+    const options = [
+      { value: '', primary: '- none -' },
+      ...shapeIds.map((sid) => ({ value: sid, primary: sid })),
+    ];
+    if (currentValue && !shapeIds.includes(currentValue)) {
+      options.push({
+        value: currentValue,
+        primary: `${currentValue} (dangling reference)`,
+      });
+    }
+
+    const picked = await showOptionPickerModal({
+      title: 'Select shape',
+      options,
+      selectedValue: currentValue,
+      searchable: true,
+    });
+
+    if (picked !== null && picked !== currentValue) {
+      span.textContent = picked || '-';
+      span.dataset.value = picked;
+      void this.updateTripProperty(tripId, 'shape_id', picked);
+    }
+  }
+
+  /**
    * Cached `<option>` markup for every stop in the feed.
    *
    * Built at most once per feed and reused by both pickers. Cleared by
    * invalidateCaches when the stops table changes.
    */
   private stopOptionsHtml: string | null = null;
-
-  /** Cached `<option>` markup for every shape_id in the feed. */
-  private shapeOptionsHtml: string | null = null;
 
   /**
    * Cached `TimetableData` keyed by `route_id|service_id|direction_id`.
@@ -352,7 +545,6 @@ export class ScheduleController {
   /** Drop the cached picker options and timetable data; call after any edit that could change them. */
   public invalidateCaches(): void {
     this.stopOptionsHtml = null;
-    this.shapeOptionsHtml = null;
     this.timetableDataCache.clear();
     this.dataProcessor.invalidateRouteSource();
   }
@@ -384,43 +576,6 @@ export class ScheduleController {
     select.innerHTML = placeholder + this.stopOptionsHtml;
     select.value = selectedStopId;
     select.dataset.stopOptions = 'ready';
-  }
-
-  /**
-   * Fill a trip-property `shape_id` select with the full shape_id list.
-   *
-   * The trip's current value is already rendered by TimetableRenderer, so
-   * `value` survives this swap even if it is a dangling reference not
-   * present in `getShapeIds()`.
-   */
-  private fillShapeOptions(select: HTMLSelectElement): void {
-    const shapeIds = this.gtfsParser.getShapeIds();
-    if (this.shapeOptionsHtml === null) {
-      console.log(
-        `[ScheduleController] building shape picker options for ${shapeIds.length} shapes`
-      );
-      this.shapeOptionsHtml = shapeIds
-        .map(
-          (sid) =>
-            `<option value="${escapeHtml(sid)}">${escapeHtml(sid)}</option>`
-        )
-        .join('');
-    }
-
-    const currentValue = select.value;
-    // A dangling shape_id (not in getShapeIds()) is not in the cached list;
-    // keep it as an extra option so filling the picker cannot silently blank
-    // the trip's real value.
-    const danglingOptionHtml =
-      currentValue && !shapeIds.includes(currentValue)
-        ? `<option value="${escapeHtml(currentValue)}">${escapeHtml(currentValue)}</option>`
-        : '';
-    select.innerHTML =
-      '<option value="">- none -</option>' +
-      this.shapeOptionsHtml +
-      danglingOptionHtml;
-    select.value = currentValue;
-    select.dataset.shapeOptions = 'ready';
   }
 
   /** Reset tracked scroll when navigating to a different timetable. */
