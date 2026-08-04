@@ -436,7 +436,7 @@ export class GTFSEditor {
     }
   }
 
-  // Not called on startup — invoke manually if the validation panel is opened.
+  // Not called on startup: invoke manually if the validation panel is opened.
   public validateAndUpdateInfo(): void {
     const validationResults = this.validator.validateFeed();
     void validationResults;

@@ -399,7 +399,7 @@ export class GTFSValidator {
           );
         } else if (!coordRequiredByType && !hasAncestorCoords) {
           this.addWarning(
-            `Row ${rowNum}: stop has no own coords and no coord-having parent_station — will not render`,
+            `Row ${rowNum}: stop has no own coords and no coord-having parent_station, will not render`,
             'ORPHANED_STOP',
             GTFS_TABLES.STOPS,
             rowNum

@@ -392,7 +392,7 @@ export class BrowseNavigation {
 
       // For the timetable, .overflow-x-auto scrolls both axes (CSS forces
       // overflow-y to auto when overflow-x is non-visible).  The DOM values
-      // are unreliable at this point — read from the controller's listener.
+      // are unreliable at this point: read from the controller's listener.
       const savedScrollLeft = this.scheduleController?.timetableScrollLeft ?? 0;
       const savedTimetableScrollTop =
         this.scheduleController?.timetableScrollTop ?? 0;
@@ -406,7 +406,7 @@ export class BrowseNavigation {
           JSON.stringify(pageState);
 
       if (!isSamePage) {
-        // Navigation to a new page — reset tracked timetable scroll so the
+        // Navigation to a new page: reset tracked timetable scroll so the
         // next timetable opens at the top-left.
         this.scheduleController?.resetTimetableScroll();
       }
@@ -486,7 +486,7 @@ export class BrowseNavigation {
         ${this.renderBreadcrumbs([])}
         <div class="content flex-1 flex items-center justify-center">
           <div class="text-center">
-            <div class="text-4xl mb-4">⚠️</div>
+            <div class="text-4xl mb-4"></div>
             <div class="text-lg mb-2">Error loading content</div>
             <div class="text-sm opacity-60">Please try refreshing the page</div>
           </div>

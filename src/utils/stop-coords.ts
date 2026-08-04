@@ -16,10 +16,10 @@
  * evenly along the line between its endpoints.
  *
  * Fallback rules:
- *  - Coord-less stop with no pathway edges → stacked at the ancestor's coords.
+ *  - Coord-less stop with no pathway edges: stacked at the ancestor's coords.
  *  - Coord-less stop whose pathway component never reaches a pinned stop
- *    (orphan island) → returns null (caller skips and warns).
- *  - Stop with no own coords and no coord-having ancestor → returns null.
+ *    (orphan island): returns null (caller skips and warns).
+ *  - Stop with no own coords and no coord-having ancestor: returns null.
  */
 import type { Pathways, Stops } from '../types/gtfs-entities';
 
@@ -196,7 +196,7 @@ export function buildStopCoordResolver(
         : [];
 
       if (neighbors.length === 0) {
-        // No-edge stop → stack at station center.
+        // No-edge stop: stack at station center.
         positions.set(orphanId, [anchorCoord[0], anchorCoord[1]]);
         continue;
       }
@@ -227,7 +227,7 @@ export function buildStopCoordResolver(
 
       if (!reachesPinned) {
         console.warn(
-          `[stop-coords] Orphan-island pathway component: stop_id=${orphanId} has pathway edges but no path to a coord-having sibling in station ${ancestorId} — skipping render.`
+          `[stop-coords] Orphan-island pathway component: stop_id=${orphanId} has pathway edges but no path to a coord-having sibling in station ${ancestorId}, skipping render.`
         );
         cache.set(orphanId, null);
         continue;
@@ -241,7 +241,7 @@ export function buildStopCoordResolver(
       positions.set(orphanId, [anchorCoord[0], anchorCoord[1]]);
     }
 
-    // Resolver for a neighbor's current position (pinned → real coords).
+    // Resolver for a neighbor's current position (pinned to real coords).
     const neighborPos = (id: string): [number, number] | null => {
       if (id === ancestorId) {
         return anchorCoord;

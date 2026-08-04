@@ -67,7 +67,7 @@ export class PathwayViewController {
         <div class="p-4 space-y-4">
           <div class="space-y-4">
             <div class="flex items-center justify-between">
-              <h2 class="text-lg font-semibold">Pathway — ${escapeAttr(modeLabel)}</h2>
+              <h2 class="text-lg font-semibold">Pathway: ${escapeAttr(modeLabel)}</h2>
               <button class="btn btn-sm btn-error btn-outline delete-pathway-btn" data-pathway-id="${escapeAttr(pathway_id)}">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -115,7 +115,7 @@ export class PathwayViewController {
       <div class="flex items-center gap-2 text-sm">
         <span class="opacity-60">From:</span>
         ${renderStopLink(pathway.from_stop_id, fromStop)}
-        <span class="opacity-40">→</span>
+        <span class="opacity-40">-&gt;</span>
         <span class="opacity-60">To:</span>
         ${renderStopLink(pathway.to_stop_id, toStop)}
       </div>

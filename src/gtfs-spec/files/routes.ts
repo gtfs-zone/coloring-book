@@ -213,7 +213,7 @@ export const routesSpec: GTFSFileSpec = {
       presenceCondition:
         'Forbidden if networks.txt or route_networks.txt exists. If neither file exists, network_id may be used to identify the network to which a route belongs.',
       description:
-        'Identifies a network to which the route belongs. Mutually exclusive with the use of networks.txt and route_networks.txt — if those files are present, network_id must not be set here.',
+        'Identifies a network to which the route belongs. Mutually exclusive with the use of networks.txt and route_networks.txt. If those files are present, network_id must not be set here.',
     },
   ],
 };

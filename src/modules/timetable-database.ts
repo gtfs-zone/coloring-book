@@ -208,7 +208,7 @@ export class TimetableDatabase {
     // Validate time format using GTFS schema if not null
     if (newTime !== null) {
       const timeValidation =
-        // Cast to z.ZodType to access safeParse — ZodTypeAny from ZodRawShape
+        // Cast to z.ZodType to access safeParse, ZodTypeAny from ZodRawShape
         // doesn't expose safeParse in its TypeScript type in Zod v4
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (StopTimesSchema.shape.arrival_time as any).safeParse(newTime);
@@ -323,7 +323,7 @@ export class TimetableDatabase {
     // Validate time format using GTFS schema if not null
     if (newTime !== null) {
       const timeValidation =
-        // Cast to z.ZodType to access safeParse — ZodTypeAny from ZodRawShape
+        // Cast to z.ZodType to access safeParse, ZodTypeAny from ZodRawShape
         // doesn't expose safeParse in its TypeScript type in Zod v4
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (StopTimesSchema.shape.arrival_time as any).safeParse(newTime);
@@ -426,7 +426,7 @@ export class TimetableDatabase {
     }
 
     if (stop_sequence) {
-      // Unambiguous lookup by primary key — required for loop routes where
+      // Unambiguous lookup by primary key, required for loop routes where
       // the same stop_id appears at multiple positions.
       const results = await database.queryRows('stop_times', {
         trip_id,

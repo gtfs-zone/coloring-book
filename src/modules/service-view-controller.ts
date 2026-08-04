@@ -270,7 +270,7 @@ export class ServiceViewController {
       });
     }
 
-    // Route reference row click → timetable
+    // Route reference row click goes to timetable
     const routeRows = container.querySelectorAll(`.${ROUTE_REF_ROW}`);
     routeRows.forEach((row) => {
       row.addEventListener('click', () => {
@@ -282,7 +282,7 @@ export class ServiceViewController {
       });
     });
 
-    // "View Route" button click → route page
+    // "View Route" button click goes to route page
     const entityBtns = container.querySelectorAll(`.${ENTITY_REF_BTN}`);
     entityBtns.forEach((btn) => {
       btn.addEventListener('click', (e) => {
