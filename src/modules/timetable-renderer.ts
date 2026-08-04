@@ -19,7 +19,7 @@ import {
 import { TripsSchema, GTFS_TABLES } from '../types/gtfs.js';
 import { getStopDisplay, renderCardLabel } from '../utils/entity-display.js';
 import { escapeHtml } from '../utils/escape-html.js';
-import { renderTrashIcon } from './modal-utils.js';
+import { renderTrashIcon, renderRouteWaypointsIcon } from './modal-utils.js';
 import { routeColor } from '../utils/route-colors.js';
 import {
   railCell,
@@ -367,19 +367,30 @@ export class TimetableRenderer {
     const trips = data.trips;
     const tripHeaders = trips
       .map((trip) => {
+        return `
+          <td class="trip-header text-center min-w-[80px] p-2 text-xs font-mono">
+            ${escapeHtml(trip.trip_id)}
+          </td>
+        `;
+      })
+      .join('');
+
+    const tripActionCells = trips
+      .map((trip) => {
         const tripStops = data.stops.filter((_, i) => trip.stopTimes.has(i));
         const brouterUrl = buildBrouterUrl(
           tripStops,
           data.route.route_type ?? ''
         );
         const brouterLink = brouterUrl
-          ? `<a href="${brouterUrl}" target="_blank" rel="noopener" class="btn btn-xs btn-outline mt-1" title="Open in brouter">-&gt;</a>`
+          ? `<a href="${brouterUrl}" target="_blank" rel="noopener" class="btn btn-xs btn-outline" title="Open in brouter">${renderRouteWaypointsIcon('h-3 w-3')}</a>`
           : '';
         return `
-          <td class="trip-header text-center min-w-[80px] p-2 text-xs font-mono">
-            ${escapeHtml(trip.trip_id)}
-            <button class="btn btn-xs btn-error btn-outline delete-trip-btn mt-1" data-trip-id="${escapeHtml(trip.trip_id)}" title="Delete">${renderTrashIcon('h-3 w-3')}</button>
-            ${brouterLink}
+          <td class="trip-header text-center min-w-[80px] p-2 text-xs">
+            <div class="flex items-center justify-center gap-1">
+              <button class="btn btn-xs btn-error btn-outline delete-trip-btn" data-trip-id="${escapeHtml(trip.trip_id)}" title="Delete">${renderTrashIcon('h-3 w-3')}</button>
+              ${brouterLink}
+            </div>
           </td>
         `;
       })
@@ -406,6 +417,11 @@ export class TimetableRenderer {
           </th>
           ${tripHeaders}
           ${newTripHeader}
+        </tr>
+        <tr class="z-[2]">
+          <th class="stop-header min-w-[200px] p-2 text-left bg-base-100"></th>
+          ${tripActionCells}
+          <td class="trip-header text-center min-w-[120px] p-2 text-xs"></td>
         </tr>
       </thead>
     `;
