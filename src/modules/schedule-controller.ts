@@ -181,26 +181,34 @@ export class ScheduleController {
       { capture: true, passive: true }
     );
 
-    this.installStopPickerHandlers();
+    this.installTimetablePickers();
   }
 
   /**
-   * Delegated handlers for the two stop pickers in the timetable.
+   * Delegated handlers for the stop and shape_id pickers in the timetable.
    *
    * Bound to `document` once, rather than to the timetable container on every
    * render: the container's innerHTML is replaced wholesale by several
    * different call sites, and re-binding after each of them was both easy to
    * forget and easy to leak.
    */
-  private installStopPickerHandlers(): void {
+  private installTimetablePickers(): void {
     // The "add stop" select at the bottom of the table fills itself on first
     // interaction, see buildStopOptions for why it is not filled on render.
     document.addEventListener('focusin', (e) => {
-      const select = (e.target as Element)?.closest?.(
+      const stopSelect = (e.target as Element)?.closest?.(
         '#new-stop-select[data-stop-options="pending"]'
       ) as HTMLSelectElement | null;
-      if (select) {
-        void this.fillStopOptions(select, '');
+      if (stopSelect) {
+        void this.fillStopOptions(stopSelect, '');
+        return;
+      }
+
+      const shapeSelect = (e.target as Element)?.closest?.(
+        'select[data-shape-options="pending"]'
+      ) as HTMLSelectElement | null;
+      if (shapeSelect) {
+        this.fillShapeOptions(shapeSelect);
       }
     });
 
@@ -266,13 +274,17 @@ export class ScheduleController {
    * Cached `<option>` markup for every stop in the feed.
    *
    * Built at most once per feed and reused by both pickers. Cleared by
-   * invalidateStopOptions when the stops table changes.
+   * invalidatePickerCaches when the stops table changes.
    */
   private stopOptionsHtml: string | null = null;
 
-  /** Drop the cached stop options; call after any edit to stops.txt. */
-  public invalidateStopOptions(): void {
+  /** Cached `<option>` markup for every shape_id in the feed. */
+  private shapeOptionsHtml: string | null = null;
+
+  /** Drop the cached picker options; call after any edit that could change them. */
+  public invalidatePickerCaches(): void {
     this.stopOptionsHtml = null;
+    this.shapeOptionsHtml = null;
   }
 
   private async fillStopOptions(
@@ -304,6 +316,43 @@ export class ScheduleController {
     select.dataset.stopOptions = 'ready';
   }
 
+  /**
+   * Fill a trip-property `shape_id` select with the full shape_id list.
+   *
+   * The trip's current value is already rendered by TimetableRenderer, so
+   * `value` survives this swap even if it is a dangling reference not
+   * present in `getShapeIds()`.
+   */
+  private fillShapeOptions(select: HTMLSelectElement): void {
+    const shapeIds = this.gtfsParser.getShapeIds();
+    if (this.shapeOptionsHtml === null) {
+      console.log(
+        `[ScheduleController] building shape picker options for ${shapeIds.length} shapes`
+      );
+      this.shapeOptionsHtml = shapeIds
+        .map(
+          (sid) =>
+            `<option value="${escapeHtml(sid)}">${escapeHtml(sid)}</option>`
+        )
+        .join('');
+    }
+
+    const currentValue = select.value;
+    // A dangling shape_id (not in getShapeIds()) is not in the cached list;
+    // keep it as an extra option so filling the picker cannot silently blank
+    // the trip's real value.
+    const danglingOptionHtml =
+      currentValue && !shapeIds.includes(currentValue)
+        ? `<option value="${escapeHtml(currentValue)}">${escapeHtml(currentValue)}</option>`
+        : '';
+    select.innerHTML =
+      '<option value="">- none -</option>' +
+      this.shapeOptionsHtml +
+      danglingOptionHtml;
+    select.value = currentValue;
+    select.dataset.shapeOptions = 'ready';
+  }
+
   /** Reset tracked scroll when navigating to a different timetable. */
   resetTimetableScroll(): void {
     this.timetableScrollLeft = 0;
@@ -313,11 +362,11 @@ export class ScheduleController {
   setPatchManager(pm: PatchManagerInterface): void {
     this.patchManager = pm;
 
-    // The stop picker's option markup is cached across renders, so any edit
-    // that could rename or add a stop has to drop it. Rebuilding is cheap and
-    // only happens on the next time a picker is opened.
+    // The picker option markup is cached across renders, so any edit that
+    // could rename/add a stop or shape has to drop it. Rebuilding is cheap
+    // and only happens the next time a picker is opened.
     for (const event of ['change', 'undo', 'redo', 'jump'] as const) {
-      pm.on(event, () => this.invalidateStopOptions());
+      pm.on(event, () => this.invalidatePickerCaches());
     }
   }
 
@@ -1018,11 +1067,6 @@ export class ScheduleController {
           stop_name: this.pendingStop.stop_name,
         } as Stops);
       }
-
-      // Distinct shape_ids for the per-trip shape dropdown. Reading the whole
-      // shapes table here copied 394,557 rows on the MBTA feed to derive 1,200
-      // ids; the parser keeps the id set indexed instead.
-      this.renderer.availableShapeIds = this.gtfsParser.getShapeIds();
 
       return this.renderer.renderTimetableHTML(
         timetableData,
