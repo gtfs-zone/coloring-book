@@ -10,7 +10,6 @@ import { notify } from './notification-system';
 import { TimeFormatter } from '../utils/time-formatter.js';
 import { TimetableDataProcessor } from './timetable-data-processor.js';
 import { TimetableRenderer } from './timetable-renderer.js';
-import { TimetableCellRenderer } from './timetable-cell-renderer.js';
 import { TimetableDatabase } from './timetable-database.js';
 import { generateCompositeKeyFromRecord } from '../utils/gtfs-primary-keys.js';
 import { patchUpdate } from '../utils/patch-utils.js';
@@ -127,7 +126,6 @@ export class ScheduleController {
   private patchManager: PatchManagerInterface | null = null;
   private dataProcessor: TimetableDataProcessor;
   private renderer: TimetableRenderer;
-  private cellRenderer: TimetableCellRenderer;
   private database: TimetableDatabase;
 
   // Current timetable state for refresh functionality
@@ -160,7 +158,6 @@ export class ScheduleController {
       gtfsParser
     );
     this.renderer = new TimetableRenderer();
-    this.cellRenderer = new TimetableCellRenderer();
     this.database = new TimetableDatabase(gtfsParser);
 
     // Capture-phase scroll listener: fires synchronously when the user scrolls
@@ -373,213 +370,6 @@ export class ScheduleController {
   // ===== PUBLIC EDITING METHODS =====
 
   /**
-   * Update time for a specific stop in a trip
-   *
-   * Updates both arrival and departure times to the same value.
-   * Follows FAIL HARD policy - throws on validation errors.
-   *
-   * @param trip_id - GTFS trip identifier
-   * @param stop_id - GTFS stop identifier
-   * @param newTime - New time value in any valid time format (HH:MM, HH:MM:SS)
-   * @throws {Error} When validation fails or database update fails
-   */
-  public async updateTime(
-    trip_id: string,
-    stop_id: string,
-    newTime: string
-  ): Promise<void> {
-    try {
-      // Cast time to HH:MM:SS format
-      const castedTime = TimeFormatter.castTimeToHHMMSS(newTime);
-
-      // Capture before-state (virtual table returns copies, so beforeRow is a stable snapshot).
-      const beforeRow = await this.database.getStopTime(trip_id, stop_id);
-      const beforeArrivalTime = beforeRow?.arrival_time;
-      const beforeDepartureTime = beforeRow?.departure_time;
-
-      // Update database directly - validation handled by TimetableDatabase
-      await this.database.updateStopTimeInDatabase(
-        trip_id,
-        stop_id,
-        castedTime
-      );
-
-      console.log(
-        `Updated time for ${trip_id}/${stop_id} from ${newTime} to ${castedTime}`
-      );
-
-      // Record patch using the stable key (no rebuild, stop_sequence unchanged)
-      const afterStopTime = await this.database.getStopTime(trip_id, stop_id);
-      if (beforeRow && afterStopTime && this.patchManager) {
-        const afterKey = generateCompositeKeyFromRecord(
-          'stop_times',
-          afterStopTime as unknown as Record<string, unknown>
-        );
-        await this.patchManager.recordUpdate(
-          'stop_times',
-          afterKey,
-          {
-            arrival_time: beforeArrivalTime,
-            departure_time: beforeDepartureTime,
-          },
-          {
-            arrival_time: afterStopTime.arrival_time,
-            departure_time: afterStopTime.departure_time,
-          }
-        );
-      }
-    } catch (error) {
-      console.error('Failed to update time:', error);
-      this.showTimeError(trip_id, stop_id, 'Failed to save time change');
-    }
-  }
-
-  /**
-   * Update linked time (both arrival and departure set to same value)
-   *
-   * Sets both arrival_time and departure_time to the same value.
-   * Handles empty input by clearing both times.
-   * Updates the UI input immediately after successful database update.
-   * Renumbers stop sequences based on arrival times after update.
-   *
-   * @param trip_id - GTFS trip identifier
-   * @param stop_id - GTFS stop identifier
-   * @param newTime - New time value or empty string to clear
-   * @throws {Error} When time casting or database update fails
-   */
-  public async updateLinkedTime(
-    trip_id: string,
-    stop_id: string,
-    newTime: string,
-    supersequencePosition?: string,
-    stopSequence?: string
-  ): Promise<void> {
-    try {
-      const positionSelector = supersequencePosition
-        ? `[data-supersequence-position="${supersequencePosition}"]`
-        : '';
-
-      // Handle empty input (clear both times)
-      if (!newTime.trim()) {
-        const beforeRow = await this.database.getStopTime(
-          trip_id,
-          stop_id,
-          stopSequence
-        );
-        await this.database.updateLinkedTimes(trip_id, stop_id, null);
-        console.log(`Cleared both times for ${trip_id}/${stop_id}`);
-
-        // Update input value immediately, use supersequencePosition to target the correct row
-        const input = document.querySelector(
-          `input[data-trip-id="${trip_id}"][data-stop-id="${stop_id}"][data-time-type="linked"]${positionSelector}`
-        ) as HTMLInputElement;
-        if (input) {
-          input.value = '';
-        }
-
-        // Rebuild stop_times from table and refresh timetable
-        await this.database.rebuildStopTimesFromTable(trip_id);
-        await this.refreshCurrentTimetable();
-
-        if (beforeRow && this.patchManager) {
-          const afterStopTime = await this.database.getStopTime(
-            trip_id,
-            stop_id,
-            stopSequence
-          );
-          if (afterStopTime) {
-            const afterKey = generateCompositeKeyFromRecord(
-              'stop_times',
-              afterStopTime as unknown as Record<string, unknown>
-            );
-            await this.patchManager.recordUpdate(
-              'stop_times',
-              afterKey,
-              {
-                arrival_time: beforeRow.arrival_time,
-                departure_time: beforeRow.departure_time,
-              },
-              {
-                arrival_time: afterStopTime.arrival_time,
-                departure_time: afterStopTime.departure_time,
-              }
-            );
-          }
-        }
-        return;
-      }
-
-      // Cast time to HH:MM:SS format
-      const castedTime = TimeFormatter.castTimeToHHMMSS(newTime);
-
-      // Capture before-state using stop_sequence for unambiguous lookup on loop routes
-      const beforeRow = await this.database.getStopTime(
-        trip_id,
-        stop_id,
-        stopSequence
-      );
-      const beforeArrivalTime = beforeRow?.arrival_time;
-      const beforeDepartureTime = beforeRow?.departure_time;
-
-      // Update both arrival and departure times to the same value
-      await this.database.updateLinkedTimes(trip_id, stop_id, castedTime);
-
-      console.log(
-        `Updated linked times for trip ${trip_id}, stop ${stop_id} to ${castedTime}`
-      );
-
-      // Clear pending stop if this was the first time entered
-      this.clearPendingStopIfMatches(stop_id);
-
-      // Update input value immediately, use supersequencePosition to target the correct row
-      const input = document.querySelector(
-        `input[data-trip-id="${trip_id}"][data-stop-id="${stop_id}"][data-time-type="linked"]${positionSelector}`
-      ) as HTMLInputElement;
-      if (input) {
-        input.value = TimeFormatter.formatTimeWithSeconds(castedTime);
-      }
-
-      // Rebuild stop_times from table and refresh timetable
-      await this.database.rebuildStopTimesFromTable(trip_id);
-      await this.refreshCurrentTimetable();
-
-      // Record patch: after re-render, find the same logical row to get the new stop_sequence
-      const afterInput = supersequencePosition
-        ? (document.querySelector(
-            `input[data-trip-id="${trip_id}"][data-supersequence-position="${supersequencePosition}"][data-time-type="linked"]`
-          ) as HTMLInputElement | null)
-        : null;
-      const afterStopSequence = afterInput?.dataset.stopSequence;
-      const afterStopTime = await this.database.getStopTime(
-        trip_id,
-        stop_id,
-        afterStopSequence
-      );
-      if (beforeRow && afterStopTime && this.patchManager) {
-        const afterKey = generateCompositeKeyFromRecord(
-          'stop_times',
-          afterStopTime as unknown as Record<string, unknown>
-        );
-        await this.patchManager.recordUpdate(
-          'stop_times',
-          afterKey,
-          {
-            arrival_time: beforeArrivalTime,
-            departure_time: beforeDepartureTime,
-          },
-          {
-            arrival_time: afterStopTime.arrival_time,
-            departure_time: afterStopTime.departure_time,
-          }
-        );
-      }
-    } catch (error) {
-      console.error('Failed to update linked time:', error);
-      this.showTimeError(trip_id, stop_id, 'Failed to save time change');
-    }
-  }
-
-  /**
    * Update arrival or departure time for a specific stop in a trip
    *
    * Updates either arrival_time or departure_time independently.
@@ -602,10 +392,6 @@ export class ScheduleController {
     stopSequence?: string
   ): Promise<void> {
     try {
-      const positionSelector = supersequencePosition
-        ? `[data-supersequence-position="${supersequencePosition}"]`
-        : '';
-
       // Handle empty input (skip/clear time)
       if (!newTime.trim()) {
         const beforeRow = await this.database.getStopTime(
@@ -695,27 +481,17 @@ export class ScheduleController {
       // Clear pending stop if this was the first time entered
       this.clearPendingStopIfMatches(stop_id);
 
-      // Update input value immediately, use supersequencePosition to target the correct row
-      const input = document.querySelector(
-        `input[data-trip-id="${trip_id}"][data-stop-id="${stop_id}"][data-time-type="${timeType}"]${positionSelector}`
-      ) as HTMLInputElement;
-      if (input) {
-        input.value = castedTime
-          ? TimeFormatter.formatTimeWithSeconds(castedTime)
-          : '';
-      }
-
       // Rebuild stop_times from table and refresh timetable
       await this.database.rebuildStopTimesFromTable(trip_id);
       await this.refreshCurrentTimetable();
 
       // Record patch: after re-render, find the same logical row to get the new stop_sequence
-      const afterInput = supersequencePosition
+      const afterSpan = supersequencePosition
         ? (document.querySelector(
-            `input[data-trip-id="${trip_id}"][data-supersequence-position="${supersequencePosition}"][data-time-type="${timeType}"]`
-          ) as HTMLInputElement | null)
+            `.time-span[data-trip-id="${trip_id}"][data-position="${supersequencePosition}"][data-time-type="${timeType}"]`
+          ) as HTMLElement | null)
         : null;
-      const afterStopSequence = afterInput?.dataset.stopSequence;
+      const afterStopSequence = afterSpan?.dataset.stopSequence;
       const afterStopTime = await this.database.getStopTime(
         trip_id,
         stop_id,
@@ -803,179 +579,6 @@ export class ScheduleController {
       notify.show(`Failed to update ${field} for trip ${trip_id}`, 'error', {
         duration: 5000,
       });
-    }
-  }
-
-  /**
-   * Swap to linked input (DOM manipulation) - delegates to cellRenderer
-   *
-   * Converts separate arrival/departure inputs to a single linked input.
-   * Uses primary time (arrival preferred, fallback to departure) as initial value.
-   * Updates database to set both times to the same value.
-   *
-   * @param trip_id - GTFS trip identifier
-   * @param stop_id - GTFS stop identifier
-   * @throws {Error} When DOM manipulation or database update fails
-   */
-  private async swapToLinkedInput(
-    trip_id: string,
-    stop_id: string
-  ): Promise<void> {
-    const inputContainer = document
-      .querySelector(
-        `input[data-trip-id="${trip_id}"][data-stop-id="${stop_id}"]`
-      )
-      ?.closest('.stacked-time-container');
-    if (!inputContainer) {
-      console.error('Input container not found for swap to linked');
-      return;
-    }
-
-    // Get current times from database (may not exist for stops with no times)
-    const stopTime = await this.database.getStopTime(trip_id, stop_id);
-
-    const arrival_time = stopTime?.arrival_time;
-    const departure_time = stopTime?.departure_time;
-
-    // Determine which time to use as primary (arrival preferred, fallback to departure)
-    const primaryTime = arrival_time || departure_time;
-    const timeValue = primaryTime
-      ? TimeFormatter.formatTimeWithSeconds(primaryTime)
-      : '';
-
-    // Create linked input using cellRenderer and replace content
-    const linkedInput = this.cellRenderer.createLinkedInput(
-      trip_id,
-      stop_id,
-      timeValue
-    );
-
-    inputContainer.innerHTML = '';
-    inputContainer.appendChild(linkedInput);
-
-    // Update database only if there's a time to set
-    if (primaryTime) {
-      await this.database.updateLinkedTimes(trip_id, stop_id, primaryTime);
-    }
-
-    console.log(
-      `Linked times for ${trip_id}/${stop_id}: set both times to ${primaryTime}`
-    );
-
-    // Record patch if departure time actually changed (arrival_time !== primaryTime || departure_time !== primaryTime)
-    if (
-      primaryTime &&
-      this.patchManager &&
-      (arrival_time !== primaryTime || departure_time !== primaryTime)
-    ) {
-      const afterStopTime = await this.database.getStopTime(trip_id, stop_id);
-      if (afterStopTime) {
-        const afterKey = generateCompositeKeyFromRecord(
-          'stop_times',
-          afterStopTime as unknown as Record<string, unknown>
-        );
-        await this.patchManager.recordUpdate(
-          'stop_times',
-          afterKey,
-          {
-            arrival_time,
-            departure_time,
-          },
-          {
-            arrival_time: afterStopTime.arrival_time,
-            departure_time: afterStopTime.departure_time,
-          }
-        );
-      }
-    }
-  }
-
-  /**
-   * Swap to unlinked inputs (DOM manipulation) - delegates to cellRenderer
-   *
-   * Converts linked input to separate arrival/departure inputs.
-   * Preserves current time values in the new input fields.
-   * No database changes - only UI state change.
-   *
-   * @param trip_id - GTFS trip identifier
-   * @param stop_id - GTFS stop identifier
-   * @throws {Error} When DOM manipulation fails
-   */
-  private async swapToUnlinkedInputs(
-    trip_id: string,
-    stop_id: string
-  ): Promise<void> {
-    const inputContainer = document
-      .querySelector(
-        `input[data-trip-id="${trip_id}"][data-stop-id="${stop_id}"]`
-      )
-      ?.closest('.stacked-time-container');
-    if (!inputContainer) {
-      console.error('Input container not found for swap to unlinked');
-      return;
-    }
-
-    // Get current times from database (may not exist for stops with no times)
-    const stopTime = await this.database.getStopTime(trip_id, stop_id);
-
-    const arrival_time = stopTime?.arrival_time
-      ? TimeFormatter.formatTimeWithSeconds(stopTime.arrival_time)
-      : '';
-    const departure_time = stopTime?.departure_time
-      ? TimeFormatter.formatTimeWithSeconds(stopTime.departure_time)
-      : '';
-
-    // Create unlinked inputs using cellRenderer and replace content
-    const unlinkedInputs = this.cellRenderer.createUnlinkedInputs(
-      trip_id,
-      stop_id,
-      arrival_time,
-      departure_time
-    );
-
-    inputContainer.innerHTML = '';
-    inputContainer.appendChild(unlinkedInputs);
-
-    // No database changes for unlinking
-    console.log(
-      `Unlinked times for ${trip_id}/${stop_id}: UI changed to separate inputs, no database changes`
-    );
-  }
-
-  /**
-   * Toggle link between arrival and departure times
-   *
-   * Switches between linked (single input) and unlinked (separate inputs) modes.
-   * Determines current state from DOM and toggles to opposite state.
-   * Delegates actual UI manipulation to swap methods.
-   *
-   * @param trip_id - GTFS trip identifier
-   * @param stop_id - GTFS stop identifier
-   * @throws {Error} When state detection or UI manipulation fails
-   */
-  public async toggleTimesLink(
-    trip_id: string,
-    stop_id: string
-  ): Promise<void> {
-    try {
-      // Determine current UI state by checking what's currently displayed
-      const linkedInput = document.querySelector(
-        `input[data-trip-id="${trip_id}"][data-stop-id="${stop_id}"][data-time-type="linked"]`
-      );
-      const isCurrentlyLinked = !!linkedInput;
-
-      console.log(
-        `Toggle for ${trip_id}/${stop_id}: currently ${isCurrentlyLinked ? 'linked' : 'unlinked'}`
-      );
-
-      // Toggle to opposite state
-      if (isCurrentlyLinked) {
-        await this.swapToUnlinkedInputs(trip_id, stop_id);
-      } else {
-        await this.swapToLinkedInput(trip_id, stop_id);
-      }
-    } catch (error) {
-      console.error('Failed to toggle times link:', error);
     }
   }
 
