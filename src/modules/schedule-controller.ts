@@ -478,68 +478,8 @@ export class ScheduleController {
     stopSequence?: string
   ): Promise<void> {
     try {
-      // Handle empty input (skip/clear time)
-      if (!newTime.trim()) {
-        const beforeRow = await this.database.getStopTime(
-          trip_id,
-          stop_id,
-          stopSequence
-        );
-        const field =
-          timeType === 'arrival' ? 'arrival_time' : 'departure_time';
-        await this.database.updateStopTimeInDatabase(
-          trip_id,
-          stop_id,
-          null,
-          timeType
-        );
-        console.log(`Cleared ${timeType} time for ${trip_id}/${stop_id}`);
-
-        // Rebuild stop_times from table and refresh timetable
-        await this.database.rebuildStopTimesFromTable(trip_id);
-        await this.refreshCurrentTimetable();
-
-        if (beforeRow && this.patchManager) {
-          const afterStopTime = await this.database.getStopTime(
-            trip_id,
-            stop_id,
-            stopSequence
-          );
-          if (afterStopTime) {
-            const afterKey = generateCompositeKeyFromRecord(
-              'stop_times',
-              afterStopTime as unknown as Record<string, unknown>
-            );
-            await this.patchManager.recordUpdate(
-              'stop_times',
-              afterKey,
-              { [field]: (beforeRow as Record<string, unknown>)[field] },
-              { [field]: (afterStopTime as Record<string, unknown>)[field] }
-            );
-          }
-        }
-        return;
-      }
-
-      // Cast time to HH:MM:SS format
-      const castedTime = TimeFormatter.castTimeToHHMMSS(newTime);
-
-      // Validate arrival <= departure constraint
-      const validation = await this.database.validateArrivalDepartureConstraint(
-        trip_id,
-        stop_id,
-        timeType,
-        castedTime
-      );
-
-      if (!validation.isValid) {
-        this.showTimeError(
-          trip_id,
-          stop_id,
-          validation.errorMessage || 'Invalid time'
-        );
-        return;
-      }
+      const field = timeType === 'arrival' ? 'arrival_time' : 'departure_time';
+      const isClear = !newTime.trim();
 
       // Capture before-state using stop_sequence for unambiguous lookup on loop routes
       const beforeRow = await this.database.getStopTime(
@@ -547,42 +487,75 @@ export class ScheduleController {
         stop_id,
         stopSequence
       );
-      const field = timeType === 'arrival' ? 'arrival_time' : 'departure_time';
       const beforeFieldValue = (beforeRow as Record<string, unknown> | null)?.[
         field
       ];
+      const beforeKey = beforeRow
+        ? generateCompositeKeyFromRecord(
+            'stop_times',
+            beforeRow as unknown as Record<string, unknown>
+          )
+        : null;
 
-      // Update database directly
+      let castedTime: string | null = null;
+      if (!isClear) {
+        castedTime = TimeFormatter.castTimeToHHMMSS(newTime);
+
+        const validation =
+          await this.database.validateArrivalDepartureConstraint(
+            trip_id,
+            stop_id,
+            timeType,
+            castedTime
+          );
+        if (!validation.isValid) {
+          this.showTimeError(
+            trip_id,
+            stop_id,
+            validation.errorMessage || 'Invalid time'
+          );
+          return;
+        }
+      }
+
       await this.database.updateStopTimeInDatabase(
         trip_id,
         stop_id,
         castedTime,
         timeType
       );
-
       console.log(
-        `Updated ${timeType} time for ${trip_id}/${stop_id} from ${newTime} to ${castedTime}`
+        isClear
+          ? `Cleared ${timeType} time for ${trip_id}/${stop_id}`
+          : `Updated ${timeType} time for ${trip_id}/${stop_id} from ${newTime} to ${castedTime}`
       );
 
-      // Clear pending stop if this was the first time entered
-      this.clearPendingStopIfMatches(stop_id);
+      if (!isClear) {
+        this.clearPendingStopIfMatches(stop_id);
+      }
 
-      // Rebuild stop_times from table and refresh timetable
-      await this.database.rebuildStopTimesFromTable(trip_id);
-      await this.refreshCurrentTimetable();
-
-      // Record patch: after re-render, find the same logical row to get the new stop_sequence
-      const afterSpan = supersequencePosition
-        ? (document.querySelector(
-            `.time-span[data-trip-id="${trip_id}"][data-position="${supersequencePosition}"][data-time-type="${timeType}"]`
-          ) as HTMLElement | null)
-        : null;
-      const afterStopSequence = afterSpan?.dataset.stopSequence;
+      // Renumber stop_sequence to match the (possibly changed) time order,
+      // then locate this same row's new sequence via its pre-renumber key.
+      const renumberMap =
+        await this.database.renumberStopSequencesByTime(trip_id);
+      const afterStopSequence = beforeKey
+        ? renumberMap.get(beforeKey)
+        : undefined;
       const afterStopTime = await this.database.getStopTime(
         trip_id,
         stop_id,
         afterStopSequence
       );
+
+      this.patchTimeCellDom(
+        trip_id,
+        stop_id,
+        supersequencePosition,
+        timeType,
+        castedTime ? TimeFormatter.formatTimeWithSeconds(castedTime) : '',
+        afterStopSequence
+      );
+
       if (beforeRow && afterStopTime && this.patchManager) {
         const afterKey = generateCompositeKeyFromRecord(
           'stop_times',
@@ -599,6 +572,45 @@ export class ScheduleController {
       console.error('Failed to update arrival/departure time:', error);
       this.showTimeError(trip_id, stop_id, 'Failed to save time change');
     }
+  }
+
+  /**
+   * Update a single time cell's spans after a commit, instead of re-rendering
+   * the whole table.
+   *
+   * The edited span's text is set directly; both spans on the row (arrival
+   * and departure share one stop_time record) get their `data-stop-sequence`
+   * refreshed so the next edit's before/after lookup stays correct even
+   * after a renumber.
+   */
+  private patchTimeCellDom(
+    trip_id: string,
+    stop_id: string,
+    supersequencePosition: string | undefined,
+    timeType: 'arrival' | 'departure',
+    displayValue: string,
+    newStopSequence: string | undefined
+  ): void {
+    const positionSelector = supersequencePosition
+      ? `[data-position="${supersequencePosition}"]`
+      : '';
+
+    const editedSpan = document.querySelector(
+      `.time-span[data-trip-id="${trip_id}"][data-stop-id="${stop_id}"][data-time-type="${timeType}"]${positionSelector}`
+    ) as HTMLElement | null;
+    if (editedSpan) {
+      editedSpan.textContent = displayValue || '--:--:--';
+    }
+
+    if (newStopSequence === undefined) {
+      return;
+    }
+    const rowSpans = document.querySelectorAll(
+      `.time-span[data-trip-id="${trip_id}"][data-stop-id="${stop_id}"]${positionSelector}`
+    );
+    rowSpans.forEach((el) => {
+      (el as HTMLElement).dataset.stopSequence = newStopSequence;
+    });
   }
 
   /**

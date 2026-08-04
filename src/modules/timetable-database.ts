@@ -396,21 +396,23 @@ export class TimetableDatabase {
   }
 
   /**
-   * Rebuild stop_times for a trip from the rendered table (source of truth)
+   * Renumber a trip's stop_sequence values to match chronological time order.
    *
-   * Scans the DOM table to find all time inputs for this trip, builds a fresh
-   * stop_times list, and replaces all database records. This ensures the database
-   * matches exactly what's shown in the table.
+   * Sourced from the database, not the DOM: with click-to-edit cells, at most
+   * one `<input>` for the trip ever exists at a time, so a DOM scrape can no
+   * longer see "every row" the way the old always-an-input rendering did.
    *
-   * - Table is source of truth (WYSIWYG)
-   * - Skipped stops have no database entry (gaps are preserved)
-   * - Stop sequence determined by time order
-   * - Handles add/remove/edit cases atomically
+   * Returns the old composite key -> new `stop_sequence` mapping so the
+   * caller can relocate the row it just edited without a full re-render:
+   * the edited row's *pre-renumber* key (trip_id + stop_sequence, unaffected
+   * by an arrival/departure field write) is a stable lookup into it.
    *
    * @param trip_id - GTFS trip identifier
    * @throws {Error} When database connection unavailable or updates fail
    */
-  async rebuildStopTimesFromTable(trip_id: string): Promise<void> {
+  async renumberStopSequencesByTime(
+    trip_id: string
+  ): Promise<Map<string, string>> {
     const database = this.gtfsParser.gtfsDatabase;
     if (!database) {
       const error = 'Database connection not available';
@@ -419,85 +421,45 @@ export class TimetableDatabase {
       throw new Error(error);
     }
 
-    // Find all time inputs for this trip in the rendered table
-    const inputs = document.querySelectorAll(
-      `input[data-trip-id="${trip_id}"]`
-    ) as NodeListOf<HTMLInputElement>;
+    const stopTimes = await database.queryRows('stop_times', { trip_id });
+    const withOldKeys = stopTimes.map((st) => ({
+      st,
+      oldKey: generateCompositeKeyFromRecord('stop_times', st),
+    }));
 
-    const stopTimesMap = new Map<string, Partial<StopTimes>>();
-
-    inputs.forEach((input: HTMLInputElement) => {
-      const stop_id = input.dataset.stopId;
-      const timeType = input.dataset.timeType; // 'linked', 'arrival', or 'departure'
-      const timeValue = input.value.trim();
-      const superPos = input.dataset.supersequencePosition ?? 'new';
-
-      if (!stop_id || !timeValue) {
-        return; // Skip empty times
-      }
-
-      // Key by composite (stop_id, supersequencePosition) to preserve duplicate stops
-      const key = `${stop_id}:${superPos}`;
-      let stopTime = stopTimesMap.get(key);
-      if (!stopTime) {
-        stopTime = {
-          trip_id,
-          stop_id,
-          stop_sequence: 0, // Temporary, will be set after sorting
-          arrival_time: undefined,
-          departure_time: undefined,
-        };
-        stopTimesMap.set(key, stopTime);
-      }
-
-      // Set the time based on input type
-      const castedTime = timeValue; // Already in HH:MM:SS format from input
-      if (timeType === 'linked') {
-        stopTime!.arrival_time = castedTime;
-        stopTime!.departure_time = castedTime;
-      } else if (timeType === 'arrival') {
-        stopTime!.arrival_time = castedTime;
-      } else if (timeType === 'departure') {
-        stopTime!.departure_time = castedTime;
-      }
-    });
-
-    const stopTimesFromTable = Array.from(stopTimesMap.values());
-
-    // Sort by time to determine sequence
-    const sortedStopTimes = stopTimesFromTable.sort((a, b) => {
-      const timeA = a.arrival_time || a.departure_time || '';
-      const timeB = b.arrival_time || b.departure_time || '';
+    // Stable sort: rows with unaffected times keep their relative order.
+    const sorted = [...withOldKeys].sort((a, b) => {
+      const timeA = a.st.arrival_time || a.st.departure_time || '';
+      const timeB = b.st.arrival_time || b.st.departure_time || '';
       return timeA.localeCompare(timeB);
     });
 
-    // Assign sequential stop_sequence numbers
-    const finalStopTimes = sortedStopTimes.map((st, index) => ({
+    const renumbered = sorted.map(({ st }, index) => ({
       ...st,
-      stop_sequence: index,
+      stop_sequence: String(index),
     })) as unknown as StopTimes[];
 
-    // Get ALL old stop_times for this trip
-    const oldStopTimes = await database.queryRows('stop_times', { trip_id });
-    const oldKeys = oldStopTimes.map((st) =>
-      generateCompositeKeyFromRecord('stop_times', st)
-    );
+    const oldKeys = withOldKeys.map(({ oldKey }) => oldKey);
+    await database.replaceRows('stop_times', oldKeys, renumbered);
 
-    // Atomic replace: delete all old, insert all new from table
-    await database.replaceRows('stop_times', oldKeys, finalStopTimes);
-
-    // Sync in-memory data so getFileDataSync reflects the rebuilt state
+    // Sync in-memory data so getFileDataSync reflects the renumbered state
     const inMemory = this.gtfsParser.getFileDataSync('stop_times.txt');
     const otherTrips = inMemory.filter(
       (st) => (st as { trip_id: string }).trip_id !== trip_id
     );
     this.gtfsParser.setInMemoryFileData('stop_times.txt', [
       ...otherTrips,
-      ...(finalStopTimes as unknown as Record<string, unknown>[]),
+      ...(renumbered as unknown as Record<string, unknown>[]),
     ]);
 
     console.log(
-      `Rebuilt ${finalStopTimes.length} stop_times for trip ${trip_id} from table`
+      `Renumbered ${renumbered.length} stop_times for trip ${trip_id} by time order`
     );
+
+    const oldKeyToNewSequence = new Map<string, string>();
+    sorted.forEach(({ oldKey }, index) => {
+      oldKeyToNewSequence.set(oldKey, String(index));
+    });
+    return oldKeyToNewSequence;
   }
 }
