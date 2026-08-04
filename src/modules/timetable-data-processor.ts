@@ -5,19 +5,23 @@
  */
 
 import {
-  shortestCommonSupersequenceWithAlignments,
-  SCSResultHelper,
-} from './scs';
-import {
   Routes,
   Stops,
   Calendar,
   CalendarDates,
   StopTimes,
-  GTFSTableMap,
   Trips,
 } from '../types/gtfs-entities.js';
 import { CalendarSchema } from '../types/gtfs.js';
+import type { GTFSParser } from './gtfs-parser.js';
+import { GTFSRouteSource } from './gtfs-route-source.js';
+import type { RouteSourceTrip } from './route-source.js';
+import {
+  routeSequence,
+  clearRouteSequenceCache,
+  RouteSequence,
+} from './route-sequence.js';
+import { routeGraph, RouteGraph } from './route-graph.js';
 
 /**
  * Editable stop time interface for timetable editing
@@ -75,6 +79,8 @@ export interface TimetableData {
   availableDirections?: DirectionInfo[];
   selectedDirectionId?: string;
   showArrivalDeparture?: boolean; // Whether to show separate arrival/departure columns
+  sequence?: RouteSequence;
+  graph?: RouteGraph;
 }
 
 // Enhanced GTFS interfaces using standard GTFS property names
@@ -105,24 +111,6 @@ interface GTFSRelationships {
   getStopByIdAsync(stop_id: string): Promise<Record<string, unknown> | null>;
 }
 
-interface GTFSParserInterface {
-  gtfsDatabase: {
-    queryRows<T extends keyof GTFSTableMap>(
-      tableName: T,
-      filter?: { [key: string]: string | number | boolean }
-    ): Promise<GTFSTableMap[T][]>;
-    updateRow<T extends keyof GTFSTableMap>(
-      tableName: T,
-      key: string,
-      data: Partial<GTFSTableMap[T]>
-    ): Promise<void>;
-    getRow<T extends keyof GTFSTableMap>(
-      tableName: T,
-      key: string
-    ): Promise<GTFSTableMap[T] | null>;
-  };
-}
-
 /**
  * Timetable Data Processor - Handles data transformation and alignment logic
  *
@@ -136,7 +124,14 @@ interface GTFSParserInterface {
  */
 export class TimetableDataProcessor {
   private relationships: GTFSRelationships;
-  private gtfsParser: GTFSParserInterface;
+  private gtfsParser: GTFSParser;
+
+  /**
+   * The route-source adapter, held for the lifetime of the current feed state
+   * so its stop index and per-trip stop_time sort survive across renders.
+   * Dropped by invalidateRouteSource whenever the underlying tables change.
+   */
+  private routeSource: GTFSRouteSource | null = null;
 
   /**
    * Initialize TimetableDataProcessor with required dependencies
@@ -144,12 +139,27 @@ export class TimetableDataProcessor {
    * @param relationships - GTFS relationships manager for data queries
    * @param gtfsParser - GTFS parser for direct file access
    */
-  constructor(
-    relationships: GTFSRelationships,
-    gtfsParser: GTFSParserInterface
-  ) {
+  constructor(relationships: GTFSRelationships, gtfsParser: GTFSParser) {
     this.relationships = relationships;
     this.gtfsParser = gtfsParser;
+  }
+
+  private getRouteSource(): GTFSRouteSource {
+    if (!this.routeSource) {
+      this.routeSource = new GTFSRouteSource(this.gtfsParser);
+    }
+    return this.routeSource;
+  }
+
+  /**
+   * Drop the cached route-source adapter and its route-sequence results.
+   * Call after any edit that could change trips, stop_times, or stops.
+   */
+  public invalidateRouteSource(): void {
+    if (this.routeSource) {
+      clearRouteSequenceCache(this.routeSource);
+      this.routeSource = null;
+    }
   }
 
   /**
@@ -176,9 +186,9 @@ export class TimetableDataProcessor {
    *
    * Main data processing method that:
    * - Validates route and service existence
-   * - Filters trips by route, service, and optionally direction
-   * - Computes optimal stop sequence using SCS algorithm
-   * - Aligns trips to the optimal sequence
+   * - Filters trips by route, service, and direction
+   * - Derives the canonical stop order from the shared route-sequence engine
+   * - Aligns each trip's stop_times to that order
    * - Returns structured timetable data for rendering
    *
    * @param route_id - GTFS route identifier
@@ -216,20 +226,13 @@ export class TimetableDataProcessor {
       );
     }
 
-    // Get all trips for this route and service (use async to get from database)
-    const allTrips: EnhancedTrip[] =
-      await this.relationships.getTripsForRouteAsync(route_id);
-    let trips = allTrips.filter(
-      (trip: EnhancedTrip) => trip.service_id === service_id
-    );
-
-    // Filter by direction if specified
-    if (direction_id !== undefined) {
-      trips = trips.filter(
-        (trip: EnhancedTrip) =>
-          String(trip.direction_id ?? '0') === direction_id
-      );
-    }
+    // Feeds that omit direction_id entirely collapse to the '' direction -
+    // directionsForRoute and routeSequence agree on that convention.
+    const directionId = direction_id ?? '';
+    const source = this.getRouteSource();
+    const trips = source
+      .tripsForRoute(route_id, service_id)
+      .filter((trip) => (trip.direction_id ?? '') === directionId);
 
     if (trips.length === 0) {
       // Return empty timetable structure with default directions
@@ -248,27 +251,12 @@ export class TimetableDataProcessor {
       };
     }
 
-    // Build stop sequences for each trip
-    const tripSequences: string[][] = [];
-    for (const trip of trips) {
-      const stopTimes = await this.getStopTimesFromDatabase(trip.id);
-      const tripStops = stopTimes
-        .sort(
-          (a: StopTimes, b: StopTimes) =>
-            parseInt(String(a.stop_sequence)) -
-            parseInt(String(b.stop_sequence))
-        )
-        .map((st: StopTimes) => st.stop_id);
-      tripSequences.push(tripStops);
-    }
+    const sequence = routeSequence(source, route_id, directionId, service_id);
+    const graph = routeGraph(sequence);
 
-    // Use enhanced SCS to get both optimal sequence and alignments
-    const scsResult = shortestCommonSupersequenceWithAlignments(tripSequences);
-    const scsHelper = new SCSResultHelper(scsResult);
-
-    // Get stop details for the optimal sequence
+    // Get stop details for the canonical stop order
     const stops: Stops[] = (await Promise.all(
-      scsResult.supersequence.map(async (stop_id) => {
+      sequence.stops.map(async ({ stop_id }) => {
         const stop = await this.relationships.getStopByIdAsync(stop_id);
         if (!stop) {
           const error = `Stop ${stop_id} not found in stops.txt but referenced in stop_times.txt`;
@@ -280,12 +268,8 @@ export class TimetableDataProcessor {
       })
     )) as Stops[];
 
-    // Align trips using the SCS result
-    const alignedTrips = await this.alignTripsWithSCS(
-      trips,
-      scsHelper,
-      scsResult.supersequence
-    );
+    // Align trips to the canonical stop order
+    const alignedTrips = await this.alignTripsWithSequence(trips, sequence);
 
     // Get direction name
     const directionName =
@@ -300,48 +284,44 @@ export class TimetableDataProcessor {
       trips: alignedTrips,
       direction_id,
       directionName,
+      sequence,
+      graph,
     };
   }
 
   /**
-   * Enhanced alignment algorithm using SCS result
+   * Align each trip's stop_times to the route sequence's canonical stop
+   * order, sorted by first departure time.
    *
-   * Aligns trips to the optimal stop sequence computed by SCS algorithm.
-   * Creates time mappings for display time, arrival times, and departure times.
-   * Uses stop_id as the key for all time lookups (clearer than numeric indices).
-   * Sorts trips by departure time from the first stop before alignment.
+   * `sequence.positionOf(trip_id, i)` maps the i-th entry of the trip's own
+   * sorted stop_times to its row on the strip. That index space is the same
+   * one `GTFSRouteSource.stopTimesForTrip` sorts into internally, so walking
+   * `stop_times` sorted the same way here keeps the two aligned.
    *
-   * No manual alignment logic needed - everything is handled by SCS!
-   *
-   * @param trips - Array of enhanced trip objects to align
-   * @param scsHelper - SCS result helper with position mappings
-   * @param supersequence - The optimal supersequence of stop_ids from SCS
-   * @returns Array of aligned trips with time mappings using stop_id as keys
+   * @param trips - Trips to align, already filtered to route/service/direction
+   * @param sequence - The route's canonical stop order
+   * @returns Array of aligned trips with time mappings keyed by strip position
    */
-  async alignTripsWithSCS(
-    trips: EnhancedTrip[],
-    scsHelper: SCSResultHelper<string>,
-    _supersequence: string[]
+  private async alignTripsWithSequence(
+    trips: RouteSourceTrip[],
+    sequence: RouteSequence
   ): Promise<AlignedTrip[]> {
-    // Sort trips by departure time from first stop
-    // IMPORTANT: Keep track of original indices because SCS alignments use original trip order!
-    const tripsWithFirstTime = await Promise.all(
-      trips.map(async (trip, originalIndex) => {
-        const stopTimes = await this.getStopTimesFromDatabase(trip.id);
-        const sortedStopTimes = stopTimes.sort(
-          (a: StopTimes, b: StopTimes) =>
+    const tripsWithStopTimes = trips.map((trip) => {
+      const stopTimes = this.gtfsParser
+        .getStopTimesByTripId(trip.trip_id)
+        .sort(
+          (a, b) =>
             parseInt(String(a.stop_sequence)) -
             parseInt(String(b.stop_sequence))
         );
-        const firstStopTime = sortedStopTimes[0];
-        const firstDepartureTime =
-          firstStopTime?.departure_time || firstStopTime?.arrival_time || '';
-        return { trip, firstDepartureTime, originalIndex };
-      })
-    );
+      const first = stopTimes[0];
+      const firstDepartureTime =
+        first?.departure_time || first?.arrival_time || '';
+      return { trip, stopTimes, firstDepartureTime };
+    });
 
     // Sort by first departure time
-    tripsWithFirstTime.sort((a, b) => {
+    tripsWithStopTimes.sort((a, b) => {
       if (!a.firstDepartureTime) {
         return 1;
       }
@@ -353,81 +333,38 @@ export class TimetableDataProcessor {
 
     const alignedTrips: AlignedTrip[] = [];
 
-    for (
-      let sortedIndex = 0;
-      sortedIndex < tripsWithFirstTime.length;
-      sortedIndex++
-    ) {
-      const { trip, originalIndex } = tripsWithFirstTime[sortedIndex];
-      const stopTimes = await this.getStopTimesFromDatabase(trip.id);
+    for (const { trip, stopTimes } of tripsWithStopTimes) {
       const stopTimeMap = new Map<number, string>();
       const arrival_timeMap = new Map<number, string>();
       const departure_timeMap = new Map<number, string>();
       const editableStopTimes = new Map<number, EditableStopTime>();
 
-      // Sort stop times by sequence
-      const sortedStopTimes = stopTimes.sort(
-        (a: StopTimes, b: StopTimes) =>
-          parseInt(String(a.stop_sequence)) - parseInt(String(b.stop_sequence))
-      );
-
-      // Note: Schema validation removed due to incorrect schema definition
-      // The generated GTFS schema incorrectly marks optional fields as required
-      // and doesn't handle string-to-number conversion for CSV data
-
-      // Use SCS alignment to map times to supersequence positions
-      // The position mapping tells us which stops in this trip align to which positions in the supersequence
-      // IMPORTANT: This handles duplicate stops correctly (e.g., circular routes)
-      // Use originalIndex because SCS was computed on the original unsorted trip order!
-      const positionMapping = scsHelper.getPositionMapping(originalIndex);
-
-      // Use position mapping from SCS to correctly handle duplicate stops
-      // inputPosition = position in this trip's stop sequence (0, 1, 2, ...)
-      // supersequencePosition = position in the optimal merged sequence
-      sortedStopTimes.forEach((st: StopTimes, inputPosition: number) => {
-        const stop_id = st.stop_id;
+      stopTimes.forEach((st: StopTimes, inputPosition: number) => {
         const arrival_time = st.arrival_time;
         const departure_time = st.departure_time;
         const displayTime = departure_time || arrival_time;
 
-        // Get the supersequence position for this stop from SCS alignment
-        const supersequencePosition = positionMapping.get(inputPosition);
-
-        if (supersequencePosition === undefined) {
-          const errorMsg = `CRITICAL ERROR: No supersequence position found for trip ${trip.id}, inputPosition ${inputPosition}, stop_id ${stop_id}. This indicates a bug in the SCS alignment logic. Original trip index: ${originalIndex}, sorted trip index: ${sortedIndex}`;
+        const position = sequence.positionOf(trip.trip_id, inputPosition);
+        if (position === null) {
+          const errorMsg = `CRITICAL ERROR: no strip position for trip ${trip.trip_id} at stop_times index ${inputPosition} (stop_id ${st.stop_id}). Every pattern is included by routeSequence, so this should be unreachable.`;
           console.error(errorMsg);
-          console.error('Position mapping:', positionMapping);
-          console.error(
-            'Available mappings:',
-            Array.from(positionMapping.entries())
-          );
           throw new Error(errorMsg);
         }
 
-        // Use supersequence position as the key - this handles duplicate stops correctly!
         if (arrival_time) {
-          arrival_timeMap.set(supersequencePosition, arrival_time);
-          console.log(
-            `  Set arrival_timeMap[${supersequencePosition}] = ${arrival_time}`
-          );
+          arrival_timeMap.set(position, arrival_time);
         }
         if (departure_time) {
-          departure_timeMap.set(supersequencePosition, departure_time);
-          console.log(
-            `  Set departure_timeMap[${supersequencePosition}] = ${departure_time}`
-          );
+          departure_timeMap.set(position, departure_time);
         }
         if (displayTime) {
-          stopTimeMap.set(supersequencePosition, displayTime);
-          console.log(
-            `  Set stopTimeMap[${supersequencePosition}] = ${displayTime}`
-          );
+          stopTimeMap.set(position, displayTime);
         }
 
-        // Create editable stop time with both arrival and departure
-        // Key by supersequence position to handle duplicate stops
+        // Keep the trip's real platform stop_id, not the collapsed station
+        // root - that's what keeps station collapse safe to edit.
         if (arrival_time || departure_time) {
-          editableStopTimes.set(supersequencePosition, {
+          editableStopTimes.set(position, {
             stop_id: st.stop_id,
             stop_sequence: String(st.stop_sequence),
             arrival_time: arrival_time,
@@ -436,19 +373,18 @@ export class TimetableDataProcessor {
             originalArrivalTime: arrival_time,
             originalDepartureTime: departure_time,
           });
-          console.log(`  Set editableStopTimes[${supersequencePosition}]`);
         }
       });
 
       // Get full trip data from database to include all GTFS properties
       const fullTrip = (await this.gtfsParser.gtfsDatabase.getRow(
         'trips',
-        trip.id
+        trip.trip_id
       )) as Trips;
 
       alignedTrips.push({
         ...fullTrip, // Spread all GTFS trip properties (shape_id, wheelchair_accessible, etc.)
-        headsign: trip.headsign || trip.id,
+        headsign: trip.headsign || trip.trip_id,
         stopTimes: stopTimeMap,
         arrival_times: arrival_timeMap,
         departure_times: departure_timeMap,
