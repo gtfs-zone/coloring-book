@@ -4,9 +4,9 @@
  * Accessed via Objects tab -> Route -> Service ID
  */
 
-import { Stops, GTFSTableMap } from '../types/gtfs-entities.js';
-import { GTFSDatabaseRecord } from './gtfs-database.js';
+import { Stops } from '../types/gtfs-entities.js';
 import { notify } from './notification-system';
+import type { GTFSParser } from './gtfs-parser.js';
 import { TimeFormatter } from '../utils/time-formatter.js';
 import {
   TimetableDataProcessor,
@@ -37,39 +37,6 @@ interface EnhancedTrip {
   block_id?: string;
   shape_id?: string;
   wheelchair_accessible?: string;
-}
-
-interface GTFSParserInterface {
-  getFileDataSync(filename: string): GTFSDatabaseRecord[];
-  setInMemoryFileData(fileName: string, data: Record<string, unknown>[]): void;
-  /** Distinct shape_ids, cached, see GTFSParser.getShapeIds. */
-  getShapeIds(): string[];
-  gtfsDatabase: {
-    queryRows<T extends keyof GTFSTableMap>(
-      tableName: T,
-      filter?: { [key: string]: string | number | boolean }
-    ): Promise<GTFSTableMap[T][]>;
-    updateRow<T extends keyof GTFSTableMap>(
-      tableName: T,
-      key: string,
-      data: Partial<GTFSTableMap[T]>
-    ): Promise<void>;
-    getRow<T extends keyof GTFSTableMap>(
-      tableName: T,
-      key: string
-    ): Promise<GTFSTableMap[T] | null>;
-    insertRows<T extends keyof GTFSTableMap>(
-      tableName: T,
-      rows: GTFSTableMap[T][]
-    ): Promise<void>;
-    replaceRows<T extends keyof GTFSTableMap>(
-      tableName: T,
-      oldKeys: string[],
-      newRows: GTFSTableMap[T][]
-    ): Promise<void>;
-    deleteRow(tableName: string, key: string): Promise<void>;
-    deleteRows(tableName: string, keys: string[]): Promise<void>;
-  };
 }
 
 interface PatchManagerInterface {
@@ -125,7 +92,7 @@ interface GTFSRelationships {
  * Follows the Enhanced GTFS Object pattern and FAIL HARD error handling policy.
  */
 export class ScheduleController {
-  private gtfsParser: GTFSParserInterface;
+  private gtfsParser: GTFSParser;
   private patchManager: PatchManagerInterface | null = null;
   private dataProcessor: TimetableDataProcessor;
   private renderer: TimetableRenderer;
@@ -151,10 +118,7 @@ export class ScheduleController {
    * @param gtfsRelationships - GTFS relationships manager for data queries
    * @param gtfsParser - GTFS parser with database access
    */
-  constructor(
-    gtfsRelationships: GTFSRelationships,
-    gtfsParser: GTFSParserInterface
-  ) {
+  constructor(gtfsRelationships: GTFSRelationships, gtfsParser: GTFSParser) {
     this.gtfsParser = gtfsParser;
     this.dataProcessor = new TimetableDataProcessor(
       gtfsRelationships,
@@ -390,6 +354,7 @@ export class ScheduleController {
     this.stopOptionsHtml = null;
     this.shapeOptionsHtml = null;
     this.timetableDataCache.clear();
+    this.dataProcessor.invalidateRouteSource();
   }
 
   private async fillStopOptions(
