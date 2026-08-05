@@ -546,7 +546,7 @@ Verbatim descriptions carry markup that the current tooltip path renders as
 literal text. This phase makes them display correctly everywhere descriptions
 already surface, and vendors the two diagrams `fare_transfer_type` depends on.
 
-- [ ] Add `src/utils/spec-markup.ts` exporting `renderSpecDescription(s: string): string`.
+- [x] Add `src/utils/spec-markup.ts` exporting `renderSpecDescription(s: string): string`.
       Supported subset: `<br>` -> `<br>`, `` `x` `` -> `<code>`,
       `[text](#anchor)` -> a link to `https://gtfs.org/documentation/schedule/reference/#anchor`,
       `[text](http...)` -> external link with `target="_blank" rel="noopener noreferrer"`,
@@ -554,22 +554,68 @@ already surface, and vendors the two diagrams `fare_transfer_type` depends on.
       `<tbody>`/`<tr>`/`<th>`/`<td>` with all attributes stripped.
       Escape everything else. Nothing user-supplied ever reaches this function -
       input is always a compile-time constant from the spec - but escape anyway.
-- [ ] Add `renderSpecDescriptionPlain(s: string): string` for contexts that need
+- [x] Add `renderSpecDescriptionPlain(s: string): string` for contexts that need
       one line (option-picker subtitles, `title=` attributes).
-- [ ] Vendor `examples/2-leg.svg` and `examples/3-leg.svg` from the
+- [x] Vendor `examples/2-leg.svg` and `examples/3-leg.svg` from the
       `google/transit` repo into `src/assets/gtfs-spec/`. Rewrite the
       `![](examples/*.svg)` references at render time to the bundled asset URLs.
       Both must be legible in all 9 DaisyUI themes; if they are dark-on-transparent,
       wrap them in a light background container rather than editing the SVGs.
-- [ ] Route `buildFieldTooltipContent` in `src/utils/field-component.ts` through
+- [x] Route `buildFieldTooltipContent` in `src/utils/field-component.ts` through
       `renderSpecDescription`.
-- [ ] Verify long descriptions do not blow out tooltip layout. Cap tooltip width
+- [x] Verify long descriptions do not blow out tooltip layout. Cap tooltip width
       and allow internal scrolling for the `fare_transfer_type` case.
 - [ ] Spot-check in the browser: `fare_transfer_type` (table + images),
       `from_timeframe_group_id` (very long, bulleted), `cemv_support` (links).
+      **Left for the user's manual pass.**
 
 ### Discoveries
-_(fill in)_
+
+**Tooltips had to stop being `data-tip` tooltips.** DaisyUI renders `data-tip`
+through CSS `content:`, so any HTML in it shows up as literal text. The rich path
+is `.tooltip > .tooltip-content`, which `renderFieldLabelContent` now emits.
+Three DaisyUI defaults on `.tooltip-content` are overridden by utility classes on
+the element: `text-align: center` -> `text-left`, `max-width: 20rem` ->
+`max-w-[36rem]`, and `pointer-events: none` -> `pointer-events-auto`. The last is
+what makes `max-h-[60vh] overflow-y-auto` usable at all; the content is a
+descendant of `.tooltip`, so hovering it keeps the tooltip open. `escapeAttr` in
+`field-component.ts` had no callers left and was deleted.
+
+**Three images, not two.** `shapes.shape_dist_traveled` embeds a raw
+`<img src="inlining.svg">`, which the plan did not account for and which would
+have rendered broken. It is vendored alongside the two `fare_transfer_type`
+diagrams; it lives at `gtfs/spec/en/inlining.svg` in `google/transit`, not under
+`examples/`. All three are black line art on transparency, so `renderImage`
+wraps them in a white plate rather than forking the SVGs. Images are matched by
+basename, so both the `![](examples/x.svg)` and `<img src="x.svg">` spellings
+resolve to the same asset, and an unrecognized one logs `[SpecMarkup]` and
+renders nothing instead of a broken image. Vite inlines `inlining.svg` as a data
+URI (under the 4 kB threshold) and emits the other two as files.
+
+**Bullets come from `<br>`, not just newlines.** `<br>` variants are folded to
+`\n` before the line pass, which is what turns `<br>- **Required** for ...` in
+`stop_times.arrival_time` into a real list. The reference writes bullets with
+both `- ` and `* ` leaders, and one bullet in `stop_times.txt` uses `-&nbsp;`,
+so the bullet regex admits `&nbsp;` as the separator. Numbered lists (`1.`,
+`2.`) in `fare_leg_rules.txt`'s file description stay as plain paragraphs; they
+read fine in order and a numbered-list parser was not worth it.
+
+**`renderInline` recurses** through bold and italic runs, so it builds a fresh
+`RegExp` per call rather than sharing one global regex whose `lastIndex` the
+inner call would clobber.
+
+**Verification.** A sweep over all 250 file-level and field-level descriptions in
+`gtfsSpec` renders with balanced, fully-closed tags and no unresolved images. The
+`<table>` in `fare_transfer_type` survives with its `<code>` cells intact.
+
+**`src/types/assets.d.ts`** was added to declare `*.svg` imports; the project has
+no `vite/client` types.
+
+**Second surface for descriptions.** The file-viewer's column headers
+(`editor.ts`, via `createTooltip`) are still `data-tip` tooltips, and were
+showing raw backticks and `<br>` as text. They now run through
+`renderSpecDescriptionPlain`. Making them rich would mean restyling a Clusterize
+`<th>`, which is out of scope here.
 
 ---
 
