@@ -9,6 +9,7 @@
  */
 
 import { GTFSFieldType, validateFieldType } from '../types/gtfs-field-types.js';
+import { fromInputValue, toInputValue } from './gtfs-date.js';
 
 export interface FieldFormatter {
   /**
@@ -61,17 +62,11 @@ const colorFormatter: FieldFormatter = {
  */
 const dateFormatter: FieldFormatter = {
   toDisplay(value: string | number): string {
-    const str = String(value).trim();
-    if (str.length !== 8) {
-      return str;
-    }
-    // Convert YYYYMMDD to YYYY-MM-DD
-    return `${str.substring(0, 4)}-${str.substring(4, 6)}-${str.substring(6, 8)}`;
+    return toInputValue(String(value));
   },
 
   toGTFS(value: string): string {
-    // Remove dashes: YYYY-MM-DD to YYYYMMDD
-    return value.trim().replace(/-/g, '');
+    return fromInputValue(value);
   },
 
   validate(value: string | number): { valid: boolean; error?: string } {

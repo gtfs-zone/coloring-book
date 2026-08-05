@@ -269,10 +269,25 @@ export class PatchManager {
     await this.appendAndPush(batchPatch);
   }
 
+  /**
+   * Record a batch of already-applied writes of mixed kinds.
+   *
+   * Like recordInsert/recordDelete (and unlike recordUpdate/recordBatch), this
+   * only appends the patch: the caller has already written the rows. Ops are
+   * kept in the order given, which matters when a batch both deletes and
+   * inserts rows in the same table: put the deletes first so neither forward
+   * replay nor the reversed inverse replay ever holds two rows on one key.
+   */
   async recordBatchMixed(
     ops: Array<
       | {
           op: 'insert';
+          table: string;
+          id: string;
+          record: Record<string, unknown>;
+        }
+      | {
+          op: 'delete';
           table: string;
           id: string;
           record: Record<string, unknown>;
@@ -298,6 +313,13 @@ export class PatchManager {
           source: { table: op.table, id: op.id },
           forward: { record: op.record },
           inverse: { id: op.id },
+        });
+      } else if (op.op === 'delete') {
+        singlePatches.push({
+          op: 'delete',
+          source: { table: op.table, id: op.id },
+          forward: { id: op.id },
+          inverse: { record: op.record },
         });
       } else {
         const forwardChanges: Record<string, unknown> = {};

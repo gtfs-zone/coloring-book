@@ -15,6 +15,12 @@ import {
   HOLIDAY_PATTERNS,
   HolidayPattern,
 } from '../calendar-patterns/index.js';
+import {
+  formatGtfsDate,
+  fromInputValue,
+  toGtfsDateLocal,
+  toInputValue,
+} from '../utils/gtfs-date.js';
 
 // Days of the week in US format (Sunday first)
 const DAYS_OF_WEEK = [
@@ -190,8 +196,8 @@ export class ServiceDaysController {
           endDate = sorted[sorted.length - 1];
         } else {
           const today = new Date();
-          startDate = this.formatDateToGTFS(today);
-          endDate = this.formatDateToGTFS(
+          startDate = toGtfsDateLocal(today);
+          endDate = toGtfsDateLocal(
             new Date(today.getTime() + 365 * 24 * 60 * 60 * 1000)
           );
         }
@@ -261,8 +267,7 @@ export class ServiceDaysController {
     try {
       this.showSavingIndicator(`date-${dateType}`);
 
-      // Convert to GTFS format (YYYYMMDD)
-      const gtfsDate = this.formatDateToGTFS(new Date(newDate));
+      const gtfsDate = fromInputValue(newDate);
 
       // Get or create calendar entry
       const calendarRows = await this.gtfsParser.gtfsDatabase.queryRows(
@@ -343,7 +348,7 @@ export class ServiceDaysController {
     try {
       this.showSavingIndicator('exceptions');
 
-      const gtfsDate = this.formatDateToGTFS(new Date(date));
+      const gtfsDate = fromInputValue(date);
 
       const existing = await this.gtfsParser.gtfsDatabase.queryRows(
         'calendar_dates',
@@ -531,14 +536,14 @@ export class ServiceDaysController {
     derivedDates?: { start: string; end: string }
   ): string {
     const startDate = calendar?.start_date
-      ? this.parseGTFSDate(calendar.start_date)
+      ? toInputValue(calendar.start_date)
       : derivedDates
-        ? this.parseGTFSDate(derivedDates.start)
+        ? toInputValue(derivedDates.start)
         : '';
     const endDate = calendar?.end_date
-      ? this.parseGTFSDate(calendar.end_date)
+      ? toInputValue(calendar.end_date)
       : derivedDates
-        ? this.parseGTFSDate(derivedDates.end)
+        ? toInputValue(derivedDates.end)
         : '';
 
     return `
@@ -654,7 +659,7 @@ export class ServiceDaysController {
       : 'Individual exceptions';
     const individualsHTML = displayExceptions
       .map((exception) => {
-        const formattedDate = this.parseGTFSDate(exception.date);
+        const formattedDate = formatGtfsDate(exception.date);
         const typeText =
           exception.exception_type === 1 ? 'Add Service' : 'Remove Service';
         const typeClass =
@@ -662,7 +667,7 @@ export class ServiceDaysController {
         return `
           <div class="exception-item flex items-center justify-between p-1 text-xs">
             <div class="flex items-center gap-2">
-              <span class="font-mono text-xs">${formattedDate}</span>
+              <span class="text-xs">${formattedDate}</span>
               <span class="badge ${typeClass} badge-xs">${typeText}</span>
             </div>
             <button
@@ -1152,29 +1157,6 @@ export class ServiceDaysController {
       indicator.style.display = 'none';
     }
     notify.error(message, { duration: 5000 });
-  }
-
-  /**
-   * Convert JavaScript Date to GTFS format (YYYYMMDD)
-   */
-  private formatDateToGTFS(date: Date): string {
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    return `${year}${month}${day}`;
-  }
-
-  /**
-   * Parse GTFS date (YYYYMMDD) to YYYY-MM-DD format for HTML date input
-   */
-  private parseGTFSDate(gtfsDate: string): string {
-    if (!gtfsDate || gtfsDate.length !== 8) {
-      return '';
-    }
-    const year = gtfsDate.substring(0, 4);
-    const month = gtfsDate.substring(4, 6);
-    const day = gtfsDate.substring(6, 8);
-    return `${year}-${month}-${day}`;
   }
 
   /**
