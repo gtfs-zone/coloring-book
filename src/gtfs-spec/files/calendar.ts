@@ -6,22 +6,22 @@ export const calendarSpec: GTFSFileSpec = {
   presenceCondition:
     'Required unless all dates of service are defined in calendar_dates.txt.',
   description:
-    'Service dates specified using a weekly schedule with start and end dates.',
+    'Service dates specified using a weekly schedule with start and end dates. <br><br>Conditionally Required:<br> - **Required** unless all dates of service are defined in [calendar_dates.txt](#calendar_datestxt).<br> - Optional otherwise.',
   fields: [
     {
       name: 'service_id',
       type: 'Unique ID',
       presence: 'Required',
-      isPrimaryKey: true,
       description:
         'Identifies a set of dates when service is available for one or more routes.',
+      isPrimaryKey: true,
     },
     {
       name: 'monday',
       type: 'Enum',
       presence: 'Required',
       description:
-        'Indicates whether the service operates on all Mondays in the date range specified by the start_date and end_date fields.',
+        'Indicates whether the service operates on all Mondays in the date range specified by the `start_date` and `end_date` fields. Note that exceptions for particular dates may be listed in [calendar_dates.txt](#calendar_datestxt). Valid options are:<br><br>`1` - Service is available for all Mondays in the date range.<br>`0` - Service is not available for Mondays in the date range.',
       enumValues: [
         {
           value: 1,
@@ -42,7 +42,7 @@ export const calendarSpec: GTFSFileSpec = {
       type: 'Enum',
       presence: 'Required',
       description:
-        'Functions in the same way as monday except applies to Tuesdays.',
+        'Functions in the same way as `monday` except applies to Tuesdays',
       enumValues: [
         {
           value: 1,
@@ -63,7 +63,7 @@ export const calendarSpec: GTFSFileSpec = {
       type: 'Enum',
       presence: 'Required',
       description:
-        'Functions in the same way as monday except applies to Wednesdays.',
+        'Functions in the same way as `monday` except applies to Wednesdays',
       enumValues: [
         {
           value: 1,
@@ -84,7 +84,7 @@ export const calendarSpec: GTFSFileSpec = {
       type: 'Enum',
       presence: 'Required',
       description:
-        'Functions in the same way as monday except applies to Thursdays.',
+        'Functions in the same way as `monday` except applies to Thursdays',
       enumValues: [
         {
           value: 1,
@@ -105,7 +105,7 @@ export const calendarSpec: GTFSFileSpec = {
       type: 'Enum',
       presence: 'Required',
       description:
-        'Functions in the same way as monday except applies to Fridays.',
+        'Functions in the same way as `monday` except applies to Fridays',
       enumValues: [
         {
           value: 1,
@@ -126,7 +126,7 @@ export const calendarSpec: GTFSFileSpec = {
       type: 'Enum',
       presence: 'Required',
       description:
-        'Functions in the same way as monday except applies to Saturdays.',
+        'Functions in the same way as `monday` except applies to Saturdays.',
       enumValues: [
         {
           value: 1,
@@ -147,7 +147,7 @@ export const calendarSpec: GTFSFileSpec = {
       type: 'Enum',
       presence: 'Required',
       description:
-        'Functions in the same way as monday except applies to Sundays.',
+        'Functions in the same way as `monday` except applies to Sundays.',
       enumValues: [
         {
           value: 1,

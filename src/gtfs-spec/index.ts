@@ -33,7 +33,7 @@ import { attributionsSpec } from './files/attributions';
 import { locationsGeojsonSpec } from './files/locations-geojson';
 
 export const gtfsSpec: GTFSSpec = {
-  specVersion: '2026-04',
+  specVersion: '2026-04-27',
   files: [
     agencySpec,
     feedInfoSpec,

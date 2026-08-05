@@ -33,10 +33,8 @@ export function deriveGTFSPrimaryKeys(spec: GTFSSpec): Record<string, string> {
 }
 
 // ─── Field type strings ───────────────────────────────────────────────────────
-// Builds filename -> fieldName -> GTFS type string.
-// For Foreign ID fields that have a foreignKey, emits the full
-// "Foreign ID referencing file.field" string to match the legacy format
-// that mapGTFSTypeString and GTFS_FIELD_TYPES consumers expect.
+// Builds filename -> fieldName -> GTFS type string. Spec types are already the
+// verbatim reference strings, so this is a straight projection.
 
 export function deriveGTFSFieldTypes(
   spec: GTFSSpec
@@ -48,12 +46,7 @@ export function deriveGTFSFieldTypes(
     }
     result[file.filename] = {};
     for (const field of file.fields) {
-      if (field.type === 'Foreign ID' && field.foreignKey) {
-        result[file.filename][field.name] =
-          `Foreign ID referencing ${field.foreignKey.file}.${field.foreignKey.field}`;
-      } else {
-        result[file.filename][field.name] = field.type;
-      }
+      result[file.filename][field.name] = field.type;
     }
   }
   return result;

@@ -34,7 +34,7 @@ Read this entire file before doing anything.
    ```bash
    pnpm typecheck && pnpm lint && pnpm knip && pnpm check-spec && pnpm build
    ```
-   (`pnpm check-spec` does not exist until Phase 1. Until then, omit it.)
+   (`pnpm check-spec` also runs from `.husky/pre-commit` as of Phase 2.)
 3. **Stage explicitly, never `git add -A`.** The user works concurrently in this tree.
 4. **Plain `git commit`.** No `--no-verify`, no hook overrides.
 5. **Conventional Commits**: `feat(fares):`, `fix(spec):`, `refactor(ui):`.
@@ -49,7 +49,7 @@ Read this entire file before doing anything.
 
 | Decision | Choice |
 |---|---|
-| Spec source of truth | Hand-written TS in `src/gtfs-spec/files/`, with **verbatim** descriptions, enforced by `scripts/check-spec.ts` against `reference/gtfs-reference.md`. Curated extras (enum short labels, `foreignKey`, `isPrimaryKey`) stay hand-written. |
+| Spec source of truth | Hand-written TS in `src/gtfs-spec/files/`, with **verbatim** descriptions and **verbatim** type strings, enforced by `scripts/check-spec.ts` against `reference/gtfs-reference.md`. Curated extras (enum short labels, `foreignKey`, `isPrimaryKey`, `presenceCondition`, `allowEmpty`) stay hand-written. |
 | Description rendering | Store the reference string **verbatim**. A sanitizing renderer converts `<br>`, `` `code` ``, `[links]`, and `<table>` to safe HTML for tooltips. The two SVG diagrams referenced by `fare_transfer_type` are vendored into `src/assets/`. |
 | Networks representation | Canonical in-DB form is always `networks.txt` + `route_networks.txt`. The form the feed **arrived** in is remembered in the `meta` store and reused on export unless a network gains a name. |
 | Cell editing | Extract a shared spec-driven click-to-edit table component from the timetable pattern **first**, then migrate everything onto it. |
@@ -405,38 +405,38 @@ Work file by file, committing in small groups, driven entirely by Phase 1's repo
 Field **order** in each spec file must match the reference's table order, since
 that order drives form layout and CSV column order for newly created files.
 
-- [ ] Rewrite descriptions verbatim for all 33 existing spec files.
-- [ ] `agency.txt`: add `cemv_support` (Enum, Optional) with enum values `0`/`1`/`2`.
-- [ ] `routes.txt`: add `cemv_support` (same shape). Verify `network_id` is present
+- [x] Rewrite descriptions verbatim for all 33 existing spec files.
+- [x] `agency.txt`: add `cemv_support` (Enum, Optional) with enum values `0`/`1`/`2`.
+- [x] `routes.txt`: add `cemv_support` (same shape). Verify `network_id` is present
       and its `Conditionally Forbidden` condition matches the reference.
-- [ ] `trips.txt`: add `cars_allowed` (Enum, Optional), `safe_duration_factor`
+- [x] `trips.txt`: add `cars_allowed` (Enum, Optional), `safe_duration_factor`
       (Float, Optional), `safe_duration_offset` (Float, Optional).
-- [ ] `transfers.txt`: change `from_stop_id` / `to_stop_id` to
+- [x] `transfers.txt`: change `from_stop_id` / `to_stop_id` to
       `Conditionally Required` with the exact February 2026 condition text.
-- [ ] `rider_categories.txt`: rename `is_default_fare_container` ->
+- [x] `rider_categories.txt`: rename `is_default_fare_container` ->
       `is_default_fare_category`; delete `min_age` and `max_age`; add
       `eligibility_url` if absent; confirm `rider_category_name` is Required.
-- [ ] `fare_leg_join_rules.txt`: replace the field list wholesale with
+- [x] `fare_leg_join_rules.txt`: replace the field list wholesale with
       `from_network_id`, `to_network_id`, `from_stop_id`, `to_stop_id`, with the
       exact conditional-requirement text on the two stop fields.
-- [ ] `fare_transfer_rules.txt`: verbatim descriptions including the embedded
+- [x] `fare_transfer_rules.txt`: verbatim descriptions including the embedded
       `<table>` and both `![](examples/*.svg)` references. Keep our curated
       `enumValues` short labels (`A + AB`, etc.) as an addition, not a replacement.
-- [ ] `fare_leg_rules.txt`, `fare_products.txt`, `fare_media.txt`,
+- [x] `fare_leg_rules.txt`, `fare_products.txt`, `fare_media.txt`,
       `timeframes.txt`, `areas.txt`, `stop_areas.txt`, `networks.txt`,
       `route_networks.txt`: verbatim, and reconcile field lists.
-- [ ] Verify the "Currency amount" type description in
+- [x] Verify the "Currency amount" type description in
       `src/types/gtfs-field-types.ts` matches the reference's improved February
       2026 wording.
-- [ ] Update `specVersion` in `src/gtfs-spec/index.ts` to `'2026-04-27'`.
-- [ ] Update `src/utils/gtfs-primary-keys.ts` to match the reference's stated
+- [x] Update `specVersion` in `src/gtfs-spec/index.ts` to `'2026-04-27'`.
+- [x] Update `src/utils/gtfs-primary-keys.ts` to match the reference's stated
       primary keys, especially `fare_leg_join_rules` (`from_network_id,
       to_network_id, from_stop_id, to_stop_id`) which is currently derived from the
       wrong field list, and `fare_leg_rules` (six-field composite).
-- [ ] Grep the app for every renamed/removed field and fix each use site.
+- [x] Grep the app for every renamed/removed field and fix each use site.
       `is_default_fare_container` appears in `fares-modal.ts`; there may be others
       in `src/types/gtfs-entities.ts` and `src/types/gtfs.ts`.
-- [ ] Get `pnpm check-spec` to exit zero, then wire it into the pre-commit gate
+- [x] Get `pnpm check-spec` to exit zero, then wire it into the pre-commit gate
       (`.husky/`, `lint-staged`, and the gate command in this file's Commit
       Policy).
 
@@ -447,7 +447,96 @@ than writing a migration. Verbatim descriptions are long; they will make the spe
 files much bigger, which is expected and fine.
 
 ### Discoveries
-_(fill in)_
+
+`pnpm check-spec` exits **zero**: 0 differences across all 32 CSV files, and
+`KNOWN_DIVERGENCES` is still empty. It now runs from `.husky/pre-commit`
+(after `lint-staged`), so drift blocks a commit.
+
+**How the rewrite was actually done.** Hand-editing 157 descriptions was not
+viable, so the spec files were regenerated by a throwaway script that parsed the
+reference (importing `parseReference` from `check-spec.ts`) and re-emitted each
+`src/gtfs-spec/files/*.ts` with reference name / type / presence / order plus the
+curated extras carried over by `(filename, fieldName)`. The output is ordinary
+hand-editable TS - the decision that these files are hand-written still holds -
+but a future reference refresh will be far cheaper if it repeats the same trick.
+Two things `check-spec.ts` gained to make that possible, both worth keeping:
+`parseReference`, `ReferenceFile`, `ReferenceField` and `REFERENCE_PATH` are now
+exported, and `main()` only runs when the script is the entry point.
+`locations.geojson` has to be excluded by hand: the reference's nested-object
+table parses as 10 pseudo-fields and will overwrite `locations-geojson.ts`.
+
+**Type strings are now verbatim too, and `foreignKey` is an array.** This is the
+resolution of Phase 1's open question about compound foreign IDs, and it changes
+the shape later phases consume:
+
+- `GTFSFieldSpec.type` holds the full reference string, backticks included:
+  `` type: 'Foreign ID referencing `stops.stop_id`' ``, not `'Foreign ID'`.
+  `deriveGTFSFieldTypes` is now a straight projection, and `check-spec`'s
+  `expectedTypeString` reassembly is gone. `mapGTFSTypeString` still resolves
+  these via its `startsWith('Foreign ID')` branch, so `GTFS_FIELD_TYPES`
+  consumers are unaffected. Note the emitted string no longer contains `.txt`
+  (`stops.stop_id`, not `stops.txt.stop_id`); nothing parsed that, but do not
+  reintroduce a parser for it - use `foreignKey`.
+- `foreignKey?: GTFSForeignKeyTarget[]` (was a single object). Every foreign-ID
+  field has one, derived from the reference type string. Five fields carry two
+  targets: `trips.service_id` and `timeframes.service_id`
+  (`calendar` + `calendar_dates`), and `fare_leg_rules.network_id`,
+  `fare_leg_join_rules.from_network_id` / `to_network_id`
+  (`routes.network_id` + `networks.network_id`). Phase 7 makes the canonical
+  `networks` table the one the pickers read; Phase 4's picker should treat the
+  array as "union the option sets", not "pick the first".
+- `calendar_dates.service_id` reads "referencing `calendar.service_id` **or ID**".
+  The bare `ID` alternative names no table and is dropped, so its `foreignKey`
+  has one entry.
+- `stop_times.location_id` is "referencing `id` from `locations.geojson`", which
+  yields `{ file: 'locations.geojson', field: 'id' }`.
+
+**File-level descriptions.** Where the `### x.txt` section has prose, that prose
+is used; otherwise the `## Dataset Files` summary sentence. Prose is joined with
+`\n` rather than a space so the bullet lists in `fare_leg_join_rules.txt`,
+`fare_leg_rules.txt` and `timeframes.txt` survive. Phase 3's
+`renderSpecDescription` must therefore handle `\n` and leading `- ` bullets on
+top of the markup subset the plan lists. The normalizer collapses whitespace, so
+this does not affect the check.
+
+**New `GTFSFieldType` members** (`src/types/gtfs-field-types.ts`):
+
+- `LocalTime = 'Local time'` for `timeframes.start_time` / `end_time`. Same
+  HH:MM:SS validator as `Time`; the difference is semantic (wall clock, and
+  values above `24:00:00` are forbidden - Phase 9 enforces the cap).
+- `NonZeroInteger = 'Non-zero integer'` for `fare_transfer_rules.transfer_count`.
+  `mapGTFSTypeString` previously folded Non-zero into `PositiveInteger`, which
+  would have rejected the spec-legal `-1` ("no limit").
+- Both needed a `field-formatters.ts` entry, since `FIELD_FORMATTERS` is an
+  exhaustive `Record<GTFSFieldType, FieldFormatter>`.
+- `mapGTFSTypeString` also gained a `Text or ...` branch so
+  `translations.translation` / `field_value` stop logging an unknown-type warning
+  on every lookup.
+
+**Primary keys.** `fare_leg_join_rules` and `fare_leg_rules` already matched, so
+that checklist item was a no-op. Four others did not and were corrected:
+`transfers` and `fare_transfer_rules` moved from `all_fields` to the reference's
+explicit composites, `route_networks` from `all_fields` to natural `route_id`,
+and `translations`' composite gained `record_id` / `record_sub_id` /
+`field_value` in place of `translation`. **`attributions` is a deliberate
+exception**: the reference names `attribution_id` as its primary key, but that
+field is Optional and real feeds omit it, which would make
+`generateCompositeKeyFromRecord` throw on import. It stays `all_fields`, with a
+comment saying why. These key changes alter IndexedDB keying, so the user needs
+Settings -> Reset before importing an old feed.
+
+**Use sites.** Only `fares-modal.ts` referenced the renamed/removed fields
+(`is_default_fare_container` -> `is_default_fare_category`, and the `min_age` /
+`max_age` form rows are gone). `gtfs-entities.ts` types the fares tables as
+generic `GTFSEntityRecord`, so nothing there needed touching. Phase 6 replaces
+this modal anyway; the edit was the minimum to keep it correct.
+
+**Left for later phases.** The `isPrimaryKey` flags inside the spec files were
+carried over untouched and a few are questionable as "the" key
+(`fare_leg_rules.leg_group_id`, `timeframes.timeframe_group_id` are not unique).
+`deriveGTFSPrimaryKeys` reads them, `gtfs-primary-keys.ts` is the real authority,
+and reconciling the two was out of Phase 2's scope. `presenceCondition` is still
+only populated where it already was; new fields have none.
 
 ---
 

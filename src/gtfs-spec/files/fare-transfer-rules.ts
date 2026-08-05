@@ -4,46 +4,39 @@ export const fareTransferRulesSpec: GTFSFileSpec = {
   filename: 'fare_transfer_rules.txt',
   presence: 'Optional',
   description:
-    'Fare rules for transfers between fare legs. Defines how fares are combined and priced when a rider transfers between legs matching different fare leg rule groups. Part of the Fares v2 model, separate from the legacy Fares v1 model (fare_attributes.txt, fare_rules.txt).',
+    'Fare rules for transfers between legs of travel defined in [`fare_leg_rules.txt`](#fare_leg_rulestxt). A fare transfer rule defined from `from_leg_group_id` to `to_leg_group_id` does not apply in the reverse direction.\nTo process the cost of a multi-leg journey:\n1. The applicable fare leg groups defined in [fare_leg_rules.txt](#fare_leg_rulestxt) should be determined for all individual legs or effective fare legs of travel based on the rider’s journey.\n2. The file [fare_transfer_rules.txt](#fare_transfer_rulestxt) must be filtered by the fields that define the characteristics of the transfer, these fields are:\n- `fare_transfer_rules.from_leg_group_id`\n- `fare_transfer_rules.to_leg_group_id`<br/>\n<br/>\n3. If the transfer exactly matches a record in [fare_transfer_rules.txt](#fare_transfer_rulestxt) based on the characteristics of the transfer, then that record must be processed to determine the transfer cost.\n4. If no exact matches are found, then empty entries in `from_leg_group_id` or in `to_leg_group_id` must be checked to process the transfer cost:\n- An empty entry in `fare_transfer_rules.from_leg_group_id` corresponds to all leg groups defined under `fare_leg_rules.leg_group_id` excluding the ones listed under `fare_transfer_rules.from_leg_group_id`\n- An empty entry in `fare_transfer_rules.to_leg_group_id` corresponds to all leg groups defined under `fare_leg_rules.leg_group_id` excluding the ones listed under `fare_transfer_rules.to_leg_group_id`<br/>\n<br/>\n5. If the transfer does not match any of the rules described above, then there is no transfer arrangement and the legs are considered separate.\n<br/>',
   fields: [
     {
-      name: 'fare_transfer_rule_id',
-      type: 'Unique ID',
+      name: 'from_leg_group_id',
+      type: 'Foreign ID referencing `fare_leg_rules.leg_group_id`',
       presence: 'Optional',
       description:
-        'Identifies an individual transfer rule entry. Permits distinguishing separate transfer rules within the file, and allows referencing specific rules from fare_leg_join_rules.txt.',
-    },
-    {
-      name: 'from_leg_group_id',
-      type: 'Foreign ID',
-      presence: 'Required',
-      description:
-        'Identifies a group of pre-transfer fare leg entries from fare_leg_rules.txt.',
-      foreignKey: { file: 'fare_leg_rules.txt', field: 'leg_group_id' },
+        'Identifies a group of pre-transfer fare leg rules.<br><br>If there are no matching `fare_transfer_rules.from_leg_group_id` values to the `leg_group_id` being filtered, empty `fare_transfer_rules.from_leg_group_id` will be matched by default. <br><br>An empty entry in `fare_transfer_rules.from_leg_group_id` corresponds to all leg groups defined under `fare_leg_rules.leg_group_id` excluding the ones listed under `fare_transfer_rules.from_leg_group_id`',
+      foreignKey: [{ file: 'fare_leg_rules.txt', field: 'leg_group_id' }],
     },
     {
       name: 'to_leg_group_id',
-      type: 'Foreign ID',
-      presence: 'Required',
+      type: 'Foreign ID referencing `fare_leg_rules.leg_group_id`',
+      presence: 'Optional',
       description:
-        'Identifies a group of post-transfer fare leg entries from fare_leg_rules.txt.',
-      foreignKey: { file: 'fare_leg_rules.txt', field: 'leg_group_id' },
+        'Identifies a group of post-transfer fare leg rules.<br><br>If there are no matching `fare_transfer_rules.to_leg_group_id` values to the `leg_group_id` being filtered, empty `fare_transfer_rules.to_leg_group_id` will be matched by default.<br><br>An empty entry in `fare_transfer_rules.to_leg_group_id` corresponds to all leg groups defined under `fare_leg_rules.leg_group_id` excluding the ones listed under `fare_transfer_rules.to_leg_group_id`',
+      foreignKey: [{ file: 'fare_leg_rules.txt', field: 'leg_group_id' }],
     },
     {
       name: 'transfer_count',
-      type: 'Non-negative integer',
-      presence: 'Optional',
+      type: 'Non-zero integer',
+      presence: 'Conditionally Forbidden',
       description:
-        'Constrains the number of transfers this rule may be applied to within the same journey. If empty, no transfer count limit is applied.',
+        'Defines how many consecutive transfers the transfer rule may be applied to.<br><br>Valid options are:<br>`-1` - No limit.<br>`1` or more - Defines how many transfers the transfer rule may span.<br><br>If a sub-journey matches multiple records with different `transfer_count`s, then the rule with the minimum `transfer_count` that is greater than or equal to the current transfer count of the sub-journey is to be selected.<br><br>Conditionally Forbidden:<br>- **Forbidden** if `fare_transfer_rules.from_leg_group_id` does not equal `fare_transfer_rules.to_leg_group_id`.<br>- **Required** if `fare_transfer_rules.from_leg_group_id` equals `fare_transfer_rules.to_leg_group_id`.',
     },
     {
       name: 'duration_limit',
-      type: 'Non-negative integer',
-      presence: 'Conditionally Required',
+      type: 'Positive integer',
+      presence: 'Optional',
       presenceCondition:
         'Required if duration_limit_type is defined. Forbidden otherwise.',
       description:
-        'Defines the duration limit in seconds of the transfer. If empty, there is no duration limit.',
+        'Defines the duration limit of the transfer.<br><br>Must be expressed in integer increments of seconds.<br><br>If there is no duration limit, `fare_transfer_rules.duration_limit` must be empty.',
     },
     {
       name: 'duration_limit_type',
@@ -52,7 +45,7 @@ export const fareTransferRulesSpec: GTFSFileSpec = {
       presenceCondition:
         'Required if duration_limit is defined. Forbidden otherwise.',
       description:
-        'Defines the relative event that corresponds to the start and end of the duration_limit. Valid options are:\n\n0 - Between the departure of the from fare leg and the departure of the to fare leg.\n1 - Between the departure of the from fare leg and the arrival of the to fare leg.\n2 - Between the arrival of the from fare leg and the departure of the to fare leg.\n3 - Between the arrival of the from fare leg and the arrival of the to fare leg.',
+        'Defines the relative start and end of `fare_transfer_rules.duration_limit`.<br><br>Valid options are:<br>`0` - Between the departure fare validation of the first leg in transfer sub-journey and the arrival fare validation of the last leg in transfer sub-journey.<br>`1` - Between the departure fare validation of the first leg in transfer sub-journey and the departure fare validation of the last leg in transfer sub-journey.<br>`2` - Between the arrival fare validation of the first leg in transfer sub-journey and the departure fare validation of the last leg in transfer sub-journey.<br>`3` - Between the arrival fare validation of the first leg in transfer sub-journey and the arrival fare validation of the last leg in transfer sub-journey.<br><br>When a transfer rule with the same `from_leg_group_id` and `to_leg_group_id` is matched multiple times consecutively within a multi-leg journey, the `duration_limit` specified by the rule should be measured starting from the first matched leg.<br><br>Conditionally Required:<br>- **Required** if `fare_transfer_rules.duration_limit` is defined.<br>- **Forbidden** if `fare_transfer_rules.duration_limit` is empty.',
       enumValues: [
         {
           value: 0,
@@ -85,7 +78,7 @@ export const fareTransferRulesSpec: GTFSFileSpec = {
       type: 'Enum',
       presence: 'Required',
       description:
-        'Indicates the cost processing method of transferring between fare legs in a journey. Valid options are:\n\n0 - From-leg fare price + transfer fare price; A + AB.\n1 - From-leg fare price + transfer fare price + to-leg fare price; A + AB + B.\n2 - Transfer fare price; AB.',
+        'Indicates the cost processing method of transferring between legs in a journey: <br>![](examples/2-leg.svg) <br>Valid options are:<br>`0` - From-leg `fare_leg_rules.fare_product_id` plus `fare_transfer_rules.fare_product_id`; A + AB.<br>`1` - From-leg `fare_leg_rules.fare_product_id` plus `fare_transfer_rules.fare_product_id` plus to-leg `fare_leg_rules.fare_product_id`; A + AB + B.<br>`2` - `fare_transfer_rules.fare_product_id`; AB. <br><br>Cost processing interactions between multiple transfers in a journey:<br>![](examples/3-leg.svg)<br><table><thead><tr><th>`fare_transfer_type`</th><th>Processing A > B</th><th>Processing B > C</th></tr></thead><tbody><tr><td>`0`</td><td>A + AB</td><td>S + BC</td></tr><tr><td>`1`</td><td>A + AB +B</td><td>S + BC + C</td></tr><tr><td>`2`</td><td>AB</td><td>S + BC</td></tr></tbody></table>Where S indicates the total processed cost of the preceding leg(s) and transfer(s).',
       enumValues: [
         {
           value: 0,
@@ -109,11 +102,11 @@ export const fareTransferRulesSpec: GTFSFileSpec = {
     },
     {
       name: 'fare_product_id',
-      type: 'Foreign ID',
-      presence: 'Required',
+      type: 'Foreign ID referencing `fare_products.fare_product_id`',
+      presence: 'Optional',
       description:
-        'The fare product required to transfer between the two fare legs. When empty, the cost of the transfer is 0.',
-      foreignKey: { file: 'fare_products.txt', field: 'fare_product_id' },
+        'The fare product required to transfer between two fare legs. If empty, the cost of the transfer rule is 0.',
+      foreignKey: [{ file: 'fare_products.txt', field: 'fare_product_id' }],
     },
   ],
 };

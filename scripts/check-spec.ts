@@ -7,18 +7,22 @@
  *   pnpm check-spec agency.txt routes.txt   # restrict to some files
  *   pnpm check-spec --full                  # print the raw reference strings
  *
- * TODO: Phase 2 of FARES_V2_PLAN.md makes this exit zero and wires it into the
- * pre-commit gate. Until then it is informational and is not run by the hooks.
+ * Runs in the pre-commit hook, so any drift from the reference blocks a commit.
  */
 
 import { readFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { gtfsSpec } from '../src/gtfs-spec/index';
-import type { GTFSFieldSpec, GTFSPresence } from '../src/gtfs-spec/types';
+import type { GTFSPresence } from '../src/gtfs-spec/types';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const REFERENCE_PATH = join(__dirname, '..', 'reference', 'gtfs-reference.md');
+export const REFERENCE_PATH = join(
+  __dirname,
+  '..',
+  'reference',
+  'gtfs-reference.md'
+);
 
 // locations.geojson describes a nested JSON object rather than a CSV table, so
 // its "field names" are indentation-encoded and do not map onto GTFSFieldSpec.
@@ -90,7 +94,7 @@ function parsePresence(cell: string): GTFSPresence | null {
 
 // ─── Reference parsing ────────────────────────────────────────────────────────
 
-interface ReferenceField {
+export interface ReferenceField {
   name: string;
   type: string;
   presence: GTFSPresence | null;
@@ -98,7 +102,7 @@ interface ReferenceField {
   description: string;
 }
 
-interface ReferenceFile {
+export interface ReferenceFile {
   filename: string;
   presence: GTFSPresence | null;
   /** Description from the "Dataset Files" summary table. */
@@ -169,7 +173,7 @@ function parseSummaryTable(markdown: string): Map<string, string> {
   return result;
 }
 
-function parseReference(markdown: string): Map<string, ReferenceFile> {
+export function parseReference(markdown: string): Map<string, ReferenceFile> {
   const summaries = parseSummaryTable(markdown);
   const lines = markdown.split('\n');
   const files = new Map<string, ReferenceFile>();
@@ -250,7 +254,9 @@ function parseReference(markdown: string): Map<string, ReferenceFile> {
       filename,
       presence,
       summaryDescription: summaries.get(filename) ?? '',
-      sectionDescription: proseLines.join(' '),
+      // Newlines are kept so bullet lists survive into the spec files; the
+      // normalizer collapses them before any comparison.
+      sectionDescription: proseLines.join('\n'),
       fields,
       fieldOrder,
       hasFieldTable: tableStart !== -1,
@@ -372,19 +378,6 @@ interface Issue {
   field?: string;
   aspect: Aspect;
   lines: string[];
-}
-
-/**
- * The reference writes foreign keys as a compound type string; our spec splits
- * that into `type: 'Foreign ID'` plus a structured `foreignKey`, which is what
- * the adapter and the pickers consume. Reassemble it for comparison.
- */
-function expectedTypeString(field: GTFSFieldSpec): string {
-  if (field.type === 'Foreign ID' && field.foreignKey) {
-    const table = field.foreignKey.file.replace(/\.txt$/, '');
-    return `Foreign ID referencing ${table}.${field.foreignKey.field}`;
-  }
-  return field.type;
 }
 
 function isKnown(issue: Issue): boolean {
@@ -523,14 +516,14 @@ function compare(
       }
 
       const refType = normalizeSpecText(refField.type);
-      const ourType = normalizeSpecText(expectedTypeString(ourField));
+      const ourType = normalizeSpecText(ourField.type);
       if (refType !== ourType) {
         issues.push({
           file: filename,
           field: name,
           aspect: 'type',
           lines: [
-            `type: reference "${refField.type}", spec "${expectedTypeString(ourField)}"`,
+            `type: reference "${refField.type}", spec "${ourField.type}"`,
           ],
         });
       }
@@ -633,4 +626,7 @@ function main(): void {
   }
 }
 
-main();
+// Guarded so other scripts can import the reference parser without running the check.
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  main();
+}
