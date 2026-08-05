@@ -9,6 +9,7 @@
  */
 
 import { getGTFSFieldDescription } from './zod-tooltip-helper.js';
+import { renderSpecDescription } from './spec-markup.js';
 import {
   GTFS_PRIMARY_KEYS,
   GTFS_FIELD_TYPES,
@@ -90,16 +91,6 @@ function escapeHtml(text: string | number | undefined): string {
 }
 
 /**
- * Escape text for use inside HTML attribute values (double-quoted).
- * Wraps escapeHtml then also escapes single quotes and double quotes.
- */
-function escapeAttr(text: unknown): string {
-  return escapeHtml(text as string | number | undefined)
-    .replace(/'/g, '&#39;')
-    .replace(/"/g, '&quot;');
-}
-
-/**
  * Get tooltip description for a field
  */
 function getFieldTooltip(config: FieldConfig): string {
@@ -151,23 +142,32 @@ function renderPresenceMark(config: FieldConfig): string {
 }
 
 /**
- * Build structured tooltip content for a field.
- * Returns a multi-part string with labeled sections joined by double newlines.
+ * Build structured tooltip content for a field, as HTML.
+ *
+ * Spec descriptions are stored verbatim from the GTFS reference and carry its
+ * markup, so they go through `renderSpecDescription` rather than being shown as
+ * literal text.
  */
 export function buildFieldTooltipContent(config: FieldConfig): string {
   const parts: string[] = [];
   const description = getFieldTooltip(config);
   if (description) {
-    parts.push(`Description: ${description}`);
+    parts.push(renderSpecDescription(description));
   }
-  parts.push(`ID: ${config.field}`);
+  parts.push(
+    `<div class="opacity-70">ID: <code class="text-xs">${escapeHtml(config.field)}</code></div>`
+  );
   if (config.presence && config.presence !== 'Optional') {
-    parts.push(`Presence: ${config.presence}`);
+    parts.push(
+      `<div class="opacity-70">Presence: ${escapeHtml(config.presence)}</div>`
+    );
     if (config.presenceCondition) {
-      parts.push(`Condition: ${config.presenceCondition}`);
+      parts.push(
+        `<div class="opacity-70">Condition: ${renderSpecDescription(config.presenceCondition)}</div>`
+      );
     }
   }
-  return parts.join('\n\n');
+  return parts.join('');
 }
 
 /**
@@ -195,7 +195,10 @@ export function renderFieldLabelContent(
         left: 'tooltip-left',
         right: 'tooltip-right',
       };
-    return `<span class="tooltip ${directionClass[tooltipDirection]}" data-tip="${escapeAttr(tipContent)}">${linkContent}${presenceMark}</span>`;
+    // `.tooltip-content` rather than `data-tip`: the latter renders through CSS
+    // `content:`, which would show the reference markup as literal text.
+    // `pointer-events-auto` is what makes the long descriptions scrollable.
+    return `<span class="tooltip ${directionClass[tooltipDirection]}"><span class="tooltip-content pointer-events-auto max-w-[36rem] max-h-[60vh] overflow-y-auto overflow-x-hidden text-left text-xs font-normal leading-snug whitespace-normal p-3">${tipContent}</span>${linkContent}${presenceMark}</span>`;
   }
   return `${linkContent}${presenceMark}`;
 }
