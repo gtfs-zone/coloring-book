@@ -5,6 +5,9 @@ import {
   renderCardLabel,
   renderOptionLabel,
 } from './entity-display';
+import { escapeHtml } from './escape-html';
+import { formatGtfsDateRange } from './gtfs-date';
+import { routeColor } from './route-colors';
 
 function escapeAttr(text: unknown): string {
   const div = document.createElement('div');
@@ -17,6 +20,9 @@ export const SERVICE_REF_ROW = 'service-ref-row';
 export const STOP_REF_ROW = 'stop-ref-row';
 export const PATHWAY_REF_ROW = 'pathway-ref-row';
 export const ENTITY_REF_BTN = 'entity-ref-btn';
+export const TIMETABLE_REF_ROW = 'timetable-ref-row';
+export const VIEW_ROUTE_BTN = 'view-route-btn';
+export const VIEW_SERVICE_BTN = 'view-service-btn';
 
 export interface RouteReferenceOpts {
   agencyName?: string;
@@ -81,7 +87,10 @@ export function formatDateRange(
   calendarDates?: Array<{ date: string; exception_type: string | number }>
 ): string {
   if (service.start_date) {
-    return `${service.start_date} – ${service.end_date}`;
+    return formatGtfsDateRange(
+      String(service.start_date),
+      String(service.end_date ?? '')
+    );
   }
   if (calendarDates && calendarDates.length > 0) {
     const positives = calendarDates
@@ -89,7 +98,7 @@ export function formatDateRange(
       .map((cd) => cd.date);
     if (positives.length > 0) {
       const sorted = positives.slice().sort();
-      return `${sorted[0]} – ${sorted[sorted.length - 1]}`;
+      return formatGtfsDateRange(sorted[0], sorted[sorted.length - 1]);
     }
   }
   return '';
@@ -233,5 +242,108 @@ export function renderServiceReference(
     ${routeBadge}
   </div>
   ${viewBtn}
+</div>`;
+}
+
+/** How many `via` stop names are spelled out before collapsing to "+N more". */
+const MAX_VIA_LABELS = 3;
+
+export interface TimetableReferenceOpts {
+  calendarDates?: Array<{ date: string; exception_type: string | number }>;
+  tripCount?: number;
+  agencyName?: string;
+  /**
+   * Descendant stops that actually carry the stop_times, when the page's stop
+   * is a station. Empty for an ordinary stop.
+   */
+  viaStops?: Array<Record<string, unknown>>;
+  /** Suppress the button pointing at the page we are already on. */
+  hide?: 'route' | 'service';
+}
+
+/**
+ * One timetable, which in GTFS terms is a route crossed with a service.
+ *
+ * Shared by the stop, route and service pages so a timetable looks the same
+ * wherever it is listed, and so every listing names both halves of the pair
+ * rather than only the one the surrounding page is not already about.
+ */
+export function renderTimetableReference(
+  route: Record<string, unknown>,
+  service: Record<string, unknown>,
+  opts: TimetableReferenceOpts = {}
+): string {
+  const route_id = String(route.route_id ?? '');
+  const service_id = String(service.service_id ?? '');
+
+  const color = routeColor(route_id, route.route_color as string | undefined);
+  const dot = `<div class="w-3 h-3 rounded-full flex-shrink-0" style="background-color: ${color}"></div>`;
+
+  const routeLabel = renderCardLabel(
+    getRouteDisplay(route as Record<string, string>)
+  );
+  const agencyTag = opts.agencyName
+    ? `<span class="text-xs opacity-60 flex-shrink-0">${escapeHtml(opts.agencyName)}</span>`
+    : '';
+
+  const serviceName = renderOptionLabel(
+    getServiceDisplay(service as Record<string, string>)
+  );
+  const dateRange = formatDateRange(service, opts.calendarDates);
+  const serviceLine = escapeHtml(serviceName);
+  const scheduleLine = [
+    escapeHtml(formatDaysOfWeek(service)),
+    dateRange ? escapeHtml(dateRange) : '',
+  ]
+    .filter(Boolean)
+    .join(' · ');
+
+  const viaStops = opts.viaStops ?? [];
+  const viaLine =
+    viaStops.length > 0
+      ? `<div class="text-xs opacity-60 truncate">via ${escapeHtml(
+          viaStops
+            .slice(0, MAX_VIA_LABELS)
+            .map((s) =>
+              renderOptionLabel(getStopDisplay(s as Record<string, string>))
+            )
+            .join(', ')
+        )}${
+          viaStops.length > MAX_VIA_LABELS
+            ? ` +${viaStops.length - MAX_VIA_LABELS} more`
+            : ''
+        }</div>`
+      : '';
+
+  const tripBadge =
+    opts.tripCount !== undefined
+      ? `<div class="badge badge-outline badge-sm">${opts.tripCount} trip${opts.tripCount !== 1 ? 's' : ''}</div>`
+      : '';
+
+  const routeBtn =
+    opts.hide === 'route'
+      ? ''
+      : `<button class="btn btn-xs btn-ghost ${VIEW_ROUTE_BTN}" data-route-id="${escapeAttr(route_id)}">Route</button>`;
+  const serviceBtn =
+    opts.hide === 'service'
+      ? ''
+      : `<button class="btn btn-xs btn-ghost ${VIEW_SERVICE_BTN}" data-service-id="${escapeAttr(service_id)}">Service</button>`;
+
+  return `<div class="flex items-center gap-3 p-3 rounded-lg hover:bg-base-200 cursor-pointer transition-colors ${TIMETABLE_REF_ROW}" data-route-id="${escapeAttr(route_id)}" data-service-id="${escapeAttr(service_id)}">
+  ${dot}
+  <div class="flex-1 min-w-0">
+    <div class="flex items-baseline gap-2 min-w-0">
+      <span class="truncate">${routeLabel}</span>
+      ${agencyTag}
+    </div>
+    <div class="text-xs opacity-60 truncate">${serviceLine}</div>
+    <div class="text-xs opacity-60 truncate">${scheduleLine}</div>
+    ${viaLine}
+  </div>
+  ${tripBadge}
+  <div class="flex items-center gap-1 flex-shrink-0">
+    ${routeBtn}
+    ${serviceBtn}
+  </div>
 </div>`;
 }

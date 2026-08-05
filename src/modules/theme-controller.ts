@@ -1,4 +1,24 @@
 export class ThemeController {
+  private listeners: ((theme: string) => void)[] = [];
+
+  /**
+   * Subscribe to theme changes. The map resolves its accent color from the
+   * active DaisyUI palette, so it has to repaint when the theme switches.
+   */
+  public onThemeChange(listener: (theme: string) => void): void {
+    this.listeners.push(listener);
+  }
+
+  private notify(theme: string): void {
+    this.listeners.forEach((listener) => {
+      try {
+        listener(theme);
+      } catch (error) {
+        console.error('[ThemeController] Theme change listener failed:', error);
+      }
+    });
+  }
+
   initialize(): void {
     // Load saved theme preference on page load
     this.loadThemePreference();
@@ -55,6 +75,7 @@ export class ThemeController {
     // Apply theme
     htmlElement.setAttribute('data-theme', newTheme);
     localStorage.setItem('theme', newTheme);
+    this.notify(newTheme);
   }
 
   private updateThemeControllers(theme: string): void {
@@ -78,6 +99,7 @@ export class ThemeController {
     htmlElement.setAttribute('data-theme', theme);
     this.updateThemeControllers(theme);
     localStorage.setItem('theme', theme);
+    this.notify(theme);
   }
 
   public getCurrentTheme(): string {

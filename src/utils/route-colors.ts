@@ -3,7 +3,7 @@
  *
  * A GTFS feed is free to omit `route_color`, and plenty do. Those routes still
  * have to be told apart on the map, so the fallback hashes `route_id` into a
- * stable hue — the same route gets the same color on every reload, and no
+ * stable hue, the same route gets the same color on every reload, and no
  * feed-supplied color is ever overridden.
  *
  * The hue is realized through OKLCH at a fixed lightness and chroma rather than
@@ -11,7 +11,7 @@
  * yellow-green and `hsl(240, 70%, 50%)` is nearly black, so a hash-assigned
  * palette comes out visually chaotic. OKLCH is perceptually uniform, so every
  * hashed route lands at the same apparent weight and the set reads as one
- * family — calm enough to sit under a raster basemap and legible on both light
+ * family, calm enough to sit under a raster basemap and legible on both light
  * and dark themes.
  *
  * Everything is converted to `#rrggbb` before it leaves this module. MapLibre
@@ -66,8 +66,8 @@ function channelToHex(value: number): string {
 }
 
 /**
- * OKLCH → `#rrggbb`, via OKLab and linear sRGB. Out-of-gamut results are
- * clamped per channel, which shifts hue slightly at high chroma — acceptable
+ * OKLCH to `#rrggbb`, via OKLab and linear sRGB. Out-of-gamut results are
+ * clamped per channel, which shifts hue slightly at high chroma, acceptable
  * here because `HASH_CHROMA` is kept well inside the gamut.
  */
 function oklchToHex(lightness: number, chroma: number, hue: number): string {

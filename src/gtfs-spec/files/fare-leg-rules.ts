@@ -4,7 +4,7 @@ export const fareLegRulesSpec: GTFSFileSpec = {
   filename: 'fare_leg_rules.txt',
   presence: 'Optional',
   description:
-    'Fare rules for individual legs of travel. Specifies the fare products that apply to legs of travel, based on route network, departure area, arrival area, and timeframe. Part of the Fares v2 model — separate from the legacy Fares v1 model (fare_attributes.txt, fare_rules.txt).',
+    'Fare rules for individual legs of travel. Specifies the fare products that apply to legs of travel, based on route network, departure area, arrival area, and timeframe. Part of the Fares v2 model, separate from the legacy Fares v1 model (fare_attributes.txt, fare_rules.txt).',
   fields: [
     {
       name: 'leg_group_id',

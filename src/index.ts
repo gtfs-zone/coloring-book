@@ -323,6 +323,9 @@ export class GTFSEditor {
 
       // Initialize theme controller
       this.themeController.initialize();
+      this.themeController.onThemeChange(() =>
+        this.mapController.refreshAccentColor()
+      );
 
       // Initialize tab manager
       this.tabManager.initialize();
@@ -413,7 +416,10 @@ export class GTFSEditor {
         }
         this.mapController
           .updateMap()
-          .then(() => {
+          .then(async () => {
+            // updateMap clears map focus. Render the URL-restored state only
+            // after it completes so a refreshed stop page keeps its selection.
+            await this.browseNavigation.refresh();
             if (CONFIG.DEBUG_BOOT) {
               console.timeEnd('[boot] map-controller.updateMap');
             }
@@ -436,7 +442,7 @@ export class GTFSEditor {
     }
   }
 
-  // Not called on startup — invoke manually if the validation panel is opened.
+  // Not called on startup: invoke manually if the validation panel is opened.
   public validateAndUpdateInfo(): void {
     const validationResults = this.validator.validateFeed();
     void validationResults;

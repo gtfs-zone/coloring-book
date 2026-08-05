@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Pathway Geometry Diagnostic</title>
+    <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.css" />
+    <style>
+      :root { color-scheme: dark; font-family: system-ui, sans-serif; }
+      body { margin: 0; min-height: 100vh; background: #0b1120; color: #e2e8f0; }
+      main { max-width: 1160px; margin: auto; padding: 28px; }
+      h1 { margin: 0 0 8px; font-size: 24px; }
+      p { color: #a5b4c8; line-height: 1.5; }
+      .controls { display: grid; grid-template-columns: repeat(3, minmax(160px, 1fr)); gap: 16px; margin: 24px 0; padding: 16px; background: #111b2e; border: 1px solid #263650; border-radius: 10px; }
+      label { display: grid; gap: 6px; font-size: 13px; font-weight: 650; }
+      output { color: #7dd3fc; font-variant-numeric: tabular-nums; }
+      input { width: 100%; accent-color: #38bdf8; }
+      .legend { display: flex; gap: 16px; flex-wrap: wrap; margin: 12px 0 20px; font-size: 13px; }
+      #map { height: 480px; margin: 20px 0; border: 1px solid #263650; border-radius: 10px; overflow: hidden; }
+      select { background: #0f172a; color: #e2e8f0; border: 1px solid #475569; border-radius: 5px; padding: 6px; }
+      .swatch { display: inline-block; width: 12px; height: 12px; margin-right: 5px; border-radius: 50%; vertical-align: -1px; }
+      svg { width: 100%; background: #111b2e; border: 1px solid #263650; border-radius: 10px; }
+      .panel-title { fill: #f8fafc; font-size: 16px; font-weight: 700; }
+      .panel-note { fill: #94a3b8; font-size: 12px; }
+      .node { fill: #f8fafc; stroke: #020617; stroke-width: 3; }
+      .node-label { fill: #cbd5e1; font-size: 12px; text-anchor: middle; }
+      .baseline { stroke: #475569; stroke-width: 2; stroke-dasharray: 5 5; }
+      .path { fill: none; stroke: #5eaea8; stroke-width: 7; stroke-linecap: round; stroke-linejoin: round; }
+      .path-core { fill: none; stroke: #e2f7f5; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+      .direct { stroke: #38bdf8; }
+      .issue { fill: #fda4af; font-size: 12px; font-weight: 650; }
+      .ok { fill: #86efac; font-size: 12px; font-weight: 650; }
+      @media (max-width: 720px) { main { padding: 16px; } .controls { grid-template-columns: 1fr; } }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Pathway Geometry Diagnostic</h1>
+      <p>
+        Every panel uses the same two nodes. The grey dashed line is the exact
+        node-to-node baseline. Adjust the controls, then compare what resembles
+        the unwanted shapes in the app.
+      </p>
+      <section class="controls">
+        <label>
+          Parallel pathway count: <output id="count-value">3</output>
+          <input id="count" type="range" min="1" max="5" value="3" />
+        </label>
+        <label>
+          Offset per adjacent pathway: <output id="offset-value">2 m</output>
+          <input id="offset" type="range" min="0" max="8" step="0.5" value="2" />
+        </label>
+        <label>
+          Node distance: <output id="distance-value">100 m</output>
+          <input id="distance" type="range" min="15" max="180" step="5" value="100" />
+        </label>
+        <label>
+          Map geometry
+          <select id="map-mode">
+            <option value="direct">Direct, no offsets</option>
+            <option value="shifted">Shifted endpoints</option>
+            <option value="connected" selected>Connected offset</option>
+          </select>
+        </label>
+      </section>
+      <div class="legend">
+        <span><i class="swatch" style="background:#475569"></i>Exact direct connection</span>
+        <span><i class="swatch" style="background:#5eaea8"></i>Rendered pathway with casing</span>
+        <span><i class="swatch" style="background:#38bdf8"></i>Single edge, always direct</span>
+      </div>
+      <h2>Actual MapLibre Rendering</h2>
+      <p>
+        This uses the same GeoJSON line geometry, cased core layers, dashed
+        category styling, rounded caps, and stop circles above paths as the app.
+      </p>
+      <div id="map"></div>
+      <svg id="diagram" viewBox="0 0 1100 620" role="img" aria-label="Pathway geometry comparisons"></svg>
+      <p id="summary"></p>
+      <p>
+        Report the panel names that match the app. In particular, say whether a
+        single-edge pair resembles <strong>Shifted endpoints</strong> or
+        <strong>Connected offset</strong>, and whether the direct blue line is
+        the expected result for those pairs.
+      </p>
+    </main>
+    <script src="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.js"></script>
+    <script>
+      const count = document.querySelector('#count');
+      const offset = document.querySelector('#offset');
+      const distance = document.querySelector('#distance');
+      const mapMode = document.querySelector('#map-mode');
+      const svg = document.querySelector('#diagram');
+      const ns = 'http://www.w3.org/2000/svg';
+      const make = (name, attrs, text) => {
+        const element = document.createElementNS(ns, name);
+        Object.entries(attrs).forEach(([key, value]) => element.setAttribute(key, value));
+        if (text) element.textContent = text;
+        return element;
+      };
+      const addPath = (group, points, extra = '') => {
+        const d = `M ${points.map(point => point.join(' ')).join(' L ')}`;
+        group.append(make('path', { d, class: `path ${extra}` }));
+        group.append(make('path', { d, class: `path-core ${extra}` }));
+      };
+      const MAP_CENTER = [-71.06, 42.3555];
+      const metersPerLng = 111320 * Math.cos((MAP_CENTER[1] * Math.PI) / 180);
+      const pointAt = (east, north) => [MAP_CENTER[0] + east / metersPerLng, MAP_CENTER[1] + north / 110540];
+      const map = new maplibregl.Map({
+        container: 'map',
+        center: MAP_CENTER,
+        zoom: 17,
+        style: { version: 8, sources: {}, layers: [{ id: 'background', type: 'background', paint: { 'background-color': '#111b2e' } }] },
+        attributionControl: false,
+      });
+      function mapData() {
+        const parallelCount = Number(count.value);
+        const spread = Number(offset.value);
+        const nodeDistance = Number(distance.value);
+        const from = pointAt(-nodeDistance / 2, 0);
+        const to = pointAt(nodeDistance / 2, 0);
+        const lines = [];
+        for (let index = 0; index < parallelCount; index += 1) {
+          const lateral = (index - (parallelCount - 1) / 2) * spread;
+          let coordinates = [from, to];
+          if (mapMode.value === 'shifted' && lateral !== 0) coordinates = [pointAt(-nodeDistance / 2, lateral), pointAt(nodeDistance / 2, lateral)];
+          if (mapMode.value === 'connected' && lateral !== 0) coordinates = [from, pointAt(-nodeDistance / 2, lateral), pointAt(nodeDistance / 2, lateral), to];
+          lines.push({ type: 'Feature', geometry: { type: 'LineString', coordinates }, properties: { category: index % 2 ? 'vertical' : 'horizontal' } });
+        }
+        return {
+          paths: { type: 'FeatureCollection', features: lines },
+          stops: { type: 'FeatureCollection', features: [from, to].map((coordinates, index) => ({ type: 'Feature', geometry: { type: 'Point', coordinates }, properties: { name: index ? 'B' : 'A' } })) },
+        };
+      }
+      function updateMap() {
+        if (!map.isStyleLoaded()) return;
+        const data = mapData();
+        map.getSource('paths').setData(data.paths);
+        map.getSource('stops').setData(data.stops);
+      }
+      map.on('load', () => {
+        const data = mapData();
+        map.addSource('paths', { type: 'geojson', data: data.paths });
+        map.addSource('stops', { type: 'geojson', data: data.stops });
+        for (const [category, dash] of [['horizontal', null], ['vertical', [2, 1.6]]]) {
+          const filter = ['==', ['get', 'category'], category];
+          const casing = { 'line-color': '#0f172a', 'line-width': 6.5, 'line-opacity': 0.8 };
+          const core = { 'line-color': '#5eaea8', 'line-width': 3 };
+          if (dash) { casing['line-dasharray'] = dash.map(value => value * 3 / 6.5); core['line-dasharray'] = dash; }
+          map.addLayer({ id: `casing-${category}`, type: 'line', source: 'paths', filter, paint: casing, layout: { 'line-cap': 'round', 'line-join': 'round' } });
+          map.addLayer({ id: `core-${category}`, type: 'line', source: 'paths', filter, paint: core, layout: { 'line-cap': 'round', 'line-join': 'round' } });
+        }
+        map.addLayer({ id: 'stops', type: 'circle', source: 'stops', paint: { 'circle-radius': 8, 'circle-color': '#ffffff', 'circle-stroke-color': '#020617', 'circle-stroke-width': 2 } });
+        map.addLayer({ id: 'stop-labels', type: 'symbol', source: 'stops', layout: { 'text-field': ['get', 'name'], 'text-offset': [0, 1.6], 'text-size': 13 }, paint: { 'text-color': '#e2e8f0' } });
+      });
+      function drawPanel(x, y, title, note, mode, parallelCount, spread, nodeDistance) {
+        const group = make('g', {});
+        const left = x + 55;
+        const right = left + nodeDistance * 1.8;
+        const nodeY = y + 105;
+        group.append(make('text', { x, y: y + 20, class: 'panel-title' }, title));
+        group.append(make('text', { x, y: y + 39, class: 'panel-note' }, note));
+        group.append(make('line', { x1: left, y1: nodeY, x2: right, y2: nodeY, class: 'baseline' }));
+        for (let index = 0; index < parallelCount; index += 1) {
+          const lateral = (index - (parallelCount - 1) / 2) * spread * 7;
+          if (mode === 'direct') addPath(group, [[left, nodeY], [right, nodeY]], 'direct');
+          if (mode === 'shifted') addPath(group, [[left, nodeY + lateral], [right, nodeY + lateral]]);
+          if (mode === 'connected') addPath(group, [[left, nodeY], [left, nodeY + lateral], [right, nodeY + lateral], [right, nodeY]]);
+        }
+        group.append(make('circle', { cx: left, cy: nodeY, r: 12, class: 'node' }));
+        group.append(make('circle', { cx: right, cy: nodeY, r: 12, class: 'node' }));
+        group.append(make('text', { x: left, y: nodeY + 33, class: 'node-label' }, 'A'));
+        group.append(make('text', { x: right, y: nodeY + 33, class: 'node-label' }, 'B'));
+        if (mode === 'direct') group.append(make('text', { x, y: y + 178, class: 'ok' }, 'Expected for exactly one pathway'));
+        if (mode === 'shifted') group.append(make('text', { x, y: y + 178, class: 'issue' }, 'Disconnected from nodes when offset is nonzero'));
+        if (mode === 'connected') group.append(make('text', { x, y: y + 178, class: 'issue' }, 'This deliberately creates the staple-shaped lead-ins'));
+        svg.append(group);
+      }
+      function render() {
+        const parallelCount = Number(count.value);
+        const spread = Number(offset.value);
+        const nodeDistance = Number(distance.value);
+        document.querySelector('#count-value').textContent = parallelCount;
+        document.querySelector('#offset-value').textContent = `${spread} m`;
+        document.querySelector('#distance-value').textContent = `${nodeDistance} m`;
+        updateMap();
+        svg.replaceChildren();
+        drawPanel(40, 40, '1. Direct edges', 'No offset. Multiple paths overlap exactly.', 'direct', parallelCount, spread, nodeDistance);
+        drawPanel(575, 40, '2. Shifted endpoints', 'The first implementation: offsets both endpoints.', 'shifted', parallelCount, spread, nodeDistance);
+        drawPanel(40, 330, '3. Connected offset', 'The current implementation: nodes stay connected.', 'connected', parallelCount, spread, nodeDistance);
+        drawPanel(575, 330, '4. Single edge control', 'Always direct, regardless of the parallel controls.', 'direct', 1, spread, nodeDistance);
+        const result = parallelCount === 1
+          ? 'With one pathway, all correct implementations must show only the direct A-to-B line. Any staple in the app means the affected path is grouped as a parallel edge or its geometry is being reused.'
+          : `With ${parallelCount} parallel pathways, only panel 3 makes the lines visibly attach to both nodes. Its vertical lead-ins are the staple shape you described.`;
+        document.querySelector('#summary').textContent = result;
+      }
+      [count, offset, distance].forEach(control => control.addEventListener('input', render));
+      mapMode.addEventListener('change', render);
+      render();
+    </script>
+  </body>
+</html>

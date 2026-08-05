@@ -87,7 +87,7 @@ function filterAndRender(
   if (filtered.length > 50) {
     const note = document.createElement('div');
     note.className = 'text-xs text-base-content/50 text-center p-2';
-    note.textContent = `Showing 50 of ${filtered.length} results — refine your search`;
+    note.textContent = `Showing 50 of ${filtered.length} results. Refine your search`;
     resultsEl.appendChild(note);
   }
 }

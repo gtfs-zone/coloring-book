@@ -1,12 +1,5 @@
 import type { HolidayPattern } from './types.js';
-
-/** Format a UTC Date as YYYYMMDD */
-function toYYYYMMDD(date: Date): string {
-  const y = date.getUTCFullYear();
-  const m = String(date.getUTCMonth() + 1).padStart(2, '0');
-  const d = String(date.getUTCDate()).padStart(2, '0');
-  return `${y}${m}${d}`;
-}
+import { toGtfsDate as toYYYYMMDD } from '../utils/gtfs-date.js';
 
 /** Day of week for a UTC date (0=Sun, 1=Mon, ..., 6=Sat) */
 function utcDow(year: number, month: number, day: number): number {
@@ -15,8 +8,8 @@ function utcDow(year: number, month: number, day: number): number {
 
 /**
  * Observed date for a fixed holiday (Jan 1, Jun 19, Jul 4, Nov 11, Dec 25).
- * If the actual date falls on Saturday → observed Friday.
- * If it falls on Sunday → observed Monday.
+ * If the actual date falls on Saturday, observed Friday.
+ * If it falls on Sunday, observed Monday.
  */
 function fixedObserved(year: number, month: number, day: number): string {
   const dow = utcDow(year, month, day);
@@ -24,13 +17,13 @@ function fixedObserved(year: number, month: number, day: number): string {
   let observedMonth = month;
   let observedYear = year;
   if (dow === 6) {
-    // Saturday → Friday
+    // Saturday to Friday
     const d = new Date(Date.UTC(year, month, day - 1));
     observedYear = d.getUTCFullYear();
     observedMonth = d.getUTCMonth();
     observedDay = d.getUTCDate();
   } else if (dow === 0) {
-    // Sunday → Monday
+    // Sunday to Monday
     const d = new Date(Date.UTC(year, month, day + 1));
     observedYear = d.getUTCFullYear();
     observedMonth = d.getUTCMonth();
@@ -43,7 +36,7 @@ function fixedObserved(year: number, month: number, day: number): string {
 
 /**
  * Nth occurrence of a given day-of-week in a month.
- * nth=1 → first, nth=2 → second, nth=-1 → last.
+ * nth=1 is first, nth=2 is second, nth=-1 is last.
  */
 function nthWeekday(
   year: number,
@@ -68,27 +61,27 @@ function nthWeekday(
 
 function getUsFederalDates(year: number): string[] {
   return [
-    // New Year's Day — Jan 1
+    // New Year's Day: Jan 1
     fixedObserved(year, 0, 1),
-    // MLK Day — 3rd Monday in January
+    // MLK Day: 3rd Monday in January
     nthWeekday(year, 0, 1, 3),
-    // Presidents' Day — 3rd Monday in February
+    // Presidents' Day: 3rd Monday in February
     nthWeekday(year, 1, 1, 3),
-    // Memorial Day — last Monday in May
+    // Memorial Day: last Monday in May
     nthWeekday(year, 4, 1, -1),
-    // Juneteenth — Jun 19
+    // Juneteenth: Jun 19
     fixedObserved(year, 5, 19),
-    // Independence Day — Jul 4
+    // Independence Day: Jul 4
     fixedObserved(year, 6, 4),
-    // Labor Day — 1st Monday in September
+    // Labor Day: 1st Monday in September
     nthWeekday(year, 8, 1, 1),
-    // Columbus Day — 2nd Monday in October
+    // Columbus Day: 2nd Monday in October
     nthWeekday(year, 9, 1, 2),
-    // Veterans Day — Nov 11
+    // Veterans Day: Nov 11
     fixedObserved(year, 10, 11),
-    // Thanksgiving — 4th Thursday in November
+    // Thanksgiving: 4th Thursday in November
     nthWeekday(year, 10, 4, 4),
-    // Christmas Day — Dec 25
+    // Christmas Day: Dec 25
     fixedObserved(year, 11, 25),
   ];
 }
