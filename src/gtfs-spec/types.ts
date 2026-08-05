@@ -11,15 +11,22 @@ export interface GTFSEnumValue {
   description: string;
 }
 
+export interface GTFSForeignKeyTarget {
+  file: string;
+  field: string;
+}
+
 export interface GTFSFieldSpec {
   name: string;
+  /** Verbatim reference type string, including the compound "Foreign ID referencing `x.y`" forms. */
   type: string;
   presence: GTFSPresence;
   presenceCondition?: string;
   description: string;
   isPrimaryKey?: boolean;
   allowEmpty?: boolean;
-  foreignKey?: { file: string; field: string };
+  /** A few fields legitimately reference more than one table, hence the array. */
+  foreignKey?: GTFSForeignKeyTarget[];
   enumValues?: GTFSEnumValue[];
 }
 

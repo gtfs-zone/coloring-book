@@ -1,8 +1,8 @@
 /**
  * GTFS Primary Key Configuration
  *
- * Based on the official GTFS specification at https://gtfs.org/schedule/reference/
- * This module provides the definitive source of truth for GTFS table primary keys.
+ * Mirrors the "Primary key (...)" line of each file section in
+ * reference/gtfs-reference.md.
  */
 
 export interface GTFSTablePrimaryKey {
@@ -18,7 +18,7 @@ export interface GTFSTablePrimaryKey {
 
 /**
  * Official GTFS Primary Key Definitions
- * Source: https://gtfs.org/schedule/reference/ (accessed 2024)
+ * Source: reference/gtfs-reference.md, revised April 27, 2026
  */
 export const GTFS_PRIMARY_KEYS: GTFSTablePrimaryKey[] = [
   // Core Required Files
@@ -73,8 +73,15 @@ export const GTFS_PRIMARY_KEYS: GTFSTablePrimaryKey[] = [
   },
   {
     tableName: 'transfers',
-    fields: [], // All provided fields
-    type: 'all_fields',
+    fields: [
+      'from_stop_id',
+      'to_stop_id',
+      'from_trip_id',
+      'to_trip_id',
+      'from_route_id',
+      'to_route_id',
+    ],
+    type: 'composite',
   },
   {
     tableName: 'feed_info',
@@ -135,8 +142,14 @@ export const GTFS_PRIMARY_KEYS: GTFSTablePrimaryKey[] = [
   },
   {
     tableName: 'fare_transfer_rules',
-    fields: [], // All provided fields
-    type: 'all_fields',
+    fields: [
+      'from_leg_group_id',
+      'to_leg_group_id',
+      'fare_product_id',
+      'transfer_count',
+      'duration_limit',
+    ],
+    type: 'composite',
   },
   {
     tableName: 'areas',
@@ -155,17 +168,27 @@ export const GTFS_PRIMARY_KEYS: GTFSTablePrimaryKey[] = [
   },
   {
     tableName: 'route_networks',
-    fields: [], // All provided fields
-    type: 'all_fields',
+    fields: ['route_id'],
+    type: 'natural',
   },
   {
+    // The reference names attribution_id as the primary key, but the field is
+    // Optional, so real feeds omit it. Keying on all fields is the only form
+    // that stays unique for those.
     tableName: 'attributions',
-    fields: [], // All provided fields
+    fields: [],
     type: 'all_fields',
   },
   {
     tableName: 'translations',
-    fields: ['table_name', 'field_name', 'language', 'translation'],
+    fields: [
+      'table_name',
+      'field_name',
+      'language',
+      'record_id',
+      'record_sub_id',
+      'field_value',
+    ],
     type: 'composite',
   },
 

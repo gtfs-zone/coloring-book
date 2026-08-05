@@ -3,39 +3,39 @@ import type { GTFSFileSpec } from '../types';
 export const attributionsSpec: GTFSFileSpec = {
   filename: 'attributions.txt',
   presence: 'Optional',
-  description: 'Defines the attributions applied to the dataset.',
+  description: 'The file defines the attributions applied to the dataset.',
   fields: [
     {
       name: 'attribution_id',
       type: 'Unique ID',
       presence: 'Optional',
-      isPrimaryKey: true,
       description:
         'Identifies an attribution for the dataset or a subset of it. This is mostly useful for translations.',
+      isPrimaryKey: true,
     },
     {
       name: 'agency_id',
-      type: 'Foreign ID',
+      type: 'Foreign ID referencing `agency.agency_id`',
       presence: 'Optional',
       description:
-        'Agency to which the attribution applies. If one agency_id, route_id, or trip_id attribution is defined, the other ones must be empty. If none of them is specified, the attribution will apply to the whole dataset.',
-      foreignKey: { file: 'agency.txt', field: 'agency_id' },
+        'Agency to which the attribution applies.<br><br>If one `agency_id`, `route_id`, or `trip_id` attribution is defined, the other ones must be empty. If none of them is specified, the attribution will apply to the whole dataset.',
+      foreignKey: [{ file: 'agency.txt', field: 'agency_id' }],
     },
     {
       name: 'route_id',
-      type: 'Foreign ID',
+      type: 'Foreign ID referencing `routes.route_id`',
       presence: 'Optional',
       description:
-        'Route to which the attribution applies. If one agency_id, route_id, or trip_id attribution is defined, the other ones must be empty. If none of them is specified, the attribution will apply to the whole dataset.',
-      foreignKey: { file: 'routes.txt', field: 'route_id' },
+        'Functions in the same way as `agency_id` except the attribution applies to a route. Multiple attributions may apply to the same route.',
+      foreignKey: [{ file: 'routes.txt', field: 'route_id' }],
     },
     {
       name: 'trip_id',
-      type: 'Foreign ID',
+      type: 'Foreign ID referencing `trips.trip_id`',
       presence: 'Optional',
       description:
-        'Trip to which the attribution applies. If one agency_id, route_id, or trip_id attribution is defined, the other ones must be empty. If none of them is specified, the attribution will apply to the whole dataset.',
-      foreignKey: { file: 'trips.txt', field: 'trip_id' },
+        'Functions in the same way as `agency_id` except the attribution applies to a trip. Multiple attributions may apply to the same trip.',
+      foreignKey: [{ file: 'trips.txt', field: 'trip_id' }],
     },
     {
       name: 'organization_name',
@@ -49,7 +49,7 @@ export const attributionsSpec: GTFSFileSpec = {
       type: 'Enum',
       presence: 'Optional',
       description:
-        'The role of the organization is producer. Allowed values: 0 or empty - Organization does not have this role. 1 - Organization does have this role.\n\nAt least one of the fields is_producer, is_operator, or is_authority should be set at 1.',
+        'The role of the organization is producer. Valid options are:<br><br>`0` or empty - Organization doesn’t have this role.<br>`1` - Organization does have this role.<br><br>At least one of the fields `is_producer`, `is_operator`, or `is_authority` should be set at `1`.',
       enumValues: [
         {
           value: 0,
@@ -68,7 +68,7 @@ export const attributionsSpec: GTFSFileSpec = {
       type: 'Enum',
       presence: 'Optional',
       description:
-        'The role of the organization is operator. Allowed values: 0 or empty - Organization does not have this role. 1 - Organization does have this role.\n\nAt least one of the fields is_producer, is_operator, or is_authority should be set at 1.',
+        'Functions in the same way as `is_producer` except the role of the organization is operator.',
       enumValues: [
         {
           value: 0,
@@ -87,7 +87,7 @@ export const attributionsSpec: GTFSFileSpec = {
       type: 'Enum',
       presence: 'Optional',
       description:
-        'The role of the organization is authority. Allowed values: 0 or empty - Organization does not have this role. 1 - Organization does have this role.\n\nAt least one of the fields is_producer, is_operator, or is_authority should be set at 1.',
+        'Functions in the same way as `is_producer` except the role of the organization is authority.',
       enumValues: [
         {
           value: 0,
