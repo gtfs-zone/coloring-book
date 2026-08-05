@@ -4,6 +4,7 @@ import {
   getGTFSFieldDescription,
   createTooltip,
 } from '../utils/zod-tooltip-helper.js';
+import { renderSpecDescriptionPlain } from '../utils/spec-markup.js';
 import {
   generateCompositeKeyFromRecord,
   getGTFSPrimaryKey,
@@ -173,9 +174,8 @@ export class Editor {
             <tr>
               ${this.headers
                 .map((header) => {
-                  const description = getGTFSFieldDescription(
-                    this.currentFile || '',
-                    header
+                  const description = renderSpecDescriptionPlain(
+                    getGTFSFieldDescription(this.currentFile || '', header)
                   );
                   const headerText = this.escapeHtml(header);
                   return description
