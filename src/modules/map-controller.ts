@@ -625,6 +625,13 @@ export class MapController {
   }
 
   /**
+   * Repaint the accent-colored map styling after a theme switch.
+   */
+  public refreshAccentColor(): void {
+    this.layerManager?.refreshAccentColor();
+  }
+
+  /**
    * Get the currently expanded station id (derived from focusedObject).
    */
   public getExpandedStationId(): string | null {

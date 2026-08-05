@@ -22,7 +22,7 @@ export class TimetableCellRenderer {
    * @param arrival_time - Arrival time string or null
    * @param departure_time - Departure time string or null
    * @param editableStopTime - Optional editable stop time data (supplies stop_sequence)
-   * @param supersequencePosition - This row's stable index into the timetable's stop list
+   * @param isPendingRow - Row is the not-yet-saved add-stop preview
    * @returns HTML string for the complete time cell
    */
   public renderStackedArrivalDepartureCell(
@@ -31,7 +31,7 @@ export class TimetableCellRenderer {
     arrival_time: string | null,
     departure_time: string | null,
     editableStopTime?: EditableStopTime,
-    supersequencePosition?: number
+    isPendingRow = false
   ): string {
     const arrivalDisplay = arrival_time
       ? TimeFormatter.formatTimeWithSeconds(arrival_time)
@@ -44,7 +44,6 @@ export class TimetableCellRenderer {
     const cellClass = `time-cell p-2 text-center ${
       isSkipped ? 'no-time' : 'has-time'
     }`;
-    const position = supersequencePosition ?? '';
     const stopSequence = editableStopTime?.stop_sequence ?? '';
 
     const renderSpan = (
@@ -56,8 +55,8 @@ export class TimetableCellRenderer {
           data-trip-id="${trip_id}"
           data-stop-id="${stop_id}"
           data-time-type="${timeType}"
-          data-position="${position}"
           data-stop-sequence="${stopSequence}"
+          data-pending="${isPendingRow}"
         >${display || '--:--:--'}</span>
     `;
 
