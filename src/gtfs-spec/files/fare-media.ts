@@ -4,7 +4,7 @@ export const fareMediaSpec: GTFSFileSpec = {
   filename: 'fare_media.txt',
   presence: 'Optional',
   description:
-    'Describes different fare media that can be employed to use fare products. Fare media are physical or virtual holders used for the representation and validation of a fare product. Part of the Fares v2 model — separate from the legacy Fares v1 model (fare_attributes.txt, fare_rules.txt).',
+    'Describes different fare media that can be employed to use fare products. Fare media are physical or virtual holders used for the representation and validation of a fare product. Part of the Fares v2 model, separate from the legacy Fares v1 model (fare_attributes.txt, fare_rules.txt).',
   fields: [
     {
       name: 'fare_media_id',

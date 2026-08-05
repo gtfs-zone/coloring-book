@@ -85,7 +85,7 @@ export class LevelsController {
             <td>${escapeHtml(l.level_index ?? '')}</td>
             <td>${escapeHtml(l.level_name ?? '')}</td>
             <td>
-              <button class="btn btn-xs btn-ghost text-error levels-delete-btn" data-level-id="${escapeAttr(l.level_id)}">✕</button>
+              <button class="btn btn-xs btn-ghost text-error levels-delete-btn" data-level-id="${escapeAttr(l.level_id)}">×</button>
             </td>
           </tr>`
         )

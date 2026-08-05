@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Stop focus + pathway styling sandbox</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        font-family:
+          ui-sans-serif,
+          system-ui,
+          -apple-system,
+          sans-serif;
+      }
+      #map {
+        position: absolute;
+        inset: 0;
+      }
+      #panel {
+        position: absolute;
+        top: 12px;
+        left: 12px;
+        bottom: 12px;
+        width: 288px;
+        overflow-y: auto;
+        background: rgba(17, 24, 39, 0.94);
+        color: #e5e7eb;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        border-radius: 10px;
+        padding: 12px 14px;
+        z-index: 10;
+        font-size: 12.5px;
+        line-height: 1.35;
+        box-shadow: 0 8px 30px rgba(0, 0, 0, 0.45);
+      }
+      #panel h1 {
+        font-size: 13px;
+        margin: 0 0 2px;
+        letter-spacing: 0.02em;
+      }
+      #panel h2 {
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.09em;
+        color: #93c5fd;
+        margin: 16px 0 6px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        padding-bottom: 4px;
+      }
+      #panel .hint {
+        color: #9ca3af;
+        font-size: 11px;
+        margin: 0 0 8px;
+      }
+      label.row {
+        display: flex;
+        gap: 8px;
+        align-items: flex-start;
+        padding: 3px 0;
+        cursor: pointer;
+      }
+      label.row input {
+        margin-top: 2px;
+        flex: none;
+      }
+      label.row .k {
+        color: #fbbf24;
+        font-weight: 600;
+        flex: none;
+        width: 14px;
+      }
+      label.row .d {
+        color: #9ca3af;
+        display: block;
+        font-size: 11px;
+      }
+      .radios {
+        display: flex;
+        gap: 10px;
+        padding: 3px 0 6px;
+      }
+      .radios label {
+        display: flex;
+        gap: 4px;
+        align-items: center;
+        cursor: pointer;
+      }
+      .btns {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+        margin: 10px 0 4px;
+      }
+      button {
+        background: #1f2937;
+        color: #e5e7eb;
+        border: 1px solid rgba(255, 255, 255, 0.15);
+        border-radius: 6px;
+        padding: 5px 8px;
+        font-size: 11.5px;
+        cursor: pointer;
+      }
+      button:hover {
+        background: #374151;
+      }
+      button.primary {
+        background: #1d4ed8;
+        border-color: #3b82f6;
+      }
+      .focus-label {
+        background: rgba(17, 24, 39, 0.92);
+        color: #fff;
+        border: 1px solid rgba(255, 255, 255, 0.25);
+        border-radius: 5px;
+        padding: 3px 7px;
+        font-size: 11.5px;
+        font-weight: 600;
+        white-space: nowrap;
+        transform: translateY(-14px);
+        pointer-events: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="map"></div>
+    <div id="panel">
+      <h1>Stop focus + pathway sandbox</h1>
+      <p class="hint">
+        Click any stop to focus it. All toggles off = current app styling.
+      </p>
+      <div class="btns">
+        <button id="btn-baseline">Baseline</button>
+        <button id="btn-shortlist" class="primary">Shipped</button>
+        <button id="btn-all">All on</button>
+      </div>
+
+      <h2>Scene</h2>
+      <div id="scene"></div>
+
+      <h2>Focused stop</h2>
+      <div class="radios" id="growth-radios"></div>
+      <div id="focus-toggles"></div>
+
+      <h2>Pathways</h2>
+      <div id="pathway-toggles"></div>
+    </div>
+    <script type="module" src="./sandbox.js"></script>
+  </body>
+</html>

@@ -75,7 +75,7 @@ export class PageStateManager {
 
   /**
    * Set the async validator used to check whether a restored page state still
-   * refers to an existing object.  Returns false → fall back to home.
+   * refers to an existing object.  Returns false to fall back to home.
    */
   setStateValidator(fn: StateValidator): void {
     this.stateValidator = fn;
@@ -511,8 +511,8 @@ export class PageStateManager {
 
   /**
    * Convert a hash string (no leading `#`) to a PageState.
-   * Parses with URLSearchParams.  Priority: stop → service (no route) →
-   * timetable (route + service) → route → agency → home.
+   * Parses with URLSearchParams.  Priority: stop -> service (no route) ->
+   * timetable (route + service) -> route -> agency -> home.
    * Always returns a valid PageState (never null).
    */
   urlToPageState(hash: string): PageState {

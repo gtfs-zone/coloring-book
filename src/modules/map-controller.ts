@@ -108,7 +108,7 @@ export class MapController {
     this.subscribeToPatchEvents(patchManager);
     this.isInitialized = true;
 
-    console.log('🗺️ MapController initialized successfully');
+    console.log('MapController initialized successfully');
   }
 
   /**
@@ -149,7 +149,7 @@ export class MapController {
     for (const op of ops) {
       const { table, id } = op.source;
       console.log(
-        `[MapController] patch ${table}:${id} op=${op.op} → dispatching invalidation`
+        `[MapController] patch ${table}:${id} op=${op.op} -> dispatching invalidation`
       );
 
       switch (table) {
@@ -198,13 +198,13 @@ export class MapController {
           break;
         }
         case 'shapes': {
-          // Composite key: shape_id:shape_pt_sequence — extract shape_id
+          // Composite key: shape_id:shape_pt_sequence, extract shape_id
           const shapeId = id.slice(0, id.lastIndexOf(':'));
           this.routeRenderer.invalidateShape(shapeId, op.op);
           break;
         }
         case 'stop_times': {
-          // Composite key: trip_id:stop_sequence — extract trip_id
+          // Composite key: trip_id:stop_sequence, extract trip_id
           const tripId = id.slice(0, id.lastIndexOf(':'));
           this.routeRenderer.invalidateStopTimes(tripId, op.op);
           break;
@@ -281,7 +281,7 @@ export class MapController {
     // Setup basemap change handler to re-add layers
     this.setupBasemapChangeHandler();
 
-    // Start RouteRenderer initialization in the background — don't block UI setup.
+    // Start RouteRenderer initialization in the background, don't block UI setup.
     // ensureInitialized() is called lazily from renderRoutes/updateMap when needed.
   }
 
@@ -321,7 +321,7 @@ export class MapController {
     this.basemapChangeHandlerSet = true;
 
     this.map.on('basemap:changed', async () => {
-      console.log('🗺️ Re-adding GTFS layers after basemap change...');
+      console.log('Re-adding GTFS layers after basemap change...');
 
       // Check if we have GTFS data loaded
       if (!this.gtfsParser || !this.gtfsParser.getFileDataSync('stops.txt')) {
@@ -350,7 +350,7 @@ export class MapController {
           });
 
           // Restore highlights and expanded station/pathways if any.
-          // Reset focusedObject first so applyFocusedObject sees oldStation→newStation
+          // Reset focusedObject first so applyFocusedObject sees oldStation -> newStation
           // as a real change and re-expands the station (recreating the pathway layer).
           const obj = this.focusedObject;
           this.focusedObject = { type: 'none' };
@@ -362,9 +362,9 @@ export class MapController {
             this.layerManager.highlightTrip(obj.id);
           }
 
-          console.log('✅ GTFS layers re-added after basemap change');
+          console.log('GTFS layers re-added after basemap change');
         } catch (error) {
-          console.error('❌ Failed to re-add GTFS layers:', error);
+          console.error('Failed to re-add GTFS layers:', error);
         }
       }
     });
@@ -423,7 +423,7 @@ export class MapController {
     // Fit map to show all data
     this.fitMapToData();
 
-    console.log('✅ Map update completed');
+    console.log('Map update completed');
   }
 
   /**
@@ -617,11 +617,18 @@ export class MapController {
       }
       this.callbacks.onStationExpandChange?.();
     } else if (newStation) {
-      // Station unchanged but focused object may have changed — update pathway highlight
+      // Station unchanged but focused object may have changed, update pathway highlight
       this.layerManager?.setFocusedPathway(
         obj.type === 'pathway' ? obj.id : null
       );
     }
+  }
+
+  /**
+   * Repaint the accent-colored map styling after a theme switch.
+   */
+  public refreshAccentColor(): void {
+    this.layerManager?.refreshAccentColor();
   }
 
   /**
@@ -639,7 +646,7 @@ export class MapController {
    * Sole owner of the route spotlight: dims non-matching route lines and
    * reveals the given routes' stops (visible/clickable at any zoom). Pass
    * null to clear. Callers must not call routeRenderer.highlightRoute(s) or
-   * layerManager.setRouteStops directly — go through this method so the two
+   * layerManager.setRouteStops directly, go through this method so the two
    * halves never get applied separately.
    */
   private applySpotlight(route_ids: string[] | null): void {
@@ -677,7 +684,7 @@ export class MapController {
     // Smoothly fly to route bounds
     this.flyToRoute(route_id);
 
-    console.log(`🎯 Highlighted route: ${route_id}`);
+    console.log(`Highlighted route: ${route_id}`);
   }
 
   /**
@@ -697,7 +704,7 @@ export class MapController {
     this.applySpotlight(route_ids.length > 0 ? route_ids : null);
 
     // For child stops and stations, applyFocusedObject already flew to the
-    // expanded station via flyToStation — skip the individual-stop flyTo so
+    // expanded station via flyToStation, skip the individual-stop flyTo so
     // it doesn't override the station fit. Only fly to the stop directly when
     // no station is expanded (i.e. standalone stops).
     if (this.getExpandedStationId() === null) {
@@ -723,11 +730,11 @@ export class MapController {
         });
       }
     }
-    console.log(`🎯 Highlighted stop: ${stop_id}`);
+    console.log(`Highlighted stop: ${stop_id}`);
   }
 
   /**
-   * Highlight specific pathway. Mirrors highlightStop/highlightRoute — used
+   * Highlight specific pathway. Mirrors highlightStop/highlightRoute, used
    * when navigation to a pathway originates from the side panel or a URL hash
    * rather than an on-map click.
    */
@@ -738,7 +745,7 @@ export class MapController {
 
     this.applyFocusedObject({ type: 'pathway', id: pathway_id });
 
-    console.log(`🎯 Highlighted pathway: ${pathway_id}`);
+    console.log(`Highlighted pathway: ${pathway_id}`);
   }
 
   /**
@@ -755,7 +762,7 @@ export class MapController {
 
     // Fit map to trip if available
     this.fitMapToTrip(trip_id);
-    console.log(`🎯 Highlighted trip: ${trip_id}`);
+    console.log(`Highlighted trip: ${trip_id}`);
   }
 
   /**
@@ -1111,7 +1118,7 @@ export class MapController {
     try {
       if (this.gtfsParser?.updateStopCoordinates) {
         await this.gtfsParser.updateStopCoordinates(stop_id, lat, lng);
-        console.log(`✅ Updated coordinates for stop ${stop_id}`);
+        console.log(`Updated coordinates for stop ${stop_id}`);
 
         // Update layer data
         this.layerManager?.invalidateCoordResolver();
@@ -1137,7 +1144,7 @@ export class MapController {
   }
 
   /**
-   * Handle pathway creation — rebuild pathways layer and navigate to the new pathway
+   * Handle pathway creation: rebuild pathways layer and navigate to the new pathway
    */
   private async handlePathwayCreated(pathway_id: string): Promise<void> {
     console.log(`Pathway ${pathway_id} created`);
@@ -1240,7 +1247,7 @@ export class MapController {
     this.focusedObject = { type: 'none' };
     this.isInitialized = false;
 
-    console.log('🧹 MapController destroyed');
+    console.log('MapController destroyed');
   }
 
   /**

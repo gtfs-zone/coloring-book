@@ -11,9 +11,9 @@ import type { QueryOnlyDatabase } from '../utils/field-component.js';
 import { normalizeAgencyId } from '../utils/agency-helpers.js';
 import { renderTrashIcon } from './modal-utils.js';
 import {
-  renderRouteReference,
-  ROUTE_REF_ROW,
-  ENTITY_REF_BTN,
+  renderTimetableReference,
+  TIMETABLE_REF_ROW,
+  VIEW_ROUTE_BTN,
 } from '../utils/entity-references.js';
 
 export interface ServiceViewDependencies {
@@ -75,10 +75,13 @@ export class ServiceViewController {
         );
       }
 
+      const { calendar, calendarDates } =
+        await this.getServiceCalendar(service_id);
+
       const html = `
         <div class="p-4 space-y-4">
           ${await this.renderServiceProperties(service_id)}
-          ${this.renderTimetablesSection(routes, agencyNameByNormalizedId, tripCountByRoute, service_id)}
+          ${this.renderTimetablesSection(routes, agencyNameByNormalizedId, tripCountByRoute, calendar, calendarDates)}
         </div>
       `;
       console.log('Service view HTML length:', html.length);
@@ -87,6 +90,35 @@ export class ServiceViewController {
       console.error('Error rendering service view:', error);
       return this.renderError('Failed to load service information.');
     }
+  }
+
+  /**
+   * The calendar row and exception dates behind a service. A service may live
+   * only in calendar_dates.txt, in which case there is no calendar row and the
+   * caller falls back to the bare service_id.
+   */
+  private async getServiceCalendar(service_id: string): Promise<{
+    calendar: Record<string, unknown>;
+    calendarDates: Array<{ date: string; exception_type: string | number }>;
+  }> {
+    if (!this.dependencies.gtfsDatabase) {
+      return { calendar: { service_id }, calendarDates: [] };
+    }
+    const calendarRows = await this.dependencies.gtfsDatabase.queryRows(
+      'calendar',
+      { service_id }
+    );
+    const calendarDates = (await this.dependencies.gtfsDatabase.queryRows(
+      'calendar_dates',
+      { service_id }
+    )) as Array<{ date: string; exception_type: string | number }>;
+    return {
+      calendar:
+        calendarRows.length > 0
+          ? (calendarRows[0] as Record<string, unknown>)
+          : { service_id },
+      calendarDates,
+    };
   }
 
   /**
@@ -200,7 +232,8 @@ export class ServiceViewController {
     routes: Routes[],
     agencyNameByNormalizedId: Map<string, string>,
     tripCountByRoute: Map<string, number>,
-    service_id: string
+    calendar: Record<string, unknown>,
+    calendarDates: Array<{ date: string; exception_type: string | number }>
   ): string {
     if (routes.length === 0) {
       return `
@@ -220,11 +253,16 @@ export class ServiceViewController {
     const items = routes
       .map((route) => {
         const normalizedId = normalizeAgencyId(route.agency_id);
-        return renderRouteReference(route as Record<string, unknown>, {
-          agencyName: agencyNameByNormalizedId.get(normalizedId),
-          tripCount: tripCountByRoute.get(route.route_id),
-          service_id,
-        });
+        return renderTimetableReference(
+          route as Record<string, unknown>,
+          calendar,
+          {
+            calendarDates,
+            agencyName: agencyNameByNormalizedId.get(normalizedId),
+            tripCount: tripCountByRoute.get(route.route_id),
+            hide: 'service',
+          }
+        );
       })
       .join('');
 
@@ -270,8 +308,8 @@ export class ServiceViewController {
       });
     }
 
-    // Route reference row click → timetable
-    const routeRows = container.querySelectorAll(`.${ROUTE_REF_ROW}`);
+    // Timetable row click goes to the timetable
+    const routeRows = container.querySelectorAll(`.${TIMETABLE_REF_ROW}`);
     routeRows.forEach((row) => {
       row.addEventListener('click', () => {
         const route_id = row.getAttribute('data-route-id');
@@ -282,8 +320,8 @@ export class ServiceViewController {
       });
     });
 
-    // "View Route" button click → route page
-    const entityBtns = container.querySelectorAll(`.${ENTITY_REF_BTN}`);
+    // "Route" button click goes to route page
+    const entityBtns = container.querySelectorAll(`.${VIEW_ROUTE_BTN}`);
     entityBtns.forEach((btn) => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();

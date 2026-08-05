@@ -40,4 +40,4 @@ const fileNames = GTFSMetadata.getAllFileNames();
 console.log(`Total files with schemas: ${fileNames.length}`);
 console.log('Sample files:', fileNames.slice(0, 5));
 
-console.log('\n✅ Metadata system test completed successfully!');
+console.log('\nMetadata system test completed successfully!');

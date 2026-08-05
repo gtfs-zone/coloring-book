@@ -266,12 +266,12 @@ export class NotificationSystem {
    * Lightly format a notification message for readability. Uses typography
    * tiers (weight / monospace / opacity) rather than hue, so it stays legible
    * on any colored alert background and across themes:
-   * - `"name/id"` (quoted entity token from humanLabel) → a monospace chip so
+   * - `"name/id"` (quoted entity token from humanLabel) becomes a monospace chip so
    *   long ids are visually distinct from prose and wrap anywhere (#135).
-   * - `(field, field)` (changed-field summary) → muted monospace so GTFS keys
+   * - `(field, field)` (changed-field summary) becomes muted monospace so GTFS keys
    *   read as keys, not prose.
-   * - `created` / `updated` / `deleted` (change verbs) → bold, for quick scan.
-   * Everything else is plain escaped text. Purely presentational — the
+   * - `created` / `updated` / `deleted` (change verbs) become bold, for quick scan.
+   * Everything else is plain escaped text. Purely presentational, the
    * underlying wording stays identical to the Changes panel / undo-redo labels.
    */
   private formatMessage(message: string): string {

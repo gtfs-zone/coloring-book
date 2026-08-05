@@ -6,6 +6,14 @@ export function renderUploadIcon(sizeClass = 'h-4 w-4'): string {
   return `<svg xmlns="http://www.w3.org/2000/svg" class="${sizeClass}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>`;
 }
 
+/**
+ * Route-waypoints icon: start/end pins connected by a path, matching the
+ * "open in brouter" affordance without spending a wide `->` text link.
+ */
+export function renderRouteWaypointsIcon(sizeClass = 'h-4 w-4'): string {
+  return `<svg xmlns="http://www.w3.org/2000/svg" class="${sizeClass}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 4a2 2 0 100 4 2 2 0 000-4zM18 16a2 2 0 100 4 2 2 0 000-4z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 8v3a3 3 0 003 3h6a3 3 0 013 3v-1" /></svg>`;
+}
+
 export interface ModalAction {
   label: string;
   className?: string;
@@ -17,11 +25,11 @@ export interface ModalAction {
  * Buttons are disabled while the action's onClick promise is pending.
  * If onClick returns true, the modal stays open (for validation failures).
  *
- * `enterAction` — index of the action triggered by Enter (skipped when focused
+ * `enterAction`: index of the action triggered by Enter (skipped when focused
  *   element is a <button> or <textarea>).
- * `escapeAction` — index of the action triggered by Escape; also controls
+ * `escapeAction`: index of the action triggered by Escape; also controls
  *   whether the X button is rendered.
- * `onMount` — called after the modal is in the DOM; receives a `close`
+ * `onMount`: called after the modal is in the DOM; receives a `close`
  *   callback so the mount handler can close the modal programmatically.
  */
 export async function showModal(options: {
@@ -39,7 +47,7 @@ export async function showModal(options: {
     modal.className = 'modal modal-open';
     modal.innerHTML = `
       <div class="modal-box relative max-h-[80vh] flex flex-col ${options.boxClassName ?? ''}">
-        ${options.escapeAction !== undefined ? '<button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2" data-dismiss>✕</button>' : ''}
+        ${options.escapeAction !== undefined ? '<button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2" data-dismiss>×</button>' : ''}
         <h3 class="font-bold text-lg">${options.title}</h3>
         <div class="flex-1 overflow-y-auto py-4">${options.body}</div>
         <div class="modal-action">

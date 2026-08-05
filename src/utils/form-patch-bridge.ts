@@ -54,7 +54,7 @@ export function attachFormPatchListeners(
       ];
       const row = pkField
         ? rows?.find((r) => String(r[pkField]) === recordId)
-        : rows?.[0]; // feed_info has no PK — use first row
+        : rows?.[0]; // feed_info has no PK, use first row
 
       const before = String(row?.[field] ?? '');
 

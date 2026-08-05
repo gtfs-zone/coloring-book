@@ -43,9 +43,7 @@ export class TabLockController {
     if (this.overlay) {
       return;
     }
-    console.log(
-      '[TabLock] Tab deactivated — another tab claimed active status'
-    );
+    console.log('[TabLock] Tab deactivated, another tab claimed active status');
     const overlay = document.createElement('div');
     overlay.className =
       'fixed inset-0 z-[200] bg-base-300/80 backdrop-blur-sm flex items-center justify-center';

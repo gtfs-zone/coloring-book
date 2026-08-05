@@ -36,7 +36,7 @@ function showURLErrorModal(url: string, error: Error) {
     body: `
       <p><code class="break-all whitespace-pre-wrap">${escapeHtml(error.message)}</code></p>
       <p>Attempted URL: <a href="${url}" target="_blank" rel="noopener" class="link">${escapeHtml(url)}</a></p>
-      <p class="text-sm text-base-content/60">Some feeds block direct browser requests (CORS). You can try opening the link above to download the file, then upload it directly using Load → Upload.</p>
+      <p class="text-sm text-base-content/60">Some feeds block direct browser requests (CORS). You can try opening the link above to download the file, then upload it directly using Load -> Upload.</p>
     `,
     enterAction: 0,
     escapeAction: 0,
@@ -897,7 +897,7 @@ export class UIController {
         // Agency icon
         const iconEl = document.createElement('div');
         iconEl.className = 'text-lg flex-shrink-0';
-        iconEl.textContent = '🏢';
+        iconEl.textContent = '';
 
         const nameEl = document.createElement('span');
         nameEl.className = 'text-sm font-medium flex-1';

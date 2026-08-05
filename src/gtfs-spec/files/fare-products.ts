@@ -4,7 +4,7 @@ export const fareProductsSpec: GTFSFileSpec = {
   filename: 'fare_products.txt',
   presence: 'Optional',
   description:
-    'Describes the different types of tickets or fares that can be purchased by riders. Part of the Fares v2 model — separate from the legacy Fares v1 model (fare_attributes.txt, fare_rules.txt). The primary key is a composite of fare_product_id, rider_category_id, and fare_media_id.',
+    'Describes the different types of tickets or fares that can be purchased by riders. Part of the Fares v2 model, separate from the legacy Fares v1 model (fare_attributes.txt, fare_rules.txt). The primary key is a composite of fare_product_id, rider_category_id, and fare_media_id.',
   fields: [
     {
       name: 'fare_product_id',

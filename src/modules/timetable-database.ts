@@ -6,7 +6,6 @@
 
 import { StopTimes, GTFSTableMap } from '../types/gtfs-entities.js';
 import { StopTimesSchema } from '../types/gtfs.js';
-import { generateCompositeKeyFromRecord } from '../utils/gtfs-primary-keys.js';
 import { notify } from './notification-system.js';
 
 interface GTFSParserInterface {
@@ -15,19 +14,23 @@ interface GTFSParserInterface {
       tableName: T,
       filter?: { [key: string]: string | number | boolean }
     ): Promise<GTFSTableMap[T][]>;
-    updateRow<T extends keyof GTFSTableMap>(
-      tableName: T,
-      key: string,
-      data: Partial<GTFSTableMap[T]>
-    ): Promise<void>;
-    replaceRows<T extends keyof GTFSTableMap>(
-      tableName: T,
-      oldKeys: string[],
-      newRows: GTFSTableMap[T][]
-    ): Promise<void>;
   };
-  getFileDataSync(fileName: string): Record<string, unknown>[];
-  setInMemoryFileData(fileName: string, data: Record<string, unknown>[]): void;
+}
+
+/**
+ * The full before/after row set for one trip, produced by planStopTimeEdit.
+ *
+ * Nothing is written: the caller diffs the two sets, writes once, and records
+ * the matching patch, so a stop_time create or a stop_sequence renumber is
+ * never invisible to the patch log.
+ */
+export interface StopTimeEditPlan {
+  /** Every stop_time of the trip as it currently stands. */
+  beforeRows: StopTimes[];
+  /** The same rows after the edit, re-sorted and renumbered from 0. */
+  afterRows: StopTimes[];
+  /** True when the edit creates a stop_time that did not exist. */
+  isInsert: boolean;
 }
 
 /**
@@ -56,348 +59,116 @@ export class TimetableDatabase {
   }
 
   /**
-   * Get current time for a stop in a trip (legacy single time method)
+   * Plan the effect of a single arrival/departure edit on a trip, without writing.
    *
-   * Legacy method that returns a single time value for display purposes.
-   * Prefers departure_time, falls back to arrival_time if departure is null.
-   * Follows FAIL HARD policy - throws on database connection or query failures.
+   * Returns the trip's complete stop_times before and after the edit so the
+   * caller can diff them, write once, and record one patch. This is the only
+   * place stop_sequence numbering is decided.
    *
-   * @param trip_id - GTFS trip identifier
-   * @param stop_id - GTFS stop identifier
-   * @returns Promise resolving to time string or null if no times set
-   * @throws {Error} When database connection unavailable or stop_time not found
-   */
-  async getCurrentTime(
-    trip_id: string,
-    stop_id: string
-  ): Promise<string | null> {
-    const database = this.gtfsParser.gtfsDatabase;
-    if (!database) {
-      const error = 'Database connection not available';
-      console.error(error);
-      notify.error('Database connection lost');
-      throw new Error(error);
-    }
-
-    const stopTimes = await database.queryRows('stop_times', {
-      trip_id: trip_id,
-      stop_id: stop_id,
-    });
-
-    if (stopTimes.length === 0) {
-      const error = `No stop_time found for trip ${trip_id}, stop ${stop_id}`;
-      console.error('Database query failed:', error);
-      notify.error('Schedule record not found');
-      throw new Error(error);
-    }
-
-    // Return departure_time or fall back to arrival_time
-    const stopTime = stopTimes[0];
-    return stopTime.departure_time || stopTime.arrival_time || null;
-  }
-
-  /**
-   * Get current arrival time for a stop in a trip
-   *
-   * Retrieves the arrival_time field specifically for a stop_time record.
-   * Used for separate arrival/departure time handling.
-   * Follows FAIL HARD policy - throws on database issues.
+   * The target row is located by stop_sequence when the caller knows it
+   * (unambiguous on loop routes, where one stop_id appears several times in a
+   * trip); `forceInsert` skips the lookup entirely for the pending add-stop row.
    *
    * @param trip_id - GTFS trip identifier
    * @param stop_id - GTFS stop identifier
-   * @returns Promise resolving to arrival time string or null
-   * @throws {Error} When database connection unavailable or stop_time not found
+   * @param timeType - Which field to write ('arrival' or 'departure')
+   * @param newTime - New HH:MM:SS value, or null to clear the field
+   * @param stopSequence - stop_sequence of the row being edited, when known
+   * @param forceInsert - Always create a new stop_time instead of editing one
+   * @throws {Error} When the time fails GTFS schema validation
    */
-  async getCurrentArrivalTime(
-    trip_id: string,
-    stop_id: string
-  ): Promise<string | null> {
-    const database = this.gtfsParser.gtfsDatabase;
-    if (!database) {
-      const error = 'Database connection not available';
-      console.error(error);
-      notify.error('Database connection lost');
-      throw new Error(error);
-    }
-
-    const stopTimes = await database.queryRows('stop_times', {
-      trip_id: trip_id,
-      stop_id: stop_id,
-    });
-
-    if (stopTimes.length === 0) {
-      const error = `No stop_time found for trip ${trip_id}, stop ${stop_id}`;
-      console.error('Database query failed:', error);
-      notify.error('Schedule record not found');
-      throw new Error(error);
-    }
-
-    const stopTime = stopTimes[0];
-    return stopTime.arrival_time || null;
-  }
-
-  /**
-   * Get current departure time for a stop in a trip
-   *
-   * Retrieves the departure_time field specifically for a stop_time record.
-   * Used for separate arrival/departure time handling.
-   * Follows FAIL HARD policy - throws on database issues.
-   *
-   * @param trip_id - GTFS trip identifier
-   * @param stop_id - GTFS stop identifier
-   * @returns Promise resolving to departure time string or null
-   * @throws {Error} When database connection unavailable or stop_time not found
-   */
-  async getCurrentDepartureTime(
-    trip_id: string,
-    stop_id: string
-  ): Promise<string | null> {
-    const database = this.gtfsParser.gtfsDatabase;
-    if (!database) {
-      const error = 'Database connection not available';
-      console.error(error);
-      notify.error('Database connection lost');
-      throw new Error(error);
-    }
-
-    const stopTimes = await database.queryRows('stop_times', {
-      trip_id: trip_id,
-      stop_id: stop_id,
-    });
-
-    if (stopTimes.length === 0) {
-      const error = `No stop_time found for trip ${trip_id}, stop ${stop_id}`;
-      console.error('Database query failed:', error);
-      notify.error('Schedule record not found');
-      throw new Error(error);
-    }
-
-    const stopTime = stopTimes[0];
-    return stopTime.departure_time || null;
-  }
-
-  /**
-   * Update stop_time in database
-   *
-   * Main method for updating individual time fields in stop_times table.
-   * Validates time format using GTFS schema before database update.
-   * Shows success notifications and logs changes.
-   * Follows FAIL HARD policy - throws on validation or database failures.
-   *
-   * @param trip_id - GTFS trip identifier
-   * @param stop_id - GTFS stop identifier
-   * @param newTime - New time value or null to clear the field
-   * @param timeType - Which field to update ('arrival' or 'departure', defaults to 'departure')
-   * @throws {Error} When validation fails, database unavailable, or record not found
-   */
-  async updateStopTimeInDatabase(
+  async planStopTimeEdit(
     trip_id: string,
     stop_id: string,
+    timeType: 'arrival' | 'departure',
     newTime: string | null,
-    timeType?: 'arrival' | 'departure'
-  ): Promise<void> {
-    // Access the database through gtfsParser
-    const database = this.gtfsParser.gtfsDatabase;
-    if (!database) {
-      const error = 'Database connection not available';
-      console.error(error);
-      notify.error('Unable to save changes - database connection lost');
-      throw new Error(error);
-    }
-
-    // Validate time format using GTFS schema if not null
+    stopSequence?: string,
+    forceInsert = false
+  ): Promise<StopTimeEditPlan> {
     if (newTime !== null) {
       const timeValidation =
-        // Cast to z.ZodType to access safeParse — ZodTypeAny from ZodRawShape
+        // Cast to z.ZodType to access safeParse, ZodTypeAny from ZodRawShape
         // doesn't expose safeParse in its TypeScript type in Zod v4
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (StopTimesSchema.shape.arrival_time as any).safeParse(newTime);
       if (!timeValidation.success) {
         const error = `Invalid time format: ${newTime}. Must be HH:MM:SS format.`;
         console.error('Time validation failed:', timeValidation.error);
-        notify.error(`Invalid time format: ${newTime}`);
         throw new Error(error);
       }
     }
 
-    // Find the stop_time record by trip_id and stop_id
-    const stopTimes = await database.queryRows('stop_times', {
-      trip_id: trip_id,
-      stop_id: stop_id,
-    });
+    const field = timeType === 'arrival' ? 'arrival_time' : 'departure_time';
+    const beforeRows = await this.gtfsParser.gtfsDatabase.queryRows(
+      'stop_times',
+      { trip_id }
+    );
+    beforeRows.sort(
+      (a, b) => Number(a.stop_sequence) - Number(b.stop_sequence)
+    );
 
-    if (stopTimes.length === 0) {
-      // This trip doesn't have this stop yet - INSERT new stop_time record
-      const allStopTimesForTrip = await database.queryRows('stop_times', {
-        trip_id: trip_id,
-      });
+    const targetIndex = forceInsert
+      ? -1
+      : beforeRows.findIndex((st) =>
+          stopSequence !== undefined && stopSequence !== ''
+            ? String(st.stop_sequence) === stopSequence
+            : st.stop_id === stop_id
+        );
 
-      // Create new stop_time record with only the specified time field
-      const field = timeType === 'arrival' ? 'arrival_time' : 'departure_time';
-      const newStopTime: Record<string, string | null> = {
-        trip_id: trip_id,
-        stop_id: stop_id,
-        stop_sequence: '0', // Temporary, will be renumbered
+    const edited = beforeRows.map((st) => ({ ...st }));
+    const isInsert = targetIndex === -1;
+    if (isInsert) {
+      edited.push({
+        trip_id,
+        stop_id,
+        stop_sequence: 0,
         arrival_time: null,
         departure_time: null,
-      };
-      newStopTime[field] = newTime;
-
-      // ATOMIC: Add new record and renumber all in single transaction
-      // Combine existing + new, sort by time, and replace all at once
-      const allStopTimes = [...allStopTimesForTrip, newStopTime];
-
-      // Sort by time
-      const sortedStopTimes = allStopTimes.sort((a, b) => {
-        const timeA = a.arrival_time || a.departure_time || '99:99:99';
-        const timeB = b.arrival_time || b.departure_time || '99:99:99';
-        return timeA.localeCompare(timeB);
-      });
-
-      // Renumber sequences
-      const renumberedStopTimes = sortedStopTimes.map((st, index) => ({
-        ...st,
-        stop_sequence: index,
-      }));
-
-      // Get old keys for deletion (only existing records, not the new one)
-      const oldKeys = allStopTimesForTrip.map((st) =>
-        generateCompositeKeyFromRecord('stop_times', st)
-      );
-
-      // Replace all in single transaction (delete old, insert new + renumbered)
-      await database.replaceRows(
-        'stop_times',
-        oldKeys,
-        renumberedStopTimes as unknown as StopTimes[]
-      );
-
-      notify.success(`Added stop to trip`, { duration: 2000 });
-      return;
+        [field]: newTime,
+      } as unknown as StopTimes);
+    } else {
+      (edited[targetIndex] as unknown as Record<string, unknown>)[field] =
+        newTime;
     }
 
-    // Use the first matching record (there should be only one)
-    const stopTime = stopTimes[0];
+    // Numbers, not strings: the parser coerces every *_sequence field to a
+    // number, and queryRows filters compare with ===, so a stringified
+    // stop_sequence makes the row unfindable by its own primary key.
+    const afterRows = this.reorderByTime(edited).map((st, index) => ({
+      ...st,
+      stop_sequence: index,
+    })) as unknown as StopTimes[];
 
-    // Determine which field to update
-    const field =
-      timeType === 'arrival'
-        ? 'arrival_time'
-        : timeType === 'departure'
-          ? 'departure_time'
-          : 'departure_time';
-
-    // Generate composite key for the stop_time record and update
-    const naturalKey = generateCompositeKeyFromRecord('stop_times', stopTime);
-    await database.updateRow('stop_times', naturalKey, {
-      [field]: newTime,
-    });
+    return { beforeRows, afterRows, isInsert };
   }
 
   /**
-   * Update both arrival and departure times to the same value (linked times)
+   * Sort a trip's rows into chronological order, moving only the timed ones.
    *
-   * Sets both arrival_time and departure_time fields to the same value.
-   * Used for stops without dwell time where arrival equals departure.
-   * Validates time format and provides appropriate user feedback.
-   * Follows FAIL HARD policy - throws on validation or database failures.
-   *
-   * @param trip_id - GTFS trip identifier
-   * @param stop_id - GTFS stop identifier
-   * @param newTime - New time value for both fields, or null to clear both
-   * @throws {Error} When validation fails, database unavailable, or record not found
+   * Rows with no arrival and no departure keep the slot they already occupy:
+   * in feeds that only time their timepoints, sorting them alongside timed rows
+   * would fling every untimed stop to one end of the trip.
    */
-  async updateLinkedTimes(
-    trip_id: string,
-    stop_id: string,
-    newTime: string | null
-  ): Promise<void> {
-    const database = this.gtfsParser.gtfsDatabase;
-    if (!database) {
-      const error = 'Database connection not available';
-      console.error(error);
-      notify.error('Unable to save changes - database connection lost');
-      throw new Error(error);
-    }
+  private reorderByTime(rows: StopTimes[]): StopTimes[] {
+    const timeOf = (st: StopTimes): string =>
+      st.arrival_time || st.departure_time || '';
 
-    // Validate time format using GTFS schema if not null
-    if (newTime !== null) {
-      const timeValidation =
-        // Cast to z.ZodType to access safeParse — ZodTypeAny from ZodRawShape
-        // doesn't expose safeParse in its TypeScript type in Zod v4
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        (StopTimesSchema.shape.arrival_time as any).safeParse(newTime);
-      if (!timeValidation.success) {
-        const error = `Invalid time format: ${newTime}. Must be HH:MM:SS format.`;
-        console.error('Time validation failed:', timeValidation.error);
-        notify.error(`Invalid time format: ${newTime}`);
-        throw new Error(error);
+    const timedSlots: number[] = [];
+    rows.forEach((st, index) => {
+      if (timeOf(st)) {
+        timedSlots.push(index);
       }
-    }
-
-    // Find the stop_time record
-    const stopTimes = await database.queryRows('stop_times', {
-      trip_id: trip_id,
-      stop_id: stop_id,
     });
 
-    if (stopTimes.length === 0) {
-      // This trip doesn't have this stop yet - INSERT new stop_time record
-      const allStopTimesForTrip = await database.queryRows('stop_times', {
-        trip_id: trip_id,
-      });
+    const sortedTimed = timedSlots
+      .map((index) => rows[index])
+      .sort((a, b) => timeOf(a).localeCompare(timeOf(b)));
 
-      // Create new stop_time record (sequence will be determined after sorting)
-      const newStopTime = {
-        trip_id: trip_id,
-        stop_id: stop_id,
-        stop_sequence: 0, // Temporary, will be renumbered
-        arrival_time: newTime ?? '',
-        departure_time: newTime ?? '',
-      };
-
-      // ATOMIC: Add new record and renumber all in single transaction
-      // Combine existing + new, sort by time, and replace all at once
-      const allStopTimes = [...allStopTimesForTrip, newStopTime];
-
-      // Sort by time (using newTime for records without times)
-      const sortedStopTimes = allStopTimes.sort((a, b) => {
-        const timeA = a.arrival_time || a.departure_time || '99:99:99';
-        const timeB = b.arrival_time || b.departure_time || '99:99:99';
-        return timeA.localeCompare(timeB);
-      });
-
-      // Renumber sequences
-      const renumberedStopTimes = sortedStopTimes.map((st, index) => ({
-        ...st,
-        stop_sequence: index,
-      }));
-
-      // Get old keys for deletion (only existing records, not the new one)
-      const oldKeys = allStopTimesForTrip.map((st) =>
-        generateCompositeKeyFromRecord('stop_times', st)
-      );
-
-      // Replace all in single transaction (delete old, insert new + renumbered)
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await (database as any).replaceRows(
-        'stop_times',
-        oldKeys,
-        renumberedStopTimes
-      );
-
-      notify.success(`Added stop to trip`, { duration: 2000 });
-      return;
-    }
-
-    const stopTime = stopTimes[0];
-    const naturalKey = generateCompositeKeyFromRecord('stop_times', stopTime);
-
-    // Update both times to the same value
-    await database.updateRow('stop_times', naturalKey, {
-      arrival_time: newTime ?? undefined,
-      departure_time: newTime ?? undefined,
+    const result = [...rows];
+    timedSlots.forEach((slot, i) => {
+      result[slot] = sortedTimed[i];
     });
+    return result;
   }
 
   /**
@@ -426,7 +197,7 @@ export class TimetableDatabase {
     }
 
     if (stop_sequence) {
-      // Unambiguous lookup by primary key — required for loop routes where
+      // Unambiguous lookup by primary key, required for loop routes where
       // the same stop_id appears at multiple positions.
       const results = await database.queryRows('stop_times', {
         trip_id,
@@ -458,15 +229,17 @@ export class TimetableDatabase {
    * @param stop_id - GTFS stop identifier
    * @param timeType - Which time field is being updated ('arrival' or 'departure')
    * @param newTime - New time value to validate against existing time
+   * @param stop_sequence - stop_sequence of the edited row, when known
    * @returns Promise resolving to validation result with optional error message
    */
   async validateArrivalDepartureConstraint(
     trip_id: string,
     stop_id: string,
     timeType: 'arrival' | 'departure',
-    newTime: string
+    newTime: string,
+    stop_sequence?: string
   ): Promise<{ isValid: boolean; errorMessage?: string }> {
-    const stopTime = await this.getStopTime(trip_id, stop_id);
+    const stopTime = await this.getStopTime(trip_id, stop_id, stop_sequence);
     if (!stopTime) {
       // No existing record means no constraints to validate
       return { isValid: true };
@@ -499,111 +272,5 @@ export class TimetableDatabase {
     }
 
     return { isValid: true };
-  }
-
-  /**
-   * Rebuild stop_times for a trip from the rendered table (source of truth)
-   *
-   * Scans the DOM table to find all time inputs for this trip, builds a fresh
-   * stop_times list, and replaces all database records. This ensures the database
-   * matches exactly what's shown in the table.
-   *
-   * - Table is source of truth (WYSIWYG)
-   * - Skipped stops have no database entry (gaps are preserved)
-   * - Stop sequence determined by time order
-   * - Handles add/remove/edit cases atomically
-   *
-   * @param trip_id - GTFS trip identifier
-   * @throws {Error} When database connection unavailable or updates fail
-   */
-  async rebuildStopTimesFromTable(trip_id: string): Promise<void> {
-    const database = this.gtfsParser.gtfsDatabase;
-    if (!database) {
-      const error = 'Database connection not available';
-      console.error(error);
-      notify.error('Database connection lost');
-      throw new Error(error);
-    }
-
-    // Find all time inputs for this trip in the rendered table
-    const inputs = document.querySelectorAll(
-      `input[data-trip-id="${trip_id}"]`
-    ) as NodeListOf<HTMLInputElement>;
-
-    const stopTimesMap = new Map<string, Partial<StopTimes>>();
-
-    inputs.forEach((input: HTMLInputElement) => {
-      const stop_id = input.dataset.stopId;
-      const timeType = input.dataset.timeType; // 'linked', 'arrival', or 'departure'
-      const timeValue = input.value.trim();
-      const superPos = input.dataset.supersequencePosition ?? 'new';
-
-      if (!stop_id || !timeValue) {
-        return; // Skip empty times
-      }
-
-      // Key by composite (stop_id, supersequencePosition) to preserve duplicate stops
-      const key = `${stop_id}:${superPos}`;
-      let stopTime = stopTimesMap.get(key);
-      if (!stopTime) {
-        stopTime = {
-          trip_id,
-          stop_id,
-          stop_sequence: 0, // Temporary, will be set after sorting
-          arrival_time: undefined,
-          departure_time: undefined,
-        };
-        stopTimesMap.set(key, stopTime);
-      }
-
-      // Set the time based on input type
-      const castedTime = timeValue; // Already in HH:MM:SS format from input
-      if (timeType === 'linked') {
-        stopTime!.arrival_time = castedTime;
-        stopTime!.departure_time = castedTime;
-      } else if (timeType === 'arrival') {
-        stopTime!.arrival_time = castedTime;
-      } else if (timeType === 'departure') {
-        stopTime!.departure_time = castedTime;
-      }
-    });
-
-    const stopTimesFromTable = Array.from(stopTimesMap.values());
-
-    // Sort by time to determine sequence
-    const sortedStopTimes = stopTimesFromTable.sort((a, b) => {
-      const timeA = a.arrival_time || a.departure_time || '';
-      const timeB = b.arrival_time || b.departure_time || '';
-      return timeA.localeCompare(timeB);
-    });
-
-    // Assign sequential stop_sequence numbers
-    const finalStopTimes = sortedStopTimes.map((st, index) => ({
-      ...st,
-      stop_sequence: index,
-    })) as unknown as StopTimes[];
-
-    // Get ALL old stop_times for this trip
-    const oldStopTimes = await database.queryRows('stop_times', { trip_id });
-    const oldKeys = oldStopTimes.map((st) =>
-      generateCompositeKeyFromRecord('stop_times', st)
-    );
-
-    // Atomic replace: delete all old, insert all new from table
-    await database.replaceRows('stop_times', oldKeys, finalStopTimes);
-
-    // Sync in-memory data so getFileDataSync reflects the rebuilt state
-    const inMemory = this.gtfsParser.getFileDataSync('stop_times.txt');
-    const otherTrips = inMemory.filter(
-      (st) => (st as { trip_id: string }).trip_id !== trip_id
-    );
-    this.gtfsParser.setInMemoryFileData('stop_times.txt', [
-      ...otherTrips,
-      ...(finalStopTimes as unknown as Record<string, unknown>[]),
-    ]);
-
-    console.log(
-      `Rebuilt ${finalStopTimes.length} stop_times for trip ${trip_id} from table`
-    );
   }
 }
