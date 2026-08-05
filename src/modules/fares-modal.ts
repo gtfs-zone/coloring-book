@@ -97,7 +97,7 @@ function renderRiderCategoriesPanel(rows: Record<string, unknown>[]): string {
           <tr>
             <td class="font-mono text-xs">${esc(r.rider_category_id)}</td>
             <td>${esc(r.rider_category_name)}</td>
-            <td>${Number(r.is_default_fare_container) === 1 ? 'Yes' : '-'}</td>
+            <td>${Number(r.is_default_fare_category) === 1 ? 'Yes' : '-'}</td>
             <td>
               <div class="flex gap-1">
                 <button class="btn btn-xs btn-ghost" data-action="edit" data-key="${esc(r.rider_category_id)}">Edit</button>
@@ -117,7 +117,7 @@ function renderRiderCategoriesPanel(rows: Record<string, unknown>[]): string {
       <div class="overflow-x-auto">
         <table class="table table-xs">
           <thead>
-            <tr>${renderColumnHeader('rider_category_id', configs)}${renderColumnHeader('rider_category_name', configs)}${renderColumnHeader('is_default_fare_container', configs)}<th></th></tr>
+            <tr>${renderColumnHeader('rider_category_id', configs)}${renderColumnHeader('rider_category_name', configs)}${renderColumnHeader('is_default_fare_category', configs)}<th></th></tr>
           </thead>
           <tbody>${rowsHtml}</tbody>
         </table>
@@ -299,10 +299,8 @@ async function showAddEditRiderCategoryModal(
           const vals = readFormValues(form, [
             'rider_category_id',
             'rider_category_name',
-            'is_default_fare_container',
+            'is_default_fare_category',
             'eligibility_url',
-            'min_age',
-            'max_age',
           ]);
           if (!isEdit && !vals.rider_category_id) {
             showFormError(errorEl, 'Rider Category ID is required');
@@ -319,19 +317,13 @@ async function showAddEditRiderCategoryModal(
             rider_category_id: id,
             rider_category_name: vals.rider_category_name,
           };
-          if (vals.is_default_fare_container !== '') {
-            record.is_default_fare_container = Number(
-              vals.is_default_fare_container
+          if (vals.is_default_fare_category !== '') {
+            record.is_default_fare_category = Number(
+              vals.is_default_fare_category
             );
           }
           if (vals.eligibility_url) {
             record.eligibility_url = vals.eligibility_url;
-          }
-          if (vals.min_age !== '') {
-            record.min_age = Number(vals.min_age);
-          }
-          if (vals.max_age !== '') {
-            record.max_age = Number(vals.max_age);
           }
 
           if (isEdit) {

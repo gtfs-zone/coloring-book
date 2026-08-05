@@ -5,24 +5,22 @@ export const routeNetworksSpec: GTFSFileSpec = {
   presence: 'Conditionally Forbidden',
   presenceCondition:
     'Forbidden if network_id exists in routes.txt. Optional otherwise.',
-  description:
-    'Rules to assign routes to networks. Assigns one or more routes to a network defined in networks.txt for use in fare leg rules.\n\nConditionally Forbidden: Forbidden if network_id exists in routes.txt. This reflects the two mutually exclusive approaches to defining route networks: either inline via routes.network_id, or via the separate networks.txt + route_networks.txt files.',
+  description: 'Assigns routes from [routes.txt](#routestxt) to networks.',
   fields: [
     {
       name: 'network_id',
-      type: 'Foreign ID',
+      type: 'Foreign ID referencing `networks.network_id`',
       presence: 'Required',
       description:
-        "Identifies a network to which one or multiple route_id's belong. The same route_id may appear in only one network_id entry.",
-      foreignKey: { file: 'networks.txt', field: 'network_id' },
+        'Identifies a network to which one or multiple `route_id`s belong. A `route_id` can only be defined in one `network_id`.',
+      foreignKey: [{ file: 'networks.txt', field: 'network_id' }],
     },
     {
       name: 'route_id',
-      type: 'Foreign ID',
+      type: 'Foreign ID referencing `routes.route_id`',
       presence: 'Required',
-      description:
-        'Identifies a route. A given route_id may only be assigned to one network_id.',
-      foreignKey: { file: 'routes.txt', field: 'route_id' },
+      description: 'Identifies a route.',
+      foreignKey: [{ file: 'routes.txt', field: 'route_id' }],
     },
   ],
 };

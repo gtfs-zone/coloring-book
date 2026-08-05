@@ -3,39 +3,38 @@ import type { GTFSFileSpec } from '../types';
 export const riderCategoriesSpec: GTFSFileSpec = {
   filename: 'rider_categories.txt',
   presence: 'Optional',
-  description:
-    'Defines categories of riders (e.g. elderly, student). Rider categories can be associated with fare products in fare_products.txt to define category-specific pricing. Part of the Fares v2 model.',
+  description: 'Defines categories of riders (e.g. elderly, student).',
   fields: [
     {
       name: 'rider_category_id',
       type: 'Unique ID',
       presence: 'Required',
-      isPrimaryKey: true,
       description: 'Identifies a rider category.',
+      isPrimaryKey: true,
     },
     {
       name: 'rider_category_name',
       type: 'Text',
       presence: 'Required',
-      description:
-        'Name of the rider category as displayed to the rider. For example: "Adult", "Child", "Student", "Senior".',
+      description: 'Rider category name as displayed to the rider.',
     },
     {
-      name: 'is_default_fare_container',
+      name: 'is_default_fare_category',
       type: 'Enum',
-      presence: 'Optional',
+      presence: 'Required',
       description:
-        'Indicates whether this rider category is the default category. A single rider_category may be set as default if it applies to the widest range of riders, such as an adult category. If multiple fare products for the same fare media are available and no rider category is specified, the default rider category is used to determine which fare product applies.\n\n0 - Not the default rider category.\n1 - Default rider category.',
+        'Specifies if an entry in [rider_categories.txt](#rider_categoriestxt) should be considered the default category (i.e. the main category that should be displayed to riders). For example: Adult fare, Regular fare, etc. Valid options are:<br><br>`0` or empty - Category is not considered the default.<br>`1` - Category is considered the default one.<br><br>When multiple rider categories are eligible for a single fare product specified by a `fare_product_id`, there must be exactly one of these eligible rider categories indicated as the default rider category (`is_default_fare_category = 1`).',
       enumValues: [
         {
           value: 0,
           label: 'Not default',
-          description: 'Not the default rider category.',
+          description:
+            'Category is not considered the default. An empty value is equivalent to 0.',
         },
         {
           value: 1,
           label: 'Default',
-          description: 'Default rider category.',
+          description: 'Category is considered the default one.',
         },
       ],
     },
@@ -44,21 +43,7 @@ export const riderCategoriesSpec: GTFSFileSpec = {
       type: 'URL',
       presence: 'Optional',
       description:
-        'URL of a web page that describes the eligibility criteria for this rider category.',
-    },
-    {
-      name: 'min_age',
-      type: 'Non-negative integer',
-      presence: 'Optional',
-      description:
-        'Minimum age (inclusive) for a rider to be eligible for this rider category.',
-    },
-    {
-      name: 'max_age',
-      type: 'Non-negative integer',
-      presence: 'Optional',
-      description:
-        'Maximum age (inclusive) for a rider to be eligible for this rider category.',
+        'URL of a web page, usually from the operating agency, that provides detailed information about a specific rider category and/or describes its eligibility criteria.',
     },
   ],
 };

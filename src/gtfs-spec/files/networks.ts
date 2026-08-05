@@ -5,22 +5,22 @@ export const networksSpec: GTFSFileSpec = {
   presence: 'Conditionally Forbidden',
   presenceCondition:
     'Forbidden if network_id exists in routes.txt. Optional otherwise.',
-  description:
-    'Network grouping of routes. Networks are used in fare leg rules (fare_leg_rules.txt) to associate fare rules with groups of routes. Routes are assigned to networks via route_networks.txt.\n\nConditionally Forbidden: Forbidden if network_id exists in routes.txt. This reflects the two mutually exclusive approaches to defining route networks: either inline via routes.network_id, or via the separate networks.txt + route_networks.txt files.',
+  description: 'Defines network identifiers that apply for fare leg rules.',
   fields: [
     {
       name: 'network_id',
       type: 'Unique ID',
       presence: 'Required',
+      description:
+        'Identifies a network. Must be unique in [networks.txt](#networkstxt).',
       isPrimaryKey: true,
-      description: 'Identifies a network. Must be unique in networks.txt.',
     },
     {
       name: 'network_name',
       type: 'Text',
       presence: 'Optional',
       description:
-        'The name of the network that applies to the fare leg rules, as used by the local agency and its riders.',
+        'The name of the network that apply for fare leg rules, as used by the local agency and its riders.',
     },
   ],
 };

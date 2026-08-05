@@ -20,11 +20,13 @@ export enum GTFSFieldType {
   Color = 'Color',
   Date = 'Date',
   Time = 'Time',
+  LocalTime = 'Local time',
   ID = 'ID',
   UniqueID = 'Unique ID',
   ForeignID = 'Foreign ID',
   Integer = 'Integer',
   NonNegativeInteger = 'Non-negative integer',
+  NonZeroInteger = 'Non-zero integer',
   PositiveInteger = 'Positive integer',
   Float = 'Float',
   NonNegativeFloat = 'Non-negative float',
@@ -123,7 +125,8 @@ export const GTFS_FIELD_TYPE_METADATA: Record<
 
   [GTFSFieldType.CurrencyAmount]: {
     type: GTFSFieldType.CurrencyAmount,
-    description: 'Decimal value for currency (use decimal type, NOT float)',
+    description:
+      'Decimal currency amount; ISO 4217 fixes the number of decimal places for the accompanying currency code (never process as float)',
     inputType: 'number',
     step: 0.01,
     min: 0,
@@ -170,6 +173,16 @@ export const GTFS_FIELD_TYPE_METADATA: Record<
       z.string().regex(/^\d{1,2}:\d{2}:\d{2}$/, 'Must be in HH:MM:SS format'),
   },
 
+  [GTFSFieldType.LocalTime]: {
+    type: GTFSFieldType.LocalTime,
+    description:
+      'Wall-clock time in HH:MM:SS format, local to the specified location',
+    pattern: /^\d{1,2}:\d{2}:\d{2}$/,
+    inputType: 'text',
+    zodValidator: (z) =>
+      z.string().regex(/^\d{1,2}:\d{2}:\d{2}$/, 'Must be in HH:MM:SS format'),
+  },
+
   [GTFSFieldType.ID]: {
     type: GTFSFieldType.ID,
     description:
@@ -207,6 +220,18 @@ export const GTFS_FIELD_TYPE_METADATA: Record<
     step: 1,
     min: 0,
     zodValidator: (z) => z.number().int().nonnegative(),
+  },
+
+  [GTFSFieldType.NonZeroInteger]: {
+    type: GTFSFieldType.NonZeroInteger,
+    description: 'Integer other than 0',
+    inputType: 'number',
+    step: 1,
+    zodValidator: (z) =>
+      z
+        .number()
+        .int()
+        .refine((n: number) => n !== 0, 'Must not be 0'),
   },
 
   [GTFSFieldType.PositiveInteger]: {
@@ -390,6 +415,11 @@ export function mapGTFSTypeString(typeString: string): GTFSFieldType {
   if (normalized === 'Currency amount') {
     return GTFSFieldType.CurrencyAmount;
   }
+  // translations.txt declares union types ("Text or URL or Email or Phone
+  // number"); the widest member is Text, which accepts all of them.
+  if (normalized.startsWith('Text or ')) {
+    return GTFSFieldType.Text;
+  }
   if (normalized.includes('Non-negative') && normalized.includes('integer')) {
     return GTFSFieldType.NonNegativeInteger;
   }
@@ -397,7 +427,7 @@ export function mapGTFSTypeString(typeString: string): GTFSFieldType {
     return GTFSFieldType.PositiveInteger;
   }
   if (normalized.includes('Non-zero') && normalized.includes('integer')) {
-    return GTFSFieldType.PositiveInteger; // Non-zero is same as positive
+    return GTFSFieldType.NonZeroInteger;
   }
   if (normalized.includes('Non-null') && normalized.includes('integer')) {
     return GTFSFieldType.Integer; // Non-null just means it can be negative
