@@ -1,12 +1,22 @@
 import { showModal } from './modal-utils';
+import {
+  PATHWAY_CATEGORIES,
+  PATHWAY_CATEGORY_ORDER,
+  PATHWAY_MODES,
+  modesInCategory,
+} from '../utils/pathway-modes.js';
 
 function circle(fill: string, stroke: string, dot?: boolean): string {
   const inner = dot ? `<circle cx="7" cy="7" r="2.5" fill="#000000"/>` : '';
   return `<svg width="14" height="14" viewBox="0 0 14 14" style="flex-shrink:0"><circle cx="7" cy="7" r="5" fill="${fill}" stroke="${stroke}" stroke-width="1.5"/>${inner}</svg>`;
 }
 
-function line(color: string): string {
-  return `<svg width="20" height="14" viewBox="0 0 20 14" style="flex-shrink:0"><line x1="2" y1="7" x2="18" y2="7" stroke="${color}" stroke-width="3" stroke-linecap="round"/></svg>`;
+function line(color: string, dash: number[] | null): string {
+  // The map's dasharray is in line widths; the swatch stroke is 3px wide.
+  const dashAttr = dash
+    ? ` stroke-dasharray="${dash.map((d) => d * 3).join(' ')}"`
+    : ' stroke-linecap="round"';
+  return `<svg width="20" height="14" viewBox="0 0 20 14" style="flex-shrink:0"><line x1="2" y1="7" x2="18" y2="7" stroke="${color}" stroke-width="3"${dashAttr}/></svg>`;
 }
 
 function buildMapKey(): string {
@@ -22,15 +32,14 @@ function buildMapKey(): string {
     row(circle('#ffffff', '#9ca3af'), 'Node with no location'),
   ].join('');
 
-  const pathways = [
-    row(line('#22c55e'), 'Walkway'),
-    row(line('#f97316'), 'Stairs'),
-    row(line('#06b6d4'), 'Moving sidewalk'),
-    row(line('#a855f7'), 'Escalator'),
-    row(line('#3b82f6'), 'Elevator'),
-    row(line('#ef4444'), 'Fare gate'),
-    row(line('#6b7280'), 'Exit gate'),
-  ].join('');
+  // Built from the same table the map styles itself from, so the key cannot
+  // drift from what is drawn.
+  const pathways = PATHWAY_CATEGORY_ORDER.map((category) => {
+    const { color, dash } = PATHWAY_CATEGORIES[category];
+    return modesInCategory(category)
+      .map((mode) => row(line(color, dash), PATHWAY_MODES[mode].label))
+      .join('');
+  }).join('');
 
   return `
     <div class="grid grid-cols-2 gap-x-6 gap-y-1 text-sm">

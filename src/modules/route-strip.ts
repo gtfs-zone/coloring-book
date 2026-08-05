@@ -94,7 +94,7 @@ export function railCell(
              dot.kind === 'solid' ? color : 'var(--color-base-100, #fff)'
            };box-shadow:inset 0 0 0 3px ${color}"></span>`;
   return `
-    <div class="relative shrink-0" style="width:${width}px" aria-hidden="true">
+    <div class="relative shrink-0 h-full" style="width:${width}px" aria-hidden="true">
       <svg class="absolute inset-0 w-full h-full" viewBox="0 0 ${width} 100" preserveAspectRatio="none">${paths
         .map((d) => railPath(d, color))
         .join('')}</svg>

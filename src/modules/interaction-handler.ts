@@ -215,9 +215,10 @@ export class InteractionHandler {
     }
 
     // Check for pathway features (only present when a station is expanded)
+    // The clickarea is 16px wide and fully covers the drawn lines, so it is
+    // the sole hit-test layer for pathways.
     const pathwayFeatures = this.queryFeaturesOnLayers(e.point, [
       'pathways-clickarea',
-      'pathways-lines',
     ]);
 
     if (pathwayFeatures.length > 0) {

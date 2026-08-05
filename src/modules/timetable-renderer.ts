@@ -27,6 +27,7 @@ import {
   RowDot,
   endpointThreshold,
   isEndpoint,
+  gutterWidth,
 } from './route-strip.js';
 import { RouteSequence } from './route-sequence.js';
 import { RouteGraph } from './route-graph.js';
@@ -454,9 +455,13 @@ export class TimetableRenderer {
     sequence: RouteSequence,
     color: string
   ): string {
-    const label = renderCardLabel(
-      getStopDisplay(stop as unknown as Record<string, string>)
-    );
+    // The pending stop (add-stop preview) is appended to data.stops but has no
+    // row in the route sequence/graph, so it has no rail and no stats. Render a
+    // plain label for it rather than indexing off the end of stopStats.
+    if (index >= sequence.stops.length) {
+      return this.renderPlainStopLabel(stop);
+    }
+
     const stats = sequence.stopStats[index];
     const threshold = endpointThreshold(sequence.totalTrips);
     const endpoint = isEndpoint(stats, threshold);
@@ -478,19 +483,52 @@ export class TimetableRenderer {
         ? `<span class="opacity-50 text-xs ml-1">(visit ${revisit + 1})</span>`
         : '';
 
+    // The rail is absolutely positioned so it fills the full row height,
+    // however tall the trip time cells make the row. A percentage height on a
+    // normal-flow child of a table cell does not resolve, but the stop <th> is
+    // `position: sticky` (from table-pin-cols), so it is a containing block and
+    // `inset-y-0` resolves to the whole cell. The label clears the rail with a
+    // left pad of the rail width plus the usual gap.
+    const width = gutterWidth(graph.laneCount);
+    return `
+      <div class="absolute top-0 -bottom-px left-0">${rail}</div>
+      <div class="min-w-0" style="padding-left:${width + 8}px">
+        ${this.renderStopNameBlock(stop, revisitHtml, `Served by ${stats.serves} of ${sequence.totalTrips} trips`)}
+      </div>
+    `;
+  }
+
+  /**
+   * The stop name over its stop_id. The name span is the click target for the
+   * stop picker (`data-stop-id`); the id line below is the real stop/platform
+   * id carried in this row of the schedule, shown so the operator can tell
+   * apart same-named stops.
+   */
+  private renderStopNameBlock(
+    stop: Stops,
+    revisitHtml: string,
+    title: string
+  ): string {
+    const label = renderCardLabel(
+      getStopDisplay(stop as unknown as Record<string, string>)
+    );
+    return `
+      <div class="flex flex-col justify-center min-w-0 flex-1" title="${title}">
+        <span
+          class="stop-label-span min-w-0 truncate cursor-pointer rounded px-1 hover:bg-base-200"
+          data-stop-id="${escapeHtml(stop.stop_id)}"
+          title="Change stop"
+        >${label}${revisitHtml}</span>
+        <span class="stop-id-line text-xs opacity-50 font-mono truncate px-1">${escapeHtml(stop.stop_id)}</span>
+      </div>
+    `;
+  }
+
+  /** A stop label with no rail, for the pending add-stop preview row. */
+  private renderPlainStopLabel(stop: Stops): string {
     return `
       <div class="flex items-stretch gap-2 min-w-0">
-        ${rail}
-        <div
-          class="flex items-center gap-1 min-w-0 flex-1"
-          title="Served by ${stats.serves} of ${sequence.totalTrips} trips"
-        >
-          <span
-            class="stop-label-span flex-1 min-w-0 truncate cursor-pointer rounded px-1 hover:bg-base-200"
-            data-stop-id="${escapeHtml(stop.stop_id)}"
-            title="Change stop"
-          >${label}${revisitHtml}</span>
-        </div>
+        ${this.renderStopNameBlock(stop, '', 'Pending stop')}
       </div>
     `;
   }
@@ -558,7 +596,7 @@ export class TimetableRenderer {
               arrival_time || null,
               departure_time || null,
               editableStopTime,
-              supersequencePosition
+              isPendingStop
             );
           })
           .join('');
@@ -568,7 +606,7 @@ export class TimetableRenderer {
 
         return `
         <tr class="${rowClass}">
-          <th class="stop-name relative max-w-[320px] px-2 pl-0 font-medium border-r border-base-300 bg-base-100">
+          <th class="stop-name max-w-[320px] py-0 px-2 pl-0 font-medium border-r border-base-300 bg-base-100">
             ${this.renderStopLabelCell(stop, stopIndex, graph as RouteGraph, sequence as RouteSequence, color)}
           </th>
           ${timeCells}

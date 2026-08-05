@@ -48,10 +48,14 @@ import { generateCompositeKeyFromRecord } from '../utils/gtfs-primary-keys.js';
 import { normalizeAgencyId } from '../utils/agency-helpers.js';
 import {
   renderServiceReference,
+  renderTimetableReference,
   SERVICE_REF_ROW,
   STOP_REF_ROW,
   PATHWAY_REF_ROW,
   ENTITY_REF_BTN,
+  TIMETABLE_REF_ROW,
+  VIEW_ROUTE_BTN,
+  VIEW_SERVICE_BTN,
 } from '../utils/entity-references.js';
 
 /**
@@ -197,6 +201,8 @@ export class PageContentRenderer {
       onStopClick: dependencies.onStopClick,
       onPathwayClick: dependencies.onPathwayClick,
       onTimetableClick: dependencies.onTimetableClick,
+      onRouteClick: dependencies.onRouteClick,
+      onServiceClick: dependencies.onServiceClick,
       onDeleteStop: (stop_id) => this.handleDeleteStop(stop_id),
       getLevelOptions: dependencies.getLevelOptions,
     };
@@ -621,6 +627,17 @@ export class PageContentRenderer {
       allServices.map((s) => [s.service_id as string, s])
     );
 
+    const calendarDatesByServiceId = new Map<
+      string,
+      Array<{ date: string; exception_type: string | number }>
+    >();
+    for (const row of calendarDatesRows) {
+      const sid = row.service_id as string;
+      const existing = calendarDatesByServiceId.get(sid) ?? [];
+      existing.push(row as { date: string; exception_type: string | number });
+      calendarDatesByServiceId.set(sid, existing);
+    }
+
     // Render timetables list
     const servicesListHTML = `
       <div class="space-y-4">
@@ -641,9 +658,15 @@ export class PageContentRenderer {
                   : `<div class="space-y-2 ${newServiceSelectorHTML ? 'mt-4' : ''}">
                     ${Object.entries(serviceGroups)
                       .map(([service_id, serviceTrips]) =>
-                        renderServiceReference(
+                        renderTimetableReference(
+                          routeData,
                           calendarByServiceId.get(service_id) ?? { service_id },
-                          { tripCount: serviceTrips.length, route_id }
+                          {
+                            calendarDates:
+                              calendarDatesByServiceId.get(service_id),
+                            tripCount: serviceTrips.length,
+                            hide: 'route',
+                          }
                         )
                       )
                       .join('')}
@@ -740,6 +763,36 @@ export class PageContentRenderer {
         if (route_id && service_id) {
           this.dependencies.onTimetableClick(route_id, service_id);
         } else if (service_id && this.dependencies.onServiceClick) {
+          this.dependencies.onServiceClick(service_id);
+        }
+      });
+    });
+
+    // Timetable rows: the row opens the timetable, the buttons branch off to
+    // either half of the route/service pair.
+    container.querySelectorAll(`.${TIMETABLE_REF_ROW}`).forEach((row) => {
+      row.addEventListener('click', () => {
+        const route_id = row.getAttribute('data-route-id');
+        const service_id = row.getAttribute('data-service-id');
+        if (route_id && service_id) {
+          this.dependencies.onTimetableClick(route_id, service_id);
+        }
+      });
+    });
+    container.querySelectorAll(`.${VIEW_ROUTE_BTN}`).forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const route_id = btn.getAttribute('data-route-id');
+        if (route_id) {
+          this.dependencies.onRouteClick(route_id);
+        }
+      });
+    });
+    container.querySelectorAll(`.${VIEW_SERVICE_BTN}`).forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const service_id = btn.getAttribute('data-service-id');
+        if (service_id && this.dependencies.onServiceClick) {
           this.dependencies.onServiceClick(service_id);
         }
       });

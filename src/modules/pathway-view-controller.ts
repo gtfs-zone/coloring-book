@@ -5,20 +5,11 @@ import {
 } from '../utils/field-component.js';
 import { GTFSSchemas, GTFS_TABLES } from '../types/gtfs.js';
 import { getStopDisplay, renderOptionLabel } from '../utils/entity-display.js';
+import { pathwayModeLabel } from '../utils/pathway-modes.js';
 
 function escapeAttr(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
 }
-
-const PATHWAY_MODE_LABELS: Record<number, string> = {
-  1: 'Walkway',
-  2: 'Stairs',
-  3: 'Moving sidewalk',
-  4: 'Escalator',
-  5: 'Elevator',
-  6: 'Fare gate',
-  7: 'Exit gate',
-};
 
 export interface PathwayViewDependencies {
   gtfsDatabase?: QueryOnlyDatabase;
@@ -60,8 +51,7 @@ export class PathwayViewController {
           )
         : '';
 
-      const modeNum = Number(pathway.pathway_mode) || 1;
-      const modeLabel = PATHWAY_MODE_LABELS[modeNum] ?? `Mode ${modeNum}`;
+      const modeLabel = pathwayModeLabel(Number(pathway.pathway_mode) || 1);
 
       return `
         <div class="p-4 space-y-4">

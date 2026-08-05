@@ -4,7 +4,7 @@
  * Accessed via Objects tab -> Route -> Service ID
  */
 
-import { Stops } from '../types/gtfs-entities.js';
+import { Stops, StopTimes } from '../types/gtfs-entities.js';
 import { notify } from './notification-system';
 import type { GTFSParser } from './gtfs-parser.js';
 import { TimeFormatter } from '../utils/time-formatter.js';
@@ -13,7 +13,7 @@ import {
   TimetableData,
 } from './timetable-data-processor.js';
 import { TimetableRenderer } from './timetable-renderer.js';
-import { TimetableDatabase } from './timetable-database.js';
+import { TimetableDatabase, StopTimeEditPlan } from './timetable-database.js';
 import { generateCompositeKeyFromRecord } from '../utils/gtfs-primary-keys.js';
 import { patchUpdate } from '../utils/patch-utils.js';
 import { getStopDisplay } from '../utils/entity-display.js';
@@ -69,6 +69,30 @@ interface PatchManagerInterface {
     ops: Array<{ table: string; id: string; record: Record<string, unknown> }>,
     label: string
   ): Promise<void>;
+  recordBatchMixed(
+    ops: Array<
+      | {
+          op: 'insert';
+          table: string;
+          id: string;
+          record: Record<string, unknown>;
+        }
+      | {
+          op: 'delete';
+          table: string;
+          id: string;
+          record: Record<string, unknown>;
+        }
+      | {
+          op: 'update';
+          table: string;
+          id: string;
+          before: Record<string, unknown>;
+          after: Record<string, unknown>;
+        }
+    >,
+    label?: string
+  ): Promise<void>;
   on(
     event: 'undo' | 'redo' | 'change' | 'jump',
     listener: (record?: unknown) => void
@@ -82,6 +106,31 @@ interface GTFSRelationships {
   getStopTimesForTrip(trip_id: string): Record<string, unknown>[];
   getStopById(stop_id: string): Record<string, unknown> | null;
   getStopByIdAsync(stop_id: string): Promise<Record<string, unknown> | null>;
+}
+
+/**
+ * Field-level diff of two versions of the same row, or null when they match.
+ * Both sides are returned so the caller can hand them straight to a patch.
+ */
+function changedFields(
+  before: StopTimes,
+  after: StopTimes
+): { before: Record<string, unknown>; after: Record<string, unknown> } | null {
+  const prev = before as unknown as Record<string, unknown>;
+  const next = after as unknown as Record<string, unknown>;
+  const beforeChanges: Record<string, unknown> = {};
+  const afterChanges: Record<string, unknown> = {};
+
+  for (const field of new Set([...Object.keys(prev), ...Object.keys(next)])) {
+    if (prev[field] !== next[field]) {
+      beforeChanges[field] = prev[field] ?? null;
+      afterChanges[field] = next[field] ?? null;
+    }
+  }
+
+  return Object.keys(afterChanges).length === 0
+    ? null
+    : { before: beforeChanges, after: afterChanges };
 }
 
 /**
@@ -114,8 +163,6 @@ export class ScheduleController {
   // because the browser resets both values during async DB awaits.
   public timetableScrollLeft = 0;
   public timetableScrollTop = 0;
-
-  private deleteTripAbortController: AbortController | null = null;
 
   /**
    * Initialize ScheduleController with required dependencies
@@ -184,6 +231,13 @@ export class ScheduleController {
       const propSpan = (e.target as Element)?.closest?.('.trip-prop-span');
       if (propSpan instanceof HTMLElement) {
         this.handleTripPropClick(propSpan);
+        return;
+      }
+
+      const deleteBtn = (e.target as Element)?.closest?.('.delete-trip-btn');
+      const tripId = deleteBtn?.getAttribute('data-trip-id');
+      if (tripId) {
+        void this.handleDeleteTrip(tripId);
       }
     });
   }
@@ -194,8 +248,8 @@ export class ScheduleController {
    * Mirrors openStopPicker: the input is built only for the cell the user
    * clicked. Committing restores the span synchronously (so at most one
    * input is ever live) and fires the database update in the background -
-   * on success it arrives via the timetable's own refreshCurrentTimetable();
-   * on validation failure the restored span still shows the pre-edit value,
+   * on success the table is redrawn by the patch:change listener; on
+   * validation failure the restored span still shows the pre-edit value,
    * which is correct since nothing was written.
    */
   private openTimeEditor(span: HTMLElement): void {
@@ -203,7 +257,7 @@ export class ScheduleController {
       return;
     }
 
-    const { tripId, stopId, timeType, position, stopSequence } = span.dataset;
+    const { tripId, stopId, timeType, stopSequence, pending } = span.dataset;
     if (
       !tripId ||
       !stopId ||
@@ -243,8 +297,8 @@ export class ScheduleController {
           stopId,
           timeType,
           value,
-          position,
-          stopSequence
+          stopSequence,
+          pending === 'true'
         );
       }
     };
@@ -408,24 +462,24 @@ export class ScheduleController {
     const enumOptions = getEnumOptions(field) ?? [];
     const currentValue = value ?? '';
     const rows: { value: string; label: string }[] = [
-      { value: '', label: '- none -' },
+      { value: '', label: '-' },
       ...enumOptions.map((opt) => ({
         value: String(opt.value),
-        label: opt.label,
+        label: `${opt.value} - ${opt.label}`,
       })),
     ];
 
     const rect = span.getBoundingClientRect();
     const menu = document.createElement('div');
     menu.className =
-      'trip-prop-enum-menu fixed z-50 bg-base-100 border border-base-300 rounded-lg shadow-lg py-1 min-w-40 max-h-72 overflow-y-auto';
+      'trip-prop-enum-menu fixed z-50 -translate-x-1/2 bg-base-100 border border-base-300 rounded-lg shadow-lg py-1 min-w-40 max-h-72 overflow-y-auto';
     menu.style.top = `${rect.bottom + window.scrollY + 2}px`;
-    menu.style.left = `${rect.left + window.scrollX}px`;
+    menu.style.left = `${rect.left + rect.width / 2 + window.scrollX}px`;
     menu.innerHTML = rows
       .map((row) => {
         const activeClass =
           row.value === currentValue ? ' bg-base-200 font-medium' : '';
-        return `<div class="px-3 py-1.5 text-sm cursor-pointer hover:bg-base-200${activeClass}" data-value="${escapeHtml(row.value)}">${escapeHtml(row.label)}</div>`;
+        return `<div class="px-3 py-1.5 text-sm text-center cursor-pointer hover:bg-base-200${activeClass}" data-value="${escapeHtml(row.value)}">${escapeHtml(row.label)}</div>`;
       })
       .join('');
     document.body.appendChild(menu);
@@ -564,9 +618,13 @@ export class ScheduleController {
   setPatchManager(pm: PatchManagerInterface): void {
     this.patchManager = pm;
 
-    // The picker option markup and TimetableData are cached across renders,
-    // so any edit has to drop them. Rebuilding is cheap and only happens on
-    // the next render/picker-open.
+    // The picker options and TimetableData are cached across renders, so any
+    // edit has to drop them. Rebuilding is cheap and only happens on the next
+    // render/picker-open.
+    //
+    // Registration order matters: this runs from the constructor, before
+    // index.ts subscribes browseNavigation.refresh() to the same events, so
+    // the caches are always clear by the time that refresh re-renders.
     for (const event of ['change', 'undo', 'redo', 'jump'] as const) {
       pm.on(event, () => this.invalidateCaches());
     }
@@ -580,12 +638,14 @@ export class ScheduleController {
    * Updates either arrival_time or departure_time independently.
    * Validates arrival <= departure constraint before saving.
    * Handles empty input by clearing the specified time field.
-   * Renumbers stop sequences based on arrival times after update.
+   * Renumbers stop sequences by time, as part of the same patch.
    *
    * @param trip_id - GTFS trip identifier
    * @param stop_id - GTFS stop identifier
    * @param timeType - Which time field to update ('arrival' or 'departure')
    * @param newTime - New time value or empty string to clear
+   * @param stopSequence - stop_sequence of the edited row, when the cell knows it
+   * @param isPendingRow - The cell belongs to the not-yet-saved add-stop row
    * @throws {Error} When validation fails or database update fails
    */
   public async updateArrivalDepartureTime(
@@ -593,39 +653,25 @@ export class ScheduleController {
     stop_id: string,
     timeType: 'arrival' | 'departure',
     newTime: string,
-    supersequencePosition?: string,
-    stopSequence?: string
+    stopSequence?: string,
+    isPendingRow = false
   ): Promise<void> {
     try {
-      const field = timeType === 'arrival' ? 'arrival_time' : 'departure_time';
       const isClear = !newTime.trim();
+      const castedTime = isClear
+        ? null
+        : TimeFormatter.castTimeToHHMMSS(newTime);
 
-      // Capture before-state using stop_sequence for unambiguous lookup on loop routes
-      const beforeRow = await this.database.getStopTime(
-        trip_id,
-        stop_id,
-        stopSequence
-      );
-      const beforeFieldValue = (beforeRow as Record<string, unknown> | null)?.[
-        field
-      ];
-      const beforeKey = beforeRow
-        ? generateCompositeKeyFromRecord(
-            'stop_times',
-            beforeRow as unknown as Record<string, unknown>
-          )
-        : null;
-
-      let castedTime: string | null = null;
-      if (!isClear) {
-        castedTime = TimeFormatter.castTimeToHHMMSS(newTime);
-
+      // The pending row has no stop_time yet, so there is nothing to validate
+      // against and nothing to find: it always inserts.
+      if (castedTime !== null && !isPendingRow) {
         const validation =
           await this.database.validateArrivalDepartureConstraint(
             trip_id,
             stop_id,
             timeType,
-            castedTime
+            castedTime,
+            stopSequence
           );
         if (!validation.isValid) {
           this.showTimeError(
@@ -637,55 +683,41 @@ export class ScheduleController {
         }
       }
 
-      await this.database.updateStopTimeInDatabase(
+      const plan = await this.database.planStopTimeEdit(
         trip_id,
         stop_id,
+        timeType,
         castedTime,
-        timeType
-      );
-      console.log(
-        isClear
-          ? `Cleared ${timeType} time for ${trip_id}/${stop_id}`
-          : `Updated ${timeType} time for ${trip_id}/${stop_id} from ${newTime} to ${castedTime}`
+        stopSequence,
+        isPendingRow
       );
 
-      if (!isClear) {
+      // Clearing a cell that has no stop_time behind it would otherwise create
+      // a row with no times at all.
+      if (plan.isInsert && castedTime === null) {
+        return;
+      }
+
+      const label = plan.isInsert
+        ? `Add stop ${stop_id} to trip ${trip_id}`
+        : isClear
+          ? `Clear ${timeType} time for ${trip_id}/${stop_id}`
+          : `Set ${timeType} time for ${trip_id}/${stop_id} to ${castedTime}`;
+
+      // Clear the pending row before the patch is recorded: the patch event
+      // drives the re-render, which must already show the stop as real.
+      if (plan.isInsert) {
         this.clearPendingStopIfMatches(stop_id);
       }
 
-      // Renumber stop_sequence to match the (possibly changed) time order,
-      // then locate this same row's new sequence via its pre-renumber key.
-      const renumberMap =
-        await this.database.renumberStopSequencesByTime(trip_id);
-      const afterStopSequence = beforeKey
-        ? renumberMap.get(beforeKey)
-        : undefined;
-      const afterStopTime = await this.database.getStopTime(
-        trip_id,
-        stop_id,
-        afterStopSequence
-      );
-
-      this.patchTimeCellDom(
-        trip_id,
-        stop_id,
-        supersequencePosition,
-        timeType,
-        castedTime ? TimeFormatter.formatTimeWithSeconds(castedTime) : '',
-        afterStopSequence
-      );
-
-      if (beforeRow && afterStopTime && this.patchManager) {
-        const afterKey = generateCompositeKeyFromRecord(
-          'stop_times',
-          afterStopTime as unknown as Record<string, unknown>
-        );
-        await this.patchManager.recordUpdate(
-          'stop_times',
-          afterKey,
-          { [field]: beforeFieldValue },
-          { [field]: (afterStopTime as Record<string, unknown>)[field] }
-        );
+      const wrote = await this.commitStopTimePlan(plan, label);
+      if (!wrote) {
+        console.log(`No stop_time change for ${trip_id}/${stop_id}`);
+        return;
+      }
+      console.log(`[ScheduleController] ${label}`);
+      if (plan.isInsert) {
+        notify.success('Added stop to trip', { duration: 2000 });
       }
     } catch (error) {
       console.error('Failed to update arrival/departure time:', error);
@@ -694,42 +726,93 @@ export class ScheduleController {
   }
 
   /**
-   * Update a single time cell's spans after a commit, instead of re-rendering
-   * the whole table.
+   * Write a planned stop_time edit and record it as a single patch.
    *
-   * The edited span's text is set directly; both spans on the row (arrival
-   * and departure share one stop_time record) get their `data-stop-sequence`
-   * refreshed so the next edit's before/after lookup stays correct even
-   * after a renumber.
+   * A renumber changes a row's identity (the stop_times key is
+   * trip_id + stop_sequence), so any plan that moves sequences is written as a
+   * whole-trip replace and recorded as deletes followed by inserts. Only when
+   * every key survives does this collapse to a plain field update.
+   *
+   * @returns Whether anything was written
    */
-  private patchTimeCellDom(
-    trip_id: string,
-    stop_id: string,
-    supersequencePosition: string | undefined,
-    timeType: 'arrival' | 'departure',
-    displayValue: string,
-    newStopSequence: string | undefined
-  ): void {
-    const positionSelector = supersequencePosition
-      ? `[data-position="${supersequencePosition}"]`
-      : '';
+  private async commitStopTimePlan(
+    plan: StopTimeEditPlan,
+    label: string
+  ): Promise<boolean> {
+    const keyOf = (row: StopTimes): string =>
+      generateCompositeKeyFromRecord(
+        'stop_times',
+        row as unknown as Record<string, unknown>
+      );
 
-    const editedSpan = document.querySelector(
-      `.time-span[data-trip-id="${trip_id}"][data-stop-id="${stop_id}"][data-time-type="${timeType}"]${positionSelector}`
-    ) as HTMLElement | null;
-    if (editedSpan) {
-      editedSpan.textContent = displayValue || '--:--:--';
+    const before = new Map(plan.beforeRows.map((row) => [keyOf(row), row]));
+    const after = new Map(plan.afterRows.map((row) => [keyOf(row), row]));
+
+    const deletes = plan.beforeRows.filter((row) => !after.has(keyOf(row)));
+    const inserts = plan.afterRows.filter((row) => !before.has(keyOf(row)));
+    const updates = plan.afterRows
+      .map((row) => ({ key: keyOf(row), row }))
+      .filter(({ key, row }) => {
+        const prev = before.get(key);
+        return prev !== undefined && changedFields(prev, row) !== null;
+      });
+
+    if (deletes.length === 0 && inserts.length === 0 && updates.length === 0) {
+      return false;
     }
 
-    if (newStopSequence === undefined) {
-      return;
+    const db = this.gtfsParser.gtfsDatabase;
+    const pm = this.patchManager;
+
+    // Fast path: nothing was renumbered, so this is one row's field changing.
+    if (deletes.length === 0 && inserts.length === 0 && updates.length === 1) {
+      const { key, row } = updates[0];
+      const changes = changedFields(before.get(key)!, row)!;
+      await patchUpdate(
+        db,
+        pm,
+        'stop_times',
+        key,
+        changes.before,
+        changes.after
+      );
+      this.invalidateCaches();
+      return true;
     }
-    const rowSpans = document.querySelectorAll(
-      `.time-span[data-trip-id="${trip_id}"][data-stop-id="${stop_id}"]${positionSelector}`
+
+    await db.replaceRows('stop_times', [...before.keys()], plan.afterRows);
+    this.invalidateCaches();
+
+    // Deletes first: forward replay (and its reversed inverse) must never hold
+    // two rows on one trip_id + stop_sequence key.
+    await pm?.recordBatchMixed(
+      [
+        ...deletes.map((row) => ({
+          op: 'delete' as const,
+          table: 'stop_times',
+          id: keyOf(row),
+          record: row as unknown as Record<string, unknown>,
+        })),
+        ...inserts.map((row) => ({
+          op: 'insert' as const,
+          table: 'stop_times',
+          id: keyOf(row),
+          record: row as unknown as Record<string, unknown>,
+        })),
+        ...updates.map(({ key, row }) => {
+          const changes = changedFields(before.get(key)!, row)!;
+          return {
+            op: 'update' as const,
+            table: 'stop_times',
+            id: key,
+            before: changes.before,
+            after: changes.after,
+          };
+        }),
+      ],
+      label
     );
-    rowSpans.forEach((el) => {
-      (el as HTMLElement).dataset.stopSequence = newStopSequence;
-    });
+    return true;
   }
 
   /**
@@ -904,10 +987,12 @@ export class ScheduleController {
   }
 
   /**
-   * Refresh the current timetable view
+   * Re-render the timetable in place, for UI-only state that no patch covers.
    *
-   * Re-renders the timetable using the stored route/service/direction state.
-   * Used after edits to reflect updated stop sequences and times.
+   * Every *recorded* edit is redrawn by the patch:change listener in index.ts
+   * (browseNavigation.refresh -> renderSchedule), so calling this after one
+   * would run two renders against the same container at once. The only caller
+   * is the pending add-stop row, which exists purely in this controller.
    * No-op if no timetable is currently displayed.
    */
   async refreshCurrentTimetable(): Promise<void> {
@@ -933,39 +1018,25 @@ export class ScheduleController {
       this.currentDirectionId
     );
 
-    // Update the timetable container
+    // renderSchedule emits its own #schedule-view wrapper, so the old element
+    // is replaced rather than filled - assigning innerHTML would nest a second
+    // element with the same id inside the first.
     const container = document.getElementById('schedule-view');
-    if (container) {
-      container.innerHTML = html;
-      const newScrollDiv =
-        container.querySelector<HTMLElement>('.overflow-x-auto');
-      if (newScrollDiv) {
-        if (savedScrollLeft > 0) {
-          newScrollDiv.scrollLeft = savedScrollLeft;
-        }
-        if (savedScrollTop > 0) {
-          newScrollDiv.scrollTop = savedScrollTop;
-        }
-      }
+    if (!container) {
+      return;
+    }
+    container.outerHTML = html;
 
-      if (this.deleteTripAbortController) {
-        this.deleteTripAbortController.abort();
+    const newScrollDiv = document
+      .getElementById('schedule-view')
+      ?.querySelector<HTMLElement>('.overflow-x-auto');
+    if (newScrollDiv) {
+      if (savedScrollLeft > 0) {
+        newScrollDiv.scrollLeft = savedScrollLeft;
       }
-      this.deleteTripAbortController = new AbortController();
-      container.addEventListener(
-        'click',
-        async (e) => {
-          const btn = (e.target as Element).closest('.delete-trip-btn');
-          if (!btn) {
-            return;
-          }
-          const trip_id = btn.getAttribute('data-trip-id');
-          if (trip_id) {
-            await this.handleDeleteTrip(trip_id);
-          }
-        },
-        { signal: this.deleteTripAbortController.signal }
-      );
+      if (savedScrollTop > 0) {
+        newScrollDiv.scrollTop = savedScrollTop;
+      }
     }
   }
 
@@ -1035,15 +1106,13 @@ export class ScheduleController {
       };
 
       await this.gtfsParser.gtfsDatabase.insertRows('trips', [tripData]);
+      this.invalidateCaches();
       await this.patchManager?.recordInsert(
         'trips',
         trimmedId,
         tripData as Record<string, unknown>
       );
       console.log('Trip saved to database:', tripData);
-
-      // Refresh the timetable to show the new trip column
-      await this.refreshCurrentTimetable();
     } catch (error) {
       console.error('Failed to create trip:', error);
       notify.error('Failed to create trip');
@@ -1228,8 +1297,6 @@ export class ScheduleController {
       const label = `Changed stop "${oldName}" -> "${newName}" (Route ${routeLabel}, Direction ${this.currentDirectionId})`;
 
       await this.patchManager.recordBatch(ops, label);
-
-      await this.refreshCurrentTimetable();
     } catch (error) {
       console.error('[ScheduleController] changeStopAtRow failed:', error);
       notify.error('Failed to change stop');
@@ -1269,6 +1336,7 @@ export class ScheduleController {
         await db.deleteRows('stop_times', stopTimeKeys);
       }
       await db.deleteRow('trips', trip_id);
+      this.invalidateCaches();
 
       const ops = [
         ...stopTimes.map((st) => ({
@@ -1287,7 +1355,6 @@ export class ScheduleController {
       console.log(
         `[ScheduleController] Deleted trip ${trip_id}${stopTimes.length > 0 ? ` and ${stopTimes.length} stop_times` : ''}`
       );
-      await this.refreshCurrentTimetable();
     };
 
     if (stopTimes.length === 0) {

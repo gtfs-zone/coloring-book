@@ -1,12 +1,5 @@
 import type { HolidayPattern } from './types.js';
-
-/** Format a UTC Date as YYYYMMDD */
-function toYYYYMMDD(date: Date): string {
-  const y = date.getUTCFullYear();
-  const m = String(date.getUTCMonth() + 1).padStart(2, '0');
-  const d = String(date.getUTCDate()).padStart(2, '0');
-  return `${y}${m}${d}`;
-}
+import { toGtfsDate as toYYYYMMDD } from '../utils/gtfs-date.js';
 
 /** Day of week for a UTC date (0=Sun, 1=Mon, ..., 6=Sat) */
 function utcDow(year: number, month: number, day: number): number {
