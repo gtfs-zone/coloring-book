@@ -13,7 +13,7 @@
  * interactive edit handlers. Ensures the patch is always recorded and always
  * follows the DB write in the correct order.
  *
- * If patchManager is null (not yet initialized), the DB write still happens —
+ * If patchManager is null (not yet initialized), the DB write still happens:
  * patch recording is omitted but the edit is not silently dropped.
  *
  * @param db - Database object with updateRow method

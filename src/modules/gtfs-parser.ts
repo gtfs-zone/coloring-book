@@ -50,6 +50,8 @@ export class GTFSParser {
   private stopTimesByStopId = new Map<string, StopTimes[]>();
   // In-memory index for stop_times trip_id lookups (used by synchronous getStopIdsForRoute)
   private stopTimesByTripId = new Map<string, StopTimes[]>();
+  // In-memory index for trips route_id lookups (used by synchronous getTripsByRouteId)
+  private tripsByRouteId = new Map<string, GTFSDatabaseRecord[]>();
   // Dirty-blob tracking for deferred persistence
   private blobDirty = new Set<string>();
   private blobPersistTimer: ReturnType<typeof setTimeout> | null = null;
@@ -152,7 +154,7 @@ export class GTFSParser {
    * shallow copies of the stored rows, never live references. This prevents
    * silent aliasing bugs where a caller's "before" snapshot is mutated by a
    * later vt.update() call. Mutations (insert, update, delete, replace) still
-   * operate on the internal objects directly — the copies are only for callers.
+   * operate on the internal objects directly: the copies are only for callers.
    *
    * SHARED-ARRAY INVARIANT: The `flat` array passed in is stored as a live
    * reference and is the same object as gtfsData[fileName].data. All in-memory
@@ -381,8 +383,14 @@ export class GTFSParser {
       fieldMaps.set('trip_id', this.stopTimesByTripId);
       fieldMaps.set('stop_id', this.stopTimesByStopId);
     } else if (tableName === 'trips') {
-      fieldMaps.set('route_id', new Map());
+      this.tripsByRouteId.clear();
+      fieldMaps.set('route_id', this.tripsByRouteId);
       fieldMaps.set('service_id', new Map());
+    } else if (tableName === 'stops') {
+      // Without this, every queryRows('stops', { stop_id }) is a linear scan
+      // that clones a matching row out of a 10,000-row table. The timetable
+      // did one per stop on the route.
+      fieldMaps.set('stop_id', new Map());
     } else if (tableName === 'agency') {
       fieldMaps.set('agency_id', new Map());
     } else if (tableName === 'routes') {
@@ -394,6 +402,9 @@ export class GTFSParser {
 
   /** Mark a table's blob as needing re-persistence and schedule a debounced flush. */
   invalidateBlobForTable(tableName: string): void {
+    if (tableName === 'shapes') {
+      this.shapeIdsCache = null;
+    }
     this.blobDirty.add(tableName);
     if (this.blobPersistTimer) {
       clearTimeout(this.blobPersistTimer);
@@ -435,9 +446,9 @@ export class GTFSParser {
    *
    * Uses Papa.unparse so commas, double-quotes, and newlines in field values
    * are properly escaped. The header set is the union of keys across all
-   * rows (not just rows[0]) so columns added later — e.g. when the UI
+   * rows (not just rows[0]) so columns added later (e.g. when the UI
    * inserts a new stop with `location_type` set, but the original imported
-   * CSV didn't have that column — survive the round-trip.
+   * CSV didn't have that column) survive the round-trip.
    */
   private generateCSVFromRows(
     fileName: string,
@@ -495,6 +506,47 @@ export class GTFSParser {
       (st) => st.trip_id === trip_id
     );
   }
+
+  /**
+   * Fast trips lookup by route_id via in-memory index (used by the route-source
+   * adapter). Returns shallow copies of the stored rows (copy-on-read invariant).
+   */
+  getTripsByRouteId(route_id: string): GTFSDatabaseRecord[] {
+    const indexed = this.tripsByRouteId.get(route_id);
+    if (indexed) {
+      return indexed.map((r) => ({ ...r }));
+    }
+
+    console.warn(
+      '[GTFSParser] getTripsByRouteId: index miss, falling back to linear scan'
+    );
+    return this.getFileDataSyncTyped(GTFS_TABLES.TRIPS).filter(
+      (t) => String(t.route_id ?? '') === route_id
+    );
+  }
+
+  /**
+   * The distinct shape_ids in the feed, sorted.
+   *
+   * Callers only ever want the id set, and reading the shapes table to get it
+   * copies every shape point (394,557 rows on the MBTA feed to derive 1,200
+   * ids. Cached until a shapes edit invalidates it.
+   */
+  getShapeIds(): string[] {
+    if (this.shapeIdsCache) {
+      return this.shapeIdsCache;
+    }
+    const ids = new Set<string>();
+    for (const row of this.getFileDataSyncTyped(GTFS_TABLES.SHAPES)) {
+      if (row.shape_id) {
+        ids.add(String(row.shape_id));
+      }
+    }
+    this.shapeIdsCache = Array.from(ids).sort();
+    return this.shapeIdsCache;
+  }
+
+  private shapeIdsCache: string[] | null = null;
 
   async initialize(): Promise<void> {
     await this.gtfsDatabase.initialize();
@@ -652,14 +704,14 @@ export class GTFSParser {
     // find it. Without a row, every field edit silently does nothing (the virtual
     // table update handler returns early when byId has no entry). On reload the
     // patch replay would also fail, hasExistingRows would be false, and
-    // initializeEmpty would clear the patches — losing all edits.
+    // initializeEmpty would clear the patches, losing all edits.
     const seedRow = Object.fromEntries(
       getFileHeaders('feed_info.txt').map((h) => [h, ''])
     ) as GTFSDatabaseRecord;
     await this.gtfsDatabase.insertRows('feed_info', [seedRow]);
     // Flush immediately so the seed blob is in IDB before any patch is recorded.
     // This guarantees that a quick refresh (before the 3-second debounce) still
-    // has a row for patch replay to land on. Fresh DB has no patches yet → version 0.
+    // has a row for patch replay to land on. Fresh DB has no patches yet, version 0.
     await this.persistDirtyBlobs(0);
   }
 
@@ -768,7 +820,7 @@ export class GTFSParser {
         }
       }
 
-      // A fresh import has no patches yet — blobs are current at version 0.
+      // A fresh import has no patches yet: blobs are current at version 0.
       await this.gtfsDatabase.setBlobVersion(0);
 
       feedProgressIndicator.updateProgress(operation, 100, 'Complete!');
@@ -799,7 +851,7 @@ export class GTFSParser {
       feedProgressIndicator.finishLoading(operation);
       const msg =
         networkError instanceof TypeError
-          ? `Network error — could not reach ${url}. Check your connection or whether the server allows cross-origin requests (CORS).`
+          ? `Network error: could not reach ${url}. Check your connection or whether the server allows cross-origin requests (CORS).`
           : `Fetch failed: ${networkError instanceof Error ? networkError.message : String(networkError)}`;
 
       console.error('[GTFSParser]', msg, networkError);
@@ -1015,7 +1067,7 @@ export class GTFSParser {
           const tableName = this.getTableName(fileName);
           const rows = await this.gtfsDatabase.getAllRows(tableName);
 
-          // Skip header-only files — don't include empty tables in the export.
+          // Skip header-only files: don't include empty tables in the export.
           if (
             rows.length === 0 &&
             (this.gtfsData[fileName]?.data.length ?? 0) === 0
@@ -1036,7 +1088,7 @@ export class GTFSParser {
 
             zip.file(fileName, csvContent);
           } else {
-            // Fallback: IDB empty but memory has rows — generate CSV from data
+            // Fallback: IDB empty but memory has rows, generate CSV from data
 
             console.warn(
               `No data in IndexedDB for ${fileName}, generating from memory`
@@ -1054,7 +1106,7 @@ export class GTFSParser {
         }
       }
 
-      // Append passthrough files verbatim — no newline manipulation.
+      // Append passthrough files verbatim, no newline manipulation.
       for (const [fileName, rawContent] of this.passthroughFiles) {
         zip.file(fileName, rawContent);
       }

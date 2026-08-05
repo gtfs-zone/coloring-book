@@ -17,8 +17,20 @@ import {
   renderFieldLabelContent,
 } from '../utils/field-component.js';
 import { TripsSchema, GTFS_TABLES } from '../types/gtfs.js';
-import { getStopDisplay, renderOptionLabel } from '../utils/entity-display.js';
-import { renderTrashIcon } from './modal-utils.js';
+import { getStopDisplay, renderCardLabel } from '../utils/entity-display.js';
+import { escapeHtml } from '../utils/escape-html.js';
+import { renderTrashIcon, renderRouteWaypointsIcon } from './modal-utils.js';
+import { routeColor } from '../utils/route-colors.js';
+import {
+  railCell,
+  rowPaths,
+  RowDot,
+  endpointThreshold,
+  isEndpoint,
+  gutterWidth,
+} from './route-strip.js';
+import { RouteSequence } from './route-sequence.js';
+import { RouteGraph } from './route-graph.js';
 
 function getBrouterProfile(routeType: string | number): string {
   const t = Number(routeType);
@@ -74,7 +86,6 @@ function buildBrouterUrl(
  */
 export class TimetableRenderer {
   private cellRenderer: TimetableCellRenderer;
-  public availableShapeIds: string[] = [];
 
   constructor() {
     this.cellRenderer = new TimetableCellRenderer();
@@ -191,11 +202,6 @@ export class TimetableRenderer {
     data: TimetableData,
     pendingStopId?: string
   ): string {
-    console.log('DEBUG: renderTimetableContent called with:', {
-      trips: data.trips?.length || 0,
-      selectedDirectionId: data.selectedDirectionId,
-    });
-
     // Always render the table structure, even when empty
     return `
       <div class="flex-1 overflow-x-auto">
@@ -217,8 +223,6 @@ export class TimetableRenderer {
   private generateTripPropertyConfigs(
     sampleTrip: Record<string, unknown>
   ): FieldConfig[] {
-    console.log('🔍 Sample trip:', sampleTrip);
-
     // Generate all field configs from TripsSchema
     const allConfigs = generateFieldConfigsFromSchema(
       TripsSchema,
@@ -226,21 +230,11 @@ export class TimetableRenderer {
       GTFS_TABLES.TRIPS
     );
 
-    console.log(
-      '🔍 All configs:',
-      allConfigs.map((c) => c.field)
-    );
-
     // Filter out fields that shouldn't be editable in the timetable
     // route_id and service_id are fixed (timetable is already filtered by these)
     // trip_id is the primary key
     const editableConfigs = allConfigs.filter(
       (config) => !['route_id', 'service_id', 'trip_id'].includes(config.field)
-    );
-
-    console.log(
-      '🔍 Editable configs:',
-      editableConfigs.map((c) => c.field)
     );
 
     return editableConfigs;
@@ -284,8 +278,8 @@ export class TimetableRenderer {
 
         return `
         <tr class="trip-property-row" data-property="${config.field}">
-          <th class="stop-name min-w-[200px] p-2 font-medium border-r border-base-300 bg-base-100">
-            <div class="stop-name-text">${renderFieldLabelContent(config)}</div>
+          <th class="stop-name max-w-[320px] p-2 font-medium border-r border-base-300 bg-base-100">
+            <div class="stop-name-text truncate">${renderFieldLabelContent(config)}</div>
           </th>
           ${cells}
           ${newTripCell}
@@ -301,7 +295,12 @@ export class TimetableRenderer {
    * Generate human-readable label from snake_case field name
    */
   /**
-   * Render individual property cell with appropriate input type
+   * Render individual property cell as a clickable text span
+   *
+   * Mirrors the time-cell click-to-edit pattern: a static span carries the
+   * data the delegated handler in ScheduleController needs to swap it for
+   * the right editor (inline input, inline enum menu, or the searchable
+   * shape_id modal) on click. See installTimetablePickers.
    *
    * @param trip - Trip object containing the property value
    * @param config - Field configuration for this property
@@ -312,84 +311,40 @@ export class TimetableRenderer {
     config: FieldConfig
   ): string {
     const trip_id = trip.trip_id as string;
-    const value = trip[config.field] ?? '';
-    const inputId = `trip-prop-${trip_id}-${config.field}`;
+    const rawValue = trip[config.field];
+    const value =
+      rawValue === null || rawValue === undefined ? '' : String(rawValue);
+
+    let fieldKind: 'text' | 'number' | 'enum' | 'shape';
+    let display: string;
 
     if (config.field === 'shape_id') {
-      const optionsHtml = [
-        `<option value=""${value === '' ? ' selected' : ''}>— none —</option>`,
-        ...this.availableShapeIds.map((sid) => {
-          const selected = String(value) === sid ? ' selected' : '';
-          return `<option value="${this.escapeHtml(sid)}"${selected}>${this.escapeHtml(sid)}</option>`;
-        }),
-      ].join('');
-      return `
-        <td class="text-center p-2">
-          <select
-            id="${inputId}"
-            class="select select-xs w-full"
-            data-trip-id="${trip_id}"
-            data-field="${config.field}"
-            data-table="trips.txt"
-            onchange="gtfsEditor.scheduleController.updateTripProperty('${trip_id}', '${config.field}', this.value)">
-            ${optionsHtml}
-          </select>
-        </td>
-      `;
+      fieldKind = 'shape';
+      display = value;
     } else if (config.type === 'select' && config.options) {
-      const optionsHtml = [
-        '<option value="">-</option>',
-        ...config.options.map((opt) => {
-          const selected =
-            String(value) === String(opt.value) ? 'selected' : '';
-          return `<option value="${this.escapeHtml(String(opt.value))}" ${selected}>${this.escapeHtml(opt.label)}</option>`;
-        }),
-      ].join('');
-
-      return `
-        <td class="text-center p-2">
-          <select
-            id="${inputId}"
-            class="select select-xs w-full"
-            data-trip-id="${trip_id}"
-            data-field="${config.field}"
-            data-table="trips.txt"
-            onchange="gtfsEditor.scheduleController.updateTripProperty('${trip_id}', '${config.field}', this.value)">
-            ${optionsHtml}
-          </select>
-        </td>
-      `;
+      fieldKind = 'enum';
+      const option = config.options.find((opt) => String(opt.value) === value);
+      display = option ? option.label : '';
     } else if (config.type === 'number') {
-      return `
-        <td class="text-center p-2">
-          <input
-            id="${inputId}"
-            type="number"
-            class="input input-xs w-full text-center"
-            data-trip-id="${trip_id}"
-            data-field="${config.field}"
-            data-table="trips.txt"
-            value="${this.escapeHtml(String(value))}"
-            onchange="gtfsEditor.scheduleController.updateTripProperty('${trip_id}', '${config.field}', this.value)" />
-        </td>
-      `;
+      fieldKind = 'number';
+      display = value;
     } else {
-      // text input
-      return `
-        <td class="text-center p-2">
-          <input
-            id="${inputId}"
-            type="text"
-            class="input input-xs w-full text-center"
-            data-trip-id="${trip_id}"
-            data-field="${config.field}"
-            data-table="trips.txt"
-            value="${this.escapeHtml(String(value))}"
-            placeholder="${this.escapeHtml(config.label)}"
-            onchange="gtfsEditor.scheduleController.updateTripProperty('${trip_id}', '${config.field}', this.value)" />
-        </td>
-      `;
+      fieldKind = 'text';
+      display = value;
     }
+
+    return `
+      <td class="text-center p-2">
+        <span
+          class="trip-prop-span inline-block max-w-full truncate cursor-pointer rounded px-1 hover:bg-base-200"
+          data-trip-id="${trip_id}"
+          data-field="${config.field}"
+          data-table="trips.txt"
+          data-field-kind="${fieldKind}"
+          data-value="${escapeHtml(value)}"
+        >${escapeHtml(display) || '-'}</span>
+      </td>
+    `;
   }
 
   /**
@@ -411,19 +366,30 @@ export class TimetableRenderer {
     const trips = data.trips;
     const tripHeaders = trips
       .map((trip) => {
+        return `
+          <td class="trip-header text-center min-w-[80px] p-2 text-xs font-mono">
+            ${escapeHtml(trip.trip_id)}
+          </td>
+        `;
+      })
+      .join('');
+
+    const tripActionCells = trips
+      .map((trip) => {
         const tripStops = data.stops.filter((_, i) => trip.stopTimes.has(i));
         const brouterUrl = buildBrouterUrl(
           tripStops,
           data.route.route_type ?? ''
         );
         const brouterLink = brouterUrl
-          ? `<a href="${brouterUrl}" target="_blank" rel="noopener" class="btn btn-xs btn-outline mt-1" title="Open in brouter">↗</a>`
+          ? `<a href="${brouterUrl}" target="_blank" rel="noopener" class="btn btn-xs btn-outline" title="Open in brouter">${renderRouteWaypointsIcon('h-3 w-3')}</a>`
           : '';
         return `
-          <td class="trip-header text-center min-w-[80px] p-2 text-xs font-mono">
-            ${this.escapeHtml(trip.trip_id)}
-            <button class="btn btn-xs btn-error btn-outline delete-trip-btn mt-1" data-trip-id="${this.escapeHtml(trip.trip_id)}" title="Delete">${renderTrashIcon('h-3 w-3')}</button>
-            ${brouterLink}
+          <td class="trip-header text-center min-w-[80px] p-2 text-xs">
+            <div class="flex items-center justify-center gap-1">
+              <button class="btn btn-xs btn-error btn-outline delete-trip-btn" data-trip-id="${escapeHtml(trip.trip_id)}" title="Delete">${renderTrashIcon('h-3 w-3')}</button>
+              ${brouterLink}
+            </div>
           </td>
         `;
       })
@@ -445,13 +411,125 @@ export class TimetableRenderer {
     return `
       <thead>
         <tr class="z-[2]">
-          <th class="stop-header min-w-[200px] p-2 text-left bg-base-100">
+          <th class="stop-header max-w-[320px] p-2 text-left bg-base-100">
             Stop
           </th>
           ${tripHeaders}
           ${newTripHeader}
         </tr>
+        <tr class="z-[2]">
+          <th class="stop-header max-w-[320px] p-2 text-left bg-base-100"></th>
+          ${tripActionCells}
+          <td class="trip-header text-center min-w-[120px] p-2 text-xs"></td>
+        </tr>
       </thead>
+    `;
+  }
+
+  /**
+   * Render one stop row's rail + label cell.
+   *
+   * The rail is the strip visualisation: an SVG of the route's branch
+   * geometry for this row, laid under the stop label and swap button. No
+   * vehicle chips sit in the gaps in coloring-book (that is test-track's
+   * concern), so every row is a plain stop row with no lead-in/lead-out
+   * extension needed.
+   *
+   * The label itself used to come from a `<select>` listing every stop in the
+   * feed, repeated in every row (226,556 `<option>` nodes for the MBTA Red
+   * Line and 721,000 for a 70-stop bus route), which was the single largest
+   * cost in the view. The label is now static text; clicking it opens the
+   * searchable stop picker modal (see ScheduleController.openStopPicker).
+   *
+   * @param stop - The stop this row represents
+   * @param index - The stop's position in the route sequence / graph
+   * @param graph - The route's lane layout
+   * @param sequence - The route's canonical stop order and per-stop stats
+   * @param color - The route's rail color
+   * @returns HTML string for the row's rail + stop label cell
+   */
+  private renderStopLabelCell(
+    stop: Stops,
+    index: number,
+    graph: RouteGraph,
+    sequence: RouteSequence,
+    color: string
+  ): string {
+    // The pending stop (add-stop preview) is appended to data.stops but has no
+    // row in the route sequence/graph, so it has no rail and no stats. Render a
+    // plain label for it rather than indexing off the end of stopStats.
+    if (index >= sequence.stops.length) {
+      return this.renderPlainStopLabel(stop);
+    }
+
+    const stats = sequence.stopStats[index];
+    const threshold = endpointThreshold(sequence.totalTrips);
+    const endpoint = isEndpoint(stats, threshold);
+    const revisit = sequence.stops[index].occurrence;
+
+    const dot: RowDot = {
+      kind: endpoint ? 'solid' : 'open',
+      lane: graph.rows[index].lane,
+    };
+    const rail = railCell(
+      color,
+      graph.laneCount,
+      rowPaths(graph, index, { kind: 'stop', leadIn: false, leadOut: false }),
+      dot
+    );
+
+    const revisitHtml =
+      revisit > 0
+        ? `<span class="opacity-50 text-xs ml-1">(visit ${revisit + 1})</span>`
+        : '';
+
+    // The rail is absolutely positioned so it fills the full row height,
+    // however tall the trip time cells make the row. A percentage height on a
+    // normal-flow child of a table cell does not resolve, but the stop <th> is
+    // `position: sticky` (from table-pin-cols), so it is a containing block and
+    // `inset-y-0` resolves to the whole cell. The label clears the rail with a
+    // left pad of the rail width plus the usual gap.
+    const width = gutterWidth(graph.laneCount);
+    return `
+      <div class="absolute top-0 -bottom-px left-0">${rail}</div>
+      <div class="min-w-0" style="padding-left:${width + 8}px">
+        ${this.renderStopNameBlock(stop, revisitHtml, `Served by ${stats.serves} of ${sequence.totalTrips} trips`)}
+      </div>
+    `;
+  }
+
+  /**
+   * The stop name over its stop_id. The name span is the click target for the
+   * stop picker (`data-stop-id`); the id line below is the real stop/platform
+   * id carried in this row of the schedule, shown so the operator can tell
+   * apart same-named stops.
+   */
+  private renderStopNameBlock(
+    stop: Stops,
+    revisitHtml: string,
+    title: string
+  ): string {
+    const label = renderCardLabel(
+      getStopDisplay(stop as unknown as Record<string, string>)
+    );
+    return `
+      <div class="flex flex-col justify-center min-w-0 flex-1" title="${title}">
+        <span
+          class="stop-label-span min-w-0 truncate cursor-pointer rounded px-1 hover:bg-base-200"
+          data-stop-id="${escapeHtml(stop.stop_id)}"
+          title="Change stop"
+        >${label}${revisitHtml}</span>
+        <span class="stop-id-line text-xs opacity-50 font-mono truncate px-1">${escapeHtml(stop.stop_id)}</span>
+      </div>
+    `;
+  }
+
+  /** A stop label with no rail, for the pending add-stop preview row. */
+  private renderPlainStopLabel(stop: Stops): string {
+    return `
+      <div class="flex items-stretch gap-2 min-w-0">
+        ${this.renderStopNameBlock(stop, '', 'Pending stop')}
+      </div>
     `;
   }
 
@@ -474,19 +552,21 @@ export class TimetableRenderer {
       return '<tbody></tbody>';
     }
 
-    console.log('\n=== RENDERING TIMETABLE BODY ===');
-    console.log(`Number of stops to render: ${data.stops.length}`);
-    console.log(`Number of trips to render: ${data.trips.length}`);
-    console.log('Stop IDs in rendering order:');
-    data.stops.forEach((stop, idx) => {
-      console.log(`  [${idx}] ${stop.stop_id} - ${stop.stop_name}`);
-    });
+    console.log(
+      `[TimetableRenderer] rendering ${data.stops.length} stops x ${data.trips.length} trips`
+    );
+
+    const graph = data.graph;
+    const sequence = data.sequence;
+    if (data.stops.length > 0 && (!graph || !sequence)) {
+      throw new Error(
+        '[TimetableRenderer] stops present without a route graph/sequence - generateTimetableData should always produce both alongside stops'
+      );
+    }
+    const color = routeColor(data.route.route_id, data.route.route_color);
 
     const rows = data.stops
       .map((stop, stopIndex) => {
-        console.log(
-          `\n--- Rendering row for stop [${stopIndex}]: ${stop.stop_id} ---`
-        );
         const isPendingStop =
           pendingStopId !== undefined &&
           stop.stop_id === pendingStopId &&
@@ -495,16 +575,13 @@ export class TimetableRenderer {
           ? 'opacity-60 border-dashed border-2 border-warning'
           : '';
         const timeCells = data.trips
-          .map((trip, tripIndex) => {
+          .map((trip) => {
             // Use stopIndex as the key for all time lookups
             // stopIndex = position in the supersequence (same as position in data.stops array)
             // This handles duplicate stops correctly (e.g., circular routes)
             const stop_id = stop.stop_id;
             const supersequencePosition = stopIndex;
 
-            console.log(
-              `  Trip ${tripIndex} (${trip.trip_id}): Looking up position=${supersequencePosition}, stop_id='${stop_id}'`
-            );
             const editableStopTime = trip.editableStopTimes?.get(
               supersequencePosition
             );
@@ -513,33 +590,13 @@ export class TimetableRenderer {
             const departure_time =
               trip.departure_times?.get(supersequencePosition) || undefined;
 
-            console.log(`    arrival_time: ${arrival_time || 'NONE'}`);
-            console.log(`    departure_time: ${departure_time || 'NONE'}`);
-            console.log(
-              `    editableStopTime: ${editableStopTime ? 'YES' : 'NO'}`
-            );
-
-            if (!arrival_time && !departure_time) {
-              console.log(
-                `    ⚠️  NO TIMES FOUND for position=${supersequencePosition}, stop_id='${stop_id}' in trip ${trip.trip_id}`
-              );
-              console.log(
-                `    Available positions in arrival_times:`,
-                Array.from(trip.arrival_times?.keys() || [])
-              );
-              console.log(
-                `    Available positions in departure_times:`,
-                Array.from(trip.departure_times?.keys() || [])
-              );
-            }
-
             return this.cellRenderer.renderStackedArrivalDepartureCell(
               trip.trip_id,
               stop_id,
               arrival_time || null,
               departure_time || null,
               editableStopTime,
-              supersequencePosition
+              isPendingStop
             );
           })
           .join('');
@@ -549,14 +606,8 @@ export class TimetableRenderer {
 
         return `
         <tr class="${rowClass}">
-          <th class="stop-name p-2 font-medium border-r border-base-300 bg-base-100">
-            <select
-              class="select select-xs w-full font-medium"
-              data-old-stop-id="${this.escapeHtml(stop.stop_id)}"
-              onchange="gtfsEditor.scheduleController.changeStopAtRow(this.dataset.oldStopId, this.value, this)"
-            >
-              ${data.allStops.map((s) => `<option value="${this.escapeHtml(s.stop_id)}"${s.stop_id === stop.stop_id ? ' selected' : ''}>${this.escapeHtml(renderOptionLabel(getStopDisplay(s as unknown as Record<string, string>)))}</option>`).join('')}
-            </select>
+          <th class="stop-name max-w-[320px] py-0 px-2 pl-0 font-medium border-r border-base-300 bg-base-100">
+            ${this.renderStopLabelCell(stop, stopIndex, graph as RouteGraph, sequence as RouteSequence, color)}
           </th>
           ${timeCells}
           ${newTripCell}
@@ -571,11 +622,10 @@ export class TimetableRenderer {
       .join('');
     const newStopRow = `
       <tr>
-        <th class="stop-name p-2 border-r border-base-300 bg-base-100">
-          <select class="select select-sm w-full" id="new-stop-select"
-                  onchange="gtfsEditor.scheduleController.addStopFromSelector(this.value)">
-            <option value="">Add stop...</option>
-          </select>
+        <th class="stop-name max-w-[320px] p-2 border-r border-base-300 bg-base-100">
+          <button
+            class="add-stop-btn btn btn-ghost btn-sm w-full justify-start opacity-70 hover:opacity-100"
+          >Add stop...</button>
         </th>
         ${newStopTimeCells}
         <td class="text-center p-2"></td>
@@ -591,20 +641,18 @@ export class TimetableRenderer {
   /**
    * Get display name for direction
    *
-   * Determines the best display name for a direction tab.
-   * Uses headsign if available, falls back to formatted direction ID.
+   * `direction.name` is already the dominant trip_headsign (or a terminal
+   * stop / bare direction id fallback) from directionsForRoute - no further
+   * formatting needed here.
    *
-   * @param direction - Direction info with ID and optional headsign
+   * @param direction - Direction info with ID and label
    * @returns Human-readable direction name for display
    */
   private getDirectionDisplayName(direction: DirectionInfo): string {
     if (direction.tripCount === 0) {
-      return `Direction ${direction.id}: No trips`;
+      return `${direction.name}: No trips`;
     }
-    if (direction.lastStopName) {
-      return `Direction ${direction.id}: To ${direction.lastStopName}`;
-    }
-    return `Direction ${direction.id}`;
+    return direction.name;
   }
 
   /**
@@ -625,20 +673,5 @@ export class TimetableRenderer {
         </div>
       </div>
     `;
-  }
-
-  /**
-   * Escape HTML characters in text
-   *
-   * Prevents XSS by escaping user-provided text content.
-   * Uses DOM API for safe HTML escaping.
-   *
-   * @param text - Raw text that may contain HTML characters
-   * @returns HTML-safe escaped text
-   */
-  private escapeHtml(text: string): string {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
   }
 }

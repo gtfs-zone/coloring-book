@@ -7,6 +7,19 @@ import {
   buildStopCoordResolver,
   hasValidCoords,
 } from '../utils/stop-coords.js';
+import { bufferedHull } from '../utils/station-hull.js';
+import {
+  clearThemeColorCache,
+  resolveThemeColor,
+} from '../utils/theme-color.js';
+import {
+  PATHWAY_CATEGORIES,
+  PATHWAY_CATEGORY_ORDER,
+  PATHWAY_MODES,
+  modesInCategory,
+  type PathwayCategory,
+} from '../utils/pathway-modes.js';
+import { ensureMapIcons } from './map-icons.js';
 
 export interface StopLayerOptions {
   showBackground: boolean;
@@ -24,6 +37,49 @@ export interface HighlightLayerOptions {
   radius: number;
   strokeColor: string;
   strokeWidth: number;
+}
+
+/** Perpendicular spacing between parallel pathways sharing an endpoint pair. */
+const PATHWAY_PARALLEL_OFFSET_M = 2;
+/** Below this length a pathway is a blob rather than a line. */
+const PATHWAY_STUB_LENGTH_M = 4;
+/** How far the station ground plane extends past its outermost node. */
+const STATION_GROUND_BUFFER_M = 16;
+
+/** Pathway line weights. The casing dash scale is derived from the ratio. */
+const PATHWAY_CORE_WIDTH_PX = 3;
+const PATHWAY_CASING_EXTRA_PX = 3.5;
+const PATHWAY_CASING_WIDTH_PX = PATHWAY_CORE_WIDTH_PX + PATHWAY_CASING_EXTRA_PX;
+
+const METERS_PER_DEG_LAT = 110540;
+const METERS_PER_DEG_LNG_EQUATOR = 111320;
+
+type Segment = [[number, number], [number, number]];
+
+const metersPerDegLng = (lat: number): number =>
+  METERS_PER_DEG_LNG_EQUATOR * Math.cos((lat * Math.PI) / 180);
+
+function segmentLengthM([a, b]: Segment): number {
+  const dx = (b[0] - a[0]) * metersPerDegLng(a[1]);
+  const dy = (b[1] - a[1]) * METERS_PER_DEG_LAT;
+  return Math.hypot(dx, dy);
+}
+
+/** Shift a segment sideways by `meters` (signed) along its own normal. */
+function offsetSegment([a, b]: Segment, meters: number): Segment {
+  const mPerDegLng = metersPerDegLng(a[1]);
+  const dx = (b[0] - a[0]) * mPerDegLng;
+  const dy = (b[1] - a[1]) * METERS_PER_DEG_LAT;
+  const len = Math.hypot(dx, dy);
+  if (len < 1e-6) {
+    return [a, b];
+  }
+  const ox = ((-dy / len) * meters) / mPerDegLng;
+  const oy = ((dx / len) * meters) / METERS_PER_DEG_LAT;
+  return [
+    [a[0] + ox, a[1] + oy],
+    [b[0] + ox, b[1] + oy],
+  ];
 }
 
 // Default filter: show all top-level stops (empty parent_station) and stations (location_type=1), hide child stops.
@@ -51,6 +107,19 @@ export class LayerManager {
     | ((stop_id: string) => [number, number] | null)
     | null = null;
 
+  /**
+   * line-dasharray is not data-driven in MapLibre, so each dash pattern needs
+   * its own layer. One casing + one core per pathway category.
+   */
+  private static readonly PATHWAY_LAYER_IDS: string[] = [
+    'station-ground-fill',
+    'station-ground-line',
+    ...PATHWAY_CATEGORY_ORDER.map((c) => `pathways-casing-${c}`),
+    ...PATHWAY_CATEGORY_ORDER.map((c) => `pathways-core-${c}`),
+    'pathways-icons',
+    'pathways-clickarea',
+  ];
+
   private readonly onPathwayMouseEnter = () => {
     this.map.getCanvas().style.cursor = 'pointer';
   };
@@ -71,7 +140,7 @@ export class LayerManager {
   };
 
   private defaultHighlightOptions: HighlightLayerOptions = {
-    color: '#e74c3c',
+    color: this.accent(),
     radius: 8,
     strokeColor: '#ffffff',
     strokeWidth: 3,
@@ -83,14 +152,54 @@ export class LayerManager {
   }
 
   /**
+   * Selection color, taken from the active DaisyUI theme. Red is reserved for
+   * errors, so selection must not use it.
+   */
+  private accent(): string {
+    return resolveThemeColor('--color-primary', '#3b82f6');
+  }
+
+  /**
+   * Re-resolve the accent against the now-active theme and repaint every
+   * property that uses it. Called by the theme controller.
+   */
+  public refreshAccentColor(): void {
+    clearThemeColorCache();
+    const accent = this.accent();
+    this.defaultHighlightOptions = {
+      ...this.defaultHighlightOptions,
+      color: accent,
+    };
+
+    for (const layerId of ['stops-focus-halo', 'stops-focus-ring']) {
+      if (this.map.getLayer(layerId)) {
+        this.map.setPaintProperty(layerId, 'circle-color', accent);
+        this.map.setPaintProperty(layerId, 'circle-stroke-color', accent);
+      }
+    }
+    for (const layerId of ['stops-background', 'stops-focus-top']) {
+      if (this.map.getLayer(layerId)) {
+        this.map.setPaintProperty(
+          layerId,
+          'circle-color',
+          this.stopFillColor(this.defaultStopOptions)
+        );
+      }
+    }
+    console.log(`[LayerManager] Accent color refreshed to ${accent}`);
+  }
+
+  /**
    * Clear all managed layers and sources
    */
   public clearAllLayers(): void {
     const layersToRemove = [
-      'pathways-lines',
-      'pathways-clickarea',
+      ...LayerManager.PATHWAY_LAYER_IDS,
       'stops-station-dot',
       'stops-background',
+      'stops-focus-halo',
+      'stops-focus-ring',
+      'stops-focus-top',
       'stops-clickarea',
       'stops-highlight',
       'trip-highlight',
@@ -102,6 +211,7 @@ export class LayerManager {
 
     const sourcesToRemove = [
       'pathways',
+      'station-ground',
       'stops',
       'stops-highlight',
       'trip-highlight',
@@ -147,12 +257,24 @@ export class LayerManager {
         data: stopsGeoJSON,
         promoteId: 'stop_id',
       });
+      // A fresh source means setStyle wiped the old one and every feature
+      // state with it. Drop the cached ids, or setFocusedStop's no-op guard
+      // would swallow the caller re-focusing the same stop and the selection
+      // would never come back after a basemap switch.
+      this.focusedStopId = null;
+      this.focusedPathwayId = null;
+      this.routeStopIds = [];
     }
     this.onStopsDataUpdated?.(stopsGeoJSON);
 
-    // Add background stops layer if enabled
+    // Add background stops layer if enabled. Order matters: the halo sits
+    // under the circles (and under the pathways, which insert themselves
+    // before stops-background), the focus redraw sits over them, and the
+    // station dot goes last so a focused station keeps its center dot.
     if (finalOptions.showBackground) {
+      this.addFocusHaloLayers();
       this.addStopsBackgroundLayer(finalOptions);
+      this.addFocusTopLayer(finalOptions);
       this.addStationDotLayer();
     }
 
@@ -167,7 +289,7 @@ export class LayerManager {
     }
 
     const featureCount = stopsGeoJSON.features.length;
-    console.log(`🗺️ Added ${featureCount} stops to map`);
+    console.log(`Added ${featureCount} stops to map`);
   }
 
   /**
@@ -305,7 +427,7 @@ export class LayerManager {
    *   ~ STATION_FADE_ZOOM_MAX   stations and child nodes have faded in
    *   ~ STOP_FADE_ZOOM_MAX      plain stops (location_type 0) have faded in
    *
-   * Stations get the gentler band because they're far more spaced out — a
+   * Stations get the gentler band because they're far more spaced out, a
    * zoomed-out view of them still reads as a network, where the same view of
    * every plain stop reads as a pile of dots. Special stops (focused, or on
    * the spotlighted route) are exempt at every zoom. When `dim` is set (route
@@ -354,40 +476,135 @@ export class LayerManager {
   }
 
   /**
-   * Per-location-type circle radius wrapped in the focused feature-state
-   * case, evaluated at one zoom stop. `scale` is the multiplier relative to
-   * the reference zoom (z16); focused stops render ~1.7x larger. Stations are
-   * the largest so they read as hubs; child node types sit in between.
+   * Per-location-type circle radius, evaluated at one zoom stop. `scale` is
+   * the multiplier relative to the reference zoom (z16). Stations are the
+   * largest so they read as hubs; child node types sit in between.
+   *
+   * Radius encodes location_type and nothing else: focus deliberately does not
+   * change size, or a focused plain stop would outgrow an unfocused station
+   * and the size hierarchy would lie. Selection is carried by the halo.
    */
   private stopRadiusAt(
     plainRadius: number,
     scale: number
   ): ExpressionSpecification {
-    const byType = (mult: number) => [
+    return [
       'case',
       ['==', ['get', 'location_type'], 1],
-      8 * scale * mult,
+      8 * scale,
       ['==', ['get', 'location_type'], 2],
-      4.5 * scale * mult,
+      4.5 * scale,
       ['==', ['get', 'location_type'], 3],
-      4.5 * scale * mult,
+      4.5 * scale,
       ['==', ['get', 'location_type'], 4],
-      5 * scale * mult,
-      plainRadius * scale * mult,
-    ];
+      5 * scale,
+      plainRadius * scale,
+    ] as unknown as ExpressionSpecification;
+  }
+
+  /**
+   * Fill for the stop circles. Focused stops invert to the accent so selection
+   * survives at any zoom without a size change. Swapping the focused branch
+   * out is how you go back to keeping the location_type color while selected.
+   */
+  private stopFillColor(options: StopLayerOptions): ExpressionSpecification {
     return [
       'case',
       ['boolean', ['feature-state', 'focused'], false],
-      byType(1.7),
-      byType(1),
+      this.accent(),
+      ['==', ['get', 'location_type'], 1],
+      '#ffffff', // Station: white (black inner dot drawn by stops-station-dot layer)
+      ['==', ['get', 'location_type'], 2],
+      '#f59e0b', // Entrance: amber
+      ['==', ['get', 'location_type'], 3],
+      '#8b5cf6', // Generic node: purple
+      ['==', ['get', 'location_type'], 4],
+      '#10b981', // Boarding area: green
+      options.backgroundColor,
     ] as unknown as ExpressionSpecification;
+  }
+
+  /**
+   * Radius of the focus halo. Fixed pixel sizes rather than a multiple of the
+   * stop radius so the glow stays the same regardless of location_type.
+   */
+  private focusHaloRadius(): ExpressionSpecification {
+    return [
+      'interpolate',
+      ['linear'],
+      ['zoom'],
+      11,
+      ['case', ['boolean', ['feature-state', 'focused'], false], 14, 0],
+      16,
+      ['case', ['boolean', ['feature-state', 'focused'], false], 24, 0],
+      19,
+      ['case', ['boolean', ['feature-state', 'focused'], false], 38, 0],
+    ] as unknown as ExpressionSpecification;
+  }
+
+  /**
+   * Add the two focus-only layers that sit under the stop circles: a soft
+   * accent disc and a thin crisp ring.
+   *
+   * Layer filters cannot read feature-state, so visibility is driven by
+   * collapsing radius and opacity to 0 when unfocused. That keeps the existing
+   * setFeatureState flow in setFocusedStop working with no setFilter churn.
+   */
+  private addFocusHaloLayers(): void {
+    if (this.map.getLayer('stops-focus-halo')) {
+      return;
+    }
+    const focused: ExpressionSpecification = [
+      'boolean',
+      ['feature-state', 'focused'],
+      false,
+    ];
+    const accent = this.accent();
+
+    this.map.addLayer({
+      id: 'stops-focus-halo',
+      type: 'circle',
+      source: 'stops',
+      filter: this.activeStopsFilter,
+      paint: {
+        'circle-radius': this.focusHaloRadius(),
+        'circle-color': accent,
+        'circle-opacity': [
+          'case',
+          focused,
+          0.18,
+          0,
+        ] as unknown as ExpressionSpecification,
+        'circle-stroke-width': 0,
+      },
+    });
+
+    this.map.addLayer({
+      id: 'stops-focus-ring',
+      type: 'circle',
+      source: 'stops',
+      filter: this.activeStopsFilter,
+      paint: {
+        'circle-radius': this.focusHaloRadius(),
+        'circle-color': accent,
+        'circle-opacity': 0,
+        'circle-stroke-color': accent,
+        'circle-stroke-width': 1.4,
+        'circle-stroke-opacity': [
+          'case',
+          focused,
+          0.9,
+          0,
+        ] as unknown as ExpressionSpecification,
+      },
+    });
   }
 
   /**
    * Add background stops layer.
    *
-   * Cased transit look: circles scale with zoom (top-level zoom interpolate —
-   * MapLibre requires zoom as input to a top-level interpolate/step only),
+   * Cased transit look: circles scale with zoom (top-level zoom interpolate,
+   * since MapLibre requires zoom as input to a top-level interpolate/step only),
    * plain stops fade out below ~z12.5 so zoomed-out views show the network
    * instead of a pile of dots, and stations stay visible at all zooms.
    * Focused stops grow and get an accent-colored ring.
@@ -424,38 +641,29 @@ export class LayerManager {
           19,
           this.stopRadiusAt(options.radius, 1.5),
         ],
-        'circle-color': [
-          'case',
-          ['==', ['get', 'location_type'], 1],
-          '#ffffff', // Station: white (black inner dot drawn by stops-station-dot layer)
-          ['==', ['get', 'location_type'], 2],
-          '#f59e0b', // Entrance: amber
-          ['==', ['get', 'location_type'], 3],
-          '#8b5cf6', // Generic node: purple
-          ['==', ['get', 'location_type'], 4],
-          '#10b981', // Boarding area: green
-          options.backgroundColor,
-        ],
+        'circle-color': this.stopFillColor(options),
         'circle-stroke-color': [
           'case',
           focused,
-          '#e74c3c', // Focused: accent ring
+          '#ffffff', // Focused: white ring against the accent fill
           ['==', ['get', 'has_own_coords'], false],
           '#9ca3af', // No own lat/lon: grey stroke
           ['==', ['get', 'location_type'], 1],
           '#111111', // Station: near-black stroke
           options.strokeColor, // Plain stops: dark slate casing
         ],
+        // The halo carries the selection now, so the focused ring stays thin
+        // instead of turning the circle into a blob.
         'circle-stroke-width': [
           'interpolate',
           ['linear'],
           ['zoom'],
           11,
-          ['case', focused, 2.5, 1.2],
+          ['case', focused, 1.6, 1.2],
           16,
-          ['case', focused, 3.5, options.strokeWidth],
+          ['case', focused, 2, options.strokeWidth],
           19,
-          ['case', focused, 4.5, options.strokeWidth + 0.8],
+          ['case', focused, 2.4, options.strokeWidth + 0.8],
         ],
         'circle-opacity': fadeOpacity,
         'circle-stroke-opacity': fadeOpacity,
@@ -464,9 +672,67 @@ export class LayerManager {
   }
 
   /**
+   * Redraw of the focused stop above every other stop layer, so a neighbouring
+   * circle can never paint over the thing that was just selected. Hidden by
+   * collapsing radius and opacity when unfocused, since filters cannot read
+   * feature-state.
+   */
+  private addFocusTopLayer(options: StopLayerOptions): void {
+    if (this.map.getLayer('stops-focus-top')) {
+      return;
+    }
+    const focused: ExpressionSpecification = [
+      'boolean',
+      ['feature-state', 'focused'],
+      false,
+    ];
+    const onlyFocused = (
+      value: ExpressionSpecification | number
+    ): ExpressionSpecification =>
+      ['case', focused, value, 0] as unknown as ExpressionSpecification;
+
+    this.map.addLayer({
+      id: 'stops-focus-top',
+      type: 'circle',
+      source: 'stops',
+      filter: this.activeStopsFilter,
+      paint: {
+        'circle-radius': [
+          'interpolate',
+          ['linear'],
+          ['zoom'],
+          11,
+          onlyFocused(this.stopRadiusAt(options.radius, 0.45)),
+          13.5,
+          onlyFocused(this.stopRadiusAt(options.radius, 0.7)),
+          16,
+          onlyFocused(this.stopRadiusAt(options.radius, 1)),
+          19,
+          onlyFocused(this.stopRadiusAt(options.radius, 1.5)),
+        ],
+        'circle-color': this.stopFillColor(options),
+        'circle-opacity': onlyFocused(1),
+        'circle-stroke-color': '#ffffff',
+        'circle-stroke-width': [
+          'interpolate',
+          ['linear'],
+          ['zoom'],
+          11,
+          onlyFocused(1.6),
+          16,
+          onlyFocused(2),
+          19,
+          onlyFocused(2.4),
+        ],
+        'circle-stroke-opacity': onlyFocused(1),
+      },
+    });
+  }
+
+  /**
    * Add a small black dot at the center of each station feature.
    * Sits on top of the white station circle to mark it as a station.
-   * Uses paint-side feature-state so the dot grows with focus.
+   * Added after the focus layer so a focused station keeps its dot.
    */
   private addStationDotLayer(): void {
     if (this.map.getLayer('stops-station-dot')) {
@@ -494,13 +760,19 @@ export class LayerManager {
           ['linear'],
           ['zoom'],
           11,
-          ['case', focused, 2.2, 1.3],
+          1.3,
           16,
-          ['case', focused, 4.5, 2.6],
+          2.6,
           19,
-          ['case', focused, 6, 3.8],
+          3.8,
         ],
-        'circle-color': '#111111',
+        // White on a focused station, where the surrounding fill is the accent.
+        'circle-color': [
+          'case',
+          focused,
+          '#ffffff',
+          '#111111',
+        ] as unknown as ExpressionSpecification,
         'circle-opacity': this.stationFadeOpacity(null),
         'circle-stroke-width': 0,
       },
@@ -512,7 +784,7 @@ export class LayerManager {
    *
    * The hit radius mirrors the visible layer's fade: it collapses to 0 where
    * plain stops are fully faded out, so invisible stops are simply not
-   * returned by queryRenderedFeatures — no JS-side visibility predicate to
+   * returned by queryRenderedFeatures: no JS-side visibility predicate to
    * keep in sync. Special (focused / on-route) stops keep a full hit area.
    */
   private addStopsClickAreaLayer(options: StopLayerOptions): void {
@@ -572,11 +844,16 @@ export class LayerManager {
    */
   public setStopsFilter(filter: FilterSpecification | null): void {
     this.activeStopsFilter = filter ?? DEFAULT_STOPS_FILTER;
-    if (this.map.getLayer('stops-background')) {
-      this.map.setFilter('stops-background', this.activeStopsFilter);
-    }
-    if (this.map.getLayer('stops-clickarea')) {
-      this.map.setFilter('stops-clickarea', this.activeStopsFilter);
+    for (const layerId of [
+      'stops-background',
+      'stops-focus-top',
+      'stops-focus-halo',
+      'stops-focus-ring',
+      'stops-clickarea',
+    ]) {
+      if (this.map.getLayer(layerId)) {
+        this.map.setFilter(layerId, this.activeStopsFilter);
+      }
     }
     // Station-dot layer always filters to location_type=1; compose with activeStopsFilter when non-default
     if (this.map.getLayer('stops-station-dot')) {
@@ -684,9 +961,7 @@ export class LayerManager {
       this.addTripHighlightLayers(tripPath, tripStopsFeatures, finalOptions);
     }
 
-    console.log(
-      `🎯 Highlighted trip: ${trip_id} with ${tripPath.length} stops`
-    );
+    console.log(`Highlighted trip: ${trip_id} with ${tripPath.length} stops`);
   }
 
   /**
@@ -935,7 +1210,7 @@ export class LayerManager {
     const stopsGeoJSON = this.createStopsGeoJSON(stops);
     stopsSource.setData(stopsGeoJSON);
     this.onStopsDataUpdated?.(stopsGeoJSON);
-    console.log(`🔄 Updated stops data: ${stopsGeoJSON.features.length} stops`);
+    console.log(`Updated stops data: ${stopsGeoJSON.features.length} stops`);
   }
 
   /**
@@ -976,7 +1251,10 @@ export class LayerManager {
         .map((s) => s.stop_id)
     );
 
-    const features: GeoJSON.Feature[] = [];
+    // Group by unordered endpoint pair first: parallel edges (a walkway, some
+    // stairs and a lift between the same two nodes) would otherwise be drawn
+    // exactly on top of each other, leaving only the last one visible.
+    const groups = new Map<string, Pathways[]>();
     pathways.forEach((pw) => {
       if (
         !stationStopIds.has(pw.from_stop_id) ||
@@ -984,29 +1262,105 @@ export class LayerManager {
       ) {
         return;
       }
-      const from = resolveCoord(String(pw.from_stop_id));
-      const to = resolveCoord(String(pw.to_stop_id));
-      if (!from || !to) {
-        return;
+      const key = [String(pw.from_stop_id), String(pw.to_stop_id)]
+        .sort()
+        .join('\u0000');
+      const existing = groups.get(key);
+      if (existing) {
+        existing.push(pw);
+      } else {
+        groups.set(key, [pw]);
       }
-      features.push({
-        type: 'Feature',
-        id: pw.pathway_id,
-        geometry: {
-          type: 'LineString',
-          coordinates: [from, to],
-        },
-        properties: {
-          pathway_id: pw.pathway_id,
-          from_stop_id: pw.from_stop_id,
-          to_stop_id: pw.to_stop_id,
-          pathway_mode: Number(pw.pathway_mode) || 1,
-          is_bidirectional: pw.is_bidirectional,
-        },
-      });
     });
 
+    const features: GeoJSON.Feature[] = [];
+    for (const members of groups.values()) {
+      members.forEach((pw, index) => {
+        const from = resolveCoord(String(pw.from_stop_id));
+        const to = resolveCoord(String(pw.to_stop_id));
+        if (!from || !to) {
+          return;
+        }
+
+        let coords: [number, number][] = [from, to];
+        const offsetFromGroup =
+          (index - (members.length - 1) / 2) * PATHWAY_PARALLEL_OFFSET_M;
+        // Groups use an unordered endpoint pair. Keep offsets relative to that
+        // canonical direction, otherwise a reverse-direction pathway flips its
+        // normal and can land on the same geographic side as its sibling.
+        const offset =
+          String(pw.from_stop_id) < String(pw.to_stop_id)
+            ? offsetFromGroup
+            : -offsetFromGroup;
+        if (offset !== 0) {
+          const [offsetFrom, offsetTo] = offsetSegment([from, to], offset);
+          // Keep endpoints at their nodes while separating only the middle run.
+          coords = [from, offsetFrom, offsetTo, to];
+        }
+
+        features.push({
+          type: 'Feature',
+          id: pw.pathway_id,
+          geometry: {
+            type: 'LineString',
+            coordinates: coords,
+          },
+          properties: {
+            pathway_id: pw.pathway_id,
+            from_stop_id: pw.from_stop_id,
+            to_stop_id: pw.to_stop_id,
+            pathway_mode: Number(pw.pathway_mode) || 1,
+            is_bidirectional: pw.is_bidirectional,
+            // Elevators between two nodes at nearly the same coordinates
+            // collapse to a blob; too small to carry an icon.
+            is_stub: segmentLengthM([from, to]) < PATHWAY_STUB_LENGTH_M,
+          },
+        });
+      });
+    }
+
     return { type: 'FeatureCollection', features };
+  }
+
+  /**
+   * Convex hull of the expanded station's nodes, used as a ground plane so the
+   * pathway graph reads as sitting on a surface instead of floating on the
+   * basemap. Returns null when the station has too few placeable nodes.
+   */
+  private buildStationGroundGeoJSON(
+    stationId: string
+  ): GeoJSON.FeatureCollection | null {
+    const stops =
+      this.gtfsParser.getFileDataSyncTyped<Stops>('stops.txt') || [];
+    const pathways =
+      this.gtfsParser.getFileDataSyncTyped<Pathways>('pathways.txt') || [];
+    const resolveCoord = this.getCachedResolver(stops, pathways);
+
+    const coords: [number, number][] = [];
+    for (const stop of stops) {
+      if (stop.stop_id !== stationId && stop.parent_station !== stationId) {
+        continue;
+      }
+      const coord = resolveCoord(String(stop.stop_id));
+      if (coord) {
+        coords.push(coord);
+      }
+    }
+
+    const ring = bufferedHull(coords, STATION_GROUND_BUFFER_M);
+    if (!ring) {
+      return null;
+    }
+    return {
+      type: 'FeatureCollection',
+      features: [
+        {
+          type: 'Feature',
+          geometry: { type: 'Polygon', coordinates: [ring] },
+          properties: {},
+        },
+      ],
+    };
   }
 
   /**
@@ -1014,6 +1368,10 @@ export class LayerManager {
    * Call when a station is expanded.
    */
   public updatePathwaysLayer(stationId: string): void {
+    // setStyle (basemap switch) drops every registered image, and this method
+    // is re-run on that path, so re-register before the icon layer is added.
+    ensureMapIcons(this.map);
+
     const geojson = this.buildPathwaysGeoJSON(stationId);
 
     const pathwaySource = this.map.getSource('pathways') as
@@ -1029,70 +1387,228 @@ export class LayerManager {
       });
     }
 
-    if (!this.map.getLayer('pathways-lines')) {
-      this.map.addLayer(
-        {
-          id: 'pathways-lines',
-          type: 'line',
-          source: 'pathways',
-          paint: {
-            'line-width': [
-              'case',
-              ['boolean', ['feature-state', 'focused'], false],
-              6,
-              3,
-            ],
-            'line-color': [
-              'case',
-              ['==', ['get', 'pathway_mode'], 1],
-              '#22c55e', // walkway: green
-              ['==', ['get', 'pathway_mode'], 2],
-              '#f97316', // stairs: orange
-              ['==', ['get', 'pathway_mode'], 3],
-              '#06b6d4', // moving sidewalk: cyan
-              ['==', ['get', 'pathway_mode'], 4],
-              '#a855f7', // escalator: purple
-              ['==', ['get', 'pathway_mode'], 5],
-              '#3b82f6', // elevator: blue
-              ['==', ['get', 'pathway_mode'], 6],
-              '#ef4444', // fare gate: red
-              ['==', ['get', 'pathway_mode'], 7],
-              '#6b7280', // exit gate: gray
-              '#ffffff',
-            ],
-          },
-          layout: {
-            'line-cap': 'round',
-            'line-join': 'round',
-          },
-        },
-        'stops-background'
-      );
-    }
-
-    if (!this.map.getLayer('pathways-clickarea')) {
-      this.map.addLayer(
-        {
-          id: 'pathways-clickarea',
-          type: 'line',
-          source: 'pathways',
-          paint: {
-            'line-width': 16,
-            'line-opacity': 0,
-          },
-        },
-        'stops-background'
-      );
-
-      ['pathways-lines', 'pathways-clickarea'].forEach((layerId) => {
-        this.map.on('mouseenter', layerId, this.onPathwayMouseEnter);
-        this.map.on('mouseleave', layerId, this.onPathwayMouseLeave);
-      });
-    }
+    this.updateStationGroundLayer(stationId);
+    this.addPathwayLineLayers();
+    this.addPathwayIconLayer();
+    this.addPathwayClickAreaLayer();
 
     console.log(
       `[LayerManager] Updated pathways layer for station: ${stationId} (${geojson.features.length} pathways)`
     );
+  }
+
+  /** Ground plane under the expanded station's pathway graph. */
+  private updateStationGroundLayer(stationId: string): void {
+    const geojson = this.buildStationGroundGeoJSON(stationId);
+    if (!geojson) {
+      // Too few placeable nodes to form a polygon. Drop any plane left over
+      // from a previously expanded station rather than showing a stale hull.
+      this.removeStationGroundLayer();
+      return;
+    }
+
+    const source = this.map.getSource('station-ground') as
+      | GeoJSONSource
+      | undefined;
+    if (source) {
+      source.setData(geojson);
+      return;
+    }
+
+    this.map.addSource('station-ground', { type: 'geojson', data: geojson });
+
+    // Below the halo, which is itself below the pathways and the stops.
+    const before = this.map.getLayer('stops-focus-halo')
+      ? 'stops-focus-halo'
+      : 'stops-background';
+
+    this.map.addLayer(
+      {
+        id: 'station-ground-fill',
+        type: 'fill',
+        source: 'station-ground',
+        paint: { 'fill-color': '#8ea3bd', 'fill-opacity': 0.2 },
+      },
+      before
+    );
+    this.map.addLayer(
+      {
+        id: 'station-ground-line',
+        type: 'line',
+        source: 'station-ground',
+        paint: {
+          'line-color': '#8ea3bd',
+          'line-width': 1.2,
+          'line-opacity': 0.5,
+          'line-dasharray': [3, 2],
+        },
+      },
+      before
+    );
+  }
+
+  private removeStationGroundLayer(): void {
+    for (const layerId of ['station-ground-fill', 'station-ground-line']) {
+      if (this.map.getLayer(layerId)) {
+        this.map.removeLayer(layerId);
+      }
+    }
+    if (this.map.getSource('station-ground')) {
+      this.map.removeSource('station-ground');
+    }
+  }
+
+  /**
+   * One casing + one core layer per pathway category. All casings go in first
+   * so a neighbour's casing can never paint over an already-drawn core.
+   */
+  private addPathwayLineLayers(): void {
+    const coreWidth: ExpressionSpecification = [
+      'case',
+      ['boolean', ['feature-state', 'focused'], false],
+      6,
+      PATHWAY_CORE_WIDTH_PX,
+    ] as unknown as ExpressionSpecification;
+
+    const categoryFilter = (category: PathwayCategory): FilterSpecification =>
+      [
+        'in',
+        ['get', 'pathway_mode'],
+        ['literal', modesInCategory(category)],
+      ] as unknown as FilterSpecification;
+
+    for (const category of PATHWAY_CATEGORY_ORDER) {
+      const id = `pathways-casing-${category}`;
+      if (this.map.getLayer(id)) {
+        continue;
+      }
+      const { dash } = PATHWAY_CATEGORIES[category];
+      const casingPaint: Record<string, unknown> = {
+        'line-color': '#0f172a',
+        'line-width': ['+', coreWidth, PATHWAY_CASING_EXTRA_PX],
+        'line-opacity': 0.8,
+      };
+      if (dash) {
+        // dasharray is measured in line widths, so the casing needs the
+        // pattern scaled by the width ratio to line up with the core. A solid
+        // casing under a dashed core would fill the gaps back in and the line
+        // would read as solid-dark-with-colored-dashes.
+        casingPaint['line-dasharray'] = dash.map(
+          (d) => (d * PATHWAY_CORE_WIDTH_PX) / PATHWAY_CASING_WIDTH_PX
+        );
+      }
+      this.map.addLayer(
+        {
+          id,
+          type: 'line',
+          source: 'pathways',
+          filter: categoryFilter(category),
+          paint: casingPaint,
+          layout: {
+            'line-cap': 'round',
+            'line-join': 'round',
+          },
+        } as unknown as Parameters<MapLibreMap['addLayer']>[0],
+        'stops-background'
+      );
+    }
+
+    for (const category of PATHWAY_CATEGORY_ORDER) {
+      const id = `pathways-core-${category}`;
+      if (this.map.getLayer(id)) {
+        continue;
+      }
+      const { color, dash } = PATHWAY_CATEGORIES[category];
+      const paint: Record<string, unknown> = {
+        'line-color': color,
+        'line-width': coreWidth,
+      };
+      if (dash) {
+        paint['line-dasharray'] = dash;
+      }
+      this.map.addLayer(
+        {
+          id,
+          type: 'line',
+          source: 'pathways',
+          filter: categoryFilter(category),
+          paint,
+          layout: {
+            'line-cap': 'round',
+            'line-join': 'round',
+          },
+        } as unknown as Parameters<MapLibreMap['addLayer']>[0],
+        'stops-background'
+      );
+    }
+  }
+
+  /**
+   * Mode glyph at the center of each pathway. This is what actually names the
+   * mode: the line color only says which category it belongs to.
+   */
+  private addPathwayIconLayer(): void {
+    if (this.map.getLayer('pathways-icons')) {
+      return;
+    }
+
+    const cases: unknown[] = ['case'];
+    for (const [mode, info] of Object.entries(PATHWAY_MODES)) {
+      cases.push(['==', ['get', 'pathway_mode'], Number(mode)], info.icon);
+    }
+    cases.push('');
+    const iconImage = cases as unknown as ExpressionSpecification;
+
+    this.map.addLayer(
+      {
+        id: 'pathways-icons',
+        type: 'symbol',
+        source: 'pathways',
+        filter: [
+          '!=',
+          ['get', 'is_stub'],
+          true,
+        ] as unknown as FilterSpecification,
+        layout: {
+          'icon-image': iconImage,
+          'symbol-placement': 'line-center',
+          'icon-allow-overlap': true,
+          'icon-ignore-placement': true,
+          'icon-rotation-alignment': 'viewport',
+          'icon-size': [
+            'interpolate',
+            ['linear'],
+            ['zoom'],
+            16,
+            0.55,
+            19,
+            1,
+          ] as unknown as ExpressionSpecification,
+        },
+      },
+      'stops-background'
+    );
+  }
+
+  private addPathwayClickAreaLayer(): void {
+    if (this.map.getLayer('pathways-clickarea')) {
+      return;
+    }
+    this.map.addLayer(
+      {
+        id: 'pathways-clickarea',
+        type: 'line',
+        source: 'pathways',
+        paint: {
+          'line-width': 16,
+          'line-opacity': 0,
+        },
+      },
+      'stops-background'
+    );
+
+    this.map.on('mouseenter', 'pathways-clickarea', this.onPathwayMouseEnter);
+    this.map.on('mouseleave', 'pathways-clickarea', this.onPathwayMouseLeave);
   }
 
   /**
@@ -1101,15 +1617,18 @@ export class LayerManager {
    */
   public clearPathwaysLayer(): void {
     this.setFocusedPathway(null);
-    ['pathways-clickarea', 'pathways-lines'].forEach((layerId) => {
-      this.map.off('mouseenter', layerId, this.onPathwayMouseEnter);
-      this.map.off('mouseleave', layerId, this.onPathwayMouseLeave);
+    this.map.off('mouseenter', 'pathways-clickarea', this.onPathwayMouseEnter);
+    this.map.off('mouseleave', 'pathways-clickarea', this.onPathwayMouseLeave);
+
+    LayerManager.PATHWAY_LAYER_IDS.forEach((layerId) => {
       if (this.map.getLayer(layerId)) {
         this.map.removeLayer(layerId);
       }
     });
-    if (this.map.getSource('pathways')) {
-      this.map.removeSource('pathways');
+    for (const sourceId of ['pathways', 'station-ground']) {
+      if (this.map.getSource(sourceId)) {
+        this.map.removeSource(sourceId);
+      }
     }
     console.log('[LayerManager] Cleared pathways layer');
   }
@@ -1124,5 +1643,15 @@ export class LayerManager {
     }
     const geojson = this.buildPathwaysGeoJSON(stationId);
     (this.map.getSource('pathways') as GeoJSONSource).setData(geojson);
+
+    const ground = this.map.getSource('station-ground') as
+      | GeoJSONSource
+      | undefined;
+    if (ground) {
+      const groundGeoJSON = this.buildStationGroundGeoJSON(stationId);
+      if (groundGeoJSON) {
+        ground.setData(groundGeoJSON);
+      }
+    }
   }
 }

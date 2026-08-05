@@ -1,5 +1,5 @@
 /**
- * GTFS Database — IndexedDB persistence layer.
+ * GTFS Database: IndexedDB persistence layer.
  *
  * INVARIANT: All user-initiated writes MUST go through patchManager.recordUpdate()
  * (or recordInsert / recordDelete). Direct updateRow() / insertRows() / deleteRow()
@@ -173,19 +173,19 @@ export interface GTFSDBSchema extends DBSchema {
     key: number; // last patch version included in this snapshot
     value: SnapshotRecord;
   };
-  // Version pointer store — supports 'versions' and 'blobVersion' keys
+  // Version pointer store: supports 'versions' and 'blobVersion' keys
   meta: {
     key: string;
     value:
       | { key: 'versions'; currentVersion: number; headVersion: number }
       | { key: 'blobVersion'; version: number };
   };
-  // Raw JSON blobs for all GTFS tables — avoids per-row IDB overhead
+  // Raw JSON blobs for all GTFS tables: avoids per-row IDB overhead
   file_blobs: {
     key: string;
     value: { tableName: string; json: string };
   };
-  // Opaque passthrough for unrecognized files — preserved verbatim on export
+  // Opaque passthrough for unrecognized files: preserved verbatim on export
   passthrough_files: {
     key: string;
     value: { fileName: string; rawContent: string };
@@ -212,9 +212,9 @@ export interface VirtualTableHandlers {
 export class GTFSDatabase {
   private db: IDBPDatabase<GTFSDBSchema> | null = null;
   private readonly dbName = CONFIG.DB_NAME;
-  // Fixed schema version — bump only for schema changes; pre-upgrade modal handles export.
+  // Fixed schema version: bump only for schema changes; pre-upgrade modal handles export.
   private readonly dbVersion = 11;
-  /** Virtual table registry — large tables that bypass per-row IDB storage. */
+  /** Virtual table registry: large tables that bypass per-row IDB storage. */
   private virtualTables = new Map<string, VirtualTableHandlers>();
 
   clearVirtualTables(): void {
@@ -386,7 +386,7 @@ export class GTFSDatabase {
         resolve(v);
       };
       req.onupgradeneeded = (e) => {
-        // Fresh install — abort to avoid creating an empty DB at version 1
+        // Fresh install: abort to avoid creating an empty DB at version 1
         (e.target as IDBOpenDBRequest).transaction?.abort();
       };
       req.onerror = () => resolve(0);
@@ -699,7 +699,7 @@ export class GTFSDatabase {
     }
 
     try {
-      // Single transaction for all rows — eliminates per-batch transaction overhead.
+      // Single transaction for all rows: eliminates per-batch transaction overhead.
       // IDB serializes readwrite transactions on the same store anyway, so multiple
       // transactions provide no parallelism benefit.
       const transaction = this.db.transaction(
@@ -1375,7 +1375,7 @@ export class GTFSDatabase {
       const vtStopTimes = this.virtualTables.get('stop_times');
 
       if (vtStopTimes) {
-        // stop_times is virtual — handle trip and stop_times separately
+        // stop_times is virtual: handle trip and stop_times separately
         const originalTrip = await this.getRow('trips', originalTripId);
         if (!originalTrip) {
           throw new Error(`Trip ${originalTripId} not found`);

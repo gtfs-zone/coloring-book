@@ -55,7 +55,7 @@ export class ShapeToggleControl {
       this.currentMode = (e.target as HTMLInputElement).checked
         ? 'shapes'
         : 'stops';
-      console.log(`[ShapeToggleControl] Render mode → ${this.currentMode}`);
+      console.log(`[ShapeToggleControl] Render mode -> ${this.currentMode}`);
       this.onModeChange(this.currentMode);
     });
   }
@@ -375,7 +375,7 @@ export class BasemapControl {
       this.map.setBearing(bearing);
       this.map.setPitch(pitch);
 
-      console.log('🎨 Style loaded, firing basemap:changed event');
+      console.log('Style loaded, firing basemap:changed event');
 
       // Trigger custom event for other modules to re-add their layers
       this.map.fire('basemap:changed', { basemapId });
@@ -385,7 +385,7 @@ export class BasemapControl {
     this.currentBasemap = basemapId;
     this.rebuildControl();
 
-    console.log(`🗺️ Basemap changed to: ${basemapStyle.name}`);
+    console.log(`Basemap changed to: ${basemapStyle.name}`);
   }
 
   /**
@@ -467,7 +467,7 @@ export class BasemapControl {
       this.map.setBearing(bearing);
       this.map.setPitch(pitch);
 
-      console.log(`🌍 Projection changed to: ${projection}`);
+      console.log(`Projection changed to: ${projection}`);
 
       // Trigger event to re-add layers
       this.map.fire('basemap:changed', { projection });

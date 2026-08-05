@@ -18,18 +18,28 @@ import {
 } from '../utils/field-component.js';
 import { GTFS_TABLES, StopsSchema } from '../types/gtfs.js';
 import { getStopDisplay, renderCardLabel } from '../utils/entity-display.js';
+import { pathwayModeLabel } from '../utils/pathway-modes.js';
 import type { LevelOption } from './levels-controller.js';
 import { renderTrashIcon } from './modal-utils.js';
 import {
   renderPathwayReference,
-  renderServiceReference,
   renderStopReference,
-  SERVICE_REF_ROW,
+  renderTimetableReference,
+  TIMETABLE_REF_ROW,
+  VIEW_ROUTE_BTN,
+  VIEW_SERVICE_BTN,
 } from '../utils/entity-references.js';
+import { collectDescendantStops } from '../utils/stop-hierarchy.js';
 
 interface TimetableKey {
   route_id: string;
   service_id: string;
+  tripCount: number;
+  /**
+   * Descendant stops whose stop_times produced this timetable, when the page's
+   * stop is a station. Empty when the stop itself carries the stop_times.
+   */
+  viaStops: Stops[];
 }
 
 interface StopRelations {
@@ -50,6 +60,8 @@ export interface StopViewDependencies {
   onStopClick?: (stop_id: string) => void;
   onPathwayClick?: (pathway_id: string) => void;
   onTimetableClick?: (route_id: string, service_id: string) => void;
+  onRouteClick?: (route_id: string) => void;
+  onServiceClick?: (service_id: string) => void;
   onDeleteStop: (stop_id: string) => Promise<void>;
   getLevelOptions?: () => Promise<LevelOption[]>;
 }
@@ -191,7 +203,7 @@ export class StopViewController {
     if (this.dependencies.getLevelOptions) {
       const currentValue = String(stop.level_id ?? '');
       const optionsHtml =
-        `<option value="">— no level —</option>` +
+        `<option value="">- no level -</option>` +
         levelOptions
           .map(
             (opt) =>
@@ -206,7 +218,7 @@ export class StopViewController {
       fieldsHtml = fieldsHtml.replace(
         /<input([^>]*data-field="level_id"[^>]*)>/,
         (_match, attrs) => {
-          // Strip value attribute — select uses <option selected> instead
+          // Strip value attribute, select uses <option selected> instead
           const attrsClean = attrs.replace(/\s*value="[^"]*"/, '');
           return `<select${attrsClean} class="select select-bordered select-sm w-full">${optionsHtml}</select>${hint}`;
         }
@@ -232,7 +244,7 @@ export class StopViewController {
 
   private renderTimetablesSection(
     timetableKeys: TimetableKey[],
-    _routes: Routes[],
+    routes: Routes[],
     calendarByServiceId: Map<string, Record<string, unknown>>,
     calendarDatesByServiceId: Map<
       string,
@@ -254,11 +266,21 @@ export class StopViewController {
       `;
     }
 
+    const routeById = new Map(routes.map((r) => [String(r.route_id), r]));
+
     const rows = timetableKeys
-      .map(({ route_id, service_id }) => {
+      .map(({ route_id, service_id, tripCount, viaStops }) => {
         const calendar = calendarByServiceId.get(service_id) ?? { service_id };
-        const calendarDates = calendarDatesByServiceId.get(service_id);
-        return renderServiceReference(calendar, { route_id, calendarDates });
+        const route = routeById.get(route_id) ?? { route_id };
+        return renderTimetableReference(
+          route as Record<string, unknown>,
+          calendar,
+          {
+            calendarDates: calendarDatesByServiceId.get(service_id),
+            tripCount,
+            viaStops: viaStops as unknown as Array<Record<string, unknown>>,
+          }
+        );
       })
       .join('');
 
@@ -289,16 +311,6 @@ export class StopViewController {
       return [];
     }
   }
-
-  private readonly PATHWAY_MODE_LABELS: Record<number, string> = {
-    1: 'Walkway',
-    2: 'Stairs',
-    3: 'Moving Sidewalk',
-    4: 'Escalator',
-    5: 'Elevator',
-    6: 'Fare Gate',
-    7: 'Exit Gate',
-  };
 
   private async getConnectedPathways(
     stop_id: string
@@ -337,9 +349,7 @@ export class StopViewController {
       .map((p) => {
         const otherStopId =
           direction === 'to' ? String(p.to_stop_id) : String(p.from_stop_id);
-        const modeNum = Number(p.pathway_mode) || 0;
-        const modeLabel =
-          this.PATHWAY_MODE_LABELS[modeNum] ?? `Mode ${modeNum}`;
+        const modeLabel = pathwayModeLabel(Number(p.pathway_mode) || 0);
         const otherStop = otherStopLookup.get(otherStopId) as
           | Record<string, unknown>
           | undefined;
@@ -424,7 +434,7 @@ export class StopViewController {
       } else if (locType === 3) {
         genericNodes.push(child);
       }
-      // locType === 4 (boarding areas) silently skipped — they belong under platforms
+      // locType === 4 (boarding areas) silently skipped, they belong under platforms
     }
     return { entrances, platforms, genericNodes };
   }
@@ -507,13 +517,39 @@ export class StopViewController {
     }
 
     try {
-      const stopTimes = (await this.dependencies.gtfsDatabase.queryRows(
-        'stop_times',
-        { stop_id }
-      )) as StopTimes[];
-      const tripIdSet = new Set(stopTimes.map((st) => st.trip_id));
+      // A station carries no stop_times of its own, so the lookup has to run
+      // over its whole platform subtree or it looks like nothing serves it.
+      const hierarchy = await collectDescendantStops(
+        this.dependencies.gtfsDatabase,
+        stop_id
+      );
+      const stopById = new Map(hierarchy.map((s) => [String(s.stop_id), s]));
+      const lookupIds = stopById.has(stop_id)
+        ? Array.from(stopById.keys())
+        : [stop_id, ...stopById.keys()];
 
-      if (tripIdSet.size === 0) {
+      // trip_id -> the descendant stop ids that put it here, so a station's
+      // rows can say which platform they came from.
+      const viaIdsByTrip = new Map<string, Set<string>>();
+      for (const id of lookupIds) {
+        const stopTimes = (await this.dependencies.gtfsDatabase.queryRows(
+          'stop_times',
+          { stop_id: id }
+        )) as StopTimes[];
+        for (const st of stopTimes) {
+          const trip_id = String(st.trip_id);
+          let via = viaIdsByTrip.get(trip_id);
+          if (!via) {
+            via = new Set();
+            viaIdsByTrip.set(trip_id, via);
+          }
+          if (id !== stop_id) {
+            via.add(id);
+          }
+        }
+      }
+
+      if (viaIdsByTrip.size === 0) {
         return { routes: [], timetableKeys: [] };
       }
 
@@ -521,21 +557,41 @@ export class StopViewController {
         'trips'
       )) as Trips[];
       const relevantTrips = allTrips.filter((trip) =>
-        tripIdSet.has(trip.trip_id)
+        viaIdsByTrip.has(String(trip.trip_id))
       );
 
       const routeIdSet = new Set(relevantTrips.map((trip) => trip.route_id));
-      const timetableKeySet = new Set<string>();
-      const timetableKeys: TimetableKey[] = [];
+      const byKey = new Map<
+        string,
+        { key: TimetableKey; viaIds: Set<string> }
+      >();
       for (const trip of relevantTrips) {
         const key = `${trip.route_id}||${trip.service_id}`;
-        if (!timetableKeySet.has(key)) {
-          timetableKeySet.add(key);
-          timetableKeys.push({
-            route_id: trip.route_id,
-            service_id: trip.service_id,
-          });
+        let entry = byKey.get(key);
+        if (!entry) {
+          entry = {
+            key: {
+              route_id: trip.route_id,
+              service_id: trip.service_id,
+              tripCount: 0,
+              viaStops: [],
+            },
+            viaIds: new Set(),
+          };
+          byKey.set(key, entry);
         }
+        entry.key.tripCount += 1;
+        for (const id of viaIdsByTrip.get(String(trip.trip_id)) ?? []) {
+          entry.viaIds.add(id);
+        }
+      }
+
+      const timetableKeys: TimetableKey[] = [];
+      for (const { key, viaIds } of byKey.values()) {
+        key.viaStops = Array.from(viaIds)
+          .map((id) => stopById.get(id))
+          .filter((s): s is Stops => s !== undefined);
+        timetableKeys.push(key);
       }
 
       const allRoutes = (await this.dependencies.gtfsDatabase.queryRows(
@@ -553,7 +609,7 @@ export class StopViewController {
   }
 
   addEventListeners(container: HTMLElement): void {
-    // Delete stop button — use event delegation so clicks on the SVG child
+    // Delete stop button, use event delegation so clicks on the SVG child
     // element are caught correctly. Use an AbortController to prevent the
     // listener from accumulating across re-renders of the same container.
     if (this.deleteListenerAbortController) {
@@ -573,13 +629,33 @@ export class StopViewController {
           }
           return;
         }
-        const serviceRefRow = (e.target as Element).closest(
-          `.${SERVICE_REF_ROW}`
-        );
-        if (serviceRefRow && this.dependencies.onTimetableClick) {
+        const routeBtn = (e.target as Element).closest(`.${VIEW_ROUTE_BTN}`);
+        if (routeBtn) {
           e.stopPropagation();
-          const route_id = serviceRefRow.getAttribute('data-route-id');
-          const service_id = serviceRefRow.getAttribute('data-service-id');
+          const route_id = routeBtn.getAttribute('data-route-id');
+          if (route_id && this.dependencies.onRouteClick) {
+            this.dependencies.onRouteClick(route_id);
+          }
+          return;
+        }
+        const serviceBtn = (e.target as Element).closest(
+          `.${VIEW_SERVICE_BTN}`
+        );
+        if (serviceBtn) {
+          e.stopPropagation();
+          const service_id = serviceBtn.getAttribute('data-service-id');
+          if (service_id && this.dependencies.onServiceClick) {
+            this.dependencies.onServiceClick(service_id);
+          }
+          return;
+        }
+        const timetableRow = (e.target as Element).closest(
+          `.${TIMETABLE_REF_ROW}`
+        );
+        if (timetableRow && this.dependencies.onTimetableClick) {
+          e.stopPropagation();
+          const route_id = timetableRow.getAttribute('data-route-id');
+          const service_id = timetableRow.getAttribute('data-service-id');
           if (route_id && service_id) {
             this.dependencies.onTimetableClick(route_id, service_id);
           }
@@ -600,5 +676,3 @@ export class StopViewController {
     `;
   }
 }
-
-export { SERVICE_REF_ROW };

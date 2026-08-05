@@ -4,17 +4,7 @@
  */
 
 import type { Agency, Routes, Calendar } from '../types/gtfs';
-
-/**
- * Get current date in YYYYMMDD format
- */
-function getTodayYYYYMMDD(): string {
-  const today = new Date();
-  const year = today.getFullYear();
-  const month = String(today.getMonth() + 1).padStart(2, '0');
-  const day = String(today.getDate()).padStart(2, '0');
-  return `${year}${month}${day}`;
-}
+import { toGtfsDateLocal, todayGtfsDate } from './gtfs-date';
 
 /**
  * Get date one year from now in YYYYMMDD format
@@ -22,10 +12,7 @@ function getTodayYYYYMMDD(): string {
 function getOneYearFromNowYYYYMMDD(): string {
   const future = new Date();
   future.setFullYear(future.getFullYear() + 1);
-  const year = future.getFullYear();
-  const month = String(future.getMonth() + 1).padStart(2, '0');
-  const day = String(future.getDate()).padStart(2, '0');
-  return `${year}${month}${day}`;
+  return toGtfsDateLocal(future);
 }
 
 /**
@@ -53,7 +40,7 @@ export function createDefaultService(service_id: string): Calendar {
     friday: 1,
     saturday: 1,
     sunday: 1,
-    start_date: getTodayYYYYMMDD(),
+    start_date: todayGtfsDate(),
     end_date: getOneYearFromNowYYYYMMDD(),
   };
 }

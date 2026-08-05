@@ -97,7 +97,7 @@ function renderRiderCategoriesPanel(rows: Record<string, unknown>[]): string {
           <tr>
             <td class="font-mono text-xs">${esc(r.rider_category_id)}</td>
             <td>${esc(r.rider_category_name)}</td>
-            <td>${Number(r.is_default_fare_container) === 1 ? 'Yes' : '—'}</td>
+            <td>${Number(r.is_default_fare_container) === 1 ? 'Yes' : '-'}</td>
             <td>
               <div class="flex gap-1">
                 <button class="btn btn-xs btn-ghost" data-action="edit" data-key="${esc(r.rider_category_id)}">Edit</button>
@@ -214,11 +214,11 @@ function renderFareProductsPanel(
             const riderCatDisplay = r.rider_category_id
               ? (riderCatNames.get(String(r.rider_category_id)) ??
                 String(r.rider_category_id))
-              : '—';
+              : '-';
             const fareMediaDisplay = r.fare_media_id
               ? (fareMediaNames.get(String(r.fare_media_id)) ??
                 String(r.fare_media_id))
-              : '—';
+              : '-';
             return `
             <tr>
               <td class="font-mono text-xs">${esc(r.fare_product_id)}</td>
@@ -483,14 +483,14 @@ async function showAddEditFareProductModal(
     );
 
   const riderCatSelectOptions = [
-    { value: '', label: '— All riders —' },
+    { value: '', label: '- All riders -' },
     ...riderCats.map((r) => ({
       value: String(r.rider_category_id),
       label: String(r.rider_category_name ?? r.rider_category_id),
     })),
   ];
   const fareMediaSelectOptions = [
-    { value: '', label: '— Unknown media —' },
+    { value: '', label: '- Unknown media -' },
     ...fareMedia.map((r) => ({
       value: String(r.fare_media_id),
       label: String(r.fare_media_name ?? r.fare_media_id),
@@ -625,7 +625,7 @@ async function showDeleteConfirmModal(
 ): Promise<void> {
   await showModal({
     title: 'Confirm Delete',
-    body: `<p>Are you sure you want to delete this record? This can be undone via Edit → Undo.</p>`,
+    body: `<p>Are you sure you want to delete this record? This can be undone via Edit -> Undo.</p>`,
     actions: [
       {
         label: 'Delete',
@@ -647,7 +647,7 @@ export async function showFaresModal(deps: FaresModalDeps): Promise<void> {
 
   const body = `
     <div>
-      <p class="text-xs text-base-content/60 mb-3">Supports a limited set of Fares V2: rider categories, fare media, and fare products. More tables coming soon. Fares V1 is not shown here — use the file viewer to inspect those tables. <a href="https://gtfs.org/documentation/schedule/reference/#fare_attributestxt" target="_blank" rel="noopener noreferrer" class="link">More info</a>.</p>
+      <p class="text-xs text-base-content/60 mb-3">Supports a limited set of Fares V2: rider categories, fare media, and fare products. More tables coming soon. Fares V1 is not shown here: use the file viewer to inspect those tables. <a href="https://gtfs.org/documentation/schedule/reference/#fare_attributestxt" target="_blank" rel="noopener noreferrer" class="link">More info</a>.</p>
       <div class="tabs tabs-border mb-4" id="fares-tabs">
         <button class="tab tab-active" data-tab="rider_categories">Rider Categories</button>
         <button class="tab" data-tab="fare_media">Fare Media</button>

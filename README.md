@@ -4,12 +4,12 @@ A web-based GTFS (General Transit Feed Specification) editor inspired by geojson
 
 ## Features
 
-- 📁 **File Upload**: Drag-and-drop or button upload for GTFS ZIP files
-- 🌐 **URL Loading**: Load GTFS feeds directly from URLs
-- 🗺️ **Interactive Map**: Visualize stops and routes on an interactive map
-- ✏️ **Text Editor**: Edit GTFS files with syntax highlighting
-- 📦 **Export**: Download modified GTFS as ZIP file
-- 📱 **Responsive**: Works on desktop and mobile devices
+- **File Upload**: Drag-and-drop or button upload for GTFS ZIP files
+- **URL Loading**: Load GTFS feeds directly from URLs
+- **Interactive Map**: Visualize stops and routes on an interactive map
+- **Text Editor**: Edit GTFS files with syntax highlighting
+- **Export**: Download modified GTFS as ZIP file
+- **Responsive**: Works on desktop and mobile devices
 
 ## Quick Start
 
@@ -94,7 +94,7 @@ npm run build
 
 ## GTFS Implementation Status
 
-Not all GTFS Schedule files have dedicated views — see [docs/gtfs-implementation-status.md](docs/gtfs-implementation-status.md) for a full breakdown of which files are fully supported, partially supported (table editor only), or not yet supported.
+Not all GTFS Schedule files have dedicated views: see [docs/gtfs-implementation-status.md](docs/gtfs-implementation-status.md) for a full breakdown of which files are fully supported, partially supported (table editor only), or not yet supported.
 
 ## Releasing
 

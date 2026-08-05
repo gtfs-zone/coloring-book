@@ -1,7 +1,7 @@
 /**
  * GTFS Relationships Module
  * Handles hierarchical navigation through GTFS data
- * Agency → Routes → Trips → Stop Times → Stops
+ * Agency -> Routes -> Trips -> Stop Times -> Stops
  */
 
 import { GTFSDatabase, GTFSDatabaseRecord } from './gtfs-database.js';

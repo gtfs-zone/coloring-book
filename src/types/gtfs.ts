@@ -16,7 +16,7 @@ import {
 } from '../gtfs-spec/adapter.js';
 import { GTFS_FIELD_TYPE_METADATA } from './gtfs-field-types.js';
 
-// File presence enum — kept for backward compat with consumers that compare
+// File presence enum, kept for backward compat with consumers that compare
 // against enum members (e.g. GTFSFilePresence.Required). String values are
 // identical to GTFSPresence in the spec types, so comparisons are safe.
 export enum GTFSFilePresence {

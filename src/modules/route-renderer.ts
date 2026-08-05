@@ -237,7 +237,7 @@ export class RouteRenderer {
 
   /**
    * Build all cached indexes and populate routeFeatures, deduplicating by (route_id, geometry_key).
-   * Lazily called — noop if caches are already warm.
+   * Lazily called, noop if caches are already warm.
    */
   private createRouteFeatures(): void {
     if (this.shapeIndex !== null) {
@@ -354,7 +354,7 @@ export class RouteRenderer {
           geometryKey = `shape:${trip.shape_id}`;
           coords = this.shapeIndex.get(trip.shape_id)!;
         } else {
-          // Stops mode or missing/unknown shape — derive from stop sequence
+          // Stops mode or missing/unknown shape, derive from stop sequence
           if (trip.shape_id && this.renderMode === 'shapes') {
             console.warn(
               `[RouteRenderer] Trip ${trip.trip_id} references unknown shape_id "${trip.shape_id}", falling back to stop connections`
@@ -448,7 +448,7 @@ export class RouteRenderer {
     }
 
     console.log(
-      `[RouteRenderer] Index build complete: ${tripsProcessed} trips → ${this.routeFeatures.size} features (${((1 - this.routeFeatures.size / Math.max(tripsProcessed, 1)) * 100).toFixed(1)}% dedupe)`
+      `[RouteRenderer] Index build complete: ${tripsProcessed} trips -> ${this.routeFeatures.size} features (${((1 - this.routeFeatures.size / Math.max(tripsProcessed, 1)) * 100).toFixed(1)}% dedupe)`
     );
   }
 
@@ -531,7 +531,7 @@ export class RouteRenderer {
     );
 
     // Lift the spotlighted routes above everything else. line-sort-key is a
-    // layout property, so it cannot read feature-state — but the same literal
+    // layout property, so it cannot read feature-state, but the same literal
     // route_id match used for opacity works here unchanged. Layout changes
     // force a tile re-layout, which is fine once per selection but must never
     // be driven from hover.
@@ -601,7 +601,7 @@ export class RouteRenderer {
   /**
    * Recompute the line-sort-key for every feature of a route after its trip
    * set or route_type changed. The key uses the route's *total* trip count, so
-   * all of its features must be rewritten together — otherwise one route's
+   * all of its features must be rewritten together, otherwise one route's
    * segments would sort against each other.
    */
   private refreshRouteSortKey(route_id: string): void {
@@ -643,7 +643,7 @@ export class RouteRenderer {
     this.tripToFeatureKey!.delete(trip_id);
 
     if (bucket.trip_ids.size === 0) {
-      // Bucket empty — remove the feature and clean up indexes
+      // Bucket empty, remove the feature and clean up indexes
       this.tripsByGeomKey!.delete(featureKey);
       this.routeFeatures.delete(featureKey);
 
@@ -773,7 +773,7 @@ export class RouteRenderer {
           route_short_name: route.route_short_name,
           route_long_name: route.route_long_name,
           trip_ids: [trip_id],
-          // Placeholder — refreshRouteSortKey below recomputes it from the
+          // Placeholder, refreshRouteSortKey below recomputes it from the
           // route's full trip set once this feature is in the index.
           sortKey: 0,
         },
@@ -838,7 +838,7 @@ export class RouteRenderer {
       // route_data now carries the new route_type; recompute paint order.
       this.refreshRouteSortKey(route_id);
       console.log(
-        `[RouteRenderer] invalidateRoute route_id=${route_id} op=update → updated ${featureKeys.size} features`
+        `[RouteRenderer] invalidateRoute route_id=${route_id} op=update -> updated ${featureKeys.size} features`
       );
       this.scheduleSetData();
     } else if (op === 'delete') {
@@ -858,7 +858,7 @@ export class RouteRenderer {
       }
       this.routeToFeatureKeys?.delete(route_id);
       console.log(
-        `[RouteRenderer] invalidateRoute route_id=${route_id} op=delete → removed ${featureKeys.size} features`
+        `[RouteRenderer] invalidateRoute route_id=${route_id} op=delete -> removed ${featureKeys.size} features`
       );
       this.scheduleSetData();
     } else if (op === 'insert') {
@@ -868,7 +868,7 @@ export class RouteRenderer {
         this.addTripToBucket(trip.trip_id);
       }
       console.log(
-        `[RouteRenderer] invalidateRoute route_id=${route_id} op=insert → processed ${routeTrips.length} trips`
+        `[RouteRenderer] invalidateRoute route_id=${route_id} op=insert -> processed ${routeTrips.length} trips`
       );
       this.scheduleSetData();
     }
@@ -900,7 +900,7 @@ export class RouteRenderer {
     }
 
     console.log(
-      `[RouteRenderer] invalidateTrip trip_id=${trip_id} op=${op} → done`
+      `[RouteRenderer] invalidateTrip trip_id=${trip_id} op=${op} -> done`
     );
     this.scheduleSetData();
   }
@@ -950,15 +950,15 @@ export class RouteRenderer {
         );
       } else {
         console.log(
-          `[RouteRenderer] invalidateShape shape_id=${shape_id} op=${op} → updated coords (${newCoords.length} pts)`
+          `[RouteRenderer] invalidateShape shape_id=${shape_id} op=${op} -> updated coords (${newCoords.length} pts)`
         );
       }
     } else if (op === 'delete' || pts.length === 0) {
-      // Shape has too few points — remove it and reassign trips to stop-sequence fallback
+      // Shape has too few points, remove it and reassign trips to stop-sequence fallback
       this.shapeIndex.delete(shape_id);
       this.handleShapeRemoved(shape_id);
       console.log(
-        `[RouteRenderer] invalidateShape shape_id=${shape_id} op=${op} → shape removed, trips reassigned`
+        `[RouteRenderer] invalidateShape shape_id=${shape_id} op=${op} -> shape removed, trips reassigned`
       );
     }
 
@@ -1011,7 +1011,7 @@ export class RouteRenderer {
       const trips = this.gtfsParser.getFileDataSyncTyped<Trips>('trips.txt');
       const trip = trips.find((t) => t.trip_id === trip_id);
       if (trip && trip.shape_id && this.shapeIndex.has(trip.shape_id)) {
-        return; // Shape-mode trip with valid shape — stop_times don't matter
+        return; // Shape-mode trip with valid shape, stop_times don't matter
       }
     }
 
@@ -1028,7 +1028,7 @@ export class RouteRenderer {
     }
 
     console.log(
-      `[RouteRenderer] invalidateStopTimes trip_id=${trip_id} op=${op} → done`
+      `[RouteRenderer] invalidateStopTimes trip_id=${trip_id} op=${op} -> done`
     );
     this.scheduleSetData();
   }
@@ -1079,7 +1079,7 @@ export class RouteRenderer {
     }
 
     console.log(
-      `[RouteRenderer] invalidateStop stop_id=${stop_id} op=${op} → updated ${affectedGeomKeys.size} geom keys`
+      `[RouteRenderer] invalidateStop stop_id=${stop_id} op=${op} -> updated ${affectedGeomKeys.size} geom keys`
     );
     this.scheduleSetData();
   }

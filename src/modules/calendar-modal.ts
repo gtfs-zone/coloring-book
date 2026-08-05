@@ -1,5 +1,10 @@
 import { showModal } from './modal-utils.js';
 import { formatDaysOfWeek } from '../utils/entity-references.js';
+import {
+  formatGtfsDateWithWeekday,
+  parseGtfsDate,
+  toGtfsDate as formatGTFS,
+} from '../utils/gtfs-date.js';
 
 export interface CalendarModalDeps {
   gtfsDatabase: {
@@ -34,18 +39,13 @@ function getServiceColor(index: number): string {
   return PALETTE[index % PALETTE.length];
 }
 
+/**
+ * Timeline arithmetic below is all `.getTime()` on the result, so an Invalid
+ * Date for a malformed feed value propagates as NaN rather than needing a null
+ * check at every site.
+ */
 function parseGTFSDate(s: string): Date {
-  const year = parseInt(s.slice(0, 4), 10);
-  const month = parseInt(s.slice(4, 6), 10);
-  const day = parseInt(s.slice(6, 8), 10);
-  return new Date(Date.UTC(year, month - 1, day));
-}
-
-function formatGTFS(date: Date): string {
-  const y = date.getUTCFullYear();
-  const m = String(date.getUTCMonth() + 1).padStart(2, '0');
-  const d = String(date.getUTCDate()).padStart(2, '0');
-  return `${y}${m}${d}`;
+  return parseGtfsDate(s) ?? new Date(NaN);
 }
 
 function getDayOfWeek(gtfsDate: string): number {
@@ -313,14 +313,6 @@ function getDaysTooltip(calendar: Record<string, unknown> | null): string {
   return formatDaysOfWeek(calendar);
 }
 
-function formatHumanDate(gtfsDate: string): string {
-  const d = parseGTFSDate(gtfsDate);
-  const dayName = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][
-    d.getUTCDay()
-  ];
-  return `${dayName}, ${MONTH_ABBR[d.getUTCMonth()]} ${d.getUTCDate()} ${d.getUTCFullYear()}`;
-}
-
 function renderTimeline(data: ServiceDataMap): string {
   if (data.size === 0) {
     return `<div class="flex items-center justify-center h-32 text-base-content/50 text-sm">No service data available</div>`;
@@ -432,11 +424,11 @@ function renderTimeline(data: ServiceDataMap): string {
             const excType = excByDate.get(dateStr);
             if (excType === 1) {
               ticks.push(
-                `<span class="tooltip tooltip-top" data-tip="${esc(formatHumanDate(dateStr))}"><span style="color:#4ade80">▲</span></span>`
+                `<span class="tooltip tooltip-top" data-tip="${esc(formatGtfsDateWithWeekday(dateStr))}"><span style="color:#4ade80">▲</span></span>`
               );
             } else if (excType === 2) {
               ticks.push(
-                `<span class="tooltip tooltip-top" data-tip="${esc(formatHumanDate(dateStr))}"><span style="color:#f87171">▼</span></span>`
+                `<span class="tooltip tooltip-top" data-tip="${esc(formatGtfsDateWithWeekday(dateStr))}"><span style="color:#f87171">▼</span></span>`
               );
             }
           }
@@ -462,7 +454,7 @@ function renderTimeline(data: ServiceDataMap): string {
     .join('');
 
   const warningHtml = truncated
-    ? `<div class="text-xs text-warning mb-2">Date range exceeds 3 years — display truncated.</div>`
+    ? `<div class="text-xs text-warning mb-2">Date range exceeds 3 years: display truncated.</div>`
     : '';
 
   return `
