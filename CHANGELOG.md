@@ -1,3 +1,38 @@
+## v0.24.0 (2026-08-05)
+
+### Feat
+
+- **map**: render pathways and station geometry with theme-aware styling
+- **timetable**: freeze and tighten the stop column
+- **timetable**: dedicated trip actions row with routing icon
+- **timetable**: add stops via searchable modal
+- **timetable**: pick stops via searchable modal
+- **timetable**: edit trip properties in place
+- **timetable**: add searchable option-picker modal
+- **strip**: show endpoint, minority and revisit facts
+- **timetable**: draw the route strip in the stop column
+- **timetable**: label directions by headsign
+- **route-sequence**: port the shared route engine from test-track
+- **timetable**: edit time cells in place
+
+### Fix
+
+- **map**: show pointer cursor over routes
+
+### Refactor
+
+- **timetable**: render trip properties as text
+- **scs**: drop the unused alignment helpers
+- **timetable**: derive rows from the route sequence
+
+### Perf
+
+- **timetable**: memoize timetable data
+- **timetable**: update one cell instead of the table
+- **timetable**: render time cells as text
+- **timetable**: fill the shape_id picker on demand
+- **timetable**: remove the per-row full-feed stop select
+
 ## v0.23.2 (2026-08-04)
 
 ## v0.23.1 (2026-08-04)
