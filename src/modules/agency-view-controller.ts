@@ -6,11 +6,9 @@
  */
 
 import type { Agency, Routes } from '../types/gtfs.js';
-import {
-  renderEntityFields,
-  type QueryOnlyDatabase,
-} from '../utils/field-component.js';
-import { GTFS_TABLES, AgencySchema } from '../types/gtfs.js';
+import type { QueryOnlyDatabase } from '../utils/field-component.js';
+import { renderInlineEntityFields } from '../utils/inline-editable-field.js';
+import { GTFS_TABLES } from '../types/gtfs.js';
 import {
   normalizeAgencyId,
   agencyRouteFilter,
@@ -68,7 +66,7 @@ export class AgencyViewController {
       // Render complete view
       const html = `
         <div class="p-4 space-y-4">
-          ${this.renderAgencyProperties(agency)}
+          ${await this.renderAgencyProperties(agency)}
           ${this.renderRoutesList(routes, agency_id, tripCountByRoute)}
         </div>
       `;
@@ -83,11 +81,10 @@ export class AgencyViewController {
   /**
    * Render editable agency properties section
    */
-  private renderAgencyProperties(agency: Agency): string {
-    const fieldsHtml = renderEntityFields(
-      AgencySchema,
-      agency as Record<string, string | number | undefined>,
+  private async renderAgencyProperties(agency: Agency): Promise<string> {
+    const fieldsHtml = await renderInlineEntityFields(
       GTFS_TABLES.AGENCY,
+      agency as Record<string, string | number | undefined>,
       this.currentAgencyId ?? ''
     );
 
