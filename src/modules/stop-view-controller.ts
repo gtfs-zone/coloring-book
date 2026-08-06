@@ -27,6 +27,7 @@ import {
   VIEW_SERVICE_BTN,
 } from '../utils/entity-references.js';
 import { collectDescendantStops } from '../utils/stop-hierarchy.js';
+import { renderStopAreasField } from '../utils/stop-areas-field.js';
 
 interface TimetableKey {
   route_id: string;
@@ -185,6 +186,11 @@ export class StopViewController {
       stop as Record<string, string | number | undefined>,
       this.currentStopId ?? ''
     );
+    // Area membership lives in stop_areas.txt, not on the stop, and a platform
+    // may inherit it from its station, so it is not an ordinary property row.
+    const areasHtml = await renderStopAreasField(
+      stop as unknown as Record<string, unknown>
+    );
 
     return `
       <div class="space-y-4">
@@ -194,8 +200,9 @@ export class StopViewController {
         </div>
         <div class="card bg-base-100 shadow-lg">
           <div class="card-body p-4">
-            <div class="max-w-md">
+            <div class="max-w-md space-y-3">
               ${fieldsHtml}
+              ${areasHtml}
             </div>
           </div>
         </div>
