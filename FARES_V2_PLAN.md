@@ -863,32 +863,102 @@ delete the second-modal add/edit flow entirely. Only the three existing tables
 move in this phase; new tables arrive in Phases 7-9. Keeping the set unchanged
 here makes the refactor independently testable.
 
-- [ ] Replace the tab row with a two-pane layout: left sidebar of grouped entries,
+- [x] Replace the tab row with a two-pane layout: left sidebar of grouped entries,
       right content pane. Groups and order:
       - **Definitions**: Timeframes, Rider Categories, Fare Media, Fare Products
       - **Rules**: Fare Leg Rules, Fare Leg Join Rules, Fare Transfer Rules
       - **Geography**: Areas, Networks
       Entries for tables not yet implemented are rendered disabled with a
       "coming in a later phase" title until their phase lands.
-- [ ] Each sidebar entry shows a live row count, refreshed after every mutation.
-- [ ] Widen `boxClassName` beyond `max-w-3xl`; the rule tables are wide. Content
+- [x] Each sidebar entry shows a live row count, refreshed after every mutation.
+- [x] Widen `boxClassName` beyond `max-w-3xl`; the rule tables are wide. Content
       pane scrolls horizontally on its own, the modal never does.
-- [ ] Render Rider Categories, Fare Media, Fare Products via `renderEditableTable`.
-- [ ] Delete `showAddEditRiderCategoryModal`, `showAddEditFareMediaModal`,
+- [x] Render Rider Categories, Fare Media, Fare Products via `renderEditableTable`.
+- [x] Delete `showAddEditRiderCategoryModal`, `showAddEditFareMediaModal`,
       `showAddEditFareProductModal`, `readFormValues`, `showFormError`,
       `renderColumnHeader`, and the local `esc` if now unused.
-- [ ] Keep `showDeleteConfirmModal`, or move it into `editable-table.ts` if that
-      is where it now belongs.
-- [ ] Replace the "Supports a limited set of Fares V2..." blurb with accurate copy,
+- [x] Keep `showDeleteConfirmModal`, or move it into `editable-table.ts` if that
+      is where it now belongs. **It was already in `editable-table.ts`**; the
+      fares-modal copy is deleted.
+- [x] Replace the "Supports a limited set of Fares V2..." blurb with accurate copy,
       still linking to the reference and still noting that Fares v1 lives in the
       file viewer.
-- [ ] Fare Products' `amount` column must render as a Currency amount, with the
+- [x] Fare Products' `amount` column must render as a Currency amount, with the
       decimal-place count implied by the row's `currency`. Do not use float math.
-- [ ] Preserve deep-linking / reopen behavior if `PageStateManager` tracks the
-      modal today. If it does not, do not add it.
+- [x] Preserve deep-linking / reopen behavior if `PageStateManager` tracks the
+      modal today. If it does not, do not add it. **It does not**: the modal is
+      opened from a `#fares-btn` click listener in `index.ts` and nothing was
+      added.
 
 ### Discoveries
-_(fill in)_
+
+**Shape of the rebuilt module.** `fares-modal.ts` went from 804 lines to about
+250, and nine tenths of what is left is data: a `FARES_ENTRIES` array of
+`{ table, label, group, pending?, emptyMessage, columnOverrides? }`. Phases 7-9
+should only have to drop the `pending: true` flag and add the entry's
+`columnOverrides`; no rendering code should need to change. The four entries
+that are not yet editable render as `menu-disabled` `<span>`s with a
+`title="Editing this table is coming in a later phase"`, but they still show
+their live row count, so an imported feed's fares data is visible before its
+editor exists.
+
+**One `EditableTableConfig` for the whole modal, re-pointed on navigation.**
+Switching sidebar entries re-assigns `tableName` / `rows` / `emptyMessage` /
+`columnOverrides` on the same config object and re-renders, rather than
+installing a second instance. The delegated handlers hold that object, so they
+follow the switch for free, and `uninstallEditableTableHandlers` has exactly one
+id to drop when `showModal` resolves. `FaresModalDeps` is now just an alias for
+`EditableTableDeps`, which adds `recordBatchMixed` to what `index.ts` passes;
+`PatchManager` already had it, and the existing `Parameters<typeof
+showFaresModal>[0]` cast at the call site still holds.
+
+**Two fixes to `editable-table.ts`, from it finally being exercised.** Both come
+from the same decision: **do not re-render on update.** A commit fires on blur,
+and a blur is usually caused by clicking the next cell, so an async re-render
+lands *after* that cell's editor has opened and destroys it. Re-rendering is
+therefore limited to insert and delete, where the row set genuinely changed.
+That left two pieces of state stale, now handled in the component:
+
+- `replaceRow` writes the committed row back into `config.rows`, so the next
+  edit of that row reads the value just written rather than the pre-edit one.
+- `rekeyRowElement` rewrites `data-key` on every cell and the delete button, and
+  `data-et-row` on the `<tr>`, after a re-keying edit. Without it the next edit
+  of that row looked up a key that no longer existed and logged
+  "row ... is gone".
+
+`onUpdate` is consequently unused by this host, which is the intended split: the
+hook exists for a host that needs to react, not to keep the table correct.
+
+**Currency without float math.** `formatCurrencyAmount(value, currency)` pads the
+stored decimal string out to the ISO 4217 minor-unit count for the row's
+currency, taking the digit count from
+`Intl.NumberFormat(...).resolvedOptions().maximumFractionDigits` and doing the
+rest with `padEnd`. It never truncates: a value with more digits than the
+currency allows is shown as written, since hiding it would misrepresent what is
+in the feed. Unparseable amounts, an empty currency and an unknown currency code
+all fall through to the raw string. It is a `columnOverrides.format`, so the
+cell still edits as the raw value.
+
+**`renderFormField` / `renderFormFields` are gone**, as Phase 5 predicted, along
+with the now-orphaned `renderTextInput`, `renderSelectInput`,
+`renderTextareaInput` and the `formatValueForDisplay` import (191 lines out of
+`field-component.ts`). `renderFieldLabel`, `renderFieldLabelContent`,
+`buildFieldTooltipContent`, `generateFieldConfigsFromSchema` and `FieldConfig`
+all stay: the click-to-edit path and the editable table's headers use them. The
+`FieldConfig` fields that only the deleted renderers read (`placeholder`,
+`attributes`, `options`, `inputClasses`, `emptyEquivalentValue`) were left in
+place; `generateFieldConfigsFromSchema` still populates them and no lint rule
+objects.
+
+**`knip.config.ts`'s `ignore` block is removed** now that `editable-table.ts` has
+a consumer, as Phase 4 required.
+
+**Not verified in a browser.** `typecheck / lint / knip / check-spec / build` all
+pass. Worth watching on the manual pass: adding a fare product through the blank
+row (composite key, and `amount` is a `Currency amount` string rather than a
+number), editing `fare_product_id` on an existing row (the re-key path), the
+row counts updating after an insert and a delete, and whether the sidebar plus a
+six-column table fits without the modal itself scrolling sideways.
 
 ---
 
