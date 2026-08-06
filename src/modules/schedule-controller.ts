@@ -17,7 +17,7 @@ import { TimetableDatabase, StopTimeEditPlan } from './timetable-database.js';
 import { generateCompositeKeyFromRecord } from '../utils/gtfs-primary-keys.js';
 import { patchUpdate } from '../utils/patch-utils.js';
 import { getStopDisplay } from '../utils/entity-display.js';
-import { escapeHtml } from '../utils/escape-html.js';
+import { openInlineEditor, openInlineMenu } from '../utils/inline-edit.js';
 import { showModal } from './modal-utils.js';
 import {
   showOptionPickerModal,
@@ -253,10 +253,6 @@ export class ScheduleController {
    * which is correct since nothing was written.
    */
   private openTimeEditor(span: HTMLElement): void {
-    if (document.querySelector('.editor-input-live')) {
-      return;
-    }
-
     const { tripId, stopId, timeType, stopSequence, pending } = span.dataset;
     if (
       !tripId ||
@@ -267,31 +263,15 @@ export class ScheduleController {
     }
 
     const originalText = span.textContent ?? '';
-    const currentValue = originalText === '--:--:--' ? '' : originalText;
 
-    const input = document.createElement('input');
-    input.type = 'text';
-    input.className =
-      'time-input-live editor-input-live input input-xs w-20 text-center font-mono';
-    input.value = currentValue;
-    input.placeholder = '--:--:--';
-    input.pattern =
-      '^([01]?[0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]$|^(2[4-9]|[3-9][0-9]):[0-5][0-9]:[0-5][0-9]$';
-    input.title = 'Enter time in HH:MM:SS format';
-
-    span.replaceWith(input);
-    input.focus();
-    input.select();
-
-    let settled = false;
-    const commit = (): void => {
-      if (settled) {
-        return;
-      }
-      settled = true;
-      const value = input.value;
-      input.replaceWith(span);
-      if (value !== currentValue) {
+    openInlineEditor(span, {
+      value: originalText === '--:--:--' ? '' : originalText,
+      className: 'time-input-live w-20 text-center font-mono',
+      placeholder: '--:--:--',
+      pattern:
+        '^([01]?[0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]$|^(2[4-9]|[3-9][0-9]):[0-5][0-9]:[0-5][0-9]$',
+      title: 'Enter time in HH:MM:SS format',
+      onCommit: (value) => {
         void this.updateArrivalDepartureTime(
           tripId,
           stopId,
@@ -300,25 +280,7 @@ export class ScheduleController {
           stopSequence,
           pending === 'true'
         );
-      }
-    };
-    const cancel = (): void => {
-      if (settled) {
-        return;
-      }
-      settled = true;
-      input.replaceWith(span);
-    };
-
-    input.addEventListener('blur', commit);
-    input.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        input.blur();
-      } else if (e.key === 'Escape') {
-        e.preventDefault();
-        cancel();
-      }
+      },
     });
   }
 
@@ -389,57 +351,20 @@ export class ScheduleController {
    * live at a time, guarded by the shared `.editor-input-live` marker class.
    */
   private openTripPropEditor(span: HTMLElement): void {
-    if (document.querySelector('.editor-input-live')) {
-      return;
-    }
-
     const { tripId, field, fieldKind, value } = span.dataset;
     if (!tripId || !field) {
       return;
     }
 
-    const currentValue = value ?? '';
-
-    const input = document.createElement('input');
-    input.type = fieldKind === 'number' ? 'number' : 'text';
-    input.className = 'editor-input-live input input-xs w-full text-center';
-    input.value = currentValue;
-
-    span.replaceWith(input);
-    input.focus();
-    input.select();
-
-    let settled = false;
-    const commit = (): void => {
-      if (settled) {
-        return;
-      }
-      settled = true;
-      const newValue = input.value;
-      input.replaceWith(span);
-      if (newValue !== currentValue) {
+    openInlineEditor(span, {
+      value: value ?? '',
+      inputType: fieldKind === 'number' ? 'number' : 'text',
+      className: 'w-full text-center',
+      onCommit: (newValue) => {
         span.textContent = newValue || '-';
         span.dataset.value = newValue;
         void this.updateTripProperty(tripId, field, newValue);
-      }
-    };
-    const cancel = (): void => {
-      if (settled) {
-        return;
-      }
-      settled = true;
-      input.replaceWith(span);
-    };
-
-    input.addEventListener('blur', commit);
-    input.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        input.blur();
-      } else if (e.key === 'Escape') {
-        e.preventDefault();
-        cancel();
-      }
+      },
     });
   }
 
@@ -450,76 +375,28 @@ export class ScheduleController {
    * searchable modal.
    */
   private openTripPropEnumMenu(span: HTMLElement): void {
-    document
-      .querySelectorAll('.trip-prop-enum-menu')
-      .forEach((el) => el.remove());
-
     const { tripId, field, value } = span.dataset;
     if (!tripId || !field) {
       return;
     }
 
     const enumOptions = getEnumOptions(field) ?? [];
-    const currentValue = value ?? '';
-    const rows: { value: string; label: string }[] = [
-      { value: '', label: '-' },
-      ...enumOptions.map((opt) => ({
-        value: String(opt.value),
-        label: `${opt.value} - ${opt.label}`,
-      })),
-    ];
 
-    const rect = span.getBoundingClientRect();
-    const menu = document.createElement('div');
-    menu.className =
-      'trip-prop-enum-menu fixed z-50 -translate-x-1/2 bg-base-100 border border-base-300 rounded-lg shadow-lg py-1 min-w-40 max-h-72 overflow-y-auto';
-    menu.style.top = `${rect.bottom + window.scrollY + 2}px`;
-    menu.style.left = `${rect.left + rect.width / 2 + window.scrollX}px`;
-    menu.innerHTML = rows
-      .map((row) => {
-        const activeClass =
-          row.value === currentValue ? ' bg-base-200 font-medium' : '';
-        return `<div class="px-3 py-1.5 text-sm text-center cursor-pointer hover:bg-base-200${activeClass}" data-value="${escapeHtml(row.value)}">${escapeHtml(row.label)}</div>`;
-      })
-      .join('');
-    document.body.appendChild(menu);
-
-    const close = (): void => {
-      menu.remove();
-      document.removeEventListener('mousedown', onOutside, true);
-      document.removeEventListener('keydown', onKeydown, true);
-    };
-    const onOutside = (e: MouseEvent): void => {
-      if (!menu.contains(e.target as Node)) {
-        close();
-      }
-    };
-    const onKeydown = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        close();
-      }
-    };
-
-    menu.addEventListener('click', (e) => {
-      const row = (e.target as Element).closest(
-        '[data-value]'
-      ) as HTMLElement | null;
-      if (!row) {
-        return;
-      }
-      const newValue = row.dataset.value ?? '';
-      close();
-      if (newValue !== currentValue) {
-        const picked = rows.find((r) => r.value === newValue);
-        span.textContent = picked?.label || '-';
+    openInlineMenu(span, {
+      currentValue: value ?? '',
+      options: [
+        { value: '', label: '-' },
+        ...enumOptions.map((opt) => ({
+          value: String(opt.value),
+          label: `${opt.value} - ${opt.label}`,
+        })),
+      ],
+      onPick: (newValue, label) => {
+        span.textContent = label || '-';
         span.dataset.value = newValue;
         void this.updateTripProperty(tripId, field, newValue);
-      }
+      },
     });
-
-    document.addEventListener('mousedown', onOutside, true);
-    document.addEventListener('keydown', onKeydown, true);
   }
 
   /**
