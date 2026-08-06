@@ -204,9 +204,16 @@ export function renderFieldLabelContent(
 }
 
 /**
- * Render label using Pattern 4: Label with for attribute
+ * Render a field's label: the spec-linked name, its presence mark, and a lock
+ * icon for primary keys.
+ *
+ * `inputId` is omitted for click-to-edit fields, which have no input to point
+ * a `for` attribute at until one is opened.
  */
-function renderLabel(config: FieldConfig, inputId: string): string {
+export function renderFieldLabel(
+  config: FieldConfig,
+  inputId?: string
+): string {
   const labelContent = renderFieldLabelContent(config);
 
   let readonlyIcon = '';
@@ -221,7 +228,7 @@ function renderLabel(config: FieldConfig, inputId: string): string {
   }
 
   return `
-    <label class="label" for="${inputId}">${labelContent}${readonlyIcon}</label>
+    <label class="label"${inputId ? ` for="${inputId}"` : ''}>${labelContent}${readonlyIcon}</label>
   `;
 }
 
@@ -384,7 +391,7 @@ function renderTextareaInput(config: FieldConfig, inputId: string): string {
  */
 export function renderFormField(config: FieldConfig): string {
   const inputId = `field-${config.field}`;
-  const labelHtml = renderLabel(config, inputId);
+  const labelHtml = renderFieldLabel(config, inputId);
 
   let inputHtml: string;
   switch (config.type) {

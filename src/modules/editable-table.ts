@@ -30,16 +30,20 @@ import {
 } from '../utils/gtfs-primary-keys.js';
 import { patchUpdate } from '../utils/patch-utils.js';
 import {
-  getEntityDisplay,
-  renderOptionLabel,
-} from '../utils/entity-display.js';
-import {
   generateFieldConfigsFromSchema,
   renderFieldLabelContent,
   type FieldConfig,
 } from '../utils/field-component.js';
+import {
+  buildForeignKeyOptions,
+  coerceFieldValue,
+  formatSpecValue,
+  specFieldKind,
+  specStoreName,
+  validateFieldValue,
+  type SpecFieldKind,
+} from '../utils/spec-field-edit.js';
 import { GTFSSchemas, GTFS_FIELD_SPECS } from '../types/gtfs.js';
-import { GTFSFieldType, mapGTFSTypeString } from '../types/gtfs-field-types.js';
 import type { GTFSFieldSpec } from '../gtfs-spec/types.js';
 import type { z } from 'zod';
 
@@ -137,8 +141,6 @@ export interface EditableTableConfig {
   onDelete?: (key: string) => void;
 }
 
-type CellKind = 'text' | 'number' | 'enum' | 'foreign';
-
 interface EditableTableInstance {
   config: EditableTableConfig;
   /** Values typed into the trailing blank row, not yet written. */
@@ -148,23 +150,7 @@ interface EditableTableInstance {
 const instances = new Map<string, EditableTableInstance>();
 let listenerInstalled = false;
 
-const NUMERIC_FIELD_TYPES = new Set<GTFSFieldType>([
-  GTFSFieldType.Integer,
-  GTFSFieldType.NonNegativeInteger,
-  GTFSFieldType.NonZeroInteger,
-  GTFSFieldType.PositiveInteger,
-  GTFSFieldType.Float,
-  GTFSFieldType.NonNegativeFloat,
-  GTFSFieldType.PositiveFloat,
-  GTFSFieldType.Latitude,
-  GTFSFieldType.Longitude,
-]);
-
 // ─── Spec lookups ─────────────────────────────────────────────────────────────
-
-function storeName(tableName: string): string {
-  return tableName.replace(/\.txt$/, '');
-}
 
 function fieldSpecs(tableName: string): Record<string, GTFSFieldSpec> {
   const specs = GTFS_FIELD_SPECS[tableName];
@@ -185,27 +171,7 @@ function rowKey(
   if (config.primaryKey) {
     return config.primaryKey(row);
   }
-  return generateCompositeKeyFromRecord(storeName(config.tableName), row);
-}
-
-function isNumericEnum(spec: GTFSFieldSpec): boolean {
-  return (
-    spec.enumValues !== undefined &&
-    spec.enumValues.length > 0 &&
-    spec.enumValues.every((v) => typeof v.value === 'number')
-  );
-}
-
-function cellKind(spec: GTFSFieldSpec): CellKind {
-  if (spec.foreignKey && spec.foreignKey.length > 0) {
-    return 'foreign';
-  }
-  if (spec.enumValues && spec.enumValues.length > 0) {
-    return 'enum';
-  }
-  return NUMERIC_FIELD_TYPES.has(mapGTFSTypeString(spec.type))
-    ? 'number'
-    : 'text';
+  return generateCompositeKeyFromRecord(specStoreName(config.tableName), row);
 }
 
 /**
@@ -214,97 +180,16 @@ function cellKind(spec: GTFSFieldSpec): CellKind {
  * `all_fields` tables key on their whole content, so every field re-keys.
  */
 function isKeyField(tableName: string, field: string): boolean {
-  const pk = getGTFSPrimaryKey(storeName(tableName));
+  const pk = getGTFSPrimaryKey(specStoreName(tableName));
   if (!pk) {
     return false;
   }
   return pk.type === 'all_fields' || pk.fields.includes(field);
 }
 
-// ─── Value handling ───────────────────────────────────────────────────────────
-
-/** Parse a cell's raw input into the type the spec (and Zod) expect. */
-function coerceValue(
-  spec: GTFSFieldSpec,
-  raw: string
-): { value: string | number } | { error: string } {
-  const trimmed = raw.trim();
-  if (trimmed === '') {
-    return { value: '' };
-  }
-  if (
-    isNumericEnum(spec) ||
-    NUMERIC_FIELD_TYPES.has(mapGTFSTypeString(spec.type))
-  ) {
-    const num = Number(trimmed);
-    if (Number.isNaN(num)) {
-      return { error: 'Must be a number' };
-    }
-    return { value: num };
-  }
-  return { value: trimmed };
-}
-
-/**
- * Validate a committed value against the field's Zod schema.
- *
- * Returns an error message, or null when the value may be written. An empty
- * value is a clear, which is legal for anything the spec does not require.
- */
-function validateValue(
-  tableName: string,
-  field: string,
-  spec: GTFSFieldSpec,
-  value: string | number
-): string | null {
-  if (value === '') {
-    return spec.presence === 'Required' ? 'This field is required' : null;
-  }
-
-  const schema = GTFSSchemas[tableName as keyof typeof GTFSSchemas] as
-    | z.ZodObject<z.ZodRawShape>
-    | undefined;
-  const fieldSchema = schema?.shape[field] as z.ZodTypeAny | undefined;
-  if (!fieldSchema) {
-    return null;
-  }
-
-  const result = fieldSchema.safeParse(value);
-  return result.success
-    ? null
-    : (result.error.issues[0]?.message ?? 'Invalid value');
-}
-
-/** Plain-text display for a cell, before escaping. */
-function displayValue(
-  spec: GTFSFieldSpec,
-  kind: CellKind,
-  value: unknown,
-  foreignLabels: Map<string, string> | undefined
-): string {
-  const raw = value === undefined || value === null ? '' : String(value);
-  if (raw === '') {
-    return '';
-  }
-  if (kind === 'enum') {
-    const option = spec.enumValues?.find((v) => String(v.value) === raw);
-    return option ? `${option.value} - ${option.label}` : raw;
-  }
-  if (kind === 'foreign') {
-    return foreignLabels?.get(raw) ?? raw;
-  }
-  return raw;
-}
-
 // ─── Foreign key options ──────────────────────────────────────────────────────
 
-/**
- * Build the picker options for a foreign-ID field.
- *
- * A field may name more than one target table (`fare_leg_rules.network_id`
- * references `routes.network_id` or `networks.network_id`), in which case the
- * option sets are unioned rather than one target winning.
- */
+/** The field's picker options, or the column's override where one is given. */
 async function foreignOptions(
   config: EditableTableConfig,
   field: string,
@@ -314,35 +199,7 @@ async function foreignOptions(
   if (override) {
     return override();
   }
-
-  const seen = new Map<string, OptionPickerItem>();
-  for (const target of spec.foreignKey ?? []) {
-    if (!target.file.endsWith('.txt')) {
-      // locations.geojson has no table store to read from.
-      continue;
-    }
-    const table = storeName(target.file);
-    const pk = getGTFSPrimaryKey(table);
-    const isEntityKey = pk?.type === 'natural' && pk.fields[0] === target.field;
-    const rows = await config.deps.gtfsDatabase.getAllRows(table);
-    for (const row of rows) {
-      const value = row[target.field];
-      if (value === undefined || value === null || value === '') {
-        continue;
-      }
-      const key = String(value);
-      if (seen.has(key)) {
-        continue;
-      }
-      const label = isEntityKey
-        ? renderOptionLabel(
-            getEntityDisplay(table, row as Record<string, string>)
-          )
-        : key;
-      seen.set(key, { value: key, primary: label, secondary: key });
-    }
-  }
-  return [...seen.values()];
+  return buildForeignKeyOptions(config.deps.gtfsDatabase, spec);
 }
 
 // ─── Rendering ────────────────────────────────────────────────────────────────
@@ -358,7 +215,7 @@ async function foreignLabelMaps(
   const maps = new Map<string, Map<string, string>>();
   for (const field of columnFields(config)) {
     const spec = specs[field];
-    if (!spec || cellKind(spec) !== 'foreign') {
+    if (!spec || specFieldKind(spec) !== 'foreign') {
       continue;
     }
     const options = await foreignOptions(config, field, spec);
@@ -376,12 +233,12 @@ function renderCell(
   foreignLabels: Map<string, string> | undefined
 ): string {
   const override = config.columnOverrides?.[field];
-  const kind = cellKind(spec);
+  const kind = specFieldKind(spec);
   const raw =
     row[field] === undefined || row[field] === null ? '' : String(row[field]);
   const text = override?.format
     ? override.format(row[field], row)
-    : displayValue(spec, kind, row[field], foreignLabels);
+    : formatSpecValue(spec, kind, row[field], foreignLabels);
 
   if (override?.readonly) {
     return `<td class="align-middle">${escapeHtml(text) || '-'}</td>`;
@@ -476,7 +333,7 @@ export async function renderEditableTable(
             data-et="${escapeHtml(config.instanceId)}"
             data-key=""
             data-field="${escapeHtml(field)}"
-            data-kind="${cellKind(specs[field])}"
+            data-kind="${specFieldKind(specs[field])}"
             data-value=""
           >+</span>
         </td>`
@@ -643,7 +500,7 @@ async function commitCell(
   spec: GTFSFieldSpec,
   raw: string
 ): Promise<void> {
-  const coerced = coerceValue(spec, raw);
+  const coerced = coerceFieldValue(spec, raw);
   if ('error' in coerced) {
     markCellError(span, coerced.error);
     return;
@@ -655,7 +512,7 @@ async function commitCell(
   const error =
     isNewRow && coerced.value === ''
       ? null
-      : validateValue(state.config.tableName, field, spec, coerced.value);
+      : validateFieldValue(state.config.tableName, field, spec, coerced.value);
 
   if (error) {
     markCellError(span, error);
@@ -679,8 +536,8 @@ function setCellDisplay(
   value: string | number
 ): void {
   span.dataset.value = value === '' ? '' : String(value);
-  const kind = (span.dataset.kind ?? 'text') as CellKind;
-  const label = displayValue(spec, kind, value, undefined);
+  const kind = (span.dataset.kind ?? 'text') as SpecFieldKind;
+  const label = formatSpecValue(spec, kind, value, undefined);
   span.textContent = label || (span.dataset.key === '' ? '+' : '-');
   if (label) {
     span.classList.remove('text-base-content/40');
@@ -695,7 +552,7 @@ async function commitUpdate(
 ): Promise<void> {
   const { config } = state;
   const key = span.dataset.key ?? '';
-  const table = storeName(config.tableName);
+  const table = specStoreName(config.tableName);
   const before = config.rows.find((r) => rowKey(config, r) === key);
   if (!before) {
     console.warn(`[EditableTable] row ${key} is gone from ${table}`);
@@ -751,7 +608,7 @@ async function commitNewRow(
   value: string | number
 ): Promise<void> {
   const { config } = state;
-  const table = storeName(config.tableName);
+  const table = specStoreName(config.tableName);
 
   if (value === '') {
     delete state.pending[field];
@@ -787,7 +644,7 @@ async function commitNewRow(
     if (pendingValue === undefined) {
       continue;
     }
-    const coerced = coerceValue(specs[f], pendingValue);
+    const coerced = coerceFieldValue(specs[f], pendingValue);
     record[f] = 'error' in coerced ? pendingValue : coerced.value;
   }
 
@@ -815,7 +672,7 @@ async function deleteRow(button: HTMLElement): Promise<void> {
     return;
   }
   const { config } = state;
-  const table = storeName(config.tableName);
+  const table = specStoreName(config.tableName);
   const record = config.rows.find((r) => rowKey(config, r) === key);
   if (!record) {
     console.warn(`[EditableTable] row ${key} is gone from ${table}`);
