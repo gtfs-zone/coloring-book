@@ -96,16 +96,6 @@ export class BrowseNavigation {
   private isLoading: boolean = false;
   private lastRenderedPageState: PageState | null = null;
   private contentRenderer: PageContentRenderer | null = null;
-  private levelsController: {
-    getLevelOptions: () => Promise<{ value: string; label: string }[]>;
-  } | null = null;
-
-  setLevelsController(lc: {
-    getLevelOptions: () => Promise<{ value: string; label: string }[]>;
-  }): void {
-    this.levelsController = lc;
-  }
-
   private patchManager: {
     recordUpdate: (
       table: string,
@@ -356,10 +346,6 @@ export class BrowseNavigation {
       ) => navigateToTimetable(route_id, service_id, direction_id),
       onEntityCreated: () => this.render(),
       patchManager: this.patchManager ?? undefined,
-      parser: this.gtfsRelationshipsInstance?.gtfsParser ?? undefined,
-      getLevelOptions: this.levelsController
-        ? () => this.levelsController!.getLevelOptions()
-        : undefined,
     };
 
     this.contentRenderer = new PageContentRenderer(dependencies);

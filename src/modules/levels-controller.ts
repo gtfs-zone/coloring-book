@@ -12,11 +12,6 @@ function escapeAttr(text: unknown): string {
   return escapeHtml(text).replace(/'/g, '&#39;').replace(/"/g, '&quot;');
 }
 
-export interface LevelOption {
-  value: string;
-  label: string;
-}
-
 export class LevelsController {
   private db: GTFSDatabase;
   private patchManager: PatchManager | null = null;
@@ -27,32 +22,6 @@ export class LevelsController {
 
   setPatchManager(pm: PatchManager): void {
     this.patchManager = pm;
-  }
-
-  async getLevelOptions(): Promise<LevelOption[]> {
-    const levels = await this.db.getAllRows('levels');
-    return levels
-      .slice()
-      .sort((a, b) => {
-        const ai = Number(a.level_index ?? 0);
-        const bi = Number(b.level_index ?? 0);
-        if (!Number.isFinite(ai) && !Number.isFinite(bi)) {
-          return 0;
-        }
-        if (!Number.isFinite(ai)) {
-          return 1;
-        }
-        if (!Number.isFinite(bi)) {
-          return -1;
-        }
-        return ai - bi;
-      })
-      .map((l) => ({
-        value: String(l.level_id),
-        label: l.level_name
-          ? `${l.level_name} (${l.level_index})`
-          : String(l.level_id),
-      }));
   }
 
   async showLevelsModal(): Promise<void> {

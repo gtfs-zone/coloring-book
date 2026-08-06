@@ -1,9 +1,7 @@
 import type { Pathways, Stops } from '../types/gtfs-entities.js';
-import {
-  renderEntityFields,
-  type QueryOnlyDatabase,
-} from '../utils/field-component.js';
-import { GTFSSchemas, GTFS_TABLES } from '../types/gtfs.js';
+import type { QueryOnlyDatabase } from '../utils/field-component.js';
+import { renderInlineEntityFields } from '../utils/inline-editable-field.js';
+import { GTFS_TABLES } from '../types/gtfs.js';
 import { getStopDisplay, renderOptionLabel } from '../utils/entity-display.js';
 import { pathwayModeLabel } from '../utils/pathway-modes.js';
 
@@ -41,15 +39,11 @@ export class PathwayViewController {
         this.getStopData(pathway.to_stop_id),
       ]);
 
-      const PathwaysSchema = GTFSSchemas['pathways.txt'];
-      const fieldsHtml = PathwaysSchema
-        ? renderEntityFields(
-            PathwaysSchema,
-            pathway as Record<string, string | number | undefined>,
-            GTFS_TABLES.PATHWAYS,
-            pathway_id
-          )
-        : '';
+      const fieldsHtml = await renderInlineEntityFields(
+        GTFS_TABLES.PATHWAYS,
+        pathway as Record<string, string | number | undefined>,
+        pathway_id
+      );
 
       const modeLabel = pathwayModeLabel(Number(pathway.pathway_mode) || 1);
 

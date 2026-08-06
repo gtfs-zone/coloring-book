@@ -12,14 +12,11 @@ import type {
   StopTimes,
   Pathways,
 } from '../types/gtfs.js';
-import {
-  renderEntityFields,
-  type QueryOnlyDatabase,
-} from '../utils/field-component.js';
-import { GTFS_TABLES, StopsSchema } from '../types/gtfs.js';
+import type { QueryOnlyDatabase } from '../utils/field-component.js';
+import { renderInlineEntityFields } from '../utils/inline-editable-field.js';
+import { GTFS_TABLES } from '../types/gtfs.js';
 import { getStopDisplay, renderCardLabel } from '../utils/entity-display.js';
 import { pathwayModeLabel } from '../utils/pathway-modes.js';
-import type { LevelOption } from './levels-controller.js';
 import { renderTrashIcon } from './modal-utils.js';
 import {
   renderPathwayReference,
@@ -47,10 +44,6 @@ interface StopRelations {
   timetableKeys: TimetableKey[];
 }
 
-function escapeAttr(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
-}
-
 export interface StopViewDependencies {
   gtfsDatabase?: QueryOnlyDatabase;
   gtfsRelationships?: {
@@ -63,7 +56,6 @@ export interface StopViewDependencies {
   onRouteClick?: (route_id: string) => void;
   onServiceClick?: (service_id: string) => void;
   onDeleteStop: (stop_id: string) => Promise<void>;
-  getLevelOptions?: () => Promise<LevelOption[]>;
 }
 
 export class StopViewController {
@@ -125,8 +117,7 @@ export class StopViewController {
         }
       }
 
-      const [levelOptions, childStops, connectedPathways] = await Promise.all([
-        this.dependencies.getLevelOptions?.() ?? Promise.resolve([]),
+      const [childStops, connectedPathways] = await Promise.all([
         isStation
           ? this.getChildStops(stop_id)
           : Promise.resolve([] as Stops[]),
@@ -172,7 +163,7 @@ export class StopViewController {
 
       const html = `
         <div class="p-4 space-y-4">
-          ${this.renderStopProperties(stop, levelOptions)}
+          ${await this.renderStopProperties(stop)}
           ${isStation ? this.renderChildStopsSections(childStops as Stops[]) : ''}
           ${!isStation ? boardingAreasHtml : ''}
           ${!isStation ? this.renderPathwaySection('Pathways Out', outPathways, 'to', otherStopLookup) : ''}
@@ -188,42 +179,12 @@ export class StopViewController {
     }
   }
 
-  private renderStopProperties(
-    stop: Stops,
-    levelOptions: LevelOption[]
-  ): string {
-    let fieldsHtml = renderEntityFields(
-      StopsSchema,
-      stop as Record<string, string | number | undefined>,
+  private async renderStopProperties(stop: Stops): Promise<string> {
+    const fieldsHtml = await renderInlineEntityFields(
       GTFS_TABLES.STOPS,
+      stop as Record<string, string | number | undefined>,
       this.currentStopId ?? ''
     );
-
-    // Replace the level_id text input with a <select> populated from levels
-    if (this.dependencies.getLevelOptions) {
-      const currentValue = String(stop.level_id ?? '');
-      const optionsHtml =
-        `<option value="">- no level -</option>` +
-        levelOptions
-          .map(
-            (opt) =>
-              `<option value="${escapeAttr(opt.value)}"${opt.value === currentValue ? ' selected' : ''}>${escapeAttr(opt.label)}</option>`
-          )
-          .join('');
-      const hint =
-        levelOptions.length === 0
-          ? `<div class="text-xs opacity-60 mt-1">Add levels via the Levels button in the nav bar.</div>`
-          : '';
-      // Match the input rendered by field-component for level_id
-      fieldsHtml = fieldsHtml.replace(
-        /<input([^>]*data-field="level_id"[^>]*)>/,
-        (_match, attrs) => {
-          // Strip value attribute, select uses <option selected> instead
-          const attrsClean = attrs.replace(/\s*value="[^"]*"/, '');
-          return `<select${attrsClean} class="select select-bordered select-sm w-full">${optionsHtml}</select>${hint}`;
-        }
-      );
-    }
 
     return `
       <div class="space-y-4">

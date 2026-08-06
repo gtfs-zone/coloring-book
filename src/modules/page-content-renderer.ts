@@ -24,18 +24,11 @@ import {
   PathwayViewDependencies,
 } from './pathway-view-controller.js';
 import {
-  renderFormFields,
-  generateFieldConfigsFromSchema,
-  renderEntityFormFields,
-} from '../utils/field-component.js';
-import { installInlineEditableFields } from '../utils/inline-editable-field.js';
-import { FeedInfoSchema, GTFS_TABLES } from '../types/gtfs.js';
+  installInlineEditableFields,
+  renderInlineEntityFields,
+} from '../utils/inline-editable-field.js';
+import { GTFS_TABLES } from '../types/gtfs.js';
 import { InlineEntityCreator } from '../utils/inline-entity-creator.js';
-import {
-  attachFormPatchListeners,
-  type FormPatchDeps,
-} from '../utils/form-patch-bridge.js';
-import type { GTFSDatabaseRecord } from './gtfs-database.js';
 import {
   getAgencyDisplay,
   getServiceDisplay,
@@ -172,14 +165,6 @@ export interface ContentRendererDependencies {
       label?: string
     ) => Promise<void>;
   };
-
-  // Parser for reading in-memory GTFS data (used by patch bridge)
-  parser?: {
-    getFileDataSync: (fileName: string) => GTFSDatabaseRecord[];
-  };
-
-  // Optional: supply level options for the level_id dropdown in stop view
-  getLevelOptions?: () => Promise<{ value: string; label: string }[]>;
 }
 
 /**
@@ -205,7 +190,6 @@ export class PageContentRenderer {
       onRouteClick: dependencies.onRouteClick,
       onServiceClick: dependencies.onServiceClick,
       onDeleteStop: (stop_id) => this.handleDeleteStop(stop_id),
-      getLevelOptions: dependencies.getLevelOptions,
     };
     this.stopViewController = new StopViewController(stopViewDependencies);
 
@@ -380,7 +364,7 @@ export class PageContentRenderer {
 
     return `
       <div class="p-4 space-y-4">
-        ${this.renderFeedInfoProperties(feedInfo)}
+        ${await this.renderFeedInfoProperties(feedInfo)}
 
         <div class="space-y-4">
           <div class="flex items-center justify-between gap-4">
@@ -504,16 +488,16 @@ export class PageContentRenderer {
   /**
    * Render feed_info properties section
    */
-  private renderFeedInfoProperties(feedInfo: Record<string, unknown>): string {
-    // Generate field configurations from FeedInfoSchema
-    const fieldConfigs = generateFieldConfigsFromSchema(
-      FeedInfoSchema,
+  private async renderFeedInfoProperties(
+    feedInfo: Record<string, unknown>
+  ): Promise<string> {
+    // feed_info holds a single row with no primary key of its own, so its
+    // patches are keyed by the table name, matching generateCompositeKeyFromRecord.
+    const fieldsHtml = await renderInlineEntityFields(
+      GTFS_TABLES.FEED_INFO,
       feedInfo as Record<string, string | number | undefined>,
-      GTFS_TABLES.FEED_INFO
-    ).map((c) => ({ ...c, recordId: 'feed_info' }));
-
-    // Render all fields using the reusable field component
-    const fieldsHtml = renderFormFields(fieldConfigs);
+      'feed_info'
+    );
 
     return `
       <div class="space-y-4">
@@ -572,11 +556,10 @@ export class PageContentRenderer {
       {}
     );
 
-    // Fetch raw row data and render form fields
-    const fieldsHtml = await renderEntityFormFields(
+    const fieldsHtml = await renderInlineEntityFields(
       GTFS_TABLES.ROUTES,
-      route_id,
-      this.dependencies.gtfsDatabase
+      routeData,
+      route_id
     );
 
     // Render route properties section
@@ -881,15 +864,6 @@ export class PageContentRenderer {
     // Add ServiceViewController event listeners
     // It will only attach to service-related elements
     this.serviceViewController.addEventListeners(container);
-
-    // Add feed_info field patch listeners via bridge
-    if (this.dependencies.patchManager && this.dependencies.parser) {
-      const patchDeps: FormPatchDeps = {
-        patchManager: this.dependencies.patchManager,
-        parser: this.dependencies.parser,
-      };
-      attachFormPatchListeners(container, patchDeps);
-    }
 
     // Add inline entity creation event listeners
     this.addInlineCreationListeners(container);
