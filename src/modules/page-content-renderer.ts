@@ -28,6 +28,7 @@ import {
   generateFieldConfigsFromSchema,
   renderEntityFormFields,
 } from '../utils/field-component.js';
+import { installInlineEditableFields } from '../utils/inline-editable-field.js';
 import { FeedInfoSchema, GTFS_TABLES } from '../types/gtfs.js';
 import { InlineEntityCreator } from '../utils/inline-entity-creator.js';
 import {
@@ -241,6 +242,24 @@ export class PageContentRenderer {
     this.serviceViewController = new ServiceViewController(
       serviceViewDependencies
     );
+
+    // Click-to-edit property fields commit straight to the patch log, so they
+    // need the same dependencies this renderer holds. Installing here rather
+    // than in addEventListeners keeps it to once per renderer, and the fields
+    // are rendered before any listener pass runs anyway.
+    installInlineEditableFields({
+      gtfsDatabase: {
+        getRow: (table, key) =>
+          dependencies.gtfsDatabase.getRow(table, key) as Promise<
+            Record<string, unknown> | undefined
+          >,
+        getAllRows: (table) =>
+          dependencies.gtfsDatabase.getAllRows(table) as Promise<
+            Record<string, unknown>[]
+          >,
+      },
+      patchManager: dependencies.patchManager ?? null,
+    });
   }
 
   /**

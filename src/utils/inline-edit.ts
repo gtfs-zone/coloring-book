@@ -17,11 +17,28 @@ import { escapeHtml } from './escape-html.js';
 /** Marks the single live editor. Any second editor is refused while it exists. */
 export const LIVE_EDITOR_CLASS = 'editor-input-live';
 
+/**
+ * Input types an inline editor can take. Matches the `inputType` hints in
+ * `GTFS_FIELD_TYPE_METADATA`, so a field's editor can be the browser's native
+ * date or color picker where the spec type calls for one.
+ */
+export type InlineEditorInputType =
+  | 'text'
+  | 'number'
+  | 'email'
+  | 'url'
+  | 'tel'
+  | 'color'
+  | 'date'
+  | 'time';
+
 export interface InlineEditorOptions {
   /** Value the input opens with. */
   value: string;
-  /** `number` renders a numeric input; everything else is a text input. */
-  inputType?: 'text' | 'number';
+  /** Native input type. Defaults to a text input. */
+  inputType?: InlineEditorInputType;
+  /** DaisyUI size class for the input. Defaults to the compact `input-xs`. */
+  sizeClass?: string;
   /** Extra classes on the input, on top of the shared editor classes. */
   className?: string;
   placeholder?: string;
@@ -49,9 +66,9 @@ export function openInlineEditor(
   }
 
   const input = document.createElement('input');
-  input.type = options.inputType === 'number' ? 'number' : 'text';
+  input.type = options.inputType ?? 'text';
   input.className =
-    `${LIVE_EDITOR_CLASS} input input-xs ${options.className ?? 'w-full'}`.trim();
+    `${LIVE_EDITOR_CLASS} input ${options.sizeClass ?? 'input-xs'} ${options.className ?? 'w-full'}`.trim();
   input.value = options.value;
   if (options.placeholder !== undefined) {
     input.placeholder = options.placeholder;
