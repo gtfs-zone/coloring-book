@@ -571,6 +571,7 @@ async function commitUpdate(
       { [field]: before[field] ?? '' },
       { [field]: value }
     );
+    replaceRow(config, key, after);
     config.onUpdate?.(key, after);
     return;
   }
@@ -593,7 +594,39 @@ async function commitUpdate(
     ],
     `Edit ${field} on ${table}`
   );
+  replaceRow(config, key, after);
+  rekeyRowElement(span, newKey);
   config.onUpdate?.(newKey, after);
+}
+
+/**
+ * Keep `config.rows` in step with a write, so the next edit of the same row
+ * sees the value that was just committed.
+ *
+ * Cell displays are updated in place rather than by re-rendering the table:
+ * a re-render on every commit would destroy the editor the user has already
+ * moved on to opening.
+ */
+function replaceRow(
+  config: EditableTableConfig,
+  key: string,
+  after: Record<string, unknown>
+): void {
+  const index = config.rows.findIndex((r) => rowKey(config, r) === key);
+  if (index >= 0) {
+    config.rows[index] = after;
+  }
+}
+
+/** Point a re-keyed row's cells and delete button at its new key. */
+function rekeyRowElement(span: HTMLElement, newKey: string): void {
+  const row = span.closest('tr');
+  row?.querySelectorAll<HTMLElement>('[data-key]').forEach((el) => {
+    el.dataset.key = newKey;
+  });
+  if (row instanceof HTMLElement) {
+    row.dataset.etRow = newKey;
+  }
 }
 
 /**
