@@ -15,6 +15,7 @@ import {
   type EditableTableColumnOverride,
   type EditableTableConfig,
   type EditableTableDeps,
+  type EditableTableExtraColumn,
 } from './editable-table.js';
 import { escapeHtml } from '../utils/escape-html.js';
 import { specStoreName } from '../utils/spec-field-edit.js';
@@ -35,6 +36,25 @@ interface FaresEntry {
   pending?: boolean;
   emptyMessage: string;
   columnOverrides?: Record<string, EditableTableColumnOverride>;
+  /** Built on every refresh, since these read other tables. */
+  extraColumns?: (deps: FaresModalDeps) => Promise<EditableTableExtraColumn[]>;
+  /** A line of explanation shown above the table. */
+  note?: string;
+}
+
+/** How many routes each network has, keyed by `network_id`. */
+async function countRoutesPerNetwork(
+  deps: FaresModalDeps
+): Promise<Map<string, number>> {
+  const counts = new Map<string, number>();
+  const rows = await deps.gtfsDatabase.getAllRows(
+    specStoreName(GTFS_TABLES.ROUTE_NETWORKS)
+  );
+  for (const row of rows) {
+    const id = String(row.network_id ?? '');
+    counts.set(id, (counts.get(id) ?? 0) + 1);
+  }
+  return counts;
 }
 
 /**
@@ -136,8 +156,19 @@ const FARES_ENTRIES: FaresEntry[] = [
     table: GTFS_TABLES.NETWORKS,
     label: 'Networks',
     group: 'Geography',
-    pending: true,
-    emptyMessage: 'No networks yet.',
+    emptyMessage:
+      'No networks yet. A network is the group of routes a fare leg rule applies to.',
+    note: 'Routes join a network on the route page. Giving a network a name makes the feed export networks.txt and route_networks.txt; an unnamed network is exported as a network_id column on routes.txt instead.',
+    extraColumns: async (deps) => {
+      const counts = await countRoutesPerNetwork(deps);
+      return [
+        {
+          label: 'Routes',
+          render: (row) =>
+            String(counts.get(String(row.network_id ?? '')) ?? 0),
+        },
+      ];
+    },
   },
 ];
 
@@ -205,6 +236,9 @@ export async function showFaresModal(deps: FaresModalDeps): Promise<void> {
     tableConfig.tableName = activeEntry.table;
     tableConfig.emptyMessage = activeEntry.emptyMessage;
     tableConfig.columnOverrides = activeEntry.columnOverrides;
+    tableConfig.extraColumns = activeEntry.extraColumns
+      ? await activeEntry.extraColumns(deps)
+      : undefined;
     tableConfig.rows = await deps.gtfsDatabase.getAllRows(
       specStoreName(activeEntry.table)
     );
@@ -214,8 +248,11 @@ export async function showFaresModal(deps: FaresModalDeps): Promise<void> {
     if (!sidebarEl || !paneEl) {
       return;
     }
+    const note = activeEntry.note
+      ? `<p class="text-xs text-base-content/60 mb-2">${escapeHtml(activeEntry.note)}</p>`
+      : '';
     sidebarEl.innerHTML = renderSidebar(activeEntry.table, counts);
-    paneEl.innerHTML = await renderEditableTable(tableConfig);
+    paneEl.innerHTML = note + (await renderEditableTable(tableConfig));
   };
 
   const body = `
