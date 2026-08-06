@@ -7,6 +7,7 @@ import {
   hasValidCoords,
 } from '../utils/stop-coords.js';
 import type { Pathways, Stops } from '../types/gtfs-entities.js';
+import { stopLocationType } from '../utils/area-hierarchy.js';
 
 interface ValidationMessage {
   level: 'error' | 'warning' | 'info';
@@ -76,6 +77,7 @@ export class GTFSValidator {
     this.validateCalendar();
     this.validateShapes();
     this.validateNetworks();
+    this.validateStopAreas();
     this.validateReferences();
 
     // Update summary
@@ -811,6 +813,44 @@ export class GTFSValidator {
           `Row ${index + 1}: network_id '${network_id}' is not defined in networks.txt`,
           'INVALID_REFERENCE',
           GTFS_TABLES.ROUTE_NETWORKS,
+          index + 1
+        );
+      }
+    });
+  }
+
+  /**
+   * Only stops (location_type 0) and stations (1) can belong to an area: an
+   * entrance, a generic node or a boarding area is not somewhere a fare leg
+   * begins or ends.
+   */
+  validateStopAreas() {
+    const stopAreas = this.gtfsParser.getFileDataSyncTyped(
+      GTFS_TABLES.STOP_AREAS
+    );
+    if (stopAreas.length === 0) {
+      return;
+    }
+
+    const stops = this.gtfsParser.getFileDataSyncTyped(GTFS_TABLES.STOPS);
+    const typeByStopId = new Map(
+      stops.map((stop) => [
+        String(stop.stop_id ?? ''),
+        stopLocationType(stop as Record<string, unknown>),
+      ])
+    );
+
+    stopAreas.forEach((row, index: number) => {
+      const stop_id = String(row.stop_id ?? '');
+      const locationType = typeByStopId.get(stop_id);
+      if (locationType === undefined) {
+        return;
+      }
+      if (locationType !== 0 && locationType !== 1) {
+        this.addError(
+          `Row ${index + 1}: stop '${stop_id}' has location_type ${locationType}, which cannot be assigned to an area`,
+          'INVALID_AREA_ASSIGNMENT',
+          GTFS_TABLES.STOP_AREAS,
           index + 1
         );
       }
