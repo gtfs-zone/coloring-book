@@ -17,6 +17,9 @@ import { escapeHtml } from './escape-html.js';
 /** Marks the single live editor. Any second editor is refused while it exists. */
 export const LIVE_EDITOR_CLASS = 'editor-input-live';
 
+/** Makes each editor's `<datalist>` id unique for as long as it is in the DOM. */
+let suggestionListSeq = 0;
+
 /**
  * Input types an inline editor can take. Matches the `inputType` hints in
  * `GTFS_FIELD_TYPE_METADATA`, so a field's editor can be the browser's native
@@ -44,6 +47,12 @@ export interface InlineEditorOptions {
   placeholder?: string;
   pattern?: string;
   title?: string;
+  /**
+   * Existing values offered as autocomplete, for free-text ID fields where the
+   * user usually means one of the ids already in the feed but must stay free to
+   * type a new one.
+   */
+  suggestions?: string[];
   /**
    * Called after the span has been restored, and only when the value changed.
    * Never called on Escape.
@@ -80,18 +89,33 @@ export function openInlineEditor(
     input.title = options.title;
   }
 
+  let datalist: HTMLDataListElement | null = null;
+  if (options.suggestions && options.suggestions.length > 0) {
+    datalist = document.createElement('datalist');
+    datalist.id = `inline-edit-suggestions-${++suggestionListSeq}`;
+    datalist.innerHTML = options.suggestions
+      .map((value) => `<option value="${escapeHtml(value)}"></option>`)
+      .join('');
+    document.body.appendChild(datalist);
+    input.setAttribute('list', datalist.id);
+  }
+
   span.replaceWith(input);
   input.focus();
   input.select();
 
   let settled = false;
+  const restore = (): void => {
+    input.replaceWith(span);
+    datalist?.remove();
+  };
   const commit = (): void => {
     if (settled) {
       return;
     }
     settled = true;
     const newValue = input.value;
-    input.replaceWith(span);
+    restore();
     if (newValue !== options.value) {
       options.onCommit(newValue);
     }
@@ -101,7 +125,7 @@ export function openInlineEditor(
       return;
     }
     settled = true;
-    input.replaceWith(span);
+    restore();
   };
 
   input.addEventListener('blur', commit);

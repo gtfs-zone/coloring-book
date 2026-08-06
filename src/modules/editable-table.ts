@@ -115,6 +115,11 @@ export interface EditableTableColumnOverride {
   format?: (value: unknown, row: Record<string, unknown>) => string;
   /** Picker options, replacing the ones derived from the field's foreignKey. */
   options?: () => Promise<OptionPickerItem[]>;
+  /**
+   * Autocomplete values for a free-text column, for ID fields that are not
+   * foreign keys but where existing values are usually what is wanted.
+   */
+  suggestions?: () => Promise<string[]>;
 }
 
 export interface EditableTableExtraColumn {
@@ -141,8 +146,18 @@ export interface EditableTableConfig {
    */
   extraColumns?: EditableTableExtraColumn[];
   deps: EditableTableDeps;
-  /** Shown in place of the rows when the table is empty. */
+  /**
+   * Shown in place of the rows when the table is empty. Trusted markup: it is
+   * either literal copy or a rendered spec description, never user input.
+   */
   emptyMessage?: string;
+  /**
+   * Cross-field check on the whole record, run once the row is complete and
+   * just before it is written. Per-field validation comes from the spec; this
+   * is for the conditional rules that span fields, such as a timeframe needing
+   * both of its times or neither. Returns an error message, or null to allow.
+   */
+  validateRow?: (row: Record<string, unknown>) => string | null;
   /**
    * Post-write hooks. The write and its patch have already landed by the time
    * these run; they exist so the host can re-render and refresh row counts.
@@ -342,7 +357,7 @@ export async function renderEditableTable(
 
   const emptyHtml =
     config.rows.length === 0 && config.emptyMessage
-      ? `<tr><td colspan="${fields.length + extraColumns.length + 1}" class="text-center text-base-content/60 py-4">${escapeHtml(config.emptyMessage)}</td></tr>`
+      ? `<tr><td colspan="${fields.length + extraColumns.length + 1}" class="text-base-content/60 py-4">${config.emptyMessage}</td></tr>`
       : '';
 
   // The trailing blank row is how rows are added: typing into any of its cells
@@ -492,6 +507,20 @@ function openCellEditor(span: HTMLElement): void {
     return;
   }
 
+  const suggest = state.config.columnOverrides?.[field]?.suggestions;
+  if (suggest) {
+    void (async () => {
+      const suggestions = await suggest();
+      openInlineEditor(span, {
+        value: current,
+        className: 'w-full',
+        suggestions,
+        onCommit: (value) => void commitCell(state, span, field, spec, value),
+      });
+    })();
+    return;
+  }
+
   openInlineEditor(span, {
     value: current,
     inputType: span.dataset.kind === 'number' ? 'number' : 'text',
@@ -541,6 +570,23 @@ async function commitCell(
   if (error) {
     markCellError(span, error);
     return;
+  }
+
+  // An existing row is complete by definition, so its cross-field rules are
+  // checked here, before the display moves on to the new value. The blank row
+  // is checked in `commitNewRow`, once it has everything it needs.
+  if (!isNewRow) {
+    const key = span.dataset.key ?? '';
+    const before = state.config.rows.find(
+      (r) => rowKey(state.config, r) === key
+    );
+    const rowError = before
+      ? state.config.validateRow?.({ ...before, [field]: coerced.value })
+      : null;
+    if (rowError) {
+      markCellError(span, rowError);
+      return;
+    }
   }
 
   clearCellError(span);
@@ -703,6 +749,12 @@ async function commitNewRow(
     }
     const coerced = coerceFieldValue(specs[f], pendingValue);
     record[f] = 'error' in coerced ? pendingValue : coerced.value;
+  }
+
+  const rowError = config.validateRow?.(record);
+  if (rowError) {
+    markCellError(span, rowError);
+    return;
   }
 
   const key = rowKey(config, record);
