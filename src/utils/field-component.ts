@@ -14,7 +14,6 @@ import {
   GTFS_PRIMARY_KEYS,
   GTFS_FIELD_TYPES,
   GTFS_FIELD_SPECS,
-  GTFSSchemas,
 } from '../types/gtfs.js';
 import type { GTFSPresence } from '../gtfs-spec/types.js';
 import type { z } from 'zod';
@@ -664,72 +663,6 @@ export interface QueryOnlyDatabase {
     tableName: string,
     filter?: Record<string, unknown>
   ) => Promise<unknown[]>;
-}
-
-/**
- * Render form fields for a GTFS entity from already-fetched row data.
- *
- * Always sets recordId so form-patch-bridge can record the edit, making it
- * impossible to forget the recordId when this helper is used.
- *
- * @param schema - Zod schema for the entity
- * @param entity - Raw row data (string or number values, as from the DB)
- * @param tableName - GTFS table name including extension (e.g. 'stops.txt')
- * @param recordId - Primary key value for patch recording
- * @returns HTML string with all form fields
- */
-export function renderEntityFields(
-  schema: z.ZodObject<z.ZodRawShape>,
-  entity: Record<string, string | number | undefined>,
-  tableName: string,
-  recordId: string
-): string {
-  const fieldConfigs = generateFieldConfigsFromSchema(
-    schema,
-    entity,
-    tableName
-  ).map((c) => ({ ...c, recordId }));
-  return renderFormFields(fieldConfigs);
-}
-
-/**
- * Render form fields for a GTFS entity, fetching raw row data from the database.
- *
- * Always uses raw snake_case row data (matching the schema), always sets recordId,
- * and always looks up the correct schema, making the correct pattern the only option.
- *
- * @param tableName - GTFS table name including extension (e.g. 'routes.txt')
- * @param id - Primary key value for the entity
- * @param database - GTFSDatabase instance (queryRows method)
- * @returns HTML string with all form fields, or empty string if schema/pk not found
- */
-export async function renderEntityFormFields(
-  tableName: string,
-  id: string,
-  database: {
-    queryRows: (
-      table: string,
-      filter?: Record<string, unknown>
-    ) => Promise<unknown[]>;
-  }
-): Promise<string> {
-  const schema = GTFSSchemas[tableName as keyof typeof GTFSSchemas];
-  const pkField =
-    GTFS_PRIMARY_KEYS[tableName as keyof typeof GTFS_PRIMARY_KEYS];
-  if (!schema || !pkField) {
-    return '';
-  }
-
-  const table = tableName.replace(/\.txt$/, '');
-  const rows = await database.queryRows(table, { [pkField]: id });
-  const rowData = (rows[0] as Record<string, unknown>) ?? {};
-
-  const fieldConfigs = generateFieldConfigsFromSchema(
-    schema as z.ZodObject<z.ZodRawShape>,
-    rowData as Record<string, string | number | undefined>,
-    tableName
-  ).map((c) => ({ ...c, recordId: id }));
-  return renderFormFields(fieldConfigs);
 }
 
 /**
