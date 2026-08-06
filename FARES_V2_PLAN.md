@@ -988,29 +988,28 @@ must collapse to one in-memory model without losing the user's original form.
   fidelity: the feed came in that way).
 - Else -> write `routes.network_id` and emit neither file.
 
-- [ ] Add `networksMode` to the `meta` store with a typed getter/setter in
+- [x] Add `networksMode` to the `meta` store with a typed getter/setter in
       `gtfs-database.ts`. Default `'inline'` when absent.
-- [ ] Implement the import normalization in `gtfs-parser.ts`, after tables load
+- [x] Implement the import normalization in `gtfs-parser.ts`, after tables load
       and before any consumer runs. Log `[Networks]` lines for which branch ran.
-- [ ] Emit the ignored-`network_id` warning through `notification-system.ts`.
+- [x] Emit the ignored-`network_id` warning through `notification-system.ts`.
       Exactly once per import, not once per route.
-- [ ] Implement the export rule. `generateCSVFromRows` derives columns from the
+- [x] Implement the export rule. `generateCSVFromRows` derives columns from the
       union of row keys, so omitting `routes.network_id` means stripping the key
       from the exported route rows, not just skipping a header.
-- [ ] Ensure the synthesized `networks` / `route_networks` rows are **not** patch
+- [x] Ensure the synthesized `networks` / `route_networks` rows are **not** patch
       records. They are derived import state, which the philosophy section
       explicitly permits writing directly.
-- [ ] Add the Networks entry to the modal. Show one row per network:
+- [x] Add the Networks entry to the modal. Show one row per network:
       `network_id`, `network_name`, and a route count. Editing `network_name`
       to a non-empty value is what flips the export to the files form; surface
       that consequence in the UI (a short inline note, not a modal).
-- [ ] Add a network selector to the route detail page, writing to
+- [x] Add a network selector to the route detail page, writing to
       `route_networks` (never to `routes.network_id`). Use
-      `showOptionPickerModal`, with an option to create a new network inline
-      (`src/utils/inline-entity-creator.ts` has the existing idiom).
-- [ ] Enforce the spec constraint that a `route_id` may appear in only one
+      `showOptionPickerModal`, with an option to create a new network inline.
+- [x] Enforce the spec constraint that a `route_id` may appear in only one
       `network_id`: assigning a route replaces its existing `route_networks` row.
-- [ ] Update `gtfs-validator.ts`: flag `routes.network_id` coexisting with
+- [x] Update `gtfs-validator.ts`: flag `routes.network_id` coexisting with
       `networks.txt`/`route_networks.txt` as an error, per the reference's
       Conditionally Forbidden rule.
 
@@ -1022,7 +1021,75 @@ still emit both files - that is exactly what `networksMode` is for, and it is
 worth verifying explicitly before the Phase 11 roundtrip test.
 
 ### Discoveries
-_(fill in)_
+
+**`routes.network_id` is left in memory, not stripped at import.** The plan says
+"ignore it", and ignoring turned out to be the literal implementation: nothing
+reads the column after `normalizeNetworks`, and the export decides the column's
+contents from scratch. Stripping it would have made the file viewer show a
+routes.txt that differs from the imported one for no gain, and would have left
+`gtfs-validator`'s new Conditionally Forbidden check unable to ever fire.
+
+**Export rewrites `routes.network_id` rather than passing it through.** Because
+the stored column is stale by construction, `applyNetworkColumn` sets it from
+the `route_networks` map in the inline form and deletes the key in the files
+form. A route with no assignment gets the key deleted, not blanked, so a feed
+with no networks at all emits no `network_id` column; Papa fills the gap with
+`''` for the other rows when some route does have one, which is what the
+original CSV had anyway. That should keep the Phase 11 roundtrip clean.
+
+**Where the two hooks live.** `normalizeNetworks()` runs at the end of
+`parseFile`, which is also the whole of `parseFromURL`'s import path, so one
+call site covers both. The trailing `setBlobVersion(0)` became
+`persistDirtyBlobs(0)`: the synthesized rows go in through the virtual tables,
+which only mark the blob dirty, and the old call would have left them to a
+3-second debounce that a quick refresh could beat. `clearDatabase()` at the top
+of `parseFile` wipes the `meta` store, so `networksMode` is always written after
+it, and `initializeEmpty` needs nothing: the absent key reads as `'inline'`.
+
+**`route_networks` is keyed on `route_id`**, natural, in
+`gtfs-primary-keys.ts`. The "a route belongs to at most one network" constraint
+therefore needs no enforcement code: the store cannot hold two rows for a route,
+and assignment is an update of the existing row rather than an insert. Note the
+consequence for patches: moving a route between networks is a `recordUpdate`
+(which applies its own write), assigning is `insertRows` + `recordInsert`, and
+unassigning is `deleteRow` + `recordDelete`.
+
+**`route_networks` may name networks `networks.txt` never defined.** Both files
+are Optional, so this is legal input. Those networks are synthesized at import,
+since a network with no row is invisible in the modal and in every picker. The
+validator still warns about the case, which is now only reachable by deleting a
+network in the modal while routes are still assigned to it. **Deleting a network
+does not cascade to `route_networks`** - a gap worth closing, but it belongs
+with the rest of referential integrity in Phase 10.
+
+**The editable table grew `extraColumns`.** Read-only columns appended after the
+spec columns, `{ label, render(row) }`, for values derived from other tables.
+Networks' route count is the only user so far; Phase 8's areas want the same
+thing for their stop count. They are rebuilt on every refresh, so `FaresEntry`
+carries `extraColumns` as an async factory rather than a value.
+`FaresEntry.note` was added alongside it, rendering a line of prose above the
+table, and is what carries the "naming a network changes the export form"
+consequence.
+
+**The route page's network field is not an `inline-editable-field`.** That
+module is spec-field-driven, keyed by table plus record id, and this field edits
+a different table from the one the page is about. It is a hand-rolled span in
+`page-content-renderer.ts` that mirrors the same contract (`tabindex="0"`,
+`role="button"`, click / Enter / Space, `focus-visible` ring) and opens
+`showOptionPickerModal`. `renderInlineEntityFields` gained an `exclude`
+parameter so `network_id` no longer renders as an ordinary editable property.
+`InlineEntityCreator` was not extended: its three methods each carry an entity's
+default-value shape, and a network is two fields, so the create flow is a small
+local modal instead.
+
+**Not verified in a browser.** `typecheck / lint / knip / check-spec / build`
+all pass. Worth watching on the manual pass: importing a feed with
+`routes.network_id` (the MBTA feed has one) and confirming the Networks table
+fills in with unnamed networks and correct route counts; the ignored-`network_id`
+warning appearing exactly once; assigning, moving and clearing a route's network
+and then undoing each; and that renaming a network in the modal flips the export
+to `networks.txt` + `route_networks.txt` with no `network_id` column on
+`routes.txt`.
 
 ---
 
