@@ -750,30 +750,109 @@ Extend Phase 4's inline-edit primitives to every entity property form, replacing
 the always-live `<input>`/`<select>` pattern. This is the user's explicit
 accessibility and uniformity request: one editing idiom across the whole app.
 
-- [ ] Add `renderInlineEditableField(config)` to `src/utils/field-component.ts`
+- [x] Add `renderInlineEditableField(config)` to `src/utils/field-component.ts`
       (or a sibling module), emitting a display span with the same `data-*`
       contract as Phase 4's cells.
-- [ ] Migrate `src/modules/page-content-renderer.ts` (route and trip pages).
-- [ ] Migrate `src/modules/stop-view-controller.ts`.
-- [ ] Migrate `src/modules/agency-view-controller.ts`.
-- [ ] Migrate `src/modules/pathway-view-controller.ts`.
-- [ ] Wire each page's commits through `patchManager`, preserving whatever
+- [x] Migrate `src/modules/page-content-renderer.ts` (route and trip pages).
+- [x] Migrate `src/modules/stop-view-controller.ts`.
+- [x] Migrate `src/modules/agency-view-controller.ts`.
+- [x] Migrate `src/modules/pathway-view-controller.ts`.
+- [x] Wire each page's commits through `patchManager`, preserving whatever
       `form-patch-bridge.ts` did per page. Delete `form-patch-bridge.ts` and
       `renderFormField`/`renderFormFields`/`renderEntityFields` once no caller
       remains; `pnpm knip` will confirm.
-- [ ] Keyboard: every editable span must be reachable by Tab, activatable by
+- [x] Keyboard: every editable span must be reachable by Tab, activatable by
       Enter and Space, with a visible focus ring. This is the point of the change.
 - [ ] Confirm the new `cemv_support` field appears and is editable on both the
-      agency page and the route page.
+      agency page and the route page. **Left for the user's manual pass**; both
+      pages render every field of their spec, and `cemv_support` is in it.
 - [ ] Confirm `cars_allowed`, `safe_duration_factor`, `safe_duration_offset`
-      appear on the trip property rows in the timetable.
+      appear on the trip property rows in the timetable. **Left for the user's
+      manual pass**; the rows come from `TripsSchema`, which has all three.
 
 **Gotchas**: some pages render fields before their entity is loaded. Preserve the
 async ordering. Watch for `input`/`change` listeners elsewhere that assumed live
 inputs existed in the DOM.
 
 ### Discoveries
-_(fill in)_
+
+**Where things live now.** `src/utils/inline-editable-field.ts` holds the field
+renderer and its delegated listeners; `src/utils/spec-field-edit.ts` holds the
+rules both it and `editable-table.ts` need. That second file is the real
+structural change of this phase: "which editor does this field get, how is its
+raw input coerced, how is it validated, how is it displayed, what are its picker
+options" now has one implementation instead of one per screen. Phase 4's local
+`cellKind` / `coerceValue` / `validateValue` / `displayValue` / `foreignOptions`
+were moved there verbatim and renamed (`specFieldKind`, `coerceFieldValue`,
+`validateFieldValue`, `formatSpecValue`, `buildForeignKeyOptions`), plus
+`specStoreName` and a new `resolveForeignLabel`. Phases 6-9 should reach for
+this module rather than re-deriving any of it.
+
+**Rendering entity fields is async now**, for the same reason Phase 4's table
+render is: a foreign-ID field shows a label, not a bare id. But a stop page
+labelling `parent_station` must not read every stop in the feed, so
+`resolveForeignLabel` does a single `getRow` when the target table is keyed on
+the named field, and falls back to the raw value otherwise.
+`buildForeignKeyOptions` (the full scan) only runs when the picker actually
+opens. Every `renderXProperties` on the four controllers became `async`.
+
+**One module-level dependency slot, not threaded parameters.**
+`installInlineEditableFields({ gtfsDatabase, patchManager })` is called from
+`PageContentRenderer`'s constructor and stores its argument in a module-level
+`let`; the render functions and the delegated listeners both read it. The
+alternative was passing a db handle through five controllers into every render
+call, for a component that is a singleton in practice. Calling it again just
+refreshes the dependencies. The controllers' `QueryOnlyDatabase` type is
+therefore untouched: they never see the write side.
+
+**Commits go through `recordUpdate` alone.** `PatchManager.recordUpdate` calls
+`applyPatchForward`, which does the `updateRow`, so there is no separate
+database write here (the same shape `form-patch-bridge.ts` had). The `before`
+value comes from the span's `data-value`, coerced the same way as the new value
+so a numeric field does not record a string `"0"` against a number `0` and make
+undo write the wrong type.
+
+**Display/storage round-trip.** Text-kind editors open on
+`formatValueForDisplay(value, gtfsFieldType)` and commit through
+`convertValueToGTFS`, so a date field still shows and edits as `2026-04-01`
+while storing `20260401`, and a color as `#FFFFFF` while storing `FFFFFF`.
+`openInlineEditor` gained the full `inputType` union from
+`GTFS_FIELD_TYPE_METADATA` (plus a `sizeClass` option) so those fields keep
+their native pickers. `Time` and `LocalTime` are deliberately forced back to a
+text input: GTFS times run past `24:00:00`, which `<input type="time">` cannot
+hold.
+
+**`level_id`'s hand-built `<select>` is gone.** It was a regex replacement over
+the rendered HTML of the `level_id` input. The spec already types the field as
+`Foreign ID referencing levels.level_id`, so the generic picker covers it, with
+better labels. That removed the whole `getLevelOptions` chain:
+`LevelsController.getLevelOptions`, `LevelOption`, the
+`setLevelsController` call in `index.ts`, and the dependency on
+`StopViewDependencies` / `ContentRendererDependencies`. The Levels modal itself
+is untouched. `ContentRendererDependencies.parser` went with
+`form-patch-bridge.ts`, its only consumer.
+
+**`renderFormField` / `renderFormFields` survive**, because `fares-modal.ts`
+still calls them. `renderEntityFields` and `renderEntityFormFields` are deleted.
+**Phase 6 should delete the remaining three** once the modal is rebuilt; knip
+will name them the moment the last caller goes.
+
+**Primary keys render as static text**, not as editors: they were already
+`readonly` in the generated field configs, and changing one re-keys the record,
+which is a different operation from editing a property. Phase 4's table handles
+re-keying because a table row's identity is its content; an entity page's is not.
+
+**Accessibility.** Spans are `tabindex="0" role="button"`, open on click, Enter
+and Space, and carry a `focus-visible` ring. Empty fields show their muted
+placeholder text rather than a bare dash, so the form still reads as a form.
+While an editor is live the keydown target is the input, not the span, so the
+Space handler cannot re-open the field being typed in.
+
+**Not verified in a browser.** Everything above passes
+`typecheck / lint / knip / check-spec / build`, but no page was opened. Worth
+watching on the manual pass: the stop page's `parent_station` and `level_id`
+pickers, a date field on the home page's feed_info block, and that committing a
+field does not fight with whatever re-render the `patch:change` listener does.
 
 ---
 
