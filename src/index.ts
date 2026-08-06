@@ -128,7 +128,6 @@ export class GTFSEditor {
     this.gtfsParser.setPatchManager(this.patchManager);
     this.editor.setPatchManager(this.patchManager);
     this.levelsController.setPatchManager(this.patchManager);
-    this.browseNavigation.setLevelsController(this.levelsController);
     this.browseNavigation.setPatchManager(this.patchManager);
     this.scheduleController.setPatchManager(this.patchManager);
     this.serviceDaysController.setPatchManager(this.patchManager);
