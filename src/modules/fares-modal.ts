@@ -30,6 +30,11 @@ import {
   formatDaysOfWeek,
 } from '../utils/entity-references.js';
 import { stopLocationType } from '../utils/area-hierarchy.js';
+import {
+  validateFareLegJoinRuleRow,
+  validateFareTransferRuleRow,
+  validateTimeframeRow,
+} from '../utils/fares-rules.js';
 import { renderSpecDescription } from '../utils/spec-markup.js';
 import { gtfsSpec } from '../gtfs-spec/index.js';
 import { GTFS_TABLES } from '../types/gtfs.js';
@@ -325,65 +330,6 @@ async function legGroupSuggestions(deps: FaresModalDeps): Promise<string[]> {
   return [...ids];
 }
 
-// ─── Cross-field rules ────────────────────────────────────────────────────────
-
-function cell(row: Record<string, unknown>, field: string): string {
-  return String(row[field] ?? '').trim();
-}
-
-/** Seconds since midnight, or null when the value is not a wall-clock time. */
-function localTimeSeconds(value: string): number | null {
-  const match = /^(\d{1,2}):([0-5]\d):([0-5]\d)$/.exec(value);
-  if (!match) {
-    return null;
-  }
-  return Number(match[1]) * 3600 + Number(match[2]) * 60 + Number(match[3]);
-}
-
-const DAY_SECONDS = 24 * 60 * 60;
-
-function validateTimeframe(row: Record<string, unknown>): string | null {
-  const start = cell(row, 'start_time');
-  const end = cell(row, 'end_time');
-  if ((start === '') !== (end === '')) {
-    return 'start_time and end_time must both be set, or both left empty';
-  }
-  for (const [field, value] of [
-    ['start_time', start],
-    ['end_time', end],
-  ]) {
-    if (value === '') {
-      continue;
-    }
-    const seconds = localTimeSeconds(value);
-    if (seconds === null) {
-      return `${field} must be a wall-clock time in HH:MM:SS format`;
-    }
-    if (seconds > DAY_SECONDS) {
-      return `${field} must not be later than 24:00:00`;
-    }
-  }
-  return null;
-}
-
-function validateFareLegJoinRule(row: Record<string, unknown>): string | null {
-  const from = cell(row, 'from_stop_id');
-  const to = cell(row, 'to_stop_id');
-  if ((from === '') !== (to === '')) {
-    return 'from_stop_id and to_stop_id must both be set, or both left empty';
-  }
-  return null;
-}
-
-function validateFareTransferRule(row: Record<string, unknown>): string | null {
-  const limit = cell(row, 'duration_limit');
-  const type = cell(row, 'duration_limit_type');
-  if ((limit === '') !== (type === '')) {
-    return 'duration_limit and duration_limit_type must both be set, or both left empty';
-  }
-  return null;
-}
-
 // ─── Empty states ─────────────────────────────────────────────────────────────
 
 /**
@@ -416,7 +362,7 @@ const FARES_ENTRIES: FaresEntry[] = [
     columnOverrides: (deps) => ({
       service_id: { options: () => serviceOptions(deps) },
     }),
-    validateRow: validateTimeframe,
+    validateRow: validateTimeframeRow,
   },
   {
     table: GTFS_TABLES.RIDER_CATEGORIES,
@@ -481,7 +427,7 @@ const FARES_ENTRIES: FaresEntry[] = [
       from_stop_id: { options: () => fareStopOptions(deps) },
       to_stop_id: { options: () => fareStopOptions(deps) },
     }),
-    validateRow: validateFareLegJoinRule,
+    validateRow: validateFareLegJoinRuleRow,
   },
   {
     table: GTFS_TABLES.FARE_TRANSFER_RULES,
@@ -495,7 +441,7 @@ const FARES_ENTRIES: FaresEntry[] = [
     columnOverrides: (deps) => ({
       fare_product_id: { options: () => fareProductOptions(deps) },
     }),
-    validateRow: validateFareTransferRule,
+    validateRow: validateFareTransferRuleRow,
   },
   {
     table: GTFS_TABLES.AREAS,
