@@ -203,11 +203,15 @@ export async function renderInlineEditableField(
  * `recordId` is the record's primary key, as `patchManager` keys patches by it.
  * Single-row tables without a key (`feed_info`) use their table name, which is
  * how `generateCompositeKeyFromRecord` keys them too.
+ *
+ * `exclude` drops fields the page edits some other way, such as
+ * `routes.network_id`, which is written from the canonical networks tables.
  */
 export async function renderInlineEntityFields(
   tableName: string,
   record: Record<string, string | number | undefined>,
-  recordId: string
+  recordId: string,
+  exclude: string[] = []
 ): Promise<string> {
   const schema = GTFSSchemas[tableName as keyof typeof GTFSSchemas] as
     | z.ZodObject<z.ZodRawShape>
@@ -217,11 +221,9 @@ export async function renderInlineEntityFields(
     return '';
   }
 
-  const configs = generateFieldConfigsFromSchema(
-    schema,
-    record,
-    tableName
-  ).map<FieldConfig>((c) => ({ ...c, recordId }));
+  const configs = generateFieldConfigsFromSchema(schema, record, tableName)
+    .filter((c) => !exclude.includes(c.field))
+    .map<FieldConfig>((c) => ({ ...c, recordId }));
 
   const fieldsHtml: string[] = [];
   for (const config of configs) {

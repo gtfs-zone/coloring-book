@@ -75,6 +75,7 @@ export class GTFSValidator {
     this.validateStopTimes();
     this.validateCalendar();
     this.validateShapes();
+    this.validateNetworks();
     this.validateReferences();
 
     // Update summary
@@ -769,6 +770,51 @@ export class GTFSValidator {
         }
       });
     }
+  }
+
+  /**
+   * networks.txt and route_networks.txt are Conditionally Forbidden: the
+   * reference forbids them when routes.txt carries a network_id column, since
+   * the two forms would disagree about which routes are in which network.
+   */
+  validateNetworks() {
+    const routes = this.gtfsParser.getFileDataSyncTyped(GTFS_TABLES.ROUTES);
+    const networks = this.gtfsParser.getFileDataSyncTyped(GTFS_TABLES.NETWORKS);
+    const routeNetworks = this.gtfsParser.getFileDataSyncTyped(
+      GTFS_TABLES.ROUTE_NETWORKS
+    );
+
+    if (networks.length === 0 && routeNetworks.length === 0) {
+      return;
+    }
+
+    const inline = routes.filter(
+      (route) => String(route.network_id ?? '').trim() !== ''
+    ).length;
+    if (inline > 0) {
+      this.addError(
+        `network_id is set on ${inline} route(s) in routes.txt, which is forbidden when networks.txt or route_networks.txt is present. Those values are ignored and will not be exported.`,
+        'NETWORK_ID_CONFLICT',
+        GTFS_TABLES.ROUTES
+      );
+    }
+
+    const defined = new Set(
+      networks
+        .map((network) => String(network.network_id ?? ''))
+        .filter((id) => id !== '')
+    );
+    routeNetworks.forEach((row, index: number) => {
+      const network_id = String(row.network_id ?? '');
+      if (network_id !== '' && !defined.has(network_id)) {
+        this.addWarning(
+          `Row ${index + 1}: network_id '${network_id}' is not defined in networks.txt`,
+          'INVALID_REFERENCE',
+          GTFS_TABLES.ROUTE_NETWORKS,
+          index + 1
+        );
+      }
+    });
   }
 
   // Helper methods
