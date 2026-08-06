@@ -1103,32 +1103,89 @@ its platforms (`location_type=0`, `parent_station` = that station) are in the
 area, "unless a platform is assigned to another area". Stops with any other
 `location_type` may not be assigned to areas.
 
-- [ ] Add `getEffectiveAreasForStop(stopId)` to `src/utils/stop-hierarchy.ts`
+- [x] Add `getEffectiveAreasForStop(stopId)` to `src/utils/stop-hierarchy.ts`
       (or a new `src/utils/area-hierarchy.ts` if that file is already crowded).
       Returns `{ areaId, inheritedFrom?: stopId }[]`. A platform with any explicit
       `stop_areas` row uses only its explicit rows; otherwise it inherits its
       parent station's.
-- [ ] Add the Areas entry to the modal: one row per area (`area_id`, `area_name`,
+- [x] Add the Areas entry to the modal: one row per area (`area_id`, `area_name`,
       stop count), with an expandable or drill-in list of assigned stops. Stop
       labels must go through `getStopDisplay`.
-- [ ] Add an area selector to the stop detail page. Explicit assignments render as
+- [x] Add an area selector to the stop detail page. Explicit assignments render as
       normal chips; inherited ones render greyed with a "from `<station name>`"
       label and are not directly removable. Adding an explicit area to a platform
       writes a `stop_areas` row and visibly supersedes the inherited set - show a
       one-line note when that transition happens.
-- [ ] Removing a platform's last explicit area returns it to inheriting. Make that
+- [x] Removing a platform's last explicit area returns it to inheriting. Make that
       reversible and obvious.
-- [ ] Block assignment for stops whose `location_type` is not 0, 1, or empty, per
+- [x] Block assignment for stops whose `location_type` is not 0, 1, or empty, per
       the reference.
-- [ ] Every mutation goes through `patchManager`.
-- [ ] Validator: flag `stop_areas` rows pointing at a `location_type` of 2, 3, or 4.
+- [x] Every mutation goes through `patchManager`.
+- [x] Validator: flag `stop_areas` rows pointing at a `location_type` of 2, 3, or 4.
 
 **Gotchas**: unlike networks, "the same `stop_id` may appear in multiple `area_id`
 entries" - areas are many-to-many. Do not reuse the single-assignment logic from
 Phase 7.
 
 ### Discoveries
-_(fill in)_
+
+**Two new modules.** `src/utils/area-hierarchy.ts` holds the rule
+(`getEffectiveAreasForStop`, `getExplicitAreasForStop`, `canStopHaveAreas`,
+`stopLocationType`); `src/utils/stop-areas-field.ts` holds the stop page's chip
+editor. `stop-hierarchy.ts` was left alone: it is about `parent_station`
+traversal for stop_times, and areas are a different question that happens to
+read the same column. `stopLocationType` is now the one place that decides what
+an empty `location_type` means (0, per the spec), and both the validator and
+the fares modal import it rather than re-parsing the field; several other call
+sites still have their own inline parse and could be folded into it later.
+
+**Inheritance is all-or-nothing, by design.** `getEffectiveAreasForStop` returns
+a platform's explicit rows *or* its station's, never a union. That is what the
+reference's "unless a platform is assigned to another area" means, and it is
+what makes the stop page legible: the chips are either all removable or all
+greyed. Only `location_type=0` inherits; a station never inherits from
+anything.
+
+**The stop page field mirrors the route page's network field, not the
+click-to-edit fields.** Same activation contract (focusable, click / Enter /
+Space, focus ring), but it edits `stop_areas.txt` rather than a property of the
+record the page is about, and it is a set rather than one value. It is
+installed the way Phase 5 installs the inline fields, from
+`PageContentRenderer`'s constructor via `installStopAreasField`, because
+`StopViewController` only ever holds a query-only database handle and this
+writes. After a mutation the module redraws its own container by
+`data-stop-id`, so the rest of the stop page is untouched.
+
+**`stop_areas` is an `all_fields` table**, so a row's key is
+`generateCompositeKeyFromRecord` over the row itself. Removal therefore reads
+the stored row back with `queryRows({ stop_id, area_id })` and keys off that,
+rather than reconstructing a two-field record that might miss a column the feed
+carried.
+
+**Transitions are announced, not blocked.** Adding the first explicit area to a
+platform that was inheriting shows a `notify.info` saying the inherited set no
+longer applies, and removing the last one says it is inheriting again. Both are
+ordinary patches, so Edit -> Undo reverses either. The persistent note under
+the chips says which state the platform is in.
+
+**Modal.** `FaresEntry` gained `detail`, an async factory rendering markup below
+the table, which is how the drill-in list of stops per area is shown (a
+`<details>` per area, labels through `getStopDisplay`). The Stops count column
+and the list both count **explicit** rows only; a station's entry is suffixed
+"and its platforms" rather than expanded, so the modal never shows a stop the
+feed did not actually name. Phase 9 can use `detail` for anything else that
+does not fit in a cell.
+
+**Deleting an area still does not cascade** to `stop_areas`, the same gap
+Phase 7 left for networks. Both belong in Phase 10's referential integrity
+pass.
+
+**Not verified in a browser.** `typecheck / lint / knip / check-spec / build`
+all pass. Worth watching on the manual pass: a platform under a station that is
+in an area (chips greyed, then adding one of its own), removing that one again,
+the Areas pane's counts and drill-in list after each change, undo of each
+mutation, and that an entrance or boarding area page shows the "only stops and
+stations" line instead of an add button.
 
 ---
 
