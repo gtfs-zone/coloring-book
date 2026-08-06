@@ -19,6 +19,12 @@ import {
 } from './editable-table.js';
 import { escapeHtml } from '../utils/escape-html.js';
 import { specStoreName } from '../utils/spec-field-edit.js';
+import {
+  getEntityDisplay,
+  getStopDisplay,
+  renderOptionLabel,
+} from '../utils/entity-display.js';
+import { stopLocationType } from '../utils/area-hierarchy.js';
 import { GTFS_TABLES } from '../types/gtfs.js';
 
 export type FaresModalDeps = EditableTableDeps;
@@ -40,6 +46,8 @@ interface FaresEntry {
   extraColumns?: (deps: FaresModalDeps) => Promise<EditableTableExtraColumn[]>;
   /** A line of explanation shown above the table. */
   note?: string;
+  /** Extra markup shown below the table, rebuilt on every refresh. */
+  detail?: (deps: FaresModalDeps) => Promise<string>;
 }
 
 /** How many routes each network has, keyed by `network_id`. */
@@ -55,6 +63,82 @@ async function countRoutesPerNetwork(
     counts.set(id, (counts.get(id) ?? 0) + 1);
   }
   return counts;
+}
+
+/** How many stops each area names directly, keyed by `area_id`. */
+async function countStopsPerArea(
+  deps: FaresModalDeps
+): Promise<Map<string, number>> {
+  const counts = new Map<string, number>();
+  const rows = await deps.gtfsDatabase.getAllRows(
+    specStoreName(GTFS_TABLES.STOP_AREAS)
+  );
+  for (const row of rows) {
+    const id = String(row.area_id ?? '');
+    counts.set(id, (counts.get(id) ?? 0) + 1);
+  }
+  return counts;
+}
+
+/**
+ * A collapsible list of the stops in each area.
+ *
+ * Only the explicit `stop_areas` rows are listed. A station's platforms are in
+ * the area too, but listing them here would blur the distinction between what
+ * the feed says and what the spec implies, so stations are labelled instead.
+ */
+async function renderAreaStopLists(deps: FaresModalDeps): Promise<string> {
+  const areas = await deps.gtfsDatabase.getAllRows(
+    specStoreName(GTFS_TABLES.AREAS)
+  );
+  if (areas.length === 0) {
+    return '';
+  }
+  const stopAreas = await deps.gtfsDatabase.getAllRows(
+    specStoreName(GTFS_TABLES.STOP_AREAS)
+  );
+  const stops = await deps.gtfsDatabase.getAllRows(
+    specStoreName(GTFS_TABLES.STOPS)
+  );
+  const stopById = new Map(stops.map((s) => [String(s.stop_id ?? ''), s]));
+
+  const byArea = new Map<string, string[]>();
+  for (const row of stopAreas) {
+    const area_id = String(row.area_id ?? '');
+    const stop_id = String(row.stop_id ?? '');
+    const stop = stopById.get(stop_id);
+    const label = stop
+      ? renderOptionLabel(getStopDisplay(stop as Record<string, string>))
+      : `${stop_id} (missing from stops.txt)`;
+    const suffix =
+      stop && stopLocationType(stop) === 1 ? ', and its platforms' : '';
+    const list = byArea.get(area_id) ?? [];
+    list.push(`${label}${suffix}`);
+    byArea.set(area_id, list);
+  }
+
+  const sections = areas
+    .map((area) => {
+      const area_id = String(area.area_id ?? '');
+      const labels = byArea.get(area_id) ?? [];
+      const heading = renderOptionLabel(
+        getEntityDisplay('areas', area as Record<string, string>)
+      );
+      const body =
+        labels.length === 0
+          ? '<li class="opacity-60">No stops assigned.</li>'
+          : labels.map((l) => `<li>${escapeHtml(l)}</li>`).join('');
+      return `<details class="collapse collapse-arrow bg-base-200 rounded-box">
+        <summary class="collapse-title text-sm py-2 min-h-0">${escapeHtml(heading)} (${labels.length})</summary>
+        <div class="collapse-content"><ul class="text-xs space-y-1">${body}</ul></div>
+      </details>`;
+    })
+    .join('');
+
+  return `<div class="mt-4 space-y-1">
+    <h3 class="text-sm font-semibold">Stops by area</h3>
+    ${sections}
+  </div>`;
 }
 
 /**
@@ -149,8 +233,19 @@ const FARES_ENTRIES: FaresEntry[] = [
     table: GTFS_TABLES.AREAS,
     label: 'Areas',
     group: 'Geography',
-    pending: true,
-    emptyMessage: 'No areas yet.',
+    emptyMessage:
+      'No areas yet. An area is the group of stops a fare leg rule starts or ends in.',
+    note: 'Stops join an area on the stop page. A station in an area carries its platforms with it, unless a platform is assigned to an area of its own.',
+    extraColumns: async (deps) => {
+      const counts = await countStopsPerArea(deps);
+      return [
+        {
+          label: 'Stops',
+          render: (row) => String(counts.get(String(row.area_id ?? '')) ?? 0),
+        },
+      ];
+    },
+    detail: (deps) => renderAreaStopLists(deps),
   },
   {
     table: GTFS_TABLES.NETWORKS,
@@ -251,8 +346,9 @@ export async function showFaresModal(deps: FaresModalDeps): Promise<void> {
     const note = activeEntry.note
       ? `<p class="text-xs text-base-content/60 mb-2">${escapeHtml(activeEntry.note)}</p>`
       : '';
+    const detail = activeEntry.detail ? await activeEntry.detail(deps) : '';
     sidebarEl.innerHTML = renderSidebar(activeEntry.table, counts);
-    paneEl.innerHTML = note + (await renderEditableTable(tableConfig));
+    paneEl.innerHTML = note + (await renderEditableTable(tableConfig)) + detail;
   };
 
   const body = `
