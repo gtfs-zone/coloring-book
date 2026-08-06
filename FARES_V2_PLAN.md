@@ -626,34 +626,34 @@ behavior into a component that renders any GTFS table from its spec, so each new
 fares tab is a few lines of configuration rather than a bespoke renderer plus a
 bespoke add/edit modal.
 
-- [ ] Create `src/modules/editable-table.ts` exporting `renderEditableTable(config)`
+- [x] Create `src/modules/editable-table.ts` exporting `renderEditableTable(config)`
       and `installEditableTableHandlers(config)`.
-- [ ] Config shape: `{ tableName, fields?, rows, primaryKey, columnOverrides?,
+- [x] Config shape: `{ tableName, fields?, rows, primaryKey, columnOverrides?,
       onInsert, onUpdate, onDelete }`. When `fields` is omitted, derive columns
       from `generateFieldConfigsFromSchema` for `tableName`, in spec order.
-- [ ] Column headers reuse `renderFieldLabelContent` so every column carries the
+- [x] Column headers reuse `renderFieldLabelContent` so every column carries the
       spec tooltip from Phase 3.
-- [ ] Cell rendering by field kind, dispatched from the `GTFSFieldSpec`:
+- [x] Cell rendering by field kind, dispatched from the `GTFSFieldSpec`:
       - text / number / URL / color / time -> inline `<input>` swap
       - `Enum` -> inline menu (mirror `openTripPropEnumMenu`)
       - `Foreign ID` -> `showOptionPickerModal`, options built from the referenced
         table via `foreignKey`, labels via `getStopDisplay` / `renderOptionLabel`
         where the target is `stops.txt`
-- [ ] Reuse the exact editing contract from `schedule-controller.ts`: `data-*`
+- [x] Reuse the exact editing contract from `schedule-controller.ts`: `data-*`
       spans, delegated `document` listener, `.editor-input-live` single-editor
       guard, `settled` flag, blur-commits / Enter-blurs / Escape-cancels.
-- [ ] A trailing blank "new row": typing into any cell of it creates the record.
+- [x] A trailing blank "new row": typing into any cell of it creates the record.
       Required fields that are still empty block the insert and show an inline
       error on the offending cell.
-- [ ] Per-row delete button using `renderTrashIcon`, going through the existing
+- [x] Per-row delete button using `renderTrashIcon`, going through the existing
       confirm modal. Keep the "This can be undone via Edit -> Undo" copy.
-- [ ] Every mutation calls `patchManager.record{Insert,Update,Delete}` alongside
+- [x] Every mutation calls `patchManager.record{Insert,Update,Delete}` alongside
       the DB write. Log `[EditableTable]`-prefixed lines at each write.
-- [ ] Validate on commit with the field's Zod schema. On failure, revert the cell
+- [x] Validate on commit with the field's Zod schema. On failure, revert the cell
       and surface the Zod message; do not write.
-- [ ] Honor the copy-on-read invariant: never retain a row object returned by a
+- [x] Honor the copy-on-read invariant: never retain a row object returned by a
       query across an await.
-- [ ] Refactor `schedule-controller.ts` to consume the shared editor primitives
+- [x] Refactor `schedule-controller.ts` to consume the shared editor primitives
       rather than keeping a parallel copy. If the timetable's needs turn out to be
       too specialized, extract only the low-level `openInlineEditor` /
       `openInlineEnumMenu` helpers into `src/utils/inline-edit.ts` and have both
@@ -664,7 +664,83 @@ regress it. `noUnusedParameters` is on. Do not build a generic "table framework"
 per the project philosophy, keep it concrete and specific to GTFS spec tables.
 
 ### Discoveries
-_(fill in)_
+
+**Which refactor route was taken: the low-level extraction.** The timetable's
+editors are not table cells - the time editor validates arrival <= departure and
+can insert a whole stop, the shape picker has a dangling-reference option, and
+the whole thing is a virtualized wide grid. Only the mechanics are shared, so
+`src/utils/inline-edit.ts` now holds `openInlineEditor` and `openInlineMenu` and
+both `schedule-controller.ts` and `editable-table.ts` call them. That deleted
+about 120 lines of duplicated editor plumbing from the schedule controller with
+no behavior change; its own commit callbacks are untouched. Two renames to know
+about: the enum menu's element class is now `inline-enum-menu` (was
+`trip-prop-enum-menu`, referenced nowhere else), and `LIVE_EDITOR_CLASS` is the
+exported name for the `.editor-input-live` guard. `escapeHtml` is no longer
+imported by `schedule-controller.ts`.
+
+**`renderEditableTable` is async.** Foreign-ID columns show a label
+(`Adult (adult)`), not a bare id, which means reading the referenced tables
+before emitting HTML. Callers must `await` it. `generateFieldConfigsFromSchema`
+is used only to build the header `FieldConfig`s, because it *sorts* its output
+(primary keys, then required, then optional); column order comes from
+`Object.keys(GTFS_FIELD_SPECS[tableName])`, which is spec order.
+
+**Instance registry instead of per-render binding.** `installEditableTableHandlers`
+records the config in a module-level `Map` keyed by `instanceId` and installs one
+`document` click/keydown listener for all instances. Cells carry `data-et` with
+the instance id. The host keeps its config object and re-assigns `config.rows`
+before each re-render, so the handlers always see what the user is looking at.
+There is also `uninstallEditableTableHandlers(instanceId)`; Phase 6 should call
+it when the fares modal closes so the map does not accumulate dead instances.
+
+**Mutations live in the component, not in the callbacks.** `onInsert`/`onUpdate`/
+`onDelete` are post-write notification hooks (refresh the pane, update the row
+counts); the DB write, the patch record and the `[EditableTable]` log all happen
+inside the component, driven by a required `deps: { gtfsDatabase, patchManager }`.
+Nine tables re-implementing patch recording was the thing this phase existed to
+prevent.
+
+**Editing a key field re-keys the row.** `updateRow` cannot express that, so when
+the edited field participates in the table's primary key the commit becomes
+`deleteRow` + `insertRows` recorded as one `recordBatchMixed` patch. This matters
+more than it sounds: `timeframes`, `stop_areas` and `fare_rules` are `all_fields`
+tables, where *every* field re-keys. Collisions with an existing row are refused
+with an inline error rather than silently overwriting. Non-key edits take the
+ordinary `patchUpdate` path.
+
+**Clearing a cell writes `''`, never `undefined`.** Deleting the key from the row
+would make it vanish from the CSV column union on export; an empty string is what
+the spec means by an absent value anyway.
+
+**Validation.** `coerceValue` turns the raw input into a number for the numeric
+field types and numeric enums (the derived Zod validators are `z.number()`, so a
+string would always fail), then the field's schema from
+`GTFSSchemas[tableName].shape[field]` runs `safeParse`. The first Zod issue
+message is shown via `notify.error` and the cell is marked `text-error` with the
+message as its `title`; nothing is written and the cell keeps its pre-edit value.
+`shape[field]` needs an `as z.ZodTypeAny` cast: the Zod 4 shape type erases to
+`$ZodType`, which has no `safeParse`.
+
+**Required-field handling on the blank row is deferred, not per-cell.** A
+half-filled new row is not an error, so requiredness is only checked once a cell
+commits: still-empty required cells get a `ring-error` outline and the insert is
+held until they are filled. Per-cell Zod validation still runs on each commit.
+
+**Accessibility came along for free.** Cells are `tabindex="0"`, open on Enter and
+Space as well as click, and carry a `focus-visible` outline. Phase 5 needs the
+same treatment on entity pages, so mirror this rather than reinventing it.
+
+**Knip.** The component has no consumer until Phase 6, and knip fails a
+never-imported file. `knip.config.ts` gained an `ignore` entry naming
+`src/modules/editable-table.ts`, with a comment saying to delete it once the
+fares modal is rebuilt on top of the component. **Phase 6 must remove that
+entry.**
+
+**Not yet exercised.** Nothing renders this component yet, so Phase 6 is also its
+first real test. The paths most worth watching there: the re-key delete+insert,
+the blank-row insert on a composite-key table (`fare_products`), and the currency
+`amount` column, which is a `z.string().regex(...)` and therefore deliberately
+*not* in `NUMERIC_FIELD_TYPES` (no float math, per the spec).
 
 ---
 
