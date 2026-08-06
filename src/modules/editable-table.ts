@@ -117,6 +117,12 @@ export interface EditableTableColumnOverride {
   options?: () => Promise<OptionPickerItem[]>;
 }
 
+export interface EditableTableExtraColumn {
+  label: string;
+  /** Plain text, escaped before it is inserted. */
+  render: (row: Record<string, unknown>) => string;
+}
+
 export interface EditableTableConfig {
   /** Distinguishes this table's cells from any other instance on the page. */
   instanceId: string;
@@ -129,6 +135,11 @@ export interface EditableTableConfig {
   /** Row key, defaulting to the table's spec primary key. */
   primaryKey?: (row: Record<string, unknown>) => string;
   columnOverrides?: Record<string, EditableTableColumnOverride>;
+  /**
+   * Read-only columns appended after the spec columns, for values derived from
+   * other tables (a network's route count) rather than stored on the row.
+   */
+  extraColumns?: EditableTableExtraColumn[];
   deps: EditableTableDeps;
   /** Shown in place of the rows when the table is empty. */
   emptyMessage?: string;
@@ -296,6 +307,13 @@ export async function renderEditableTable(
     })
     .join('');
 
+  const extraColumns = config.extraColumns ?? [];
+  const extraHeaderHtml = extraColumns
+    .map(
+      (column) => `<th class="align-bottom">${escapeHtml(column.label)}</th>`
+    )
+    .join('');
+
   const bodyHtml = config.rows
     .map((row) => {
       const key = rowKey(config, row);
@@ -310,7 +328,13 @@ export async function renderEditableTable(
           return renderCell(config, field, spec, row, key, labels.get(field));
         })
         .join('');
-      return `<tr data-et-row="${escapeHtml(key)}">${cells}<td class="align-middle w-8">
+      const extraCells = extraColumns
+        .map(
+          (column) =>
+            `<td class="align-middle">${escapeHtml(column.render(row))}</td>`
+        )
+        .join('');
+      return `<tr data-et-row="${escapeHtml(key)}">${cells}${extraCells}<td class="align-middle w-8">
         <button class="editable-table-delete btn btn-xs btn-ghost text-error" data-et="${escapeHtml(config.instanceId)}" data-key="${escapeHtml(key)}" title="Delete row">${renderTrashIcon('h-3.5 w-3.5')}</button>
       </td></tr>`;
     })
@@ -318,7 +342,7 @@ export async function renderEditableTable(
 
   const emptyHtml =
     config.rows.length === 0 && config.emptyMessage
-      ? `<tr><td colspan="${fields.length + 1}" class="text-center text-base-content/60 py-4">${escapeHtml(config.emptyMessage)}</td></tr>`
+      ? `<tr><td colspan="${fields.length + extraColumns.length + 1}" class="text-center text-base-content/60 py-4">${escapeHtml(config.emptyMessage)}</td></tr>`
       : '';
 
   // The trailing blank row is how rows are added: typing into any of its cells
@@ -343,8 +367,8 @@ export async function renderEditableTable(
   return `
     <div class="overflow-x-auto">
       <table class="table table-xs">
-        <thead><tr>${headerHtml}<th></th></tr></thead>
-        <tbody>${emptyHtml}${bodyHtml}<tr class="editable-table-new-row">${newRowCells}<td></td></tr></tbody>
+        <thead><tr>${headerHtml}${extraHeaderHtml}<th></th></tr></thead>
+        <tbody>${emptyHtml}${bodyHtml}<tr class="editable-table-new-row">${newRowCells}${extraColumns.map(() => '<td></td>').join('')}<td></td></tr></tbody>
       </table>
     </div>
   `;
