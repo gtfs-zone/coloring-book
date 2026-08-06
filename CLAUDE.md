@@ -26,6 +26,7 @@ pnpm lint            # ESLint on src/
 pnpm lint:fix        # ESLint with auto-fix
 pnpm format          # Prettier
 pnpm typecheck       # TypeScript type check without emit
+pnpm check-spec      # Diff src/gtfs-spec/ against the official reference snapshot
 
 # Release
 pnpm commit          # Interactive commit with Commitizen (use instead of git commit)
@@ -65,6 +66,14 @@ There is no centralized state management (no Redux/Zustand). State is distribute
 
 GTFS types are defined in `src/types/` with Zod schemas for runtime validation. `gtfs.ts` is the master type file (large). Use Zod for any new field validation.
 
+### Spec layer
+
+`reference/gtfs-reference.md` is a verbatim snapshot of the official GTFS Schedule reference and is the single source of truth for the spec layer. `src/gtfs-spec/files/*.ts` mirrors it: file names, field names, field order, type strings, presence values, and descriptions are stored **verbatim**, and `src/gtfs-spec/adapter.ts` derives the Zod schemas, primary keys, enum registry, and field types from there. Enum short labels, `foreignKey`, `isPrimaryKey`, `presenceCondition`, and `allowEmpty` are curated additions that the reference does not carry.
+
+`pnpm check-spec` diffs the two and exits non-zero on any difference not listed in the script's `KNOWN_DIVERGENCES`. It runs from `.husky/pre-commit`, so drift blocks a commit. See `reference/README.md` for how to refresh the snapshot.
+
+Descriptions carry markdown and HTML, so anything rendering one must go through `renderSpecDescription` / `renderSpecDescriptionPlain` in `src/utils/spec-markup.ts`.
+
 ### Build
 
 Vite is the primary build tool. The app version is injected at build time via `git describe` (accessible as `__APP_VERSION__`). Output goes to `dist/`.
@@ -78,6 +87,7 @@ Vite is the primary build tool. The app version is injected at build time via `g
 - **Fail loudly**: Prefer throwing or logging errors over silent fallbacks. If something unexpected happens, we want to know.
 - **Virtual table copy-on-read invariant**: All query methods on virtual tables (`getAll`, `getById`, `query`) return shallow copies of the stored rows, not live references. This prevents silent aliasing bugs where a "before" snapshot is mutated by a later in-place write. Do not hold a long-lived reference to a query result and assume it will remain unchanged.
 - **All user edits go through the patch system**: Every user-initiated `updateRow`, `insertRows`, or `deleteRow` must be accompanied by a corresponding `patchManager.record*()` call. Direct DB writes are only for: internal initialization, patch replay, feed import, and backup restore.
+- **Networks are canonical as `networks` + `route_networks`**: GTFS allows two mutually exclusive on-disk forms, `routes.network_id` or the two network files. In IndexedDB it is always the two tables: import synthesizes them from `routes.network_id` when that is the form the feed used, and nothing reads `routes.network_id` afterwards. Which form the feed arrived in is remembered as `networksMode` in the `meta` store and decides the export form, unless a network has gained a name (which forces the files form). Never write `routes.network_id` outside export.
 - **Stop display labels go through `getStopDisplay`**: All user-visible stop labels are rendered via `getStopDisplay()` in `src/utils/entity-display.ts` (paired with `renderOptionLabel`/`renderCardLabel`). Child stops (with a non-empty `parent_station`) show `Name (stop_id)`; stations and standalone stops show just the name. Do not inline-format stop labels.
 
 ## Conventions

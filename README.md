@@ -8,6 +8,7 @@ A web-based GTFS (General Transit Feed Specification) editor inspired by geojson
 - **URL Loading**: Load GTFS feeds directly from URLs
 - **Interactive Map**: Visualize stops and routes on an interactive map
 - **Text Editor**: Edit GTFS files with syntax highlighting
+- **Fares v2**: Editor for fare products, rules, timeframes, areas, and networks
 - **Export**: Download modified GTFS as ZIP file
 - **Responsive**: Works on desktop and mobile devices
 
@@ -79,7 +80,7 @@ npm run build
 - [ ] **Embed Widget**: Embeddable map widget for websites
 
 ### Quality & Standards
-- [ ] **GTFS Extensions**: Support for GTFS-Flex, GTFS-Fares v2
+- [ ] **GTFS Extensions**: Support for GTFS-Flex
 - [ ] **Accessibility**: Full WCAG 2.1 compliance
 - [ ] **Internationalization**: Multi-language support
 - [ ] **Print Support**: Printable route maps and schedules

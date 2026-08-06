@@ -1309,26 +1309,82 @@ spec description appears outside a tooltip.
 
 ## PHASE 10 - Validation, docs, cleanup
 
-- [ ] Extend `gtfs-validator.ts` with the conditional-presence rules introduced
+- [x] Extend `gtfs-validator.ts` with the conditional-presence rules introduced
       above: transfers `from_stop_id`/`to_stop_id`, timeframes start/end pairing,
       fare_transfer_rules duration pairing, fare_leg_join_rules stop pairing,
       networks Conditionally Forbidden, rider category default-uniqueness
       ("exactly one default per fare_product_id eligibility set").
-- [ ] Cross-file referential integrity for every new `foreignKey` in the fares
+- [x] Cross-file referential integrity for every new `foreignKey` in the fares
       tables.
-- [ ] Update `CLAUDE.md`: document `reference/gtfs-reference.md` as the spec source
+- [x] Update `CLAUDE.md`: document `reference/gtfs-reference.md` as the spec source
       of truth, `pnpm check-spec` as part of the gate, and the networks
       canonicalization invariant.
-- [ ] Delete `FARES.md` (superseded scratch notes).
-- [ ] Add a short `reference/README.md` recording the source URL, the revision
+- [x] Delete `FARES.md` (superseded scratch notes).
+- [x] Add a short `reference/README.md` recording the source URL, the revision
       date, and how to refresh the snapshot (re-download, run `pnpm check-spec`,
       fix drift).
-- [ ] Confirm the About / feature list copy reflects that only flex service and
+- [x] Confirm the About / feature list copy reflects that only flex service and
       `frequencies.txt` remain unsupported.
-- [ ] `pnpm knip` clean; no orphaned modules from Phases 5 and 6.
+- [x] `pnpm knip` clean; no orphaned modules from Phases 5 and 6.
 
 ### Discoveries
-_(fill in)_
+
+**The row rules are now shared, not reimplemented.** `src/utils/fares-rules.ts`
+holds `validateTimeframeRow`, `validateFareLegJoinRuleRow`,
+`validateFareTransferRuleRow` and the new `validateTransferRow`. Phase 9's three
+functions were moved there verbatim out of `fares-modal.ts`, which now imports
+them as its `validateRow` callbacks, and `gtfs-validator.ts` runs the same four
+over every imported row. A rule that rejects an edit and a rule that flags an
+imported feed being the same function is the point: the alternative was two
+wordings of the same condition drifting apart. `cell`, `localTimeSeconds` and
+`DAY_SECONDS` moved with them and are private to the new module.
+
+**`validateTransferRow` covers both directions of the transfers rule**, not just
+the plan's `from_stop_id`/`to_stop_id` half: `from_trip_id`/`to_trip_id` are
+Conditionally Required exactly when the stop fields are not (`transfer_type` 4
+or 5), so checking one without the other would have let half the file through.
+The stop-field message quotes the reference's own condition text.
+
+**Referential integrity is spec-driven, not hand-listed.**
+`validateFaresReferences` walks `GTFS_FIELD_SPECS[table]` for the seven fares
+tables that have foreign keys (`timeframes`, `fare_products`, `fare_leg_rules`,
+`fare_leg_join_rules`, `fare_transfer_rules`, `stop_areas`, `route_networks`)
+and checks every field carrying a `foreignKey` against the union of its targets'
+values, memoized per `file:field`. A field naming two tables (the `network_id`
+family, `service_id`) matches a value present in **either**, which is the
+lenient reading and the correct one under both networks forms. Adding a foreign
+key to a fares spec file therefore gets a validator check for free; adding a
+whole new fares table needs its name in the `faresTables` array.
+
+**One check was removed as a duplicate.** `validateNetworks`' dangling
+`route_networks.network_id` warning is now covered by the generic pass, as an
+error rather than a warning. `validateNetworks` is back to being only about the
+Conditionally Forbidden rule, which is what its comment claims.
+
+**Rider category defaults are a per-product check.** The reference's rule is
+scoped to "multiple rider categories eligible for a single `fare_product_id`",
+so the validator groups `fare_products` rows by `fare_product_id`, and only
+flags a product whose eligible set has two or more categories without exactly
+one `is_default_fare_category = 1`. A single-category product is silent, and a
+feed with no `fare_products` produces nothing regardless of how its categories
+are flagged.
+
+**Docs.** `docs/gtfs-implementation-status.md` was the real "feature list": ten
+rows moved from Partial to Full and the spec version is now `2026-04-27`. The
+About modal has no coverage list, so nothing there needed changing; the README
+gained a Fares v2 feature bullet and its stale "GTFS-Fares v2" todo lost that
+half. `CLAUDE.md` gained a **Spec layer** section (verbatim invariant,
+`pnpm check-spec` in the gate, `renderSpecDescription` for anything that
+displays a description) and a networks-canonicalization bullet in the philosophy
+list. `reference/README.md` records the source URL, the revision date, and the
+refresh procedure including the three follow-on files a new field usually
+touches.
+
+**Not verified in a browser.** `typecheck / lint / knip / check-spec / build`
+all pass. The validator's new output is worth a look on the manual pass: run
+Validate on the MBTA feed and confirm the fares checks are quiet, since a real
+feed should trip none of them, and that the transfers check does not flood on a
+feed using `transfer_type` 4 or 5.
 
 ---
 

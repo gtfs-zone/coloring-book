@@ -1,6 +1,6 @@
 # GTFS Implementation Status
 
-Tracks which GTFS Schedule files are supported in the GTFS.zone UI. Spec version: **2026-04**.
+Tracks which GTFS Schedule files are supported in the GTFS.zone UI. Spec version: **2026-04-27**.
 
 UI support levels:
 - **Full**: dedicated view or map visualization beyond the generic table editor
@@ -24,17 +24,17 @@ UI support levels:
 | `levels.txt` | Conditionally Required | Partial | Table editor only |
 | `fare_attributes.txt` | Optional | Partial | Fares v1: table editor only |
 | `fare_rules.txt` | Optional | Partial | Fares v1: table editor only |
-| `fare_media.txt` | Optional | Partial | Fares v2: table editor only |
-| `fare_products.txt` | Optional | Partial | Fares v2: table editor only |
-| `fare_leg_rules.txt` | Optional | Partial | Fares v2: table editor only |
-| `fare_leg_join_rules.txt` | Optional | Partial | Fares v2: table editor only |
-| `fare_transfer_rules.txt` | Optional | Partial | Fares v2: table editor only |
-| `timeframes.txt` | Optional | Partial | Fares v2: table editor only |
-| `rider_categories.txt` | Optional | Partial | Fares v2: table editor only |
-| `areas.txt` | Optional | Partial | Table editor only |
-| `stop_areas.txt` | Optional | Partial | Table editor only |
-| `networks.txt` | Conditionally Forbidden | Partial | Table editor only; mutually exclusive with `routes.network_id` |
-| `route_networks.txt` | Conditionally Forbidden | Partial | Table editor only; mutually exclusive with `routes.network_id` |
+| `fare_media.txt` | Optional | Full | Fares v2 editor |
+| `fare_products.txt` | Optional | Full | Fares v2 editor; `amount` shown in the row's currency |
+| `fare_leg_rules.txt` | Optional | Full | Fares v2 editor with pickers for every referenced table |
+| `fare_leg_join_rules.txt` | Optional | Full | Fares v2 editor |
+| `fare_transfer_rules.txt` | Optional | Full | Fares v2 editor |
+| `timeframes.txt` | Optional | Full | Fares v2 editor |
+| `rider_categories.txt` | Optional | Full | Fares v2 editor |
+| `areas.txt` | Optional | Full | Fares v2 editor, with the stops in each area |
+| `stop_areas.txt` | Optional | Full | Edited from the stop page; platforms inherit their station's areas |
+| `networks.txt` | Conditionally Forbidden | Full | Fares v2 editor; canonical in-app form, see the networks invariant in CLAUDE.md |
+| `route_networks.txt` | Conditionally Forbidden | Full | Assigned from the route page; canonical in-app form |
 | `location_groups.txt` | Optional | Partial | Flex transit: table editor only |
 | `location_group_stops.txt` | Optional | Partial | Flex transit: table editor only |
 | `booking_rules.txt` | Optional | Partial | Flex transit: table editor only |
