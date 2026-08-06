@@ -42,6 +42,14 @@ import {
 } from '../utils/gtfs-primary-keys.js';
 import { TimeFormatter } from '../utils/time-formatter.js';
 
+/**
+ * Which on-disk form the imported feed expressed its networks in.
+ *
+ * In the database networks are always `networks` + `route_networks`; this only
+ * records the form to export back to when no network has been named.
+ */
+export type NetworksMode = 'inline' | 'files';
+
 // Concrete union of all IDB object store names (avoids keyof GTFSDBSchema widening to string)
 type GTFSStoreName =
   | 'agencies'
@@ -173,12 +181,14 @@ export interface GTFSDBSchema extends DBSchema {
     key: number; // last patch version included in this snapshot
     value: SnapshotRecord;
   };
-  // Version pointer store: supports 'versions' and 'blobVersion' keys
+  // Version pointer store: supports 'versions', 'blobVersion' and
+  // 'networksMode' keys
   meta: {
     key: string;
     value:
       | { key: 'versions'; currentVersion: number; headVersion: number }
-      | { key: 'blobVersion'; version: number };
+      | { key: 'blobVersion'; version: number }
+      | { key: 'networksMode'; mode: NetworksMode };
   };
   // Raw JSON blobs for all GTFS tables: avoids per-row IDB overhead
   file_blobs: {
@@ -1790,6 +1800,27 @@ export class GTFSDatabase {
       throw new Error('Database not initialized');
     }
     await this.db.put('meta', { key: 'blobVersion', version });
+  }
+
+  /**
+   * The form the imported feed expressed its networks in.
+   *
+   * Defaults to `'inline'` when absent, so a feed that gains its first network
+   * exports the lighter `routes.network_id` form.
+   */
+  async getNetworksMode(): Promise<NetworksMode> {
+    if (!this.db) {
+      return 'inline';
+    }
+    const entry = await this.db.get('meta', 'networksMode');
+    return entry?.key === 'networksMode' ? entry.mode : 'inline';
+  }
+
+  async setNetworksMode(mode: NetworksMode): Promise<void> {
+    if (!this.db) {
+      throw new Error('Database not initialized');
+    }
+    await this.db.put('meta', { key: 'networksMode', mode });
   }
 
   /**
