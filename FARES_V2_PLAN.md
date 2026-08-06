@@ -1195,29 +1195,29 @@ Per the user's direction, these are **simple tables** with no bespoke UI: straig
 `renderEditableTable` instances with foreign-key pickers. This is where Phase 4's
 investment pays off.
 
-- [ ] Timeframes entry: `timeframe_group_id`, `start_time`, `end_time`,
+- [x] Timeframes entry: `timeframe_group_id`, `start_time`, `end_time`,
       `service_id`. `service_id` picker reads `calendar` union `calendar_dates`,
       labeled via the service-days helpers. Validate the conditional pairing of
       `start_time`/`end_time` and reject values above `24:00:00`.
-- [ ] Fare Leg Rules entry: all eight fields. Pickers for `network_id` (canonical
+- [x] Fare Leg Rules entry: all eight fields. Pickers for `network_id` (canonical
       networks table), `from_area_id`/`to_area_id` (areas),
       `from_timeframe_group_id`/`to_timeframe_group_id` (distinct
       `timeframe_group_id` values), `fare_product_id` (fare products).
       `leg_group_id` is a free ID, but offer existing values as suggestions.
-- [ ] Fare Leg Join Rules entry: the **corrected** fields from Phase 2 -
+- [x] Fare Leg Join Rules entry: the **corrected** fields from Phase 2 -
       `from_network_id`, `to_network_id`, `from_stop_id`, `to_stop_id`. Enforce
       the mutual conditional requirement on the two stop fields, and that the
       stops are `location_type` 0 or 1.
-- [ ] Fare Transfer Rules entry: all fields. `fare_transfer_type` and
+- [x] Fare Transfer Rules entry: all fields. `fare_transfer_type` and
       `duration_limit_type` use the inline enum menu with our curated short
       labels; the full verbatim description with its table and diagrams is
       available from the column header tooltip.
-- [ ] Enforce `duration_limit` / `duration_limit_type` mutual requirement
+- [x] Enforce `duration_limit` / `duration_limit_type` mutual requirement
       (each Required if the other is defined, Forbidden otherwise).
-- [ ] Note in the Fare Transfer Rules UI that these rules are **directional**
+- [x] Note in the Fare Transfer Rules UI that these rules are **directional**
       (the February 2026 clarification), using the reference's wording.
-- [ ] Enable all previously-disabled sidebar entries; remove the placeholder copy.
-- [ ] Empty-state copy for each table explaining what it is for, drawn from the
+- [x] Enable all previously-disabled sidebar entries; remove the placeholder copy.
+- [x] Empty-state copy for each table explaining what it is for, drawn from the
       reference's file-level description via `renderSpecDescription`.
 
 **Gotchas**: `fare_leg_rules`' primary key is a six-field composite including
@@ -1227,7 +1227,83 @@ is handled consistently, since the two mean different things to the spec's match
 semantics.
 
 ### Discoveries
-_(fill in)_
+
+**Phase 4 paid off, but three things had to be added to it.** No new renderer
+and no bespoke modal: the four tables are four `FARES_ENTRIES` records. What the
+component was missing:
+
+- `EditableTableConfig.validateRow(row)`, for the conditional rules that span
+  fields. It runs on the whole prospective record, not on the cell, because
+  every one of these rules is about two fields at once. On an existing row it
+  runs in `commitCell` **before** the display moves to the new value, so a
+  rejected edit leaves the cell reading what is actually stored; on the blank
+  row it runs in `commitNewRow`, after the required-field check, so a
+  half-filled row is not nagged at.
+- `EditableTableColumnOverride.suggestions`, an async `() => string[]` that
+  becomes a `<datalist>` on the live input (`InlineEditorOptions.suggestions` in
+  `utils/inline-edit.ts`, which owns creating and removing the element). This is
+  for `fare_leg_rules.leg_group_id`: a free ID that in practice is one of the
+  ids already in the file, but must stay typeable.
+- `emptyMessage` is now **markup**, not escaped text. It carries a rendered spec
+  description, so escaping it would have shown the reference's backticks and
+  links as literal characters. It is never user input; the only host is this
+  modal.
+
+`FaresEntry.columnOverrides` also became `(deps) => Record<...>` rather than a
+value, since almost every override is now an option set that reads the database.
+
+**Which pickers needed an override, and why.** The spec-derived
+`buildForeignKeyOptions` is right for `from_area_id` / `to_area_id` and for
+`fare_transfer_rules.from_leg_group_id` / `to_leg_group_id`, and those are left
+alone. The rest are overridden:
+
+- `network_id`, `from_network_id`, `to_network_id`: the spec names *two* target
+  tables, so the derived options would union `routes.network_id` with
+  `networks.network_id`. Phase 7 made `networks` canonical, so the override
+  reads only that, which is complete under either on-disk form.
+- `from_stop_id` / `to_stop_id`: filtered to `location_type` 0 or 1, which is
+  where the reference's "stop or station" constraint is enforced. It is
+  enforcement of *new* values only; an imported row naming a boarding area is
+  not flagged. That check belongs with Phase 10's validator work.
+- `fare_product_id`: `fare_products` is keyed on the id plus rider category plus
+  media, so the derived options would offer the same id several times. The
+  override is one option per distinct id, labelled with the product name.
+- `from_timeframe_group_id` / `to_timeframe_group_id`: `timeframe_group_id`
+  names a *set* of rows, so the same problem, plus `getEntityDisplay` has no
+  case for `timeframes` and would have produced empty labels. Options are the
+  distinct group ids with their row count as the subtitle.
+- `timeframes.service_id`: the derived options would be bare service ids from
+  two tables. The override labels them with `formatDaysOfWeek` and
+  `formatDateRange` from `utils/entity-references.ts` (`Mon-Fri, Jan 1 - Dec 31`),
+  falling back to "Specific dates" for a `calendar_dates`-only service.
+
+**Empty-vs-absent on the composite keys, as the gotcha asked.**
+`generateCompositeKeyFromRecord`'s `composite` branch maps both an absent field
+and an empty one to `''`, so `fare_leg_rules`' six-field key is stable however
+sparse the row is, and a row built by the blank row (which omits untouched
+fields entirely) keys identically to the same row read back from a feed. The
+`all_fields` branch does **not** have that property, and `timeframes` is an
+`all_fields` table: a row with `start_time: ''` keys differently from one with
+no `start_time` key at all. That is pre-existing, it does not bite here (the
+component always re-keys through the same function it inserted with), and
+narrowing `timeframes` to a real composite is a `gtfs-primary-keys.ts` change
+worth considering in Phase 10.
+
+**The timeframe pairing rule is enforced on every edit of the row**, not only on
+edits of the two time fields, because `validateRow` sees the record rather than
+the field. An imported timeframe with only one of the two times therefore has to
+be fixed before any of its other fields can be edited. That is the "fail loudly"
+reading and the message says exactly what is wrong, but it is the one place this
+phase is stricter than the file viewer.
+
+**Not verified in a browser.** `typecheck / lint / knip / check-spec / build`
+all pass. Worth watching on the manual pass: the `leg_group_id` datalist (it is
+the first `<datalist>` in the app); adding a fare leg rule through the blank row,
+where only `fare_product_id` is required and five key fields are empty; the
+duration-limit pairing message when clearing one of the two; whether the
+eight-column leg rules table and the sidebar still fit without the modal
+scrolling sideways; and the empty states, which are the first place a rendered
+spec description appears outside a tooltip.
 
 ---
 

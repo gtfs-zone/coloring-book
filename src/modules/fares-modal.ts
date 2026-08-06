@@ -17,6 +17,7 @@ import {
   type EditableTableDeps,
   type EditableTableExtraColumn,
 } from './editable-table.js';
+import type { OptionPickerItem } from './option-picker-modal.js';
 import { escapeHtml } from '../utils/escape-html.js';
 import { specStoreName } from '../utils/spec-field-edit.js';
 import {
@@ -24,7 +25,13 @@ import {
   getStopDisplay,
   renderOptionLabel,
 } from '../utils/entity-display.js';
+import {
+  formatDateRange,
+  formatDaysOfWeek,
+} from '../utils/entity-references.js';
 import { stopLocationType } from '../utils/area-hierarchy.js';
+import { renderSpecDescription } from '../utils/spec-markup.js';
+import { gtfsSpec } from '../gtfs-spec/index.js';
 import { GTFS_TABLES } from '../types/gtfs.js';
 
 export type FaresModalDeps = EditableTableDeps;
@@ -38,10 +45,14 @@ interface FaresEntry {
   table: string;
   label: string;
   group: FaresGroup;
-  /** Set while the table has no editor yet; the entry renders disabled. */
-  pending?: boolean;
+  /** Markup shown in place of the rows when the table is empty. */
   emptyMessage: string;
-  columnOverrides?: Record<string, EditableTableColumnOverride>;
+  /** Built per open, since the option sets read other tables. */
+  columnOverrides?: (
+    deps: FaresModalDeps
+  ) => Record<string, EditableTableColumnOverride>;
+  /** Conditional rules that span fields, checked before a row is written. */
+  validateRow?: (row: Record<string, unknown>) => string | null;
   /** Built on every refresh, since these read other tables. */
   extraColumns?: (deps: FaresModalDeps) => Promise<EditableTableExtraColumn[]>;
   /** A line of explanation shown above the table. */
@@ -175,66 +186,325 @@ function formatCurrencyAmount(value: unknown, currency: unknown): string {
   return `${whole}.${fraction.padEnd(digits, '0')}`;
 }
 
+// ─── Picker option sets ───────────────────────────────────────────────────────
+
+/**
+ * Networks, read from the canonical `networks` table.
+ *
+ * The spec types these fields as referencing `routes.network_id` **or**
+ * `networks.network_id`, but the app normalizes both on-disk forms to
+ * `networks` at import, so the one table is the complete list under either.
+ */
+async function networkOptions(
+  deps: FaresModalDeps
+): Promise<OptionPickerItem[]> {
+  const rows = await deps.gtfsDatabase.getAllRows(
+    specStoreName(GTFS_TABLES.NETWORKS)
+  );
+  return rows
+    .filter((row) => String(row.network_id ?? '') !== '')
+    .map((row) => ({
+      value: String(row.network_id),
+      primary: renderOptionLabel(
+        getEntityDisplay('networks', row as Record<string, string>)
+      ),
+      secondary: String(row.network_id),
+    }));
+}
+
+/** Stops a fare rule may name: stops and stations only, per the reference. */
+async function fareStopOptions(
+  deps: FaresModalDeps
+): Promise<OptionPickerItem[]> {
+  const rows = await deps.gtfsDatabase.getAllRows(
+    specStoreName(GTFS_TABLES.STOPS)
+  );
+  return rows
+    .filter((row) => {
+      const type = stopLocationType(row);
+      return type === 0 || type === 1;
+    })
+    .map((row) => ({
+      value: String(row.stop_id ?? ''),
+      primary: renderOptionLabel(getStopDisplay(row as Record<string, string>)),
+      secondary: String(row.stop_id ?? ''),
+    }));
+}
+
+/**
+ * One option per fare product id.
+ *
+ * `fare_products` is keyed on the id together with the rider category and the
+ * media, so the same id legitimately appears on several rows; a rule names the
+ * id, not the row.
+ */
+async function fareProductOptions(
+  deps: FaresModalDeps
+): Promise<OptionPickerItem[]> {
+  const rows = await deps.gtfsDatabase.getAllRows(
+    specStoreName(GTFS_TABLES.FARE_PRODUCTS)
+  );
+  const seen = new Map<string, OptionPickerItem>();
+  for (const row of rows) {
+    const id = String(row.fare_product_id ?? '');
+    if (id === '' || seen.has(id)) {
+      continue;
+    }
+    const name = String(row.fare_product_name ?? '');
+    seen.set(id, { value: id, primary: name ? `${name} (${id})` : id });
+  }
+  return [...seen.values()];
+}
+
+/** One option per distinct `timeframe_group_id`, which names a set of rows. */
+async function timeframeGroupOptions(
+  deps: FaresModalDeps
+): Promise<OptionPickerItem[]> {
+  const rows = await deps.gtfsDatabase.getAllRows(
+    specStoreName(GTFS_TABLES.TIMEFRAMES)
+  );
+  const counts = new Map<string, number>();
+  for (const row of rows) {
+    const id = String(row.timeframe_group_id ?? '');
+    if (id !== '') {
+      counts.set(id, (counts.get(id) ?? 0) + 1);
+    }
+  }
+  return [...counts].map(([id, count]) => ({
+    value: id,
+    primary: id,
+    secondary: `${count} timeframe${count === 1 ? '' : 's'}`,
+  }));
+}
+
+/** Services from both `calendar` and `calendar_dates`, labelled by their days. */
+async function serviceOptions(
+  deps: FaresModalDeps
+): Promise<OptionPickerItem[]> {
+  const options = new Map<string, OptionPickerItem>();
+  const calendar = await deps.gtfsDatabase.getAllRows(
+    specStoreName(GTFS_TABLES.CALENDAR)
+  );
+  for (const row of calendar) {
+    const id = String(row.service_id ?? '');
+    if (id === '' || options.has(id)) {
+      continue;
+    }
+    const range = formatDateRange(row);
+    options.set(id, {
+      value: id,
+      primary: id,
+      secondary: [formatDaysOfWeek(row), range].filter(Boolean).join(', '),
+    });
+  }
+  const dates = await deps.gtfsDatabase.getAllRows(
+    specStoreName(GTFS_TABLES.CALENDAR_DATES)
+  );
+  for (const row of dates) {
+    const id = String(row.service_id ?? '');
+    if (id === '' || options.has(id)) {
+      continue;
+    }
+    options.set(id, { value: id, primary: id, secondary: 'Specific dates' });
+  }
+  return [...options.values()];
+}
+
+/** The leg group ids already in use, offered as autocomplete on a free ID. */
+async function legGroupSuggestions(deps: FaresModalDeps): Promise<string[]> {
+  const rows = await deps.gtfsDatabase.getAllRows(
+    specStoreName(GTFS_TABLES.FARE_LEG_RULES)
+  );
+  const ids = new Set<string>();
+  for (const row of rows) {
+    const id = String(row.leg_group_id ?? '');
+    if (id !== '') {
+      ids.add(id);
+    }
+  }
+  return [...ids];
+}
+
+// ─── Cross-field rules ────────────────────────────────────────────────────────
+
+function cell(row: Record<string, unknown>, field: string): string {
+  return String(row[field] ?? '').trim();
+}
+
+/** Seconds since midnight, or null when the value is not a wall-clock time. */
+function localTimeSeconds(value: string): number | null {
+  const match = /^(\d{1,2}):([0-5]\d):([0-5]\d)$/.exec(value);
+  if (!match) {
+    return null;
+  }
+  return Number(match[1]) * 3600 + Number(match[2]) * 60 + Number(match[3]);
+}
+
+const DAY_SECONDS = 24 * 60 * 60;
+
+function validateTimeframe(row: Record<string, unknown>): string | null {
+  const start = cell(row, 'start_time');
+  const end = cell(row, 'end_time');
+  if ((start === '') !== (end === '')) {
+    return 'start_time and end_time must both be set, or both left empty';
+  }
+  for (const [field, value] of [
+    ['start_time', start],
+    ['end_time', end],
+  ]) {
+    if (value === '') {
+      continue;
+    }
+    const seconds = localTimeSeconds(value);
+    if (seconds === null) {
+      return `${field} must be a wall-clock time in HH:MM:SS format`;
+    }
+    if (seconds > DAY_SECONDS) {
+      return `${field} must not be later than 24:00:00`;
+    }
+  }
+  return null;
+}
+
+function validateFareLegJoinRule(row: Record<string, unknown>): string | null {
+  const from = cell(row, 'from_stop_id');
+  const to = cell(row, 'to_stop_id');
+  if ((from === '') !== (to === '')) {
+    return 'from_stop_id and to_stop_id must both be set, or both left empty';
+  }
+  return null;
+}
+
+function validateFareTransferRule(row: Record<string, unknown>): string | null {
+  const limit = cell(row, 'duration_limit');
+  const type = cell(row, 'duration_limit_type');
+  if ((limit === '') !== (type === '')) {
+    return 'duration_limit and duration_limit_type must both be set, or both left empty';
+  }
+  return null;
+}
+
+// ─── Empty states ─────────────────────────────────────────────────────────────
+
+/**
+ * What the table is for, taken from the reference's own description.
+ *
+ * Only the first paragraph: the rule tables' descriptions continue into the
+ * full matching algorithm, which belongs in the column tooltips rather than in
+ * an empty state.
+ */
+function emptyState(table: string, hint: string): string {
+  const spec = gtfsSpec.files.find((file) => file.filename === table);
+  const intro = (spec?.description ?? '')
+    .split('\n')[0]
+    .replace(/(\s*<br\s*\/?>)+\s*$/i, '');
+  return `<div class="max-w-prose space-y-2 py-2">
+    <div>${renderSpecDescription(intro)}</div>
+    <p>${escapeHtml(hint)}</p>
+  </div>`;
+}
+
 const FARES_ENTRIES: FaresEntry[] = [
   {
     table: GTFS_TABLES.TIMEFRAMES,
     label: 'Timeframes',
     group: 'Definitions',
-    pending: true,
-    emptyMessage: 'No timeframes yet.',
+    emptyMessage: emptyState(
+      GTFS_TABLES.TIMEFRAMES,
+      'Add one row per interval. Rows sharing a timeframe_group_id form one group, which a fare leg rule can then name.'
+    ),
+    columnOverrides: (deps) => ({
+      service_id: { options: () => serviceOptions(deps) },
+    }),
+    validateRow: validateTimeframe,
   },
   {
     table: GTFS_TABLES.RIDER_CATEGORIES,
     label: 'Rider Categories',
     group: 'Definitions',
-    emptyMessage:
-      'No rider categories yet. Add one to price fares differently for, say, seniors or students.',
+    emptyMessage: emptyState(
+      GTFS_TABLES.RIDER_CATEGORIES,
+      'Add one to price fares differently for, say, seniors or students.'
+    ),
   },
   {
     table: GTFS_TABLES.FARE_MEDIA,
     label: 'Fare Media',
     group: 'Definitions',
-    emptyMessage:
-      'No fare media yet. Add one to describe how a fare is carried: a paper ticket, a transit card, a phone.',
+    emptyMessage: emptyState(
+      GTFS_TABLES.FARE_MEDIA,
+      'Add one to describe how a fare is carried: a paper ticket, a transit card, a phone.'
+    ),
   },
   {
     table: GTFS_TABLES.FARE_PRODUCTS,
     label: 'Fare Products',
     group: 'Definitions',
-    emptyMessage: 'No fare products yet. Add one to give a fare a price.',
-    columnOverrides: {
+    emptyMessage: emptyState(
+      GTFS_TABLES.FARE_PRODUCTS,
+      'Add one to give a fare a price.'
+    ),
+    columnOverrides: () => ({
       amount: {
         format: (value, row) => formatCurrencyAmount(value, row.currency),
       },
-    },
+    }),
   },
   {
     table: GTFS_TABLES.FARE_LEG_RULES,
     label: 'Fare Leg Rules',
     group: 'Rules',
-    pending: true,
-    emptyMessage: 'No fare leg rules yet.',
+    emptyMessage: emptyState(
+      GTFS_TABLES.FARE_LEG_RULES,
+      'Add one to say which fare product pays for a leg. An empty network or area matches everything the other rules do not name.'
+    ),
+    columnOverrides: (deps) => ({
+      leg_group_id: { suggestions: () => legGroupSuggestions(deps) },
+      network_id: { options: () => networkOptions(deps) },
+      from_timeframe_group_id: { options: () => timeframeGroupOptions(deps) },
+      to_timeframe_group_id: { options: () => timeframeGroupOptions(deps) },
+      fare_product_id: { options: () => fareProductOptions(deps) },
+    }),
   },
   {
     table: GTFS_TABLES.FARE_LEG_JOIN_RULES,
     label: 'Fare Leg Join Rules',
     group: 'Rules',
-    pending: true,
-    emptyMessage: 'No fare leg join rules yet.',
+    emptyMessage: emptyState(
+      GTFS_TABLES.FARE_LEG_JOIN_RULES,
+      'Add one to make two legs across a transfer price as a single leg.'
+    ),
+    note: 'The stop fields go together: name both, or neither. Only stops and stations may be named.',
+    columnOverrides: (deps) => ({
+      from_network_id: { options: () => networkOptions(deps) },
+      to_network_id: { options: () => networkOptions(deps) },
+      from_stop_id: { options: () => fareStopOptions(deps) },
+      to_stop_id: { options: () => fareStopOptions(deps) },
+    }),
+    validateRow: validateFareLegJoinRule,
   },
   {
     table: GTFS_TABLES.FARE_TRANSFER_RULES,
     label: 'Fare Transfer Rules',
     group: 'Rules',
-    pending: true,
-    emptyMessage: 'No fare transfer rules yet.',
+    emptyMessage: emptyState(
+      GTFS_TABLES.FARE_TRANSFER_RULES,
+      'Add one to price the transfer between two leg groups.'
+    ),
+    note: 'A fare transfer rule defined from from_leg_group_id to to_leg_group_id does not apply in the reverse direction. The duration fields go together: set both, or neither.',
+    columnOverrides: (deps) => ({
+      fare_product_id: { options: () => fareProductOptions(deps) },
+    }),
+    validateRow: validateFareTransferRule,
   },
   {
     table: GTFS_TABLES.AREAS,
     label: 'Areas',
     group: 'Geography',
-    emptyMessage:
-      'No areas yet. An area is the group of stops a fare leg rule starts or ends in.',
+    emptyMessage: emptyState(
+      GTFS_TABLES.AREAS,
+      'An area is the group of stops a fare leg rule starts or ends in.'
+    ),
     note: 'Stops join an area on the stop page. A station in an area carries its platforms with it, unless a platform is assigned to an area of its own.',
     extraColumns: async (deps) => {
       const counts = await countStopsPerArea(deps);
@@ -251,8 +521,10 @@ const FARES_ENTRIES: FaresEntry[] = [
     table: GTFS_TABLES.NETWORKS,
     label: 'Networks',
     group: 'Geography',
-    emptyMessage:
-      'No networks yet. A network is the group of routes a fare leg rule applies to.',
+    emptyMessage: emptyState(
+      GTFS_TABLES.NETWORKS,
+      'A network is the group of routes a fare leg rule applies to.'
+    ),
     note: 'Routes join a network on the route page. Giving a network a name makes the feed export networks.txt and route_networks.txt; an unnamed network is exported as a network_id column on routes.txt instead.',
     extraColumns: async (deps) => {
       const counts = await countRoutesPerNetwork(deps);
@@ -269,8 +541,6 @@ const FARES_ENTRIES: FaresEntry[] = [
 
 const GROUP_ORDER: FaresGroup[] = ['Definitions', 'Rules', 'Geography'];
 
-const PENDING_TITLE = 'Editing this table is coming in a later phase';
-
 function renderSidebar(
   activeTable: string,
   counts: Map<string, number>
@@ -280,11 +550,6 @@ function renderSidebar(
       .map((entry) => {
         const count = counts.get(entry.table) ?? 0;
         const badge = `<span class="badge badge-sm badge-ghost ml-auto">${count}</span>`;
-        if (entry.pending) {
-          return `<li class="menu-disabled">
-            <span title="${PENDING_TITLE}">${escapeHtml(entry.label)}${badge}</span>
-          </li>`;
-        }
         return `<li>
           <button
             type="button"
@@ -301,8 +566,7 @@ function renderSidebar(
 }
 
 export async function showFaresModal(deps: FaresModalDeps): Promise<void> {
-  let activeEntry =
-    FARES_ENTRIES.find((entry) => !entry.pending) ?? FARES_ENTRIES[0];
+  let activeEntry = FARES_ENTRIES[0];
 
   const tableConfig: EditableTableConfig = {
     instanceId: INSTANCE_ID,
@@ -310,7 +574,8 @@ export async function showFaresModal(deps: FaresModalDeps): Promise<void> {
     rows: [],
     deps,
     emptyMessage: activeEntry.emptyMessage,
-    columnOverrides: activeEntry.columnOverrides,
+    columnOverrides: activeEntry.columnOverrides?.(deps),
+    validateRow: activeEntry.validateRow,
     onInsert: () => void refresh(),
     onDelete: () => void refresh(),
   };
@@ -330,7 +595,8 @@ export async function showFaresModal(deps: FaresModalDeps): Promise<void> {
     const counts = await readCounts();
     tableConfig.tableName = activeEntry.table;
     tableConfig.emptyMessage = activeEntry.emptyMessage;
-    tableConfig.columnOverrides = activeEntry.columnOverrides;
+    tableConfig.columnOverrides = activeEntry.columnOverrides?.(deps);
+    tableConfig.validateRow = activeEntry.validateRow;
     tableConfig.extraColumns = activeEntry.extraColumns
       ? await activeEntry.extraColumns(deps)
       : undefined;
