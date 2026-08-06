@@ -8,6 +8,11 @@ const config: KnipConfig = {
     "scripts/**/*.ts",
   ],
   project: ["src/**/*.{ts,js}", "scripts/**/*.ts"],
+  ignore: [
+    // The spec-driven table component landed ahead of its first consumer.
+    // Remove this entry when the fares modal is rebuilt on top of it.
+    "src/modules/editable-table.ts",
+  ],
   ignoreDependencies: [
     // Used in postcss.config.js as string plugin names, not ESM imports
     "@tailwindcss/postcss",
