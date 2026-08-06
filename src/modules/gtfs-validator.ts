@@ -1,5 +1,5 @@
 import { GTFSDatabaseRecord } from './gtfs-database.js';
-import { GTFS_TABLES } from '../types/gtfs.js';
+import { GTFS_TABLES, GTFS_FIELD_SPECS } from '../types/gtfs.js';
 import { GTFSFieldType } from '../types/gtfs-field-types.js';
 import { validateValue } from '../utils/field-formatters.js';
 import {
@@ -8,6 +8,12 @@ import {
 } from '../utils/stop-coords.js';
 import type { Pathways, Stops } from '../types/gtfs-entities.js';
 import { stopLocationType } from '../utils/area-hierarchy.js';
+import {
+  validateFareLegJoinRuleRow,
+  validateFareTransferRuleRow,
+  validateTimeframeRow,
+  validateTransferRow,
+} from '../utils/fares-rules.js';
 
 interface ValidationMessage {
   level: 'error' | 'warning' | 'info';
@@ -78,6 +84,10 @@ export class GTFSValidator {
     this.validateShapes();
     this.validateNetworks();
     this.validateStopAreas();
+    this.validateTransfers();
+    this.validateConditionalPresence();
+    this.validateRiderCategoryDefaults();
+    this.validateFaresReferences();
     this.validateReferences();
 
     // Update summary
@@ -800,23 +810,6 @@ export class GTFSValidator {
         GTFS_TABLES.ROUTES
       );
     }
-
-    const defined = new Set(
-      networks
-        .map((network) => String(network.network_id ?? ''))
-        .filter((id) => id !== '')
-    );
-    routeNetworks.forEach((row, index: number) => {
-      const network_id = String(row.network_id ?? '');
-      if (network_id !== '' && !defined.has(network_id)) {
-        this.addWarning(
-          `Row ${index + 1}: network_id '${network_id}' is not defined in networks.txt`,
-          'INVALID_REFERENCE',
-          GTFS_TABLES.ROUTE_NETWORKS,
-          index + 1
-        );
-      }
-    });
   }
 
   /**
@@ -855,6 +848,188 @@ export class GTFSValidator {
         );
       }
     });
+  }
+
+  /**
+   * The row-level conditional-presence rules the fares editor enforces on every
+   * edit, applied to whatever the feed arrived with.
+   */
+  validateConditionalPresence() {
+    const checks: [string, (row: Record<string, unknown>) => string | null][] =
+      [
+        [GTFS_TABLES.TIMEFRAMES, validateTimeframeRow],
+        [GTFS_TABLES.FARE_LEG_JOIN_RULES, validateFareLegJoinRuleRow],
+        [GTFS_TABLES.FARE_TRANSFER_RULES, validateFareTransferRuleRow],
+      ];
+
+    for (const [table, check] of checks) {
+      const rows = this.gtfsParser.getFileDataSyncTyped(table);
+      rows.forEach((row, index: number) => {
+        const problem = check(row as Record<string, unknown>);
+        if (problem) {
+          this.addError(
+            `Row ${index + 1}: ${problem}`,
+            'CONDITIONAL_PRESENCE',
+            table,
+            index + 1
+          );
+        }
+      });
+    }
+  }
+
+  validateTransfers() {
+    const transfers = this.gtfsParser.getFileDataSyncTyped(
+      GTFS_TABLES.TRANSFERS
+    );
+    transfers.forEach((row, index: number) => {
+      const problem = validateTransferRow(row as Record<string, unknown>);
+      if (problem) {
+        this.addError(
+          `Row ${index + 1}: ${problem}`,
+          'CONDITIONAL_PRESENCE',
+          GTFS_TABLES.TRANSFERS,
+          index + 1
+        );
+      }
+    });
+  }
+
+  /**
+   * Where several rider categories are eligible for the same fare product,
+   * exactly one of them must be the default, since that is the one shown to
+   * the rider.
+   */
+  validateRiderCategoryDefaults() {
+    const categories = this.gtfsParser.getFileDataSyncTyped(
+      GTFS_TABLES.RIDER_CATEGORIES
+    );
+    if (categories.length === 0) {
+      return;
+    }
+
+    const isDefault = new Map(
+      categories.map((row) => [
+        String(row.rider_category_id ?? ''),
+        String(row.is_default_fare_category ?? '').trim() === '1',
+      ])
+    );
+
+    const products = this.gtfsParser.getFileDataSyncTyped(
+      GTFS_TABLES.FARE_PRODUCTS
+    );
+    const categoriesByProduct = new Map<string, Set<string>>();
+    for (const product of products) {
+      const productId = String(product.fare_product_id ?? '');
+      const categoryId = String(product.rider_category_id ?? '').trim();
+      if (productId === '' || categoryId === '') {
+        continue;
+      }
+      const set = categoriesByProduct.get(productId) ?? new Set<string>();
+      set.add(categoryId);
+      categoriesByProduct.set(productId, set);
+    }
+
+    for (const [productId, eligible] of categoriesByProduct) {
+      if (eligible.size < 2) {
+        continue;
+      }
+      const defaults = [...eligible].filter((id) => isDefault.get(id) === true);
+      if (defaults.length !== 1) {
+        this.addError(
+          `fare_product_id '${productId}' is eligible for ${eligible.size} rider categories but ${defaults.length} of them are marked is_default_fare_category=1; exactly one is required`,
+          'RIDER_CATEGORY_DEFAULT',
+          GTFS_TABLES.RIDER_CATEGORIES
+        );
+      }
+    }
+  }
+
+  /**
+   * Every foreign key the fares tables declare in the spec, checked against the
+   * tables it names. A field naming two tables (network_id) matches a value
+   * present in either.
+   */
+  validateFaresReferences() {
+    const faresTables = [
+      GTFS_TABLES.TIMEFRAMES,
+      GTFS_TABLES.FARE_PRODUCTS,
+      GTFS_TABLES.FARE_LEG_RULES,
+      GTFS_TABLES.FARE_LEG_JOIN_RULES,
+      GTFS_TABLES.FARE_TRANSFER_RULES,
+      GTFS_TABLES.STOP_AREAS,
+      GTFS_TABLES.ROUTE_NETWORKS,
+    ];
+    const valueCache = new Map<string, Set<string>>();
+
+    for (const table of faresTables) {
+      const rows = this.gtfsParser.getFileDataSyncTyped(table);
+      if (rows.length === 0) {
+        continue;
+      }
+      const specs = GTFS_FIELD_SPECS[table];
+      if (!specs) {
+        continue;
+      }
+
+      for (const spec of Object.values(specs)) {
+        const targets = spec.foreignKey;
+        if (!targets || targets.length === 0) {
+          continue;
+        }
+        const known = new Set<string>();
+        for (const target of targets) {
+          for (const value of this.collectValues(
+            target.file,
+            target.field,
+            valueCache
+          )) {
+            known.add(value);
+          }
+        }
+
+        const targetNames = targets
+          .map(
+            (target) => `${target.file.replace(/\.txt$/, '')}.${target.field}`
+          )
+          .join(' or ');
+
+        rows.forEach((row, index: number) => {
+          const value = String(row[spec.name] ?? '').trim();
+          if (value === '' || known.has(value)) {
+            return;
+          }
+          this.addError(
+            `Row ${index + 1}: ${spec.name} '${value}' not found in ${targetNames}`,
+            'INVALID_REFERENCE',
+            table,
+            index + 1
+          );
+        });
+      }
+    }
+  }
+
+  /** Distinct non-empty values of one column, memoized across foreign keys. */
+  private collectValues(
+    file: string,
+    field: string,
+    cache: Map<string, Set<string>>
+  ): Set<string> {
+    const key = `${file}:${field}`;
+    const cached = cache.get(key);
+    if (cached) {
+      return cached;
+    }
+    const values = new Set<string>();
+    for (const row of this.gtfsParser.getFileDataSyncTyped(file)) {
+      const value = String(row[field] ?? '').trim();
+      if (value !== '') {
+        values.add(value);
+      }
+    }
+    cache.set(key, values);
+    return values;
   }
 
   // Helper methods
