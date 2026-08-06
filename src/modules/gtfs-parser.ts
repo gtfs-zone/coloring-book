@@ -4,6 +4,7 @@ import { CONFIG } from '../config.js';
 import { GTFSDatabase, GTFSDatabaseRecord } from './gtfs-database.js';
 import { GTFS_FILES, GTFSFilePresence, GTFS_TABLES } from '../types/gtfs.js';
 import { feedProgressIndicator } from './feed-progress-indicator.js';
+import { notify } from './notification-system.js';
 import {
   ALL_GTFS_FILES,
   makeHeaderOnlyCSV,
@@ -820,8 +821,11 @@ export class GTFSParser {
         }
       }
 
+      await this.normalizeNetworks();
+
       // A fresh import has no patches yet: blobs are current at version 0.
-      await this.gtfsDatabase.setBlobVersion(0);
+      // Flushing here also persists whatever normalizeNetworks synthesized.
+      await this.persistDirtyBlobs(0);
 
       feedProgressIndicator.updateProgress(operation, 100, 'Complete!');
       feedProgressIndicator.finishLoading(operation);
@@ -834,6 +838,97 @@ export class GTFSParser {
       feedProgressIndicator.finishLoading(operation);
       throw error;
     }
+  }
+
+  /**
+   * Collapse the two on-disk forms of network membership into one in-memory model.
+   *
+   * GTFS lets a feed name its networks either in `networks.txt` +
+   * `route_networks.txt` or in a `routes.network_id` column, and forbids both at
+   * once. The app always works from the two tables, so a feed that arrived in
+   * the inline form is expanded into them here. The form it arrived in is
+   * remembered so an unedited feed exports the way it came in.
+   *
+   * These are derived import state, not user edits, so they are written
+   * directly rather than recorded as patches.
+   */
+  private async normalizeNetworks(): Promise<void> {
+    const networks = this.gtfsData[GTFS_TABLES.NETWORKS]?.data ?? [];
+    const routeNetworks = this.gtfsData[GTFS_TABLES.ROUTE_NETWORKS]?.data ?? [];
+    const routes = this.gtfsData[GTFS_TABLES.ROUTES]?.data ?? [];
+
+    if (networks.length > 0 || routeNetworks.length > 0) {
+      console.log(
+        `[Networks] feed uses networks.txt / route_networks.txt: ${networks.length} network(s), ${routeNetworks.length} assignment(s)`
+      );
+
+      // route_networks may name a network that networks.txt never defined.
+      // The canonical model needs a row for it, or it is invisible everywhere.
+      const defined = new Set(
+        networks
+          .map((n) => String(n.network_id ?? ''))
+          .filter((id) => id !== '')
+      );
+      const undefinedIds = new Set<string>();
+      for (const row of routeNetworks) {
+        const id = String(row.network_id ?? '');
+        if (id !== '' && !defined.has(id)) {
+          undefinedIds.add(id);
+        }
+      }
+      if (undefinedIds.size > 0) {
+        console.warn(
+          `[Networks] ${undefinedIds.size} network(s) referenced by route_networks.txt are missing from networks.txt, synthesizing them`
+        );
+        await this.gtfsDatabase.insertRows(
+          'networks',
+          [...undefinedIds].map((id) => ({ network_id: id, network_name: '' }))
+        );
+      }
+
+      const ignored = routes.filter(
+        (r) => String(r.network_id ?? '').trim() !== ''
+      ).length;
+      if (ignored > 0) {
+        console.warn(
+          `[Networks] ignoring routes.network_id on ${ignored} route(s): the feed also defines networks in its own files`
+        );
+        notify.warning(
+          `This feed defines networks in networks.txt or route_networks.txt and also sets network_id on ${ignored} route${ignored === 1 ? '' : 's'} in routes.txt. GTFS forbids both, so the routes.network_id values are ignored and will not be exported.`,
+          { duration: 12000 }
+        );
+      }
+
+      await this.gtfsDatabase.setNetworksMode('files');
+      return;
+    }
+
+    const ids = new Set<string>();
+    const assignments: GTFSDatabaseRecord[] = [];
+    for (const route of routes) {
+      const networkId = String(route.network_id ?? '').trim();
+      const routeId = String(route.route_id ?? '');
+      if (networkId === '' || routeId === '') {
+        continue;
+      }
+      ids.add(networkId);
+      assignments.push({ network_id: networkId, route_id: routeId });
+    }
+
+    if (ids.size > 0) {
+      console.log(
+        `[Networks] expanding routes.network_id into ${ids.size} network(s) and ${assignments.length} assignment(s)`
+      );
+      await this.gtfsDatabase.insertRows(
+        'networks',
+        [...ids].map((id) => ({ network_id: id, network_name: '' }))
+      );
+      await this.gtfsDatabase.insertRows('route_networks', assignments);
+    } else {
+      console.log('[Networks] feed defines no networks');
+    }
+
+    await this.gtfsDatabase.setNetworksMode('inline');
   }
 
   private getTableName(fileName: string): string {
@@ -1042,6 +1137,65 @@ export class GTFSParser {
   }
 
   /**
+   * Decide which of the two network forms this export writes.
+   *
+   * Naming a network is the thing that forces the files form: a name has
+   * nowhere to live in a `routes.network_id` column. Otherwise a feed that
+   * arrived as files goes back out as files, and everything else takes the
+   * lighter inline form.
+   */
+  private async resolveNetworksExport(): Promise<{
+    useFiles: boolean;
+    networkByRoute: Map<string, string>;
+  }> {
+    const networks = await this.gtfsDatabase.getAllRows('networks');
+    const routeNetworks = await this.gtfsDatabase.getAllRows('route_networks');
+    const anyNamed = networks.some(
+      (n) => String(n.network_name ?? '').trim() !== ''
+    );
+    const mode = await this.gtfsDatabase.getNetworksMode();
+    const useFiles = anyNamed || mode === 'files';
+
+    const networkByRoute = new Map<string, string>();
+    for (const row of routeNetworks) {
+      const routeId = String(row.route_id ?? '');
+      const networkId = String(row.network_id ?? '');
+      if (routeId !== '' && networkId !== '') {
+        networkByRoute.set(routeId, networkId);
+      }
+    }
+
+    console.log(
+      `[Networks] exporting as ${useFiles ? 'networks.txt + route_networks.txt' : 'routes.network_id'} (mode ${mode}, ${anyNamed ? 'named' : 'unnamed'})`
+    );
+    return { useFiles, networkByRoute };
+  }
+
+  /**
+   * Rewrite `routes.network_id` from the canonical tables, or strip it.
+   *
+   * The stored column is never read after import, so exporting it verbatim
+   * would ship whatever the feed arrived with rather than what the user edited.
+   * Dropping the key rather than blanking it keeps the column out of the CSV
+   * entirely when no route is assigned, since the header is the union of keys.
+   */
+  private applyNetworkColumn(
+    row: GTFSDatabaseRecord,
+    useFiles: boolean,
+    networkByRoute: Map<string, string>
+  ): GTFSDatabaseRecord {
+    const networkId = useFiles
+      ? undefined
+      : networkByRoute.get(String(row.route_id ?? ''));
+    if (networkId !== undefined) {
+      return { ...row, network_id: networkId };
+    }
+    const stripped = { ...row };
+    delete stripped.network_id;
+    return stripped;
+  }
+
+  /**
    * Format field value for export (ensures proper formatting, no scientific notation)
    */
   async exportAsZip() {
@@ -1060,12 +1214,26 @@ export class GTFSParser {
       }
 
       const zip = new JSZip();
+      const { useFiles, networkByRoute } = await this.resolveNetworksExport();
 
       for (const fileName of fileNames) {
         try {
+          if (
+            !useFiles &&
+            (fileName === GTFS_TABLES.NETWORKS ||
+              fileName === GTFS_TABLES.ROUTE_NETWORKS)
+          ) {
+            continue;
+          }
+
           // Get data from IndexedDB first
           const tableName = this.getTableName(fileName);
-          const rows = await this.gtfsDatabase.getAllRows(tableName);
+          let rows = await this.gtfsDatabase.getAllRows(tableName);
+          if (fileName === GTFS_TABLES.ROUTES) {
+            rows = rows.map((row) =>
+              this.applyNetworkColumn(row, useFiles, networkByRoute)
+            );
+          }
 
           // Skip header-only files: don't include empty tables in the export.
           if (
