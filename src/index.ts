@@ -39,6 +39,7 @@ import { PanelResizer } from './modules/panel-resizer';
 import { LevelsController } from './modules/levels-controller';
 import { feedProgressIndicator } from './modules/feed-progress-indicator';
 import { CONFIG } from './config';
+import { initFieldTooltipPortal } from './utils/tooltip-position';
 import './styles/main.css';
 
 declare global {
@@ -123,6 +124,7 @@ export class GTFSEditor {
 
     const appContainer = document.querySelector<HTMLElement>('.app-container')!;
     new PanelResizer(appContainer, this.mapController);
+    initFieldTooltipPortal();
 
     // Inject patchManager so edit operations are recorded
     this.gtfsParser.setPatchManager(this.patchManager);
