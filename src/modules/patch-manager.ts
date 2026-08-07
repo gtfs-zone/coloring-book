@@ -446,6 +446,19 @@ export class PatchManager {
     return this.currentVersion;
   }
 
+  /**
+   * Reset in-memory version bookkeeping after the underlying stores are wiped
+   * for a new/replacement feed (patches, snapshots, and meta are all cleared
+   * by GTFSDatabase.clearDatabase()). Without this, appendAndPush's stale
+   * currentVersion/headVersion from the previous feed cause a spurious
+   * deletePatchesAfter() call against the now-empty patches store on the
+   * first edit of the new feed.
+   */
+  resetState(): void {
+    this.currentVersion = 0;
+    this.headVersion = 0;
+  }
+
   async jumpToVersion(target: number): Promise<void> {
     if (target === this.currentVersion) {
       return;

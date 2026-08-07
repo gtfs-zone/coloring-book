@@ -470,6 +470,26 @@ export class ScheduleController {
     this.dataProcessor.invalidateRouteSource();
   }
 
+  /**
+   * Full reset for a new/replacement feed.
+   *
+   * invalidateCaches() alone is not enough here: it runs on every patch event,
+   * but importing a feed clears IndexedDB without going through the patch
+   * system, so it never fires. Without this, re-rendering the same
+   * route/service/direction id (common when re-uploading a corrected feed)
+   * could reuse this.timetableDataCache or the GTFSRouteSource's own caches
+   * from the previous feed, and currentRouteId/currentServiceId/pendingStop
+   * would still point at state that may no longer exist.
+   */
+  public resetForNewFeed(): void {
+    this.invalidateCaches();
+    this.currentRouteId = undefined;
+    this.currentServiceId = undefined;
+    this.currentDirectionId = undefined;
+    this.pendingStop = undefined;
+    this.resetTimetableScroll();
+  }
+
   private async getStopOptions(): Promise<OptionPickerItem[]> {
     if (this.stopOptions === null) {
       const stops = await this.gtfsParser.gtfsDatabase.queryRows('stops', {});

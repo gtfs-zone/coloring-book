@@ -39,6 +39,7 @@ interface PatchManagerRef {
     before: Record<string, unknown>,
     after: Record<string, unknown>
   ): Promise<void>;
+  resetState?(): void;
 }
 
 export class GTFSParser {
@@ -684,10 +685,34 @@ export class GTFSParser {
     }
   }
 
+  /**
+   * Reset all in-memory feed state before wiping IndexedDB for a new/replacement feed.
+   *
+   * Cancels any pending debounced blob write first: without this, a write scheduled
+   * by an edit to the *previous* feed can fire after clearDatabase() empties
+   * file_blobs, re-writing stale rows for whichever table it targeted (since it
+   * reads gtfsData, which at that point still holds the old feed's rows). This is
+   * a real bug fixed here, not just defensive cleanup.
+   */
+  private resetInMemoryFeedState(): void {
+    if (this.blobPersistTimer) {
+      clearTimeout(this.blobPersistTimer);
+      this.blobPersistTimer = null;
+    }
+    this.blobDirty.clear();
+    this.stopTimesByStopId.clear();
+    this.stopTimesByTripId.clear();
+    this.tripsByRouteId.clear();
+    this.shapeIdsCache = null;
+    this.passthroughFiles.clear();
+    this.gtfsData = {};
+    this.patchManager?.resetState?.();
+  }
+
   async initializeEmpty(): Promise<void> {
+    this.resetInMemoryFeedState();
     await this.gtfsDatabase.clearDatabase();
     this.gtfsDatabase.clearVirtualTables();
-    this.passthroughFiles.clear();
 
     for (const filename of ALL_GTFS_FILES) {
       const content = makeHeaderOnlyCSV(filename);
@@ -743,6 +768,7 @@ export class GTFSParser {
       );
 
       console.time('[GTFS] clearDatabase');
+      this.resetInMemoryFeedState();
       await this.gtfsDatabase.clearDatabase();
       this.gtfsDatabase.clearVirtualTables();
       console.timeEnd('[GTFS] clearDatabase');
