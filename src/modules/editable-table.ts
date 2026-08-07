@@ -316,8 +316,7 @@ export async function renderEditableTable(
       return `<th class="align-bottom">${renderFieldLabelContent(
         override?.label
           ? { ...fieldConfig, label: override.label }
-          : fieldConfig,
-        'bottom'
+          : fieldConfig
       )}</th>`;
     })
     .join('');

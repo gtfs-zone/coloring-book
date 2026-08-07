@@ -89,6 +89,20 @@ function escapeHtml(text: string | number | undefined): string {
 }
 
 /**
+ * Escape a string for safe embedding inside an HTML attribute value,
+ * including quote characters (unlike `escapeHtml`, which only needs to be
+ * safe as text content).
+ */
+function escapeAttr(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+/**
  * Get tooltip description for a field
  */
 function getFieldTooltip(config: FieldConfig): string {
@@ -170,13 +184,16 @@ export function buildFieldTooltipContent(config: FieldConfig): string {
 
 /**
  * Render the shared label content pattern: label text (linked to spec) + presence mark,
- * wrapped in a tooltip container showing structured field info on hover.
+ * wrapped in a tooltip trigger showing structured field info on hover.
  * Used by both form field labels and timetable trip property rows.
+ *
+ * The tooltip itself is portaled to `document.body` and positioned in the
+ * viewport by `src/utils/tooltip-position.ts` (see that file for why: DaisyUI's
+ * CSS tooltip gets clipped by the scrollable ancestors these labels render
+ * inside). There is no direction parameter here since the portal picks a
+ * position from the trigger's on-screen location, not a fixed CSS side.
  */
-export function renderFieldLabelContent(
-  config: FieldConfig,
-  tooltipDirection: 'top' | 'bottom' | 'left' | 'right' = 'right'
-): string {
+export function renderFieldLabelContent(config: FieldConfig): string {
   const specUrl = getSpecUrl(config.tableName);
   const tipContent = buildFieldTooltipContent(config);
   const labelText = escapeHtml(config.label);
@@ -186,17 +203,7 @@ export function renderFieldLabelContent(
   const presenceMark = renderPresenceMark(config);
 
   if (tipContent) {
-    const directionClass: Record<'top' | 'bottom' | 'left' | 'right', string> =
-      {
-        top: 'tooltip-top',
-        bottom: 'tooltip-bottom',
-        left: 'tooltip-left',
-        right: 'tooltip-right',
-      };
-    // `.tooltip-content` rather than `data-tip`: the latter renders through CSS
-    // `content:`, which would show the reference markup as literal text.
-    // `pointer-events-auto` is what makes the long descriptions scrollable.
-    return `<span class="tooltip ${directionClass[tooltipDirection]}"><span class="tooltip-content pointer-events-auto max-w-[36rem] max-h-[60vh] overflow-y-auto overflow-x-hidden text-left text-xs font-normal leading-snug whitespace-normal p-3">${tipContent}</span>${linkContent}${presenceMark}</span>`;
+    return `<span class="field-tooltip-trigger" tabindex="0" data-tooltip-content="${escapeAttr(tipContent)}">${linkContent}${presenceMark}</span>`;
   }
   return `${linkContent}${presenceMark}`;
 }
