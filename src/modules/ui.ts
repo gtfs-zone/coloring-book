@@ -270,6 +270,11 @@ export class UIController {
         throw new Error('Please upload a ZIP file containing GTFS data');
       }
 
+      // Drop cached timetable state from whatever feed was loaded before:
+      // it's keyed by route/service/direction ids, which can collide with
+      // the new feed's ids and would otherwise redisplay stale stop times.
+      this.scheduleController?.resetForNewFeed();
+
       // Parse the file
       const { unknownFiles } = await this.gtfsParser!.parseFile(file);
       if (unknownFiles.length > 0) {
@@ -400,6 +405,8 @@ export class UIController {
   async loadGTFSFromURL(url: string) {
     try {
       console.log('Loading GTFS from URL:', url);
+
+      this.scheduleController?.resetForNewFeed();
 
       const { unknownFiles } = await this.gtfsParser!.parseFromURL(url);
       if (unknownFiles.length > 0) {
@@ -1167,6 +1174,7 @@ export class UIController {
   async createNewFeed() {
     try {
       // Reset to empty GTFS feed
+      this.scheduleController?.resetForNewFeed();
       await this.gtfsParser!.initializeEmpty();
       this.updateFileList();
       await this.mapController!.updateMap();
