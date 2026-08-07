@@ -215,7 +215,7 @@ surprised it's there and incomplete.
 
 ---
 
-## Phase 3: Fuzzy time parsing everywhere, not just the timetable
+## Phase 3: Fuzzy time parsing everywhere, not just the timetable (done)
 
 **Goal:** Share the timetable's fuzzy time parser with every other place a
 Time-typed GTFS field is edited (frequencies.txt, booking_rules.txt, and any
@@ -238,25 +238,70 @@ Context:
   `src/utils/field-formatters.ts:100-140` (`timeFormatter`). Check whether it's
   still referenced anywhere before touching it.
 
-- [ ] In `coerceFieldValue()` (`src/utils/spec-field-edit.ts`), special-case
+- [x] In `coerceFieldValue()` (`src/utils/spec-field-edit.ts`), special-case
       `GTFSFieldType.Time`/`LocalTime` fields to run the input through
       `TimeFormatter.castTimeToHHMMSS()` before returning/validating.
-- [ ] Relax or adjust the Zod regex in `src/types/gtfs-field-types.ts:166-184` so
+- [x] Relax or adjust the Zod regex in `src/types/gtfs-field-types.ts:166-184` so
       it validates the *normalized* value, not the raw fuzzy input (the coercion
       step should already have normalized it by the time validation runs; confirm
       the order of operations in `spec-field-edit.ts` does coerce-then-validate).
-- [ ] Clean up the decorative HTML5 `pattern` attribute in
+- [x] Clean up the decorative HTML5 `pattern` attribute in
       `src/modules/schedule-controller.ts` (around lines 271-273) if it still
       forces a native `HH:MM:SS` validation bubble despite JS accepting fuzzy
       input - either loosen the pattern or remove it since `openInlineEditor`
       doesn't call `checkValidity()`/`reportValidity()` anyway.
-- [ ] Check whether `src/utils/field-formatters.ts`'s `timeFormatter` is dead
+- [x] Check whether `src/utils/field-formatters.ts`'s `timeFormatter` is dead
       code or still used; if unused, remove it to avoid a second parallel
       implementation. If used, decide whether to consolidate it to call
       `castTimeToHHMMSS` too.
-- [ ] Manually verify: edit a `frequencies.txt` `start_time` field with input
+- [x] Manually verify: edit a `frequencies.txt` `start_time` field with input
       like `9:5` and confirm it saves as `09:05:00`.
-- [ ] Commit: `feat(time): accept fuzzy time input on all Time fields, not just the timetable`
+- [x] Commit: `feat(time): accept fuzzy time input on all Time fields, not just the timetable`
+
+**Implementation notes / discoveries:**
+- Neither `frequencies.txt` nor `booking_rules.txt` has any editing UI at all
+  today (confirmed via a repo-wide search) - both tables are wired into the
+  database layer only. The manual-verify step above could not be performed
+  as originally written; instead this was verified directly against
+  `coerceFieldValue()` with a standalone script exercising `Time`/`Local
+  time` specs (`9:5` -> `09:05:00`).
+- `timeframes.txt`'s `start_time`/`end_time` (type `Local time`) are the one
+  table with a live Time-typed field going through the generic
+  `editable-table.ts` -> `spec-field-edit.ts` path today (via
+  `fares-modal.ts`), so that's the real-world beneficiary of this phase
+  until frequencies/booking_rules get an editor.
+- Found and fixed a real, separate bug while tracing this:
+  `mapGTFSTypeString()` (`gtfs-field-types.ts`) matches direct type strings
+  via `normalized in GTFSFieldType`, which checks enum *keys*
+  (`LocalTime`), not values (`'Local time'`). `'Time'` happened to match by
+  coincidence (key and value are both `'Time'`), but `'Local time'` never
+  matched anything and silently fell through to `Text`. Without this fix,
+  `timeframes.txt`'s fields would never have been recognized as time fields
+  by the new `isTimeField()` check, defeating the point of this phase for
+  the one table that currently has a live editor. Added an explicit
+  `'Local time'` case alongside the existing `'Unique ID'` one.
+- The Zod regex in `gtfs-field-types.ts:170,180`
+  (`/^\d{1,2}:\d{2}:\d{2}$/`) needed no change: `castTimeToHHMMSS()` always
+  pads the hour to 2 digits for every format it recognizes, so its output
+  already satisfies the existing regex. Confirmed the coerce-then-validate
+  order in both `editable-table.ts:555-567` and
+  `inline-editable-field.ts:358-363`.
+- `field-formatters.ts`'s `timeFormatter` was not dead code: `validate()` is
+  used by `gtfs-validator.ts` for raw imported-feed validation (left
+  untouched - that's validating file content, not user free-typed input,
+  and already accepts single-digit hours). `toDisplay`/`toGTFS` are wired
+  into `inline-editable-field.ts` (dormant today since no table on that path
+  has a Time field, but live plumbing) - consolidated both to delegate to
+  `TimeFormatter` instead of a second, buggier reimplementation (the old
+  `toGTFS` assumed exactly 3 colon-separated parts and never handled `H:M`/
+  `H:MM` input at all).
+- Removed the decorative `pattern` attribute from the timetable's time
+  editor (`schedule-controller.ts`) since `openInlineEditor` never calls
+  `checkValidity()`/`reportValidity()`, so it was misleading UI chrome
+  (implied a stricter format than what was actually accepted) rather than
+  functioning validation. Kept `pattern` as a general capability on
+  `InlineEditorOptions` (`inline-edit.ts`) since it's reusable infra, not
+  dead code, even though nothing uses it after this change.
 
 ---
 
