@@ -10,6 +10,7 @@
 
 import { GTFSFieldType, validateFieldType } from '../types/gtfs-field-types.js';
 import { fromInputValue, toInputValue } from './gtfs-date.js';
+import { TimeFormatter } from './time-formatter.js';
 
 export interface FieldFormatter {
   /**
@@ -104,25 +105,12 @@ const dateFormatter: FieldFormatter = {
  */
 const timeFormatter: FieldFormatter = {
   toDisplay(value: string | number): string {
-    const str = String(value).trim();
-    // Ensure HH:MM:SS format (pad single digit hours)
-    const parts = str.split(':');
-    if (parts.length === 3) {
-      const hours = parts[0].padStart(2, '0');
-      return `${hours}:${parts[1]}:${parts[2]}`;
-    }
-    return str;
+    return TimeFormatter.formatTimeWithSeconds(String(value).trim());
   },
 
   toGTFS(value: string): string {
-    // GTFS allows H:MM:SS or HH:MM:SS
-    // We'll normalize to HH:MM:SS
-    const parts = value.trim().split(':');
-    if (parts.length === 3) {
-      const hours = parts[0].padStart(2, '0');
-      return `${hours}:${parts[1]}:${parts[2]}`;
-    }
-    return value.trim();
+    // Accepts H:M, H:MM, HH:MM, HH:MM:SS and normalizes to HH:MM:SS.
+    return TimeFormatter.castTimeToHHMMSS(value);
   },
 
   validate(value: string | number): { valid: boolean; error?: string } {

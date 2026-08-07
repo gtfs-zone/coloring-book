@@ -268,9 +268,7 @@ export class ScheduleController {
       value: originalText === '--:--:--' ? '' : originalText,
       className: 'time-input-live w-20 text-center font-mono',
       placeholder: '--:--:--',
-      pattern:
-        '^([01]?[0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]$|^(2[4-9]|[3-9][0-9]):[0-5][0-9]:[0-5][0-9]$',
-      title: 'Enter time in HH:MM:SS format',
+      title: 'Enter a time, e.g. 9:30 or 09:30:00',
       onCommit: (value) => {
         void this.updateArrivalDepartureTime(
           tripId,
