@@ -403,6 +403,9 @@ export function mapGTFSTypeString(typeString: string): GTFSFieldType {
   if (normalized === 'Unique ID') {
     return GTFSFieldType.UniqueID;
   }
+  if (normalized === 'Local time') {
+    return GTFSFieldType.LocalTime;
+  }
   if (normalized === 'Language code') {
     return GTFSFieldType.LanguageCode;
   }

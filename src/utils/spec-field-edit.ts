@@ -11,6 +11,7 @@ import { GTFSSchemas } from '../types/gtfs.js';
 import { GTFSFieldType, mapGTFSTypeString } from '../types/gtfs-field-types.js';
 import { getGTFSPrimaryKey } from './gtfs-primary-keys.js';
 import { getEntityDisplay, renderOptionLabel } from './entity-display.js';
+import { TimeFormatter } from './time-formatter.js';
 import type { OptionPickerItem } from '../modules/option-picker-modal.js';
 import type { GTFSFieldSpec } from '../gtfs-spec/types.js';
 import type { z } from 'zod';
@@ -49,6 +50,16 @@ function isNumericField(spec: GTFSFieldSpec): boolean {
   );
 }
 
+/** Field types entered as a time of day, which accept fuzzy `H:M` input. */
+const TIME_FIELD_TYPES = new Set<GTFSFieldType>([
+  GTFSFieldType.Time,
+  GTFSFieldType.LocalTime,
+]);
+
+function isTimeField(spec: GTFSFieldSpec): boolean {
+  return TIME_FIELD_TYPES.has(mapGTFSTypeString(spec.type));
+}
+
 /** Which editor the field opens: a picker, a menu, or a live input. */
 export function specFieldKind(spec: GTFSFieldSpec): SpecFieldKind {
   if (spec.foreignKey && spec.foreignKey.length > 0) {
@@ -77,6 +88,9 @@ export function coerceFieldValue(
       return { error: 'Must be a number' };
     }
     return { value: num };
+  }
+  if (isTimeField(spec)) {
+    return { value: TimeFormatter.castTimeToHHMMSS(trimmed) };
   }
   return { value: trimmed };
 }
