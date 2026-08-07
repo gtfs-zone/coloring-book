@@ -204,7 +204,7 @@ export async function renderStopAreasField(
 ): Promise<string> {
   const stop_id = String(stop.stop_id ?? '');
   return `
-    <fieldset class="fieldset">
+    <fieldset class="fieldset isolate">
       <legend class="fieldset-legend">Areas</legend>
       <div class="${FIELD_CLASS}" data-stop-id="${escapeHtml(stop_id)}">${await renderContent(stop)}</div>
     </fieldset>
