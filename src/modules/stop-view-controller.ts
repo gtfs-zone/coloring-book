@@ -194,9 +194,9 @@ export class StopViewController {
 
     return `
       <div class="space-y-4">
-        <div class="flex items-center justify-between">
-          <h2 class="text-lg font-semibold">${renderCardLabel(getStopDisplay(stop as unknown as Record<string, string>))}</h2>
-          <button class="btn btn-sm btn-error btn-outline delete-stop-btn" data-stop-id="${stop.stop_id}" title="Delete">${renderTrashIcon()}</button>
+        <div class="flex items-center justify-between gap-2 min-w-0">
+          <h2 class="text-lg font-semibold truncate">${renderCardLabel(getStopDisplay(stop as unknown as Record<string, string>))}</h2>
+          <button class="btn btn-sm btn-error btn-outline delete-stop-btn shrink-0" data-stop-id="${stop.stop_id}" title="Delete">${renderTrashIcon()}</button>
         </div>
         <div class="card bg-base-100 shadow-lg">
           <div class="card-body p-4">
