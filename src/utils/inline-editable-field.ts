@@ -167,7 +167,7 @@ export async function renderInlineEditableField(
   const label = renderFieldLabel(config);
 
   if (!spec || config.readonly || config.recordId === undefined) {
-    return `<fieldset class="fieldset">${label}<span class="px-1 py-1.5 text-sm opacity-70">${displayHtml(raw, '-')}</span></fieldset>`;
+    return `<fieldset class="fieldset isolate">${label}<span class="px-1 py-1.5 text-sm opacity-70">${displayHtml(raw, '-')}</span></fieldset>`;
   }
 
   const kind = specFieldKind(spec);
@@ -179,7 +179,7 @@ export async function renderInlineEditableField(
   const placeholder = config.placeholder ?? '-';
 
   return `
-    <fieldset class="fieldset">
+    <fieldset class="fieldset isolate">
       ${label}
       <span
         class="${FIELD_CLASS} block w-full cursor-pointer truncate rounded-field border border-base-300 px-3 py-1.5 text-sm hover:bg-base-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
