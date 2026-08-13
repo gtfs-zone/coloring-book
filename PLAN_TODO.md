@@ -2,17 +2,16 @@
 
 ## Summary
 
-`TODO.md` is a flat, unprioritized scratchpad of 4 tooltip/scroll bugs, 3 smaller
-bugs/feats, and 2 large feats, plus a final group of 4 shapes/navbar items. This
-plan turns it into phases an agent can pick up one at a time. Phases 1-2 fix the
-tooltip/scroll bugs (they share one root cause). Phases 3-5 are the smaller
-independent bugs/feats. Phases 7-9 build the services timeline feature. Phases
-10-12 build the fares list-column feature. Phases 13-16 are the shapes/navbar
-items (icon swap, GPX upload flow, a rendering race, and navbar count bubbles).
+`TODO.md` is a flat, unprioritized scratchpad. This file is the actionable
+version, ordered small-fixes-first. Phases 1-5 are quick, independent bugs and
+feats. Phases 6-8 unify dangling reference handling into one coherent feature
+(detect generically, find from the home page, fix at the use site). Phases 9-10
+are the two stop/route diagram features shared with `../test-track`. Phases 11-12
+build the services timeline; Phases 13-15 build the fares list-column feature.
+Phases 16-17 are blocked on live reproduction and sit at the end deliberately.
 
-`TODO.md` itself is left as-is; this file is the actionable version. Do not delete
-items from `TODO.md` when you finish a phase here (it's a separate scratchpad the
-user maintains manually).
+`TODO.md` itself stays as the user's raw scratchpad. Do not delete items from it
+when you finish a phase here.
 
 ## Ground rules for whoever (agent) executes a phase
 
@@ -28,319 +27,34 @@ user maintains manually).
 - After finishing a phase, update this file: check off the completed items, and
   append any discoveries/surprises to that phase's notes so later phases (or a
   retry of this one) have accurate context.
+- `src/modules/page-content-renderer.ts` contains a literal NUL byte (see
+  Phase 10), so `rg`/`grep` silently skip it as binary. Use `rg --text` when
+  searching that file until Phase 10 fixes it.
 
 ---
 
-## Relevant context (read once, applies to Phases 1-2)
+## Phase 1: Don't open the Files modal after loading a feed
 
-Both tooltip mechanisms in the app:
+**Goal:** Loading a feed should leave you on the map, not behind the raw-file
+editor.
 
-1. **Structured tooltip** - `renderFieldLabelContent()` in
-   `src/utils/field-component.ts:176-199`. Used for every GTFS-spec field label
-   (trip property rows in the timetable, route/stop/fares property labels,
-   fares editable-table column headers). Renders:
-   ```html
-   <span class="tooltip tooltip-{direction}">
-     <span class="tooltip-content ... max-w-[36rem] max-h-[60vh] ...">...</span>
-     {label}{presence mark}
-   </span>
-   ```
-   `direction` defaults to `'right'` and callers can pass `'top'|'bottom'|'left'|'right'`.
-   `.tooltip-content` is DaisyUI's `position: absolute` popover.
+`src/modules/ui.ts` (~lines 299-303) unconditionally calls
+`document.getElementById('files-modal').showModal()` at the end of the post-load
+path, so the Files modal pops open every single time a feed is loaded.
 
-2. **Native `data-tip` tooltip** - ad hoc, used in `calendar-modal.ts`, `ui.ts`,
-   `atlas-search.ts`. Not part of these bugs.
-
-Ancestor containers that clip both axes (CSS overflow spec: setting one axis to
-non-`visible` forces the other to compute as `auto` too, even if only one axis is
-written):
-- `src/modules/browse-navigation.ts:409` - `overflow-y-auto` wraps every page.
-- `src/modules/modal-utils.ts:52` - `overflow-y-auto` wraps every modal body,
-  including the Fares modal.
-- `src/modules/timetable-renderer.ts:207` - `overflow-x-auto` (explicit on both axes).
-- `src/modules/editable-table.ts:383` - `overflow-x-auto` around the fares table.
-
-A 576px-wide tooltip (`max-w-[36rem]`) popping out of a narrow column/sticky cell
-inside any of these containers gets clipped whenever there isn't enough room in
-that direction. This is the shared root cause behind Bugs 1-3. Bug 4 is a
-different but related issue (tooltip *bleed* from an adjacent field, not clipping).
-
-There is a pre-existing `/* My hacks to fix the tooltip issues */` comment in
-`src/styles/main.css:132-153` (z-index bump on `.stop-name`, a `:before` rule that
-doesn't apply to `.tooltip-content`). Leave or adjust as needed but don't be
-surprised it's there and incomplete.
+- [ ] Delete that `showModal()` call only. Keep the `this.showFileList()` call
+      immediately above it so the list stays populated for when the modal is
+      opened deliberately.
+- [ ] Leave the other open sites alone: `ui.ts:217-222` (the `files-btn` click
+      handler), `ui.ts:564` (`showFileInEditor`) and `bottom-sheet.ts:219` are
+      all explicit user actions.
+- [ ] Manually verify: load a feed, confirm the map is visible and no modal
+      appears; then click the Files button and confirm the list is populated.
+- [ ] Commit: `fix(ui): stop opening the files modal after loading a feed`
 
 ---
 
-## Phase 1: Make `renderFieldLabelContent` tooltips edge-aware and clip-safe (done)
-
-**Goal:** Fix the shared component once instead of patching each call site.
-
-- [x] In `src/utils/field-component.ts`, rework `renderFieldLabelContent` so the
-      tooltip does not rely purely on a fixed CSS direction that can clip. Two
-      viable approaches, pick one after a quick spike:
-  - **Option A (simpler, prefer if it works):** Keep DaisyUI's CSS tooltip, but
-    at render time you don't know the trigger's position on screen, so a pure
-    CSS "flip direction near an edge" isn't possible without JS. Add a small
-    `pointerenter`-driven adjustment: after the tooltip shows, measure
-    `tooltip-content`'s `getBoundingClientRect()` and if it overflows the
-    viewport (or nearest scrollable ancestor), toggle a class that repositions
-    it (e.g. clamp `left`/`right` via inline style, or switch `tooltip-left`
-    class to `tooltip-right`).
-  - **Option B (more robust, more work):** Render the tooltip content into a
-    fixed-position element appended to `document.body` on hover/focus
-    (a lightweight portal), positioned via `getBoundingClientRect()` of the
-    trigger, removed on `pointerleave`/`blur`. This sidesteps all ancestor
-    `overflow` clipping entirely, at the cost of more DOM plumbing shared
-    across every call site.
-  - Ask the user which option to pursue if the spike for Option A looks fragile
-    (e.g. flashing/repositioning jank) before investing in Option B.
-  - **Chosen: Option B.** Research (see below) showed ancestor `overflow-auto`
-    containers can clip a 576px tooltip on either side, so Option A's
-    class-flip wouldn't reliably fix narrow-column cases (e.g. fares table
-    columns) - asked the user, confirmed Option B up front, no spike needed.
-- [x] Whatever approach is chosen, keep the existing `pointer-events-auto` /
-      scrollable-long-description behavior intact (some tooltips are long enough
-      to need internal scroll, per `max-h-[60vh] overflow-y-auto`).
-- [x] Manually verify against at least one narrow-column case (e.g. resize the
-      window or use a small viewport) to confirm the tooltip no longer clips.
-- [x] Commit: `fix(tooltip): make field label tooltips edge-aware and clip-safe`
-
-**Implementation notes / discoveries for Phase 2:**
-- New file `src/utils/tooltip-position.ts` owns the portal: a single
-  document-level delegated listener set (`pointerover`/`pointerout`,
-  `focusin`/`focusout`, `scroll`/`resize`), registered once via
-  `initFieldTooltipPortal()` called from `GTFSEditor`'s constructor in
-  `src/index.ts` (synchronous, alongside other document-level setup like
-  `notify.initialize()` - doesn't depend on GTFS data being loaded).
-- `renderFieldLabelContent(config)` no longer takes a `tooltipDirection`
-  parameter - positioning is now computed from the trigger's on-screen
-  location via `getBoundingClientRect()`, not a fixed CSS side. The only
-  caller that passed a direction, `editable-table.ts:316` (`'bottom'` for
-  fares table headers), was updated to drop the argument.
-- Markup changed from DaisyUI's `.tooltip`/`.tooltip-content` (CSS-only,
-  `position: absolute` relative to the trigger) to a
-  `.field-tooltip-trigger` span with a `data-tooltip-content` attribute
-  holding the tooltip's HTML (escaped for safe attribute embedding via a new
-  `escapeAttr()` helper in `field-component.ts` - `escapeHtml()` alone
-  doesn't escape quote characters, which would break out of the attribute
-  since tooltip content contains nested HTML like `<a href="...">`).
-- `tooltip-content`/`.tooltip` CSS classes were used *only* by
-  `field-component.ts` in the whole codebase (confirmed via search) - the
-  other 8 or so `.tooltip` usages elsewhere (`data-tip` attribute tooltips in
-  `ui.ts`, `calendar-modal.ts`, `atlas-search.ts`, index.html buttons) are a
-  separate, unrelated mechanism per the plan's original context section and
-  were intentionally left untouched.
-- Confirmed via a research pass that in all four ancestor-overflow contexts
-  (`browse-navigation.ts:409`, `modal-utils.ts:52`, `timetable-renderer.ts:207`,
-  `editable-table.ts:383`), `.tooltip-content`'s CSS `position: absolute`
-  offsetParent was always the immediate `.tooltip` trigger span (DaisyUI sets
-  `.tooltip { position: relative }`), never the scrollable ancestor itself -
-  those ancestors only mattered as clipping/scroll viewports. This is why a
-  portal to `document.body` with `position: fixed` was necessary rather than
-  a CSS-only positioning tweak.
-- No test infra (Playwright) is currently installed in the repo despite
-  CLAUDE.md referencing `pnpm test` - verified via `pnpm typecheck`,
-  `pnpm lint`, and `pnpm build` only, per the user testing manually.
-
----
-
-## Phase 2: Verify and finish the 4 specific tooltip/scroll bugs (done)
-
-**Goal:** Confirm Phase 1's fix resolves bugs 1-3, and separately fix bug 4
-(tooltip bleed) plus the route-page horizontal scroll.
-
-- [x] **Bug 1 (trip property tooltips cut off):** `src/modules/timetable-renderer.ts:280-283`
-      calls `renderFieldLabelContent(config)` with no direction (defaults `'right'`)
-      inside a pinned/sticky `<th>` column. Verify Phase 1's fix resolves clipping
-      here; if not, pass an explicit direction override for this call site.
-- [x] **Bug 2 (fares modal leftmost column tooltip cut off):**
-      `src/modules/editable-table.ts:309-322` calls `renderFieldLabelContent(...,
-      'bottom')` for every header, which centers the tooltip and clips left on the
-      leftmost column. Verify Phase 1's fix resolves it; if not, special-case the
-      leftmost column to use `'right'` direction instead of `'bottom'`.
-- [x] **Bug 3 (route page horizontal scroll):** Two separate causes, fix both:
-  - Unbounded flex title row: `src/modules/page-content-renderer.ts:590-592`
-    renders `<h2>${renderCardLabel(...)}</h2>` in a flex row with no `min-w-0`/
-    `truncate`, so a long `route_long_name` pushes the page wider and forces
-    horizontal scroll. Add `min-w-0` to the flex container and `truncate` (or
-    wrapping) to the `<h2>`. Apply the same fix to the identical pattern at
-    `src/modules/stop-view-controller.ts:197-199` for consistency.
-  - Confirm Phase 1's tooltip fix also resolves the second contributing cause
-    (route property field tooltips popping out of the `max-w-md` column via
-    `renderInlineEditableField` -> `renderFieldLabel` -> `renderFieldLabelContent`,
-    default `'right'` direction).
-- [x] **Bug 4 (Areas tooltip on stop page triggered from a weird location):**
-      `src/utils/stop-areas-field.ts:207-210` renders the "Areas" `<legend>` with
-      no tooltip of its own. What the user sees is very likely the *previous*
-      field's tooltip (in `src/modules/stop-view-controller.ts:191-206`, fields
-      are rendered with `space-y-3` and no isolation), bleeding visually into the
-      Areas row when that field has a long description. Reproduce by finding a
-      stop where the field directly before "Areas" (in stops.txt schema order)
-      has a long presence/description tooltip, hover just past the label, and
-      confirm the bleed. Fix by giving the field label's tooltip container
-      enough stacking/spacing isolation (e.g. `isolate` + adequate `space-y`) so
-      a long tooltip can't visually overlap the next field's label area.
-- [x] Commit: `fix(ui): resolve tooltip clipping and route page horizontal scroll`
-
-**Implementation notes / discoveries:**
-- Bugs 1, 2, and the tooltip half of Bug 3 needed no further work: Phase 1's
-  portal (`tooltip-position.ts`) computes position from
-  `getBoundingClientRect()` and clamps to the viewport regardless of call
-  site or CSS direction, so `renderFieldLabelContent`'s single no-argument
-  call shape already covers the sticky trip-property column, the fares
-  table's leftmost header, and the `max-w-md` route/stop property columns.
-  No call sites needed a direction override (there is no direction parameter
-  anymore per Phase 1).
-- Bug 3's non-tooltip cause was real and separate: `page-content-renderer.ts`
-  (route page) and `stop-view-controller.ts` (stop page) both rendered the
-  entity name in an unbounded flex row. Fixed by adding `min-w-0` to the flex
-  container, `truncate` to the `<h2>`, and `shrink-0` to the delete button so
-  a long `route_long_name`/stop name truncates instead of pushing the page
-  wide enough to force horizontal scroll.
-- Bug 4 turned out to already be fixed as a side effect of Phase 1: the old
-  bleed was DaisyUI's `.tooltip-content` (`position: absolute`, offsetParent
-  the trigger span) rendering past its own trigger's box in document flow,
-  visually overlapping whatever was stacked below it (the Areas legend has no
-  tooltip of its own, so what the user saw hovering "near" Areas was actually
-  the previous field's popup bleeding down). The portal now renders
-  `position: fixed` on `document.body`, entirely outside the stacked
-  fieldset's DOM flow, so there is nothing left to bleed into a sibling's
-  box. Added `isolate` to the field fieldsets
-  (`inline-editable-field.ts`, `stop-areas-field.ts`) as a defensive
-  stacking-context boundary in case some other overlay is added later, but
-  no code change was otherwise needed for this bug to be resolved. Could not
-  do a live-browser repro in this environment; user should spot-check with a
-  stop whose field just before "Areas" has a long tooltip description.
-
----
-
-## Phase 3: Fuzzy time parsing everywhere, not just the timetable (done)
-
-**Goal:** Share the timetable's fuzzy time parser with every other place a
-Time-typed GTFS field is edited (frequencies.txt, booking_rules.txt, and any
-future generic-table Time field), instead of forcing strict `HH:MM:SS`.
-
-Context:
-- `src/utils/time-formatter.ts` `TimeFormatter.castTimeToHHMMSS()` already
-  accepts `H:M`, `H:MM`, `HH:MM`, `HH:MM:SS` (including 24+ hour times) and
-  normalizes to `HH:MM:SS`. It's only wired into
-  `src/modules/schedule-controller.ts` (timetable time-cell editor).
-- The generic spec-driven edit path does not use it:
-  `src/utils/spec-field-edit.ts` `coerceFieldValue()` passes Time fields through
-  as raw trimmed text, and `validateFieldValue()` then runs the value through
-  the field's Zod schema, which is `z.string().regex(/^\d{1,2}:\d{2}:\d{2}$/,
-  ...)` in `src/types/gtfs-field-types.ts:166-184` - requires exactly 3
-  colon-separated parts, so `9:30` fails outright.
-- Fields typed `'Time'` in the spec: `frequencies.txt` (`start_time`,
-  `end_time`), `stop-times.ts`, `booking-rules.ts`.
-- There's also a second, separate, slightly different implementation in
-  `src/utils/field-formatters.ts:100-140` (`timeFormatter`). Check whether it's
-  still referenced anywhere before touching it.
-
-- [x] In `coerceFieldValue()` (`src/utils/spec-field-edit.ts`), special-case
-      `GTFSFieldType.Time`/`LocalTime` fields to run the input through
-      `TimeFormatter.castTimeToHHMMSS()` before returning/validating.
-- [x] Relax or adjust the Zod regex in `src/types/gtfs-field-types.ts:166-184` so
-      it validates the *normalized* value, not the raw fuzzy input (the coercion
-      step should already have normalized it by the time validation runs; confirm
-      the order of operations in `spec-field-edit.ts` does coerce-then-validate).
-- [x] Clean up the decorative HTML5 `pattern` attribute in
-      `src/modules/schedule-controller.ts` (around lines 271-273) if it still
-      forces a native `HH:MM:SS` validation bubble despite JS accepting fuzzy
-      input - either loosen the pattern or remove it since `openInlineEditor`
-      doesn't call `checkValidity()`/`reportValidity()` anyway.
-- [x] Check whether `src/utils/field-formatters.ts`'s `timeFormatter` is dead
-      code or still used; if unused, remove it to avoid a second parallel
-      implementation. If used, decide whether to consolidate it to call
-      `castTimeToHHMMSS` too.
-- [x] Manually verify: edit a `frequencies.txt` `start_time` field with input
-      like `9:5` and confirm it saves as `09:05:00`.
-- [x] Commit: `feat(time): accept fuzzy time input on all Time fields, not just the timetable`
-
-**Implementation notes / discoveries:**
-- Neither `frequencies.txt` nor `booking_rules.txt` has any editing UI at all
-  today (confirmed via a repo-wide search) - both tables are wired into the
-  database layer only. The manual-verify step above could not be performed
-  as originally written; instead this was verified directly against
-  `coerceFieldValue()` with a standalone script exercising `Time`/`Local
-  time` specs (`9:5` -> `09:05:00`).
-- `timeframes.txt`'s `start_time`/`end_time` (type `Local time`) are the one
-  table with a live Time-typed field going through the generic
-  `editable-table.ts` -> `spec-field-edit.ts` path today (via
-  `fares-modal.ts`), so that's the real-world beneficiary of this phase
-  until frequencies/booking_rules get an editor.
-- Found and fixed a real, separate bug while tracing this:
-  `mapGTFSTypeString()` (`gtfs-field-types.ts`) matches direct type strings
-  via `normalized in GTFSFieldType`, which checks enum *keys*
-  (`LocalTime`), not values (`'Local time'`). `'Time'` happened to match by
-  coincidence (key and value are both `'Time'`), but `'Local time'` never
-  matched anything and silently fell through to `Text`. Without this fix,
-  `timeframes.txt`'s fields would never have been recognized as time fields
-  by the new `isTimeField()` check, defeating the point of this phase for
-  the one table that currently has a live editor. Added an explicit
-  `'Local time'` case alongside the existing `'Unique ID'` one.
-- The Zod regex in `gtfs-field-types.ts:170,180`
-  (`/^\d{1,2}:\d{2}:\d{2}$/`) needed no change: `castTimeToHHMMSS()` always
-  pads the hour to 2 digits for every format it recognizes, so its output
-  already satisfies the existing regex. Confirmed the coerce-then-validate
-  order in both `editable-table.ts:555-567` and
-  `inline-editable-field.ts:358-363`.
-- `field-formatters.ts`'s `timeFormatter` was not dead code: `validate()` is
-  used by `gtfs-validator.ts` for raw imported-feed validation (left
-  untouched - that's validating file content, not user free-typed input,
-  and already accepts single-digit hours). `toDisplay`/`toGTFS` are wired
-  into `inline-editable-field.ts` (dormant today since no table on that path
-  has a Time field, but live plumbing) - consolidated both to delegate to
-  `TimeFormatter` instead of a second, buggier reimplementation (the old
-  `toGTFS` assumed exactly 3 colon-separated parts and never handled `H:M`/
-  `H:MM` input at all).
-- Removed the decorative `pattern` attribute from the timetable's time
-  editor (`schedule-controller.ts`) since `openInlineEditor` never calls
-  `checkValidity()`/`reportValidity()`, so it was misleading UI chrome
-  (implied a stricter format than what was actually accepted) rather than
-  functioning validation. Kept `pattern` as a general capability on
-  `InlineEditorOptions` (`inline-edit.ts`) since it's reusable infra, not
-  dead code, even though nothing uses it after this change.
-
----
-
-## Phase 4: Fix "Is Default Fare Category" / "Fare Media Type" click doing nothing
-
-**Goal:** Root-cause and fix the unclickable enum fields in the Fares modal.
-
-Static analysis found no defect: the fields (`rider_categories.txt
-is_default_fare_category`, `fare_media.txt fare_media_type`) are both `Enum`
-type, go through the same generic `editable-table.ts` path as other working
-enum fields, and nothing distinguishes them in code. **This needs live
-reproduction.** The user will be the tester.
-
-- [ ] Ask the user to open the Fares modal on a feed with `rider_categories.txt`
-      / `fare_media.txt` rows, open devtools console, click the affected cell,
-      and report back:
-  - Whether any console error/warning appears.
-  - Whether `document.querySelector('.editable-cell[data-field="is_default_fare_category"]')`
-    (or `fare_media_type`) returns an element, and whether it receives the click
-    (e.g. check via `getComputedStyle(el).pointerEvents` and whether another
-    element overlaps it - `document.elementFromPoint(x, y)` at the cell's
-    coordinates).
-  - Whether `GTFS_FIELD_SPECS['rider_categories.txt']['is_default_fare_category']`
-    (and the `fare_media.txt` equivalent) exist in the console.
-- [ ] Based on findings, likely candidates to check/fix:
-  - `resolve()` in `src/modules/editable-table.ts` (around lines 444-460) silently
-    returns `null` (no-op, no console output) if the field spec lookup fails -
-    this exactly reproduces "click does nothing" with zero error. If this is the
-    cause, fix the spec/field name mismatch causing the lookup miss.
-  - An overlapping element (e.g. tooltip markup from `renderFieldLabelContent`)
-    intercepting the click - if so, fix the CSS stacking/pointer-events.
-- [ ] Fix the confirmed root cause.
-- [ ] Manually re-verify the fix with the user (click the field, confirm the
-      enum picker opens and a selection commits).
-- [ ] Commit: `fix(fares): make is_default_fare_category and fare_media_type editable`
-
----
-
-## Phase 5: Escape closes only the topmost modal
+## Phase 2: Escape closes only the topmost modal
 
 **Goal:** When a multiselect-with-search picker is open on top of another modal
 (e.g. the Fares modal), Escape should close only the picker, not both.
@@ -358,8 +72,8 @@ Context:
   modals' keydown listeners are live simultaneously.
 
 - [ ] In `src/modules/modal-utils.ts`, add a small module-level stack (array) of
-      currently-open modal instances (e.g. push an identifier/handle in
-      `showModal()`, pop it in `close()`).
+      currently-open modal instances (push an identifier/handle in `showModal()`,
+      pop it in `close()`).
 - [ ] In the `keydown` handler, before acting on `Escape`/`Enter`, check that this
       modal instance is the topmost entry in the stack; if not, return early
       without calling `preventDefault()`/`triggerAction()` (so the topmost modal's
@@ -373,27 +87,283 @@ Context:
 
 ---
 
-## Phase 6: Clicking a stop marker in the timetable focuses that stop
+## Phase 3: Swap the navbar shapes icon to the brouter waypoints icon
 
-**Goal:** Small standalone feat, listed separately from the timeline work below.
+**Goal:** Purely an icon swap. `shapes-btn`'s click handler
+(`src/index.ts:272-279`), its title "Shapes", and `ShapesManager.open()` are all
+unchanged.
 
-- [ ] Find where the timetable renders stop markers/labels (likely
-      `src/modules/timetable-renderer.ts`, the sticky left column showing stop
-      names) and where "focus a stop" navigation already happens elsewhere (e.g.
-      `page-state-manager.ts` `setPageState({ type: 'stop', stop_id })`, or
-      however the map highlights/pans to a stop - check `map-controller.ts` /
-      `interaction-handler.ts` for an existing "focus stop" helper to reuse
-      rather than reinventing it).
-- [ ] Wire a click handler on the stop marker/label cell that calls the existing
-      focus-stop mechanism with that row's `stop_id`.
-- [ ] Manually verify: open a timetable, click a stop name, confirm the map (or
-      relevant view) focuses that stop the same way other "focus stop" entry
-      points in the app do.
-- [ ] Commit: `feat(timetable): focus stop on marker click`
+`src/index.html:69-88` is the `shapes-btn` navbar button, currently using a
+generic "layers" SVG path. The desired replacement is the existing "Open in
+brouter" icon: `renderRouteWaypointsIcon` in `src/modules/modal-utils.ts:13`,
+used at `src/modules/timetable-renderer.ts:385`.
+
+- [ ] Replace the `shapes-btn` SVG with the markup produced by
+      `renderRouteWaypointsIcon`. Since the icon is a template-string helper
+      rather than static markup, set `innerHTML` from `src/index.ts` (where
+      `shapes-btn` is wired, lines 272-279) at startup instead of hardcoding SVG
+      in `index.html`.
+- [ ] Confirm the icon renders at the same size as sibling navbar icons: check
+      `calendar-btn` for the expected size class, since `renderRouteWaypointsIcon`
+      is normally invoked at `h-3 w-3` in the timetable context.
+- [ ] Manually verify: navbar shapes button now shows the same icon as
+      "Open in brouter" in the timetable view, click behavior unchanged.
+- [ ] Commit: `feat(navbar): use the brouter waypoints icon for the shapes button`
 
 ---
 
-## Phase 7-9: Services timeline view replaces service lists (large feat)
+## Phase 4: File-first GPX upload flow for new shapes
+
+**Goal:** Pick the GPX file first, then name the shape, defaulting to the
+filename.
+
+Currently the "+ New shape from GPX" button (`src/modules/shapes-manager.ts`
+`renderBody()`, lines 36 and 71) asks for a Shape ID first via a text-entry modal
+(lines 245-253), validates uniqueness (275-280), *then* calls `pickGPXFile()`
+(line 282, defined lines 14-30), then `parseGPX(file, shapeId)`
+(`src/utils/gpx-parser.ts`, line 289). `replaceShape()` (lines 184-240) already
+does file-first for the *replace* flow: reuse that ordering. `newShape()`
+(lines 242-315) is the function to restructure.
+
+- [ ] Restructure `newShape()` to call `pickGPXFile()` before asking for a
+      shape ID, mirroring `replaceShape()`.
+- [ ] Update the button UI (`renderBody()`, lines 36 and 71): change the
+      label/affordance from "+ New shape from GPX" to an upload-first control,
+      reusing `renderUploadIcon()` from `modal-utils.ts` (already used for the
+      "Replace with GPX" button at line 49) for visual consistency.
+- [ ] After the file is picked, default the shape ID text input to the filename
+      with the `.gpx` extension stripped, but keep the input editable before the
+      user confirms. Do not auto-lock the id. Keep the existing uniqueness
+      validation (lines 275-280) running against whatever id is in the input at
+      confirm time, not just the default.
+- [ ] Manually verify: click the upload button, pick a `some-name.gpx` file,
+      confirm the shape ID field pre-fills to `some-name`, edit it, confirm the
+      shape is created under the edited id.
+- [ ] Commit: `feat(shapes): upload GPX first and default the shape id to the filename`
+
+---
+
+## Phase 5: Navbar item count bubbles
+
+**Goal:** Show a notification-style count bubble on each of the 4 navbar items.
+
+There is no unified tab bar; the 4 items are separate navbar buttons opening
+separate modals:
+- Services -> `calendar-btn` (`src/index.html:90-109`), wired `src/index.ts:292-303`.
+  Count is unique `service_id`s across `calendar`/`calendar_dates`; check
+  `page-content-renderer.ts` `getServices()` for the existing query to reuse.
+- Shapes -> `shapes-btn` (`src/index.html:69-88`), wired `src/index.ts:272-279`.
+  Count is unique `shape_id`s, available via `gtfsParser.getShapeIds()` (used in
+  `schedule-controller.ts:408-439`).
+- Fare products -> `fares-btn` (`src/index.html:111-130`), wired
+  `src/index.ts:282-289`. Count is `fare_products.txt` row count; the existing
+  per-table count pattern to copy is `fares-modal.ts:496-504`.
+- Changes -> `history-btn` (`src/index.html:254-273`), wired `src/index.ts:332-334`.
+  Count is pending/unsaved patch count; check `patch-manager.ts` for the count
+  already used by `history-controller.ts` (lines 32-40, 167, 197).
+
+Badge convention to follow (already used throughout, see `ui.ts:518` and
+`fares-modal.ts:496-504`): a DaisyUI `<span class="badge badge-sm ...">`.
+
+- [ ] Implement the four count sources, reusing the existing query helpers above.
+- [ ] Add a `badge badge-sm` bubble to each of the 4 navbar buttons.
+- [ ] Wire count updates to fire whenever the underlying data changes (patch
+      recorded, DB write, feed import, undo/redo). Check how
+      `history-controller.ts` already refreshes its own badges as a model for
+      hooking into the right update events.
+- [ ] Manually verify: import a feed, confirm all 4 bubbles show correct initial
+      counts; make an edit affecting one category, confirm its bubble updates
+      without a page refresh.
+- [ ] Commit: `feat(navbar): show item counts as badge bubbles`
+
+---
+
+## Phases 6-8: Unified dangling reference handling
+
+### Guiding principle: surface, don't repair
+
+Nothing in this phase group may auto-blank, auto-remap, or hide a broken
+reference. The straight-line geometry fallback for a dangling `shape_id` already
+renders and stays. A route with a bad `agency_id` must become *visible*, not
+silently reparented. The goal is that a dangling reference is impossible to miss,
+easy to locate, and straightforward to repoint by hand.
+
+### Context: work already in progress
+
+There is uncommitted work in the tree that is the foundation for this. **Keep all
+of it**, do not revert it:
+
+- `src/modules/gtfs-validator.ts` - `ValidationMessage`/`ValidationResults` are
+  now exported, and `code` is propagated through `addError`/`addWarning`/
+  `addInfo` instead of being discarded as `_code`.
+- `src/modules/feed-issues.ts` (new) - `deriveFeedIssues()` groups error and
+  warning messages by `${file}:${code}` into label/count rows, with a
+  `CODE_LABELS` map and a `NOTES` map for consequences worth spelling out.
+  Module-level `setFeedIssues`/`getFeedIssues` cache the result so the panel does
+  not re-validate on every render (a full pass walks `stop_times`).
+- `src/utils/issue-card.ts` (new) - `renderIssueCard(title, rows)`, a warning
+  card that renders nothing when every count is zero.
+- `src/index.ts` - `validateAndUpdateInfo()` now runs on boot, publishes the
+  derived issues, and logs a summary.
+- `src/modules/page-content-renderer.ts` - the home page renders the card between
+  feed info and Agencies.
+
+The gap: the card proves problems *exist* without letting you *find* or *fix*
+them. Phases 6-8 close that gap.
+
+### Context: the spec layer already knows every foreign key
+
+`foreignKey` is a curated addition on field definitions across 20 files in
+`src/gtfs-spec/files/` (~54 declarations, including all three on `trips.ts`:
+`route_id`, `service_id`, `shape_id`). But `src/gtfs-spec/adapter.ts` does not
+expose it, so `gtfs-validator.ts` instead hand-writes five `INVALID_REFERENCE`
+checks (lines 296, 486, 538, 554, 1005). Exposing it is the unification lever:
+one generic sweep replaces all five and covers `trips.shape_id` (the Nuuk
+dangling-shape bug) and everything else for free.
+
+### Context: dangling values are already labelled in pickers
+
+`schedule-controller.ts:403-421`, `editable-table.ts:489-493` and
+`inline-editable-field.ts:285-289` all render `"${current} (dangling reference)"`
+as a synthetic option so an untouched dangling value is never silently blanked.
+That is the existing fix path to lean on, not rebuild.
+
+### Context: Nuuk route 1
+
+Root cause is known: the route's `agency_id` was mistyped, orphaning it from
+every agency list. It is one instance of the general problem, handled by this
+phase group rather than separately.
+
+### Phase 6: Generic spec-driven referential integrity
+
+- [ ] Expose `foreignKey` from `src/gtfs-spec/adapter.ts` as a derived list of
+      `{ file, field, targetFile, targetField }`.
+- [ ] Add one generic pass in `src/modules/gtfs-validator.ts` that walks every
+      declared FK, builds the target id set once per target file, and raises
+      `INVALID_REFERENCE` for each non-empty value with no match. Skip empty
+      values: an optional FK left blank is not dangling.
+- [ ] Delete the five hand-written `INVALID_REFERENCE` checks (lines 296, 486,
+      538, 554, 1005) that the sweep now subsumes. Confirm the fares v2 checks
+      from `5ae5715` that are *not* plain FK checks (conditional presence, area
+      assignment) are left alone.
+- [ ] Extend `ValidationMessage` with the offending entity's identity,
+      `entity?: { file, id, field, value }`, populated by the sweep and using
+      `src/utils/gtfs-primary-keys.ts` to resolve the row's id. This is what
+      removes any need to recover ids by regex from message text.
+- [ ] Watch for volume: the sweep will surface references the app never checked
+      before. If a real feed lights up with hundreds of new rows, report the
+      counts back to the user rather than quietly narrowing the sweep.
+- [ ] Commit: `feat(validation): check every spec-declared foreign key generically`
+
+### Phase 7: Make dangling objects findable from the issue card
+
+- [ ] Extend `IssueRow` in `src/utils/issue-card.ts` to carry the offending
+      entities (from Phase 6's `entity` field), and render each row as an
+      expandable `<details>`/`<summary>` block listing them, following the
+      existing pattern in `renderAreaStopLists()` (`fares-modal.ts:99-158`).
+- [ ] Each listed entity is a link to its own page, going through
+      `PageStateManager` the same way existing entity lists do, and labelled via
+      the `entity-display.ts` / `entity-references.ts` helpers (`getStopDisplay`
+      and friends) rather than an inline-formatted string.
+- [ ] Keep `deriveFeedIssues()`'s grouping and its `CODE_LABELS`/`NOTES` maps as
+      they are; they only need to thread entities through alongside the counts.
+- [ ] Cap the inline list at a sane length with an "and N more" tail so one
+      badly broken file cannot make the home page unusable.
+- [ ] Manually verify: load a feed with a dangling reference, expand the issue
+      row, click through to the offending entity's page.
+- [ ] Commit: `feat(issues): list the offending entities under each feed issue`
+
+### Phase 8: Make them obviously fixable at the use site
+
+- [ ] **Red at the use site:** wherever a foreign key value is rendered
+      read-only, show a dangling value in error color with a `title` explaining
+      that the target does not exist. Covers `trips.shape_id` in the timetable
+      trip rows and `routes.agency_id` on the route page at minimum. This is the
+      read-only counterpart to the picker labelling that already exists.
+- [ ] **Contextual note on the entity page:** an entity whose own row has a
+      dangling reference carries a warning note naming the broken field, so
+      arriving from the issue card lands you on something that explains itself.
+      Reuse `renderIssueCard` rather than inventing second warning markup.
+- [ ] **Fix path:** verify that clicking the field opens a picker carrying the
+      synthetic `"${current} (dangling reference)"` option for every FK type, so
+      the value can be repointed without being blanked first. Find and fill any
+      FK that does not reach one of the three existing paths
+      (`editable-table.ts:489`, `inline-editable-field.ts:285`,
+      `schedule-controller.ts:403`).
+- [ ] Verify end to end with the Nuuk feed: route 1's bad `agency_id` appears in
+      the home issue card, expands to a link to route 1, that page shows the note
+      and a red `agency_id`, and clicking it offers a picker that fixes it.
+      Separately confirm the `x3_...` dangling `shape_id` shows red on its trips
+      and still draws the straight-line fallback.
+- [ ] Commit: `feat(issues): surface and fix dangling references at the use site`
+
+---
+
+## Phase 9: Timetable stop click and hover highlight, in both repos
+
+**Goal:** Clicking a stop in the timetable focuses it; hovering highlights it.
+Shared with `../test-track`.
+
+`src/modules/route-strip.ts` is vendored verbatim into test-track
+(`../test-track/VENDORED.md`, SHA `9f1f986`), with coloring-book as the canonical
+source. Put shareable highlight logic there so it flows across.
+
+- [ ] Click a stop name/marker in the timetable stop column
+      (`timetable-renderer.ts:519`, `timetable-cell-renderer.ts:56`, both already
+      carry `data-stop-id`) to focus that stop. Find the existing "focus a stop"
+      mechanism first (`page-state-manager.ts` `setPageState({type: 'stop', ...})`,
+      or a helper in `map-controller.ts` / `interaction-handler.ts`) and reuse it
+      rather than reinventing it.
+- [ ] Hover highlights the stop (map and/or strip dot). Put the highlight logic
+      in `src/modules/route-strip.ts` so it is shareable.
+- [ ] Apply the same change to `../test-track/src/modules/route-strip.ts` and
+      bump its `VENDORED.md` row from SHA `9f1f986` to the new coloring-book SHA,
+      keeping `@status verbatim`. test-track already has click-on-name, so
+      reconcile with what is there rather than duplicating it.
+- [ ] Manually verify in both apps: click a stop name, confirm focus behaves like
+      other focus-stop entry points; hover, confirm the highlight appears.
+- [ ] Commit: `feat(timetable): focus and highlight stops from the stop column`
+
+---
+
+## Phase 10: Route page route diagram over all trips
+
+**Goal:** The route page shows the branching route diagram covering *all* of the
+route's trips, like test-track's route page.
+
+The engine is already fully present here. `route-sequence.ts`, `route-graph.ts`,
+`route-strip.ts` and `route-source.ts` are all vendored in coloring-book (it is
+the canonical source; they flow *out* to test-track).
+`routeSequence(source, route_id, directionId, service_id)` takes `service_id` as
+optional, so passing `undefined` yields the all-trips sequence this needs.
+`timetable-data-processor.ts:212-213` is the existing call site to model on, and
+`GTFSRouteSource` (`gtfs-route-source.ts:23`) is the adapter. The genuinely new
+code is a render function analogous to test-track's `renderStrip()`
+(`../test-track/src/modules/pages/route-page.ts:219-331`), minus its realtime
+chrome.
+
+- [ ] Write the render function, modelled on test-track's `renderStrip`, stripped
+      of `placeVehicles` / `vehicleChip` / `eta` / `alertPips` (none of which
+      exist in a static editor).
+- [ ] Data: `GTFSRouteSource` + `routeSequence(source, route_id, directionId,
+      undefined)` + `routeGraph(sequence)`.
+- [ ] Rows: rail SVG + stop name link + endpoint/minority facts from `StopStats`
+      (test-track's `endpointNoteHtml`). No trip counts.
+- [ ] Placement: a new section **below** the timetables list in `renderRoute()`
+      (`page-content-renderer.ts:552`).
+- [ ] Give the timetables list a max height with `overflow-y-auto` so the page
+      does not run long once the diagram is below it.
+- [ ] Incidental cleanup in the same file: `CREATE_NETWORK` is defined with a
+      **literal NUL byte** in the source, which makes `rg`/`grep` treat the whole
+      file as binary and skip it. Replace it with the `'\0create-network'` escape.
+- [ ] Manually verify: open a route with branching patterns, confirm the diagram
+      covers all trips (not just one service) and matches how test-track draws
+      the same route.
+- [ ] Commit: `feat(route): draw the full route diagram on the route page`
+
+---
+
+## Phases 11-12: Services timeline view replaces service lists (large feat)
 
 ### Context
 
@@ -406,109 +376,87 @@ from all `calendar`/`calendar_dates` rows) and renders one row per service with
 weekly-column shading, click-to-navigate via `data-service-id` + an injected
 `onServiceClick` callback. No filtering support exists yet (always all services).
 
-Four places currently render a non-timeline service/timetable list, each with
+Three places currently render a non-timeline service/timetable list, each with
 its own trip-count computation to be dropped:
 - **Home page** - `renderHome()` in `page-content-renderer.ts` (~lines 333-460):
-  flat list of all services via `renderServiceReference()`, with `tripCountByService`
-  / `routesByService` computed by scanning all `trips` (~lines 358-369).
-- **Route page** - `renderRoute()` in `page-content-renderer.ts` (~lines 547-720):
-  groups trips by `service_id` (~lines 563-575), renders one
+  flat list of all services via `renderServiceReference()`, with
+  `tripCountByService` / `routesByService` computed by scanning all `trips`
+  (~lines 358-371).
+- **Route page** - `renderRoute()` in `page-content-renderer.ts` (~lines 552-724):
+  groups trips by `service_id` (~lines 564-575), renders one
   `renderTimetableReference()` row per service (~lines 666-711).
-- **Service page** - `ServiceViewController.renderTimetablesSection()`
-  (`service-view-controller.ts`, ~lines 231-279): lists routes using this
-  service, via `renderTimetableReference()` (~lines 253-267).
 - **Stop page** - `StopViewController.renderTimetablesSection()`
   (`stop-view-controller.ts`, ~lines 213-260): lists timetables serving this
   stop, via `renderTimetableReference()`.
 
+**The service page is deliberately excluded.** `ServiceViewController.renderTimetablesSection()`
+lists *routes* using one fixed service, the inverse relationship from what the
+timeline shows. A timeline of a single service is not a meaningful replacement,
+so that page keeps its plain route list unchanged. This was decided; do not
+re-open it.
+
 Row-click navigation pattern to reuse: `data-service-id`/`data-route-id`
 attributes + a delegated click listener in each controller's `addEventListeners()`
 calling into injected `onServiceClick`/`onRouteClick`/`onTimetableClick`
-dependencies (see `page-content-renderer.ts` `addEventListeners()`, ~lines
-964-1025). `page-state-manager.ts` already supports `{type: 'service',
-service_id}` and route+service timetable URL states.
+dependencies (see `page-content-renderer.ts` `addEventListeners()`).
+`page-state-manager.ts` already supports `{type: 'service', service_id}` and
+route+service timetable URL states.
 
-Trip-count computations to remove once their list rows are replaced:
-`page-content-renderer.ts` (`renderHome`, `renderRoute`), `service-view-controller.ts`
-(`renderServiceView`), `stop-view-controller.ts` (`TimetableKey.tripCount`
-building), and the badge rendering in `src/utils/entity-references.ts`
-(`renderRouteReference`, `renderServiceReference`, `renderTimetableReference`).
+### Phase 11: Extract the timeline renderer into a shared module
 
-### Phase 7: Extract the timeline renderer into a shared module
-
-- [ ] Create `src/modules/service-timeline.ts` (or similar name - check for
-      naming conflicts first). Move `renderTimeline()` and its private helpers
-      (`isServiceActive`, `getServiceColor`, `renderWeekdayDots`,
-      `getDaysTooltip`, `hexToRgba`, `esc`, and the row-click wiring currently in
-      `attachTimelineListeners`) out of `calendar-modal.ts` into this new module,
-      exporting what's needed.
-- [ ] Add an optional filter parameter to `loadCalendarData()` (or a new
-      thin wrapper) so callers can scope the `ServiceDataMap` to a specific set
-      of `service_id`s, instead of always loading every service in the feed.
-      Decide whether this filter belongs in `loadCalendarData` itself or as a
-      post-filter step (`filterServiceDataMap(map, service_ids)`); prefer the
-      post-filter approach if it keeps `loadCalendarData` simpler.
+- [ ] Create `src/modules/service-timeline.ts` (check for naming conflicts
+      first). Move `renderTimeline()` and its private helpers (`isServiceActive`,
+      `getServiceColor`, `renderWeekdayDots`, `getDaysTooltip`, `hexToRgba`,
+      `esc`, and the row-click wiring currently in `attachTimelineListeners`) out
+      of `calendar-modal.ts` into this new module, exporting what's needed.
+- [ ] Add service-id filtering so callers can scope the `ServiceDataMap` to a
+      specific set of `service_id`s. Prefer a post-filter step
+      (`filterServiceDataMap(map, service_ids)`) over a parameter on
+      `loadCalendarData()`, to keep the latter simple.
 - [ ] Update `calendar-modal.ts` to import from the new module instead of
       defining these locally; confirm the Calendar modal still renders
-      identically (no all-services view should change).
-- [ ] Add support for an optional fixed `route_id` context (needed by the route
-      page: a timeline row there must link to a specific timetable, not just a
-      service) - e.g. an optional `data-route-id` attribute on `.timeline-row`
-      when rendering in a route-scoped context, and an `onRowClick` callback
-      shape flexible enough to carry `(service_id, route_id?)`.
-- [ ] Run `pnpm typecheck` and `pnpm lint`. Manually verify the Calendar modal
-      still works exactly as before this refactor (open it, check Timeline tab).
+      identically.
+- [ ] Add support for an optional fixed `route_id` context (the route page needs
+      a timeline row to link to a specific timetable, not just a service): an
+      optional `data-route-id` attribute on `.timeline-row`, and an `onRowClick`
+      callback shape flexible enough to carry `(service_id, route_id?)`.
+- [ ] Manually verify the Calendar modal works exactly as before this refactor.
 - [ ] Commit: `refactor(calendar): extract the services timeline into a shared module`
 
-### Phase 8: Swap the home page and route page to the timeline view
+### Phase 12: Swap the home, route and stop pages to the timeline view
 
-- [ ] Home page (`renderHome()` in `page-content-renderer.ts`): replace the
-      `renderServiceReference()` list with the shared timeline renderer, scoped
-      to all services (no filter needed here, matches Calendar modal's default).
-      Wire row clicks to the existing `onServiceClick` dependency.
+- [ ] Home page (`renderHome()`): replace the `renderServiceReference()` list
+      with the shared timeline renderer, scoped to all services. Wire row clicks
+      to the existing `onServiceClick` dependency.
 - [ ] Remove `tripCountByService`/`routesByService` computation in `renderHome()`
       now that nothing consumes it.
-- [ ] Route page (`renderRoute()` in `page-content-renderer.ts`): replace the
-      `renderTimetableReference()` list under "Timetables" with the shared
-      timeline renderer, filtered to the route's `service_id`s (from the
-      existing `serviceGroups` grouping), passing the fixed `route_id` context
-      from Phase 7 so row clicks navigate to the specific timetable.
+- [ ] Route page (`renderRoute()`): replace the `renderTimetableReference()` list
+      under "Timetables" with the shared timeline renderer, filtered to the
+      route's `service_id`s (from the existing `serviceGroups` grouping), passing
+      the fixed `route_id` context from Phase 11 so row clicks navigate to the
+      specific timetable. This is the same list Phase 10 made scrollable; keep
+      the scroll container.
 - [ ] Remove the now-unused `serviceTrips.length` trip-count plumbing in
       `renderRoute()`.
-- [ ] Keep the existing "add new service" / "new timetable" dropdown affordances
-      on both pages - only the list rendering changes, not the add-new flow.
-- [ ] Manually verify: home page shows the timeline for all services with
-      working row clicks; route page shows a timeline filtered to that route's
-      services with working row clicks to the correct timetable.
-- [ ] Commit: `feat(services): use the timeline view on the home and route pages`
-
-### Phase 9: Swap the service page and stop page to the timeline view
-
-- [ ] Service page (`ServiceViewController.renderTimetablesSection()`) lists
-      *routes* for one fixed service - the inverse relationship from what the
-      timeline naturally shows (one row per service). A timeline of a single
-      service isn't a meaningful replacement for a list of routes. Before
-      implementing anything here, ask the user whether this page's "routes
-      using this service" list should stay as a plain list (likely correct,
-      since there's nothing service-timeline-shaped to show), or whether they
-      want a different treatment. Do not guess.
 - [ ] Stop page (`StopViewController.renderTimetablesSection()`): replace the
-      timetables-serving-this-stop list with the timeline renderer, filtered to
-      the relevant `service_id`s (derived from `timetableKeys`), with row clicks
-      navigating to the correct timetable (needs both `route_id` and
-      `service_id` per row, same as the route page's context).
-- [ ] Remove now-unused `TimetableKey.tripCount` computation in
-      `stop-view-controller.ts` if nothing else consumes it, and remove the
-      `tripBadge` code paths in `src/utils/entity-references.ts` that no caller
-      uses anymore after Phases 8-9 (check all 4 call sites first - don't remove
-      `renderServiceReference`/`renderTimetableReference` themselves if any
-      other page still uses them for a different purpose).
-- [ ] Manually verify both pages.
-- [ ] Commit: `feat(services): use the timeline view on the stop page`
+      timetables list with the timeline renderer, filtered to the relevant
+      `service_id`s (derived from `timetableKeys`), with row clicks carrying both
+      `route_id` and `service_id`.
+- [ ] Keep the existing "add new service" / "new timetable" dropdown affordances
+      on all pages. Only the list rendering changes, not the add-new flow.
+- [ ] Remove `TimetableKey.tripCount` computation in `stop-view-controller.ts` if
+      nothing else consumes it, and remove the `tripBadge` code paths in
+      `src/utils/entity-references.ts` that no caller uses anymore. Check every
+      call site first: do not remove `renderServiceReference`/
+      `renderTimetableReference` themselves if the service page or another page
+      still uses them.
+- [ ] Manually verify all three pages, including row clicks landing on the right
+      timetable.
+- [ ] Commit: `feat(services): use the timeline view on the home, route and stop pages`
 
 ---
 
-## Phase 10-12: Fares table list columns (large feat)
+## Phases 13-15: Fares table list columns (large feat)
 
 ### Context
 
@@ -524,283 +472,177 @@ duplicated:
 - `fare_transfer_rules` - composite key includes `from_leg_group_id`/
   `to_leg_group_id` (lines 143-153).
 - `fare_leg_join_rules` - composite key on all four OD/stop fields
-  (lines 138-142). Note: this table's "OD pairs" per the GTFS spec are
+  (lines 138-142). Its "OD pairs" per the GTFS spec are
   `from_network_id`/`to_network_id` and `from_stop_id`/`to_stop_id`
-  (`src/gtfs-spec/files/fare-leg-join-rules.ts`) - there are no area fields on
-  this table, confirm this matches what TODO.md meant by "both OD pairs" before
-  implementing (it does - just double check field names against the spec file
-  when you get there).
+  (`src/gtfs-spec/files/fare-leg-join-rules.ts`); there are no area fields on
+  this table.
 
 The existing "list items with newlines" pattern to generalize:
 `renderAreaStopLists()` in `fares-modal.ts` (lines 99-158) builds
 `Map<area_id, string[]>` from `stop_areas` + `stops`, and renders a `<details>`/
-`<summary>`/`<ul><li>` block per area below the main table (wired via the
-Areas entry's `detail:` callback, `fares-modal.ts:464`). Networks
-(`fares-modal.ts` lines 466-485) has the count (`countRoutesPerNetwork`,
-lines 70-82) but no equivalent list detail block - this is the asymmetry
-TODO.md calls out to fix, reusing the same presentation but with networks'
-own join logic (`route_networks` instead of `stop_areas`).
+`<summary>`/`<ul><li>` block per area below the main table (wired via the Areas
+entry's `detail:` callback, `fares-modal.ts:464`). Networks (lines 466-485) has
+the count (`countRoutesPerNetwork`, lines 70-82) but no equivalent list detail
+block: that asymmetry is what Phase 15 fixes.
 
-No existing utility collapses repeated table rows into one row with an
-aggregated list cell - this is new functionality, not an extension.
+No existing utility collapses repeated table rows into one row with an aggregated
+list cell. That is new functionality.
 
-Design decided by TODO.md: **list values in a column, newline-separated, and
-keep it simple for now** (read-only aggregated display is acceptable - it says
-"lets list the items in the table for now to make it super clear", implying
-full multi-value editing is out of scope for this pass).
+Scope decision from `TODO.md`: **list values in a column, newline-separated, and
+keep it simple for now.** Read-only aggregated display is acceptable; full
+multi-value editing is out of scope for this pass.
 
-### Phase 10: Build a display-only grouped-row rendering layer for editable-table.ts
+### Phase 13: Display-only grouped-row rendering in editable-table.ts
 
 - [ ] In `src/modules/editable-table.ts`, add support for a column marked as a
-      "list column" (e.g. extend `EditableTableColumnOverride` with a
-      `listOf?: boolean` or similar flag). When set, rows that are identical
-      across every *other* rendered column get collapsed into a single visual
-      row, with that column rendering all distinct values from the collapsed
-      rows, newline-separated (use `white-space: pre-line` or `<br>`-joined
-      markup in the cell instead of the current `truncate` single-line span -
-      truncate would clip a multi-value list).
-- [ ] Make list-column cells non-interactive/read-only for now (matching how
-      `extraColumns` and `columnOverrides.readonly` already render plain text) -
-      do not attempt to make multi-value editing work in this pass, per the
-      "list the items... for now" scope in TODO.md.
+      "list column" (extend `EditableTableColumnOverride` with a `listOf?: boolean`
+      or similar flag). When set, rows identical across every *other* rendered
+      column collapse into a single visual row, with that column rendering all
+      distinct values from the collapsed rows, newline-separated (use
+      `white-space: pre-line` or `<br>`-joined markup, not the current `truncate`
+      single-line span, which would clip a multi-value list).
+- [ ] Make list-column cells non-interactive/read-only for now, matching how
+      `extraColumns` and `columnOverrides.readonly` already render plain text.
 - [ ] Foreign-key list values should still resolve to display labels (reuse
       `foreignLabelMaps()`, ~lines 237-251) rather than showing raw IDs.
 - [ ] Confirm add-row/delete-row flows still operate correctly against a grouped
-      display (i.e. adding or deleting one underlying row should not silently
-      corrupt the collapsed view - verify by testing add/delete against a table
-      using this new grouping).
+      display: adding or deleting one underlying row must not corrupt the
+      collapsed view.
 - [ ] Commit: `feat(editable-table): support list-valued columns via row grouping`
 
-### Phase 11: Apply list columns to the four fares tables
+### Phase 14: Apply list columns to the four fares tables
 
 - [ ] `fare_products`: group by everything except `fare_media_id`, mark
-      `fare_media_id` as a list column (`fares-modal.ts` `FARE_PRODUCTS` entry,
-      ~lines 385-398).
+      `fare_media_id` as a list column (`FARE_PRODUCTS` entry, ~lines 385-398).
 - [ ] `fare_leg_rules`: mark `from_area_id` and `to_area_id` as list columns
       (`FARE_LEG_RULES` entry, ~lines 399-414).
 - [ ] `fare_transfer_rules`: mark `from_leg_group_id` and `to_leg_group_id` as
       list columns (`FARE_TRANSFER_RULES` entry, ~lines 432-445).
 - [ ] `fare_leg_join_rules`: mark both OD pairs (`from_network_id`/`to_network_id`
       and `from_stop_id`/`to_stop_id`) as list columns (`FARE_LEG_JOIN_RULES`
-      entry, ~lines 415-431).
-- [ ] Manually verify each of the 4 tables in the Fares modal with a feed that
-      has actual duplication on these keys (create test rows if the sample feed
-      doesn't already have any), confirming rows collapse and list correctly.
+      entry, ~lines 415-431). Double check field names against the spec file.
+- [ ] Manually verify each of the 4 tables with a feed that has actual
+      duplication on these keys (create test rows if the sample feed has none),
+      confirming rows collapse and list correctly.
 - [ ] Commit: `feat(fares): list repeated foreign keys instead of duplicating rows`
 
-### Phase 12: Generalize the areas/networks list display
+### Phase 15: Generalize the areas/networks list display
 
 - [ ] Extract `renderAreaStopLists()`'s presentation (the `<details>`/`<summary>`/
       `<ul><li>` markup, item formatting via `getStopDisplay`/`getEntityDisplay` +
-      `renderOptionLabel`) into a shared helper function that takes a
-      `Map<id, {label: string, items: string[]}>` (or similar) and returns the
-      HTML block, independent of whether the source join is `stop_areas` or
-      `route_networks`.
+      `renderOptionLabel`) into a shared helper taking a
+      `Map<id, {label: string, items: string[]}>` and returning the HTML block,
+      independent of whether the source join is `stop_areas` or `route_networks`.
 - [ ] Reimplement `renderAreaStopLists()` as a thin wrapper: collect the
       `stop_areas`/`stops` join data, then call the shared helper.
-- [ ] Add an equivalent for Networks: collect `route_networks`/`routes` join
-      data (reuse the same join logic as `countRoutesPerNetwork()`,
-      `fares-modal.ts` lines 70-82), then call the shared helper. Wire it in as
-      the Networks entry's `detail:` callback (mirroring how Areas does it at
-      `fares-modal.ts:464`).
-- [ ] Manually verify both the Areas and Networks panes in the Fares modal show
-      matching-style list details.
+- [ ] Add an equivalent for Networks: collect `route_networks`/`routes` join data
+      (reuse the join logic in `countRoutesPerNetwork()`, `fares-modal.ts:70-82`),
+      then call the shared helper. Wire it in as the Networks entry's `detail:`
+      callback, mirroring Areas at `fares-modal.ts:464`.
+- [ ] Manually verify both the Areas and Networks panes show matching-style list
+      details.
 - [ ] Commit: `feat(fares): show a route list detail for networks, matching areas`
 
 ---
 
-## Phase 13-16: Shapes/navbar cleanup (4 small items)
+## Blocked on live reproduction
 
-### Context
+The two phases below cannot be root-caused by reading the code: static analysis
+found nothing wrong in either. They are last on purpose. **An agent may skip
+them and pick up the next unblocked phase rather than stalling.**
 
-Four unrelated small items from the end of `TODO.md`, grouped here only because
-they're all navbar- or shapes-adjacent.
+## Phase 16: Fix "Is Default Fare Category" / "Fare Media Type" click doing nothing
 
-**Item A - navbar shapes icon.** `src/index.html:69-88` is the `shapes-btn`
-navbar button, currently using a generic "layers" SVG path. The desired
-replacement icon is the existing "Open in brouter" icon: `renderRouteWaypointsIcon`
-in `src/modules/modal-utils.ts:13`, currently used at
-`src/modules/timetable-renderer.ts:380-391` for the per-timetable "Open in
-brouter" link. Reuse that same icon markup for `shapes-btn` (this is purely an
-icon swap - `shapes-btn`'s click handler in `src/index.ts:272-279`, its title
-"Shapes", and its `ShapesManager.open()` behavior are unchanged).
+Static analysis found no defect: the fields (`rider_categories.txt
+is_default_fare_category`, `fare_media.txt fare_media_type`) are both `Enum`
+type, go through the same generic `editable-table.ts` path as other working enum
+fields, and nothing distinguishes them in code.
 
-**Item B - GPX upload button.** `src/modules/shapes-manager.ts`, class
-`ShapesManager`. Currently the "+ New shape from GPX" button
-(`renderBody()`, lines 36 and 71) asks for a Shape ID first via a text-entry
-modal (lines 245-253), validates uniqueness (275-280), *then* calls
-`pickGPXFile()` (line 282, defined lines 14-30) to open the file picker, then
-`parseGPX(file, shapeId)` (`src/utils/gpx-parser.ts`, line 289). The new flow
-inverts this order: click an upload button, pick the GPX file first, default
-the shape ID input to the uploaded filename (stripped of `.gpx`), and let the
-user edit that id before it's locked in. Compare against `replaceShape()`
-(lines 184-240), which already does file-first for the *replace* flow - reuse
-that ordering. `newShape()` (lines 242-315) is the function to restructure.
+- [ ] Ask the user to open the Fares modal on a feed with `rider_categories.txt`
+      / `fare_media.txt` rows, open devtools console, click the affected cell,
+      and report back:
+  - Whether any console error/warning appears.
+  - Whether `document.querySelector('.editable-cell[data-field="is_default_fare_category"]')`
+    (or `fare_media_type`) returns an element, and whether it receives the click
+    (check `getComputedStyle(el).pointerEvents`, and
+    `document.elementFromPoint(x, y)` at the cell's coordinates for an overlay).
+  - Whether `GTFS_FIELD_SPECS['rider_categories.txt']['is_default_fare_category']`
+    (and the `fare_media.txt` equivalent) exist in the console.
+- [ ] Based on findings, likely candidates:
+  - `resolve()` in `src/modules/editable-table.ts` (~lines 444-460) silently
+    returns `null` (no-op, no console output) if the field spec lookup fails.
+    That exactly reproduces "click does nothing" with zero error. If so, fix the
+    spec/field name mismatch causing the lookup miss.
+  - An overlapping element intercepting the click; if so, fix the CSS
+    stacking/pointer-events.
+- [ ] Fix the confirmed root cause and re-verify with the user.
+- [ ] Commit: `fix(fares): make is_default_fare_category and fare_media_type editable`
 
-**Item C - straight-line route removal race.** `src/modules/route-renderer.ts`,
-class `RouteRenderer`. When a shape is assigned to a trip (or all trips in a
-route), the straight-line stop-sequence fallback should disappear immediately.
-Relevant machinery:
+## Phase 17: Straight-line fallback lingers after shape assignment
+
+`src/modules/route-renderer.ts`, class `RouteRenderer`. When a shape is assigned
+to a trip (or all trips in a route), the straight-line stop-sequence fallback
+should disappear immediately. Relevant machinery:
 - `addTripToBucket(trip_id)` (lines 683-792) draws either the real shape
   (694-700) or, if no valid shape_id, a `stops:${stopIds.join('|')}` fallback
   line (701-737).
 - `invalidateTrip(trip_id, op, ...)` (lines 881-906) and `invalidateShape(...)`
-  (lines 912-966) are the entry points called after a trip/shape edit; they
-  call `removeTripFromBucket` (636-677) then re-add via `addTripToBucket`.
+  (lines 912-966) are the entry points called after a trip/shape edit; they call
+  `removeTripFromBucket` (636-677) then re-add via `addTripToBucket`.
 - `scheduleSetData()` (lines 216-236) coalesces multiple invalidations in the
-  same tick into one `requestAnimationFrame`-deferred `source.setData(...)`
-  call.
+  same tick into one `requestAnimationFrame`-deferred `source.setData(...)` call.
 - `ensureInitialized()` / `initializationPromise` (lines 98-125) guard against
   calling map source methods before the MapLibre style has loaded.
 
-The bug ("had to refresh the page for it to disappear... next time it worked")
-smells like a caller invoking `invalidateTrip`/similar without awaiting
-`ensureInitialized()` first, or a bulk-assign loop firing many invalidations
-whose final `scheduleSetData()` RAF callback gets scheduled before the last
-trip's bucket update lands (a stale closure over `dirtyFlag`, or the RAF firing
-mid-loop). Root-cause needs live reproduction since `route-renderer.ts` async
-guards look correct on read-through; confirm with the user which UI flow was
-used ("selecting shapes for all trips in a route" implies a per-trip loop
-somewhere in `schedule-controller.ts` or the shape picker, not a single
-`updateTripProperty` call - locate that loop first).
+The symptom ("had to refresh the page for it to disappear... next time it
+worked") smells like a caller invoking `invalidateTrip` without awaiting
+`ensureInitialized()`, or a bulk-assign loop firing many invalidations whose
+final `scheduleSetData()` RAF callback is scheduled before the last trip's bucket
+update lands.
 
-**Item D - navbar count bubbles.** No unified tab bar exists; the 4 items are
-separate navbar buttons opening separate modals:
-- Services -> `calendar-btn` (`src/index.html:90-109`), wired
-  `src/index.ts:292-303`. "Services" count would be total rows in
-  `calendar`/`calendar_dates` (unique `service_id`s) - check
-  `page-content-renderer.ts` `getServices()` (~line 476/606+) for the existing
-  query to reuse.
-- Shapes -> `shapes-btn` (`src/index.html:69-88`), wired `src/index.ts:272-279`.
-  Count is unique `shape_id`s, likely already available via
-  `gtfsParser.getShapeIds()` (used in `schedule-controller.ts:408-439`).
-- Fare products -> `fares-btn` (`src/index.html:111-130`), wired
-  `src/index.ts:282-289`. Count is `fare_products.txt` row count; the existing
-  per-table count pattern to copy is `fares-modal.ts:496-504` (`renderSidebar()`
-  builds a `Map<table, count>` and renders `<span class="badge badge-sm
-  badge-ghost ml-auto">${count}</span>` next to each sidebar entry's label).
-- Changes -> `history-btn` (`src/index.html:254-273`), wired
-  `src/index.ts:332-334`. Count is pending/unsaved patch count - check
-  `patch-manager.ts` for the existing count used by `history-controller.ts`
-  (lines 32-40, 167, 197 already render badges there).
-
-Badge convention to follow (already used throughout the app, see
-`ui.ts:518` and `fares-modal.ts:496-504`): a DaisyUI `<span
-class="badge badge-sm ...">` appended near the button/label, updated whenever
-the underlying data changes (patch recorded, DB write, import, undo/redo).
-
-### Phase 13: Swap the navbar shapes icon to the brouter waypoints icon
-
-- [ ] In `src/index.html:69-88`, replace the `shapes-btn` SVG with the markup
-      produced by `renderRouteWaypointsIcon` (`src/modules/modal-utils.ts:13`).
-      If the icon is only exported as a template-string helper (not usable
-      directly in static HTML), move the button's icon rendering into
-      `src/index.ts` (wherever `shapes-btn` is wired, lines 272-279) and set
-      `innerHTML` from the helper at startup instead of hardcoding SVG in
-      `index.html`.
-- [ ] Confirm the icon renders at the same size/style as the other navbar
-      icons (`h-4 w-4`/`h-5 w-5` class, whichever the surrounding buttons use -
-      check a sibling button like `calendar-btn` for the expected size class,
-      since `renderRouteWaypointsIcon` is normally invoked at `h-3 w-3` in the
-      timetable context).
-- [ ] Manually verify: navbar shapes button now shows the same icon as
-      "Open in brouter" in the timetable view, click behavior unchanged.
-- [ ] Commit: `feat(navbar): use the brouter waypoints icon for the shapes button`
-
-### Phase 14: File-first GPX upload flow for new shapes
-
-- [ ] In `src/modules/shapes-manager.ts`, restructure `newShape()`
-      (lines 242-315) to call `pickGPXFile()` before asking for a shape ID,
-      mirroring the ordering already used in `replaceShape()` (lines 184-240).
-- [ ] Update the button UI (`renderBody()`, lines 36 and 71): change label/affordance
-      from "+ New shape from GPX" to an upload-first control (e.g. reuse
-      `renderUploadIcon()` from `modal-utils.ts`, already used for the existing
-      "Replace with GPX" button at line 49, for visual consistency).
-- [ ] After the file is picked, default the shape ID text input to the
-      filename with the `.gpx` extension stripped, but keep the input editable
-      before the user confirms (do not auto-lock the id) - keep the existing
-      uniqueness validation (lines 275-280) running against whatever id is in
-      the input at confirm time, not just the default.
-- [ ] Manually verify: click the upload button, pick a `some-name.gpx` file,
-      confirm the shape ID field pre-fills to `some-name`, edit it, confirm the
-      shape is created under the edited id.
-- [ ] Commit: `feat(shapes): upload GPX first and default the shape id to the filename`
-
-### Phase 15: Fix the straight-line fallback route not disappearing after shape assignment
-
-- [ ] Ask the user to reproduce the bug (assign shapes to all trips in a route,
-      watch whether the straight-line route disappears immediately or requires
-      a refresh) and identify exactly which UI action triggers the bulk
-      assignment - this determines whether the bug is in a bulk-assign loop
-      calling `invalidateTrip`/`invalidateShape` per-trip, or a single call
-      missing an `await ensureInitialized()`.
-- [ ] Once the trigger is found, trace whether `scheduleSetData()`
-      (`route-renderer.ts:216-236`) is being starved (e.g. the RAF callback
-      firing between individual `addTripToBucket` calls in a loop, so the map
-      briefly shows a stale mix, or a final `invalidateTrip` call landing after
-      the last scheduled RAF already ran) - fix by ensuring the entire batch of
-      trip updates finishes before the final `scheduleSetData()` call is
-      allowed to flush, or by making the dirty-flag/RAF coalescing batch-aware.
+- [ ] Ask the user to reproduce and identify exactly which UI action triggers the
+      bulk assignment. "Selecting shapes for all trips in a route" implies a
+      per-trip loop somewhere in `schedule-controller.ts` or the shape picker,
+      not a single `updateTripProperty` call. Locate that loop first.
+- [ ] Trace whether `scheduleSetData()` is being starved (the RAF callback firing
+      between individual `addTripToBucket` calls in a loop, or a final
+      `invalidateTrip` landing after the last scheduled RAF already ran). Fix by
+      ensuring the whole batch finishes before the final `scheduleSetData()`
+      flush, or by making the dirty-flag/RAF coalescing batch-aware.
 - [ ] Manually re-verify with the user: assign shapes to all trips in a route,
       confirm the straight-line route disappears without a page refresh.
 - [ ] Commit: `fix(route-renderer): remove straight-line fallback immediately after shape assignment`
-
-### Phase 16: Navbar item count bubbles
-
-- [ ] Decide on and implement count sources for each of the 4 navbar items,
-      reusing existing query helpers where possible (see Context above for
-      candidates per item: `calendar`/`calendar_dates` service count,
-      `gtfsParser.getShapeIds()`, `fare_products.txt` row count, pending patch
-      count from `patch-manager.ts`).
-- [ ] Add a DaisyUI `badge badge-sm` bubble to each of the 4 navbar buttons
-      (`shapes-btn`, `calendar-btn`, `fares-btn`, `history-btn` in
-      `src/index.html`), following the existing badge convention in
-      `fares-modal.ts:496-504` / `ui.ts:518`.
-- [ ] Wire count updates to fire whenever the underlying data changes (patch
-      recorded, DB write, feed import, undo/redo) - check how
-      `history-controller.ts` already refreshes its own badges (lines 32-40,
-      167, 197) as a model for hooking into the right update events.
-- [ ] Manually verify: import a feed, confirm all 4 bubbles show correct
-      initial counts; make an edit affecting one of the 4 categories, confirm
-      its bubble updates without a page refresh.
-- [ ] Commit: `feat(navbar): show item counts as badge bubbles`
-
----
-
-## Phase 17: Route 1 missing from route list in nuuk feed
-
-**Goal:** Root-cause why a specific route doesn't show up in the route list.
-
-- [ ] Ask the user for the exact feed path (`~/Downloads/nuuk`) if not already
-      available, and load it to reproduce.
-- [ ] Check `routes.txt` for a `route_id`/`route_short_name` "1" and confirm it
-      parses without error (check `gtfs-parser.ts` / `gtfs-validator.ts` console
-      output for warnings on that row - e.g. duplicate id, failed Zod validation,
-      or a row silently dropped during import).
-- [ ] Check whether the route list rendering filters routes somehow (e.g. by
-      network, by whether it has trips) that could exclude a route with no
-      trips or an unusual `route_type`.
-- [ ] Fix the confirmed root cause.
-- [ ] Manually verify with the user: import the nuuk feed, confirm route 1
-      appears in the route list.
-- [ ] Commit: `fix(routes): route 1 not showing up in route list`
 
 ---
 
 ## Original Issue (verbatim from TODO.md)
 
 ```
-- Bug: Trip property tooltips cut off
-- Bug: Leftmost column tooltip in Fares modal is sometimes cut off
-- Bug: In Route page, fix horizontal scroll bug (might also be tooltips)
-- Bug: tooltip for Areas on stop page is triggered by some weird location, not by text "Areas"
+Needs research (mine, not in the plan yet)
+- Bug: if I delete all stop times, the stop should be removed. Something leaves ""
 
-- Feat: Use unified fuzzy handling of time (shouldn't force HH:MM:SS format, share with timetable view)
-- Bug: "Is Default Fare Category" and "Fare Media Type" doesn't work (click does nothing) (possibly more)
-- Bug: When I have a multiselect with search modal, escape should close that but not necessarily the modal beneath (ie fares modal)
-
-- Feat: Clicking stop markers in timetables should focus that stop
-
+In the plan (see PLAN_TODO.md)
+- Bug: "Is Default Fare Category" / "Fare Media Type" click does nothing (possibly more)
+- Bug: multiselect-with-search escape should close only that modal, not the one
+  beneath (ie fares modal)
+- Bug: after selecting shapes for all trips in a route, it doesn't remove the
+  straight line route. I had to refresh the page for it to disappear. (this
+  seems to be a race, because the next time it worked)
+- Bug: loading a feed pops the Files modal open, it shouldn't
+- Feat: unify dangling reference handling. Present them as issues, make them
+  findable and fixable, without silently making them work. Covers the nuuk
+  x3_... dangling shape and the nuuk route 1 bad agency_id.
+- Feat: change navbar shapes icon to match open in brouter
+- Feat: instead of "New shape from GPX" lets have an upload button. After
+  upload, lets default to the filename in the input and allow changes before
+  locking in the id
+- Feat: in nav bar show number of each item (# services, # shapes, # fare
+  products, # changes) We can show it as a little notification style bubble.
+- Feat: clicking stop markers in timetables should focus that stop. Hovering
+  should highlight the stop in some way. Lets share the highlighting with
+  ../test-track as well (they already have click on name)
+- Feat: show the route diagram including all trips on the route page, just like
+  we do in the realtime (../test-track), sharing code as much as possible
 - Feat(large): Instead of any places where we list services, lets try using the
   timeline view. We could do that for the feed page (all services) and anywhere
   else we list services (route page, etc) it would be filtered and contain the
@@ -814,14 +656,4 @@ the underlying data changes (patch recorded, DB write, import, undo/redo).
   in the table for now to make it super clear (newlines between). Lets use the
   opportunity to use the same display method for areas and networks tables
   (internal logic will remain different for these two)
-
-- Feat: Change navbar shapes icon to match open in brouter
-- Feat: Instead of "New shape from GPX" lets have an upload button. After
-  upload, lets default to the filename in the input and allow changes before
-  locking in the id
-- Bug: After selecting shapes for all trips in a route, it doesn't remove the
-  straight line route. I had to refresh the page for it to disappear. (this seems to be a race, because the next time it worked)
-- Feat: in nav bar show number of each item (# services, # shapes, # Fare products, # changes) We can show it as a little notification style bubble.
-
-- Bug: ~/Downloads/nuuk route 1 not showing up in route list
 ```
