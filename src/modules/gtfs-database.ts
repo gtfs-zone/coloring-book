@@ -1701,11 +1701,11 @@ export class GTFSDatabase {
   /**
    * Append a patch to the history log. Returns the assigned version number.
    */
-  async appendPatch(patch: Omit<PatchRecord, 'version'>): Promise<number> {
+  async appendPatch(patch: PatchRecord): Promise<number> {
     if (!this.db) {
       throw new Error('Database not initialized');
     }
-    const version = await this.db.add('patches', patch as PatchRecord);
+    const version = await this.db.add('patches', patch);
     return version as number;
   }
 
@@ -1718,6 +1718,21 @@ export class GTFSDatabase {
     }
     const range = IDBKeyRange.lowerBound(version, true); // exclusive
     return this.db.getAll('patches', range);
+  }
+
+  /**
+   * Count the patches at or below the given version. Version numbers are
+   * auto-increment keys that keep climbing after a redo branch is discarded,
+   * so this is not the same as the version number itself.
+   */
+  async countPatchesUpTo(version: number): Promise<number> {
+    if (!this.db) {
+      throw new Error('Database not initialized');
+    }
+    if (version <= 0) {
+      return 0;
+    }
+    return this.db.count('patches', IDBKeyRange.upperBound(version));
   }
 
   /**

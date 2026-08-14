@@ -28,6 +28,7 @@ export class PatchManager {
   private parser: GTFSParser;
   private currentVersion = 0;
   private headVersion = 0;
+  private appliedCount = 0;
   private listeners = new Map<PatchEventType, Set<PatchEventListener>>();
 
   constructor(db: GTFSDatabase, parser: GTFSParser) {
@@ -43,6 +44,7 @@ export class PatchManager {
     const { currentVersion, headVersion } = await this.db.getVersions();
     this.currentVersion = currentVersion;
     this.headVersion = headVersion;
+    this.appliedCount = await this.db.countPatchesUpTo(currentVersion);
 
     const blobVersion = await this.db.getBlobVersion();
     if (blobVersion === currentVersion) {
@@ -416,6 +418,7 @@ export class PatchManager {
     }
     await this.applyPatchInverse(record.patch);
     this.currentVersion--;
+    this.appliedCount--;
     await this.db.setVersions(this.currentVersion, this.headVersion);
     this.emit('undo', record);
   }
@@ -430,6 +433,7 @@ export class PatchManager {
     }
     await this.applyPatchForward(record.patch);
     this.currentVersion++;
+    this.appliedCount++;
     await this.db.setVersions(this.currentVersion, this.headVersion);
     this.emit('redo', record);
   }
@@ -446,6 +450,11 @@ export class PatchManager {
     return this.currentVersion;
   }
 
+  /** Number of patches currently applied (undone patches do not count). */
+  get changeCount(): number {
+    return this.appliedCount;
+  }
+
   /**
    * Reset in-memory version bookkeeping after the underlying stores are wiped
    * for a new/replacement feed (patches, snapshots, and meta are all cleared
@@ -457,6 +466,7 @@ export class PatchManager {
   resetState(): void {
     this.currentVersion = 0;
     this.headVersion = 0;
+    this.appliedCount = 0;
   }
 
   async jumpToVersion(target: number): Promise<void> {
@@ -479,6 +489,7 @@ export class PatchManager {
       }
     }
     this.currentVersion = target;
+    this.appliedCount = await this.db.countPatchesUpTo(target);
     await this.db.setVersions(this.currentVersion, this.headVersion);
     this.emit('jump');
   }
@@ -510,9 +521,17 @@ export class PatchManager {
       this.headVersion = this.currentVersion;
     }
     const timestamp = Date.now();
-    const version = await this.db.appendPatch({ patch, timestamp });
+    // Version is assigned explicitly rather than by the store's key generator:
+    // the generator keeps climbing after a discarded redo branch, which would
+    // leave gaps that undo/redo cannot step across.
+    const version = await this.db.appendPatch({
+      version: this.currentVersion + 1,
+      patch,
+      timestamp,
+    });
     this.currentVersion = version;
     this.headVersion = version;
+    this.appliedCount++;
     await this.db.setVersions(this.currentVersion, this.headVersion);
     await this.maybeSnapshot();
     this.emit('change', { version, patch, timestamp });
