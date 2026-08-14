@@ -4,16 +4,16 @@ import type { PatchManager } from './patch-manager.js';
 import type { Shapes } from '../types/gtfs-entities.js';
 import { parseGPX } from '../utils/gpx-parser.js';
 import { generateCompositeKeyFromRecord } from '../utils/gtfs-primary-keys.js';
+import { escapeHtml } from '../utils/escape-html.js';
+import { getRouteDisplay, renderOptionLabel } from '../utils/entity-display.js';
+import { routeColor } from '../utils/route-colors.js';
+import { navigateToRoute } from './navigation-actions.js';
 
-function esc(s: string): string {
-  const div = document.createElement('div');
-  div.textContent = s;
-  return div.innerHTML;
-}
-
-// esc() leaves quotes intact, which is unsafe inside a quoted attribute value.
-function escAttr(s: string): string {
-  return esc(s).replace(/"/g, '&quot;');
+/** What the shapes table shows for one shape_id. */
+interface ShapeUsage {
+  pointCount: number;
+  tripCount: number;
+  routes: Record<string, unknown>[];
 }
 
 function pickGPXFile(): Promise<File | null> {
@@ -34,38 +34,63 @@ function pickGPXFile(): Promise<File | null> {
   });
 }
 
-function renderBody(shapes: Map<string, number>): string {
+// Compact enough to sit several to a table cell, unlike renderRouteReference's
+// full card row.
+function renderRouteChip(route: Record<string, unknown>): string {
+  const route_id = String(route.route_id ?? '');
+  const color = routeColor(route_id, route.route_color as string | undefined);
+  const label = renderOptionLabel(
+    getRouteDisplay(route as Record<string, string>)
+  );
+  return `
+    <button class="inline-flex items-center gap-1 max-w-full text-xs hover:underline" data-action="route" data-route-id="${escapeHtml(route_id)}" title="${escapeHtml(label)}">
+      <span class="w-2 h-2 rounded-full flex-shrink-0" style="background-color: ${color}"></span>
+      <span class="truncate">${escapeHtml(label)}</span>
+    </button>`;
+}
+
+function renderBody(shapes: Map<string, ShapeUsage>): string {
+  const uploadBtn = `<button class="btn btn-sm btn-primary" data-action="new">${renderUploadIcon()} Upload GPX</button>`;
+
   if (shapes.size === 0) {
     return `
       <p class="text-base-content/60 text-sm mb-4">No shapes in this feed.</p>
-      <button class="btn btn-sm btn-primary" data-action="new">${renderUploadIcon()} Upload GPX</button>
+      ${uploadBtn}
     `;
   }
 
   const rows = Array.from(shapes.entries())
     .sort(([a], [b]) => a.localeCompare(b))
     .map(
-      ([shapeId, count]) => `
+      ([shapeId, usage]) => `
         <tr>
-          <td class="font-mono text-sm">${esc(shapeId)}</td>
-          <td>${count}</td>
+          <td class="font-mono text-sm break-all">${escapeHtml(shapeId)}</td>
+          <td>${usage.pointCount}</td>
+          <td>${usage.tripCount}</td>
+          <td>
+            <div class="flex flex-wrap gap-x-2 gap-y-1">${usage.routes.map(renderRouteChip).join('')}</div>
+          </td>
           <td>
             <div class="flex gap-1">
-              <button class="btn btn-xs btn-ghost" data-action="replace" data-shape-id="${esc(shapeId)}" title="Replace with GPX">${renderUploadIcon()}</button>
-              <button class="btn btn-xs btn-ghost text-error" data-action="delete" data-shape-id="${esc(shapeId)}" title="Delete shape">${renderTrashIcon()}</button>
+              <button class="btn btn-xs btn-ghost" data-action="replace" data-shape-id="${escapeHtml(shapeId)}" title="Replace with GPX">${renderUploadIcon()}</button>
+              <button class="btn btn-xs btn-ghost text-error" data-action="delete" data-shape-id="${escapeHtml(shapeId)}" title="Delete shape">${renderTrashIcon()}</button>
             </div>
           </td>
         </tr>`
     )
     .join('');
 
+  // The table body scrolls under a pinned header, and the upload button sits
+  // below the scroll container so it stays reachable with hundreds of shapes.
   return `
-    <div class="overflow-x-auto">
-      <table class="table table-sm">
+    <div class="max-h-[55vh] overflow-y-auto">
+      <table class="table table-sm table-pin-rows">
         <thead>
           <tr>
             <th>Shape ID</th>
             <th>Points</th>
+            <th>Trips</th>
+            <th>Routes</th>
             <th>Actions</th>
           </tr>
         </thead>
@@ -73,7 +98,7 @@ function renderBody(shapes: Map<string, number>): string {
       </table>
     </div>
     <div class="mt-4">
-      <button class="btn btn-sm btn-primary" data-action="new">${renderUploadIcon()} Upload GPX</button>
+      ${uploadBtn}
     </div>
   `;
 }
@@ -87,34 +112,75 @@ export class ShapesManager {
     this.patchManager = patchManager;
   }
 
-  async open(): Promise<void> {
-    const getShapes = async (): Promise<Map<string, number>> => {
-      const rows = (await this.gtfsParser.gtfsDatabase.getAllRows(
-        'shapes'
-      )) as Shapes[];
-      const map = new Map<string, number>();
-      for (const row of rows) {
-        const id = String(row.shape_id);
-        map.set(id, (map.get(id) ?? 0) + 1);
+  /**
+   * Point counts, trip counts and the distinct routes using each shape.
+   *
+   * Recomputed on every panel refresh, so a new/replace/delete updates all
+   * three columns without reopening the modal.
+   */
+  private async getShapes(): Promise<Map<string, ShapeUsage>> {
+    const rows = (await this.gtfsParser.gtfsDatabase.getAllRows(
+      'shapes'
+    )) as Shapes[];
+    const map = new Map<string, ShapeUsage>();
+    for (const row of rows) {
+      const id = String(row.shape_id);
+      const usage = map.get(id);
+      if (usage) {
+        usage.pointCount++;
+      } else {
+        map.set(id, { pointCount: 1, tripCount: 0, routes: [] });
       }
-      return map;
-    };
+    }
 
-    let currentShapes = await getShapes();
+    const routeById = new Map<string, Record<string, unknown>>();
+    for (const route of this.gtfsParser.getFileDataSync('routes.txt')) {
+      routeById.set(String(route.route_id), route as Record<string, unknown>);
+    }
+
+    const routeIdsByShape = new Map<string, Set<string>>();
+    for (const trip of this.gtfsParser.getFileDataSync('trips.txt')) {
+      const shapeId = String(trip.shape_id ?? '');
+      const usage = map.get(shapeId);
+      if (!usage) {
+        continue;
+      }
+      usage.tripCount++;
+      let routeIds = routeIdsByShape.get(shapeId);
+      if (!routeIds) {
+        routeIds = new Set<string>();
+        routeIdsByShape.set(shapeId, routeIds);
+      }
+      routeIds.add(String(trip.route_id ?? ''));
+    }
+
+    for (const [shapeId, routeIds] of routeIdsByShape) {
+      const usage = map.get(shapeId)!;
+      usage.routes = [...routeIds].map(
+        (route_id) => routeById.get(route_id) ?? { route_id }
+      );
+    }
+
+    return map;
+  }
+
+  async open(): Promise<void> {
+    let currentShapes = await this.getShapes();
 
     await showModal({
       title: 'Shapes',
       body: `<div id="shapes-panel">${renderBody(currentShapes)}</div>`,
       escapeAction: 0,
+      boxClassName: 'max-w-6xl w-11/12',
       actions: [{ label: 'Close', onClick: () => {} }],
-      onMount: (_close) => {
+      onMount: (close) => {
         const panel = document.getElementById('shapes-panel');
         if (!panel) {
           return;
         }
 
         const refreshPanel = async () => {
-          currentShapes = await getShapes();
+          currentShapes = await this.getShapes();
           panel.innerHTML = renderBody(currentShapes);
         };
 
@@ -132,12 +198,17 @@ export class ShapesManager {
           if (action === 'delete' && shapeId) {
             void this.deleteShape(
               shapeId,
-              currentShapes.get(shapeId) ?? 0
+              currentShapes.get(shapeId)?.pointCount ?? 0
             ).then(refreshPanel);
           } else if (action === 'replace' && shapeId) {
             void this.replaceShape(shapeId).then(refreshPanel);
           } else if (action === 'new') {
             void this.newShape(currentShapes).then(refreshPanel);
+          } else if (action === 'route') {
+            // Navigating behind an open modal would leave the route page
+            // hidden, so the modal goes first.
+            close();
+            void navigateToRoute(btn.dataset.routeId ?? '');
           }
         });
       },
@@ -151,7 +222,7 @@ export class ShapesManager {
     let confirmed = false;
     await showModal({
       title: 'Delete shape',
-      body: `<p>Delete shape <strong class="font-mono">${esc(shapeId)}</strong> and all ${pointCount} point${pointCount !== 1 ? 's' : ''}?</p>`,
+      body: `<p>Delete shape <strong class="font-mono">${escapeHtml(shapeId)}</strong> and all ${pointCount} point${pointCount !== 1 ? 's' : ''}?</p>`,
       escapeAction: 1,
       actions: [
         {
@@ -198,7 +269,7 @@ export class ShapesManager {
     } catch (e) {
       await showModal({
         title: 'GPX Error',
-        body: `<p>${esc(e instanceof Error ? e.message : String(e))}</p>`,
+        body: `<p>${escapeHtml(e instanceof Error ? e.message : String(e))}</p>`,
         escapeAction: 0,
         actions: [{ label: 'OK', onClick: () => {} }],
       });
@@ -244,7 +315,9 @@ export class ShapesManager {
     );
   }
 
-  private async newShape(existingShapes: Map<string, number>): Promise<void> {
+  private async newShape(
+    existingShapes: Map<string, ShapeUsage>
+  ): Promise<void> {
     const file = await pickGPXFile();
     if (!file) {
       return;
@@ -257,10 +330,10 @@ export class ShapesManager {
       title: 'New shape from GPX',
       body: `
         <div class="space-y-3">
-          <p class="text-base-content/60 text-sm">${esc(file.name)}</p>
+          <p class="text-base-content/60 text-sm">${escapeHtml(file.name)}</p>
           <fieldset class="fieldset">
             <label class="label" for="new-shape-id">Shape ID</label>
-            <input id="new-shape-id" class="input w-full" type="text" placeholder="e.g. shape_1" value="${escAttr(defaultId)}" />
+            <input id="new-shape-id" class="input w-full" type="text" placeholder="e.g. shape_1" value="${escapeHtml(defaultId)}" />
             <p id="new-shape-error" class="text-error text-sm hidden"></p>
           </fieldset>
         </div>
