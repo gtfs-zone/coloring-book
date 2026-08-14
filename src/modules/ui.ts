@@ -295,11 +295,8 @@ export class UIController {
 
       console.timeEnd('[GTFS] updateMap');
 
-      // Show file list and open Files modal
+      // Populate the file list without opening the Files modal
       this.showFileList();
-      (
-        document.getElementById('files-modal') as HTMLDialogElement
-      )?.showModal();
 
       // Validate before rendering: the home panel draws the resulting issues.
       if (this.validateCallback) {
