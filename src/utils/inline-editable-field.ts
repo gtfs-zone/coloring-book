@@ -19,6 +19,7 @@ import {
 } from '../modules/option-picker-modal.js';
 import { notify } from '../modules/notification-system.js';
 import {
+  formatIssueValue,
   isDanglingReference,
   markReferenceResolved,
   renderEntityIssueNote,
@@ -192,7 +193,7 @@ export async function renderInlineEditableField(
   );
   const danglingClass = dangling ? ' text-error border-error' : '';
   const danglingTitle = dangling
-    ? ` title="${escapeHtml(`No record with ${config.field} '${raw}' exists`)}"`
+    ? ` title="${escapeHtml(`No record with ${config.field} ${formatIssueValue(raw)} exists`)}"`
     : '';
 
   return `
@@ -304,7 +305,7 @@ function openFieldEditor(span: HTMLElement): void {
       if (current && !options.some((o) => o.value === current)) {
         options.push({
           value: current,
-          primary: `${current} (dangling reference)`,
+          primary: `${formatIssueValue(current)} (dangling reference)`,
         });
       }
       const picked = await showOptionPickerModal({
