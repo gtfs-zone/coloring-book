@@ -169,7 +169,28 @@ function buildIssueItem(entity: ValidationEntity, index: RowIndex): IssueItem {
     data['issue-id'] = String(row[page.idField]);
   }
 
-  return { label, detail: `${entity.field}: ${entity.value}`, data };
+  return {
+    label,
+    detail: `${entity.field}: ${formatValue(entity.value)}`,
+    data,
+  };
+}
+
+/**
+ * The offending value, made readable. A value whose problem is invisible
+ * (surrounding whitespace, an embedded newline from a quoted CSV field) is
+ * quoted with its control characters escaped, so "20261231\n" does not read as
+ * a perfectly good date.
+ */
+function formatValue(value: string): string {
+  if (value === '') {
+    return '(empty)';
+  }
+  const hasControlChar = [...value].some((char) => char.charCodeAt(0) < 32);
+  if (hasControlChar || value !== value.trim()) {
+    return JSON.stringify(value);
+  }
+  return value;
 }
 
 /** Lazily indexes a file's rows by primary key, one file at a time. */
