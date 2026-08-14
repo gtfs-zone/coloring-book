@@ -43,7 +43,7 @@ function renderRouteChip(route: Record<string, unknown>): string {
     getRouteDisplay(route as Record<string, string>)
   );
   return `
-    <button class="inline-flex items-center gap-1 max-w-full text-xs hover:underline" data-action="route" data-route-id="${escapeHtml(route_id)}" title="${escapeHtml(label)}">
+    <button class="inline-flex items-center gap-1 max-w-full text-xs cursor-pointer hover:underline" data-action="route" data-route-id="${escapeHtml(route_id)}" title="${escapeHtml(label)}">
       <span class="w-2 h-2 rounded-full flex-shrink-0" style="background-color: ${color}"></span>
       <span class="truncate">${escapeHtml(label)}</span>
     </button>`;
