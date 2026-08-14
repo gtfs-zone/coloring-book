@@ -19,6 +19,7 @@ import {
 import { TripsSchema, GTFS_TABLES } from '../types/gtfs.js';
 import { getStopDisplay, renderCardLabel } from '../utils/entity-display.js';
 import { escapeHtml } from '../utils/escape-html.js';
+import { isDanglingReference } from './feed-issues.js';
 import { renderTrashIcon, renderRouteWaypointsIcon } from './modal-utils.js';
 import { routeColor } from '../utils/route-colors.js';
 import {
@@ -333,10 +334,17 @@ export class TimetableRenderer {
       display = value;
     }
 
+    // A reference no record matches reads as an error. It stays clickable, so
+    // the picker (which offers the current value back) can repoint it.
+    const dangling = isDanglingReference('trips.txt', config.field, value);
+    const danglingAttrs = dangling
+      ? ` title="${escapeHtml(`No record with ${config.field} '${value}' exists`)}"`
+      : '';
+
     return `
       <td class="text-center p-2">
-        <span
-          class="trip-prop-span inline-block max-w-full truncate cursor-pointer rounded px-1 hover:bg-base-200"
+        <span${danglingAttrs}
+          class="trip-prop-span inline-block max-w-full truncate cursor-pointer rounded px-1 hover:bg-base-200${dangling ? ' text-error font-semibold' : ''}"
           data-trip-id="${trip_id}"
           data-field="${config.field}"
           data-table="trips.txt"

@@ -10,6 +10,7 @@
  */
 
 import type { ValidationEntity, ValidationResults } from './gtfs-validator.js';
+import { renderIssueCard } from '../utils/issue-card.js';
 import type { IssueItem, IssueRow } from '../utils/issue-card.js';
 import {
   getEntityDisplay,
@@ -207,4 +208,104 @@ export function setFeedIssues(issues: IssueRow[]): void {
 
 export function getFeedIssues(): IssueRow[] {
   return currentIssues;
+}
+
+// ─── Dangling references ──────────────────────────────────────────────────────
+// The use sites (entity fields, timetable trip properties) ask whether the
+// value they are about to render is one the last validation pass flagged. Keyed
+// two ways: by value for the read-only render, by row for the per-entity note.
+
+const danglingByValue = new Set<string>();
+const danglingByRow = new Map<string, ValidationEntity[]>();
+
+function valueKey(file: string, field: string, value: string): string {
+  return `${file}:${field}:${value}`;
+}
+
+/**
+ * Validate, publish the grouped rows the home panel renders, and index the
+ * dangling references so the use sites can colour them.
+ */
+export function publishFeedIssues(
+  results: ValidationResults,
+  source?: FeedIssueRowSource
+): IssueRow[] {
+  danglingByValue.clear();
+  danglingByRow.clear();
+  for (const message of results.errors) {
+    const entity = message.entity;
+    if (!entity || message.code !== 'INVALID_REFERENCE') {
+      continue;
+    }
+    danglingByValue.add(valueKey(entity.file, entity.field, entity.value));
+    const key = `${entity.file}:${entity.id}`;
+    danglingByRow.set(key, [...(danglingByRow.get(key) ?? []), entity]);
+  }
+
+  const issues = deriveFeedIssues(results, source);
+  setFeedIssues(issues);
+  return issues;
+}
+
+export function isDanglingReference(
+  file: string,
+  field: string,
+  value: string
+): boolean {
+  return value !== '' && danglingByValue.has(valueKey(file, field, value));
+}
+
+/**
+ * Drop a reference from the index once it has been repointed, so the use site
+ * stops showing it as broken without waiting for the next validation pass.
+ */
+export function markReferenceResolved(
+  file: string,
+  field: string,
+  value: string
+): void {
+  danglingByValue.delete(valueKey(file, field, value));
+  for (const [key, entities] of danglingByRow) {
+    const kept = entities.filter(
+      (entity) =>
+        !(
+          entity.file === file &&
+          entity.field === field &&
+          entity.value === value
+        )
+    );
+    if (kept.length === 0) {
+      danglingByRow.delete(key);
+    } else {
+      danglingByRow.set(key, kept);
+    }
+  }
+}
+
+/** The dangling references on one row, for the note on its own page. */
+export function getRowDanglingRefs(
+  file: string,
+  recordId: string
+): ValidationEntity[] {
+  return danglingByRow.get(`${file}:${recordId}`) ?? [];
+}
+
+/**
+ * The warning note an entity page carries when its own row has a broken
+ * reference, so arriving from the home issue card lands on something that
+ * explains itself.
+ */
+export function renderEntityIssueNote(file: string, recordId: string): string {
+  const refs = getRowDanglingRefs(file, recordId);
+  if (refs.length === 0) {
+    return '';
+  }
+  return renderIssueCard(
+    'Issues with this record',
+    refs.map((ref) => ({
+      label: `${ref.field} refers to '${ref.value}', which does not exist`,
+      count: 1,
+      note: 'Pick an existing value below, or create the record it refers to.',
+    }))
+  );
 }

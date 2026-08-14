@@ -18,6 +18,11 @@ import {
   type OptionPickerItem,
 } from '../modules/option-picker-modal.js';
 import { notify } from '../modules/notification-system.js';
+import {
+  isDanglingReference,
+  markReferenceResolved,
+  renderEntityIssueNote,
+} from '../modules/feed-issues.js';
 import { escapeHtml } from './escape-html.js';
 import { openInlineEditor, openInlineMenu } from './inline-edit.js';
 import type { InlineEditorInputType } from './inline-edit.js';
@@ -178,11 +183,23 @@ export async function renderInlineEditableField(
   const text = displayText(config, spec, foreignLabel);
   const placeholder = config.placeholder ?? '-';
 
+  // A reference the last validation pass could not resolve reads as an error,
+  // but stays editable: clicking it opens the picker that repoints it.
+  const dangling = isDanglingReference(
+    config.tableName ?? '',
+    config.field,
+    raw
+  );
+  const danglingClass = dangling ? ' text-error border-error' : '';
+  const danglingTitle = dangling
+    ? ` title="${escapeHtml(`No record with ${config.field} '${raw}' exists`)}"`
+    : '';
+
   return `
     <fieldset class="fieldset isolate">
       ${label}
-      <span
-        class="${FIELD_CLASS} block w-full cursor-pointer truncate rounded-field border border-base-300 px-3 py-1.5 text-sm hover:bg-base-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
+      <span${danglingTitle}
+        class="${FIELD_CLASS}${danglingClass} block w-full cursor-pointer truncate rounded-field border border-base-300 px-3 py-1.5 text-sm hover:bg-base-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
         tabindex="0"
         role="button"
         data-table="${escapeHtml(config.tableName ?? '')}"
@@ -230,7 +247,8 @@ export async function renderInlineEntityFields(
     fieldsHtml.push(await renderInlineEditableField(config));
   }
 
-  return `<div class="space-y-3">${fieldsHtml.join('')}</div>`;
+  const note = renderEntityIssueNote(tableName, recordId);
+  return `<div class="space-y-3">${note}${fieldsHtml.join('')}</div>`;
 }
 
 // ─── Editing ──────────────────────────────────────────────────────────────────
@@ -376,6 +394,14 @@ async function commit(
 
   clearError(span);
   setDisplay(span, spec, coerced.value, label);
+
+  // The old value was the broken one, so the row is no longer dangling on this
+  // field. Drop the red now rather than waiting for the next validation pass.
+  if (String(before) !== String(coerced.value)) {
+    markReferenceResolved(table, field, String(before));
+    span.classList.remove('text-error', 'border-error');
+    span.removeAttribute('title');
+  }
 
   const store = specStoreName(table);
   console.log(`[InlineField] update ${store} ${recordId}.${field}`);
