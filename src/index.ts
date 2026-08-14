@@ -468,7 +468,7 @@ export class GTFSEditor {
     this.navbarCounts.refresh();
 
     const validationResults = this.validator.validateFeed();
-    const issues = deriveFeedIssues(validationResults);
+    const issues = deriveFeedIssues(validationResults, this.gtfsParser);
     setFeedIssues(issues);
     console.log(
       `[GTFSEditor] validation: ${validationResults.errors.length} error(s), ${validationResults.warnings.length} warning(s), ${issues.length} issue group(s)`
