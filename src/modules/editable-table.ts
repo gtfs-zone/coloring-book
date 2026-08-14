@@ -115,6 +115,12 @@ export interface EditableTableColumnOverride {
   readonly?: boolean;
   /** Plain-text cell display, replacing the spec-derived formatting. */
   format?: (value: unknown, row: Record<string, unknown>) => string;
+  /**
+   * Tailwind width class for the column, e.g. `min-w-64`. Applied to the header
+   * and to every cell's display span; without one a column is only as wide as
+   * its widest value, which reads as cramped for an ID people scan by.
+   */
+  widthClass?: string;
   /** Picker options, replacing the ones derived from the field's foreignKey. */
   options?: () => Promise<OptionPickerItem[]>;
   /**
@@ -545,12 +551,12 @@ function renderCell(
   const text = cellText(config, field, spec, row, foreignLabels);
 
   if (override?.readonly) {
-    return `<td class="align-middle">${escapeHtml(text) || '-'}</td>`;
+    return `<td class="align-middle ${override.widthClass ?? ''}">${escapeHtml(text) || '-'}</td>`;
   }
 
   return `<td class="align-middle p-1">
     <span
-      class="editable-cell inline-block min-w-8 max-w-full truncate cursor-pointer rounded px-1 hover:bg-base-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
+      class="editable-cell inline-block min-w-8 max-w-full truncate cursor-pointer rounded px-1 hover:bg-base-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${override?.widthClass ?? ''}"
       tabindex="0"
       data-et="${escapeHtml(config.instanceId)}"
       data-key="${escapeHtml(key)}"
@@ -588,10 +594,11 @@ export async function renderEditableTable(
     .map((field) => {
       const override = config.columnOverrides?.[field];
       const fieldConfig = configsByField.get(field);
+      const widthClass = override?.widthClass ?? '';
       if (!fieldConfig) {
-        return `<th>${escapeHtml(override?.label ?? field)}</th>`;
+        return `<th class="${widthClass}">${escapeHtml(override?.label ?? field)}</th>`;
       }
-      return `<th class="align-bottom">${renderFieldLabelContent(
+      return `<th class="align-bottom ${widthClass}">${renderFieldLabelContent(
         override?.label
           ? { ...fieldConfig, label: override.label }
           : fieldConfig
@@ -679,7 +686,7 @@ export async function renderEditableTable(
 
   return `
     <div class="overflow-x-auto">
-      <table class="table table-xs">
+      <table class="table table-xs table-pin-rows">
         <thead><tr>${headerHtml}${joinHeaderHtml}<th></th></tr></thead>
         <tbody>${emptyHtml}${bodyHtml}<tr class="editable-table-new-row">${newRowCells}${joinColumns.map(() => '<td></td>').join('')}<td></td></tr></tbody>
       </table>
