@@ -1627,10 +1627,37 @@ called `close()` and then reopened the whole modal.
       `src/utils/escape-html.ts`.
 - [x] Widen the box to `max-w-4xl w-11/12` and move the Add Level button below
       the scroll container.
-- [ ] Manually verify: add and delete a level and confirm the list updates in
-      place with no modal flicker; confirm the header pins while scrolling;
-      confirm a level used by stops lists them and the chips navigate.
 - [x] Commit: `feat(levels): show stop usage and share the shapes list chrome`
+
+**Follow-up (second pass): the levels table is now an `EditableTable`.** The
+chip/count rendering above was a stop on the way; the whole list is now the
+spec-driven editable table the fares panes use, so `level_index` and
+`level_name` edit inline, the trailing blank row adds a level and the row
+delete button removes one.
+
+- [x] Swap `showLevelsModal()` to `renderEditableTable` /
+      `installEditableTableHandlers` / `uninstallEditableTableHandlers` with
+      `instanceId: 'levels'`, the fares-modal pattern.
+- [x] "Used by" is an `EditableTableJoinColumn`, so it opens the same
+      multi-select the fares list/join columns use. Unlike `memberJoinColumn`
+      there is no join table: `apply` writes `stops.level_id` directly, one
+      `recordBatchMixed` per commit.
+- [x] Drop the separate stop-count column (the multi-select cell lists them),
+      the bespoke Add Level modal, `addLevel`/`deleteLevel`, and the local
+      chip/scroll rendering.
+- [x] Add `widthClass` to `EditableTableColumnOverride`, applied to the header
+      and cell spans; levels passes `min-w-64` for `level_id`.
+- [x] Widen the app-wide default modal box to `max-w-4xl w-11/12`
+      (`modal-utils.ts`), so the levels modal needs no `boxClassName` of its
+      own. Every existing override is wider than the new default, so none of
+      them change.
+- [x] `table-pin-rows` on the editable table, which pins its header inside the
+      scrolling modal body. Affects the fares panes too.
+- [ ] Manually verify: edit an index and a name inline; add a level from the
+      blank row and delete one; assign and unassign stops through the Used by
+      picker and confirm `stops.level_id` changed and undo reverts it; confirm
+      the fares modal still looks right with the pinned header.
+- [x] Commit: `feat(levels): edit levels through the spec-driven table`
 
 **Notes:**
 
