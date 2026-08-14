@@ -9,6 +9,9 @@ feats. Phases 6-8 unify dangling reference handling into one coherent feature
 are the two stop/route diagram features shared with `../test-track`. Phases 11-12
 build the services timeline; Phases 13-15 build the fares list-column feature.
 Phases 16-17 are blocked on live reproduction and sit at the end deliberately.
+Phases 18-20 are small, independent items added after the original pass (glyph
+cleanup, shapes list improvements, a fares tooltip regression); they can be
+picked up at any time and do not depend on anything above.
 
 `TODO.md` itself stays as the user's raw scratchpad. Do not delete items from it
 when you finish a phase here.
@@ -333,40 +336,69 @@ phase group rather than separately.
 
 ### Phase 6: Generic spec-driven referential integrity
 
-- [ ] Expose `foreignKey` from `src/gtfs-spec/adapter.ts` as a derived list of
+- [x] Expose `foreignKey` from `src/gtfs-spec/adapter.ts` as a derived list of
       `{ file, field, targetFile, targetField }`.
-- [ ] Add one generic pass in `src/modules/gtfs-validator.ts` that walks every
+- [x] Add one generic pass in `src/modules/gtfs-validator.ts` that walks every
       declared FK, builds the target id set once per target file, and raises
       `INVALID_REFERENCE` for each non-empty value with no match. Skip empty
       values: an optional FK left blank is not dangling.
-- [ ] Delete the five hand-written `INVALID_REFERENCE` checks (lines 296, 486,
+- [x] Delete the five hand-written `INVALID_REFERENCE` checks (lines 296, 486,
       538, 554, 1005) that the sweep now subsumes. Confirm the fares v2 checks
       from `5ae5715` that are *not* plain FK checks (conditional presence, area
       assignment) are left alone.
-- [ ] Extend `ValidationMessage` with the offending entity's identity,
+- [x] Extend `ValidationMessage` with the offending entity's identity,
       `entity?: { file, id, field, value }`, populated by the sweep and using
       `src/utils/gtfs-primary-keys.ts` to resolve the row's id. This is what
       removes any need to recover ids by regex from message text.
 - [ ] Watch for volume: the sweep will surface references the app never checked
       before. If a real feed lights up with hundreds of new rows, report the
       counts back to the user rather than quietly narrowing the sweep.
-- [ ] Commit: `feat(validation): check every spec-declared foreign key generically`
+- [x] Commit: `feat(validation): check every spec-declared foreign key generically`
+
+**Done** (commit `2316f46`). Notes:
+
+- `deriveGTFSForeignKeys()` returns `{ file, field, targets }`, not the flat
+  `targetFile`/`targetField` the plan sketched: several fields legitimately name
+  two tables (`trips.service_id`, `fare_leg_rules.network_id`), and the value
+  matches if it is present in **either**. Exported as `GTFS_FOREIGN_KEYS` from
+  `src/types/gtfs.ts` next to `GTFS_FIELD_SPECS`.
+- `validateFaresReferences()` was already a spec-driven sweep over 7 fares
+  tables. It was renamed `validateForeignKeys()` and widened to all 54
+  declarations; the declarations are grouped by file first so each table is
+  walked once no matter how many FKs it carries (stop_times has 5).
+- **Two declarations are deliberately skipped**, via `SKIPPED_FOREIGN_KEYS` in
+  the validator, both would be pure false positives:
+  - `calendar_dates.service_id`: the reference type is "Foreign ID referencing
+    `calendar.service_id` **or ID**", so a service that exists only in
+    `calendar_dates.txt` is valid. Without this every calendar_dates-only feed
+    would light up entirely.
+  - `stop_times.location_id`: targets `locations.geojson`, which is not a row
+    table, so there is no column to collect ids from.
+  They stay on the spec because `spec-field-edit.ts` uses `foreignKey` to build
+  pickers, which is still the right behavior for both.
+- Deleting the hand-written checks left `agency_ids`, `route_ids`, `trip_ids`
+  and `stop_ids` unused in `validateRoutes`/`validateTrips`/`validateStopTimes`
+  (plus the now-unused `getFileDataSyncTyped` reads that fed them). Removed,
+  which is also a small win: `validateStopTimes` no longer builds two sets over
+  the whole feed that the sweep builds again.
+- The volume item is left unchecked deliberately: it needs a real feed, so it is
+  part of the manual test pass.
 
 ### Phase 7: Make dangling objects findable from the issue card
 
-- [ ] Extend `IssueRow` in `src/utils/issue-card.ts` to carry the offending
+- [x] Extend `IssueRow` in `src/utils/issue-card.ts` to carry the offending
       entities (from Phase 6's `entity` field), and render each row as an
       expandable `<details>`/`<summary>` block listing them, following the
       existing pattern in `renderAreaStopLists()` (`fares-modal.ts:99-158`).
-- [ ] Each listed entity is a link to its own page, going through
+- [x] Each listed entity is a link to its own page, going through
       `PageStateManager` the same way existing entity lists do, and labelled via
       the `entity-display.ts` / `entity-references.ts` helpers (`getStopDisplay`
       and friends) rather than an inline-formatted string.
-- [ ] Keep `deriveFeedIssues()`'s grouping and its `CODE_LABELS`/`NOTES` maps as
+- [x] Keep `deriveFeedIssues()`'s grouping and its `CODE_LABELS`/`NOTES` maps as
       they are; they only need to thread entities through alongside the counts.
-- [ ] Cap the inline list at a sane length with an "and N more" tail so one
+- [x] Cap the inline list at a sane length with an "and N more" tail so one
       badly broken file cannot make the home page unusable.
-- [ ] `issue-card.ts` is vendored into `../test-track`, which has no concept of
+- [x] `issue-card.ts` is vendored into `../test-track`, which has no concept of
       GTFS entity pages. Keep the entity list optional so a row that carries only
       a label and a count still renders exactly as it does today, then re-vendor
       and bump the `@sha` in that repo's `VENDORED.md`. If entity linking cannot
@@ -374,20 +406,49 @@ phase group rather than separately.
       than forking the shared card.
 - [ ] Manually verify: load a feed with a dangling reference, expand the issue
       row, click through to the offending entity's page.
-- [ ] Commit: `feat(issues): list the offending entities under each feed issue`
+- [x] Commit: `feat(issues): list the offending entities under each feed issue`
+
+**Done** (commit `a515310`). Notes:
+
+- **Grouping changed after all.** The key is now `${file}:${code}:${field}`, not
+  `${file}:${code}`: one file raises `INVALID_REFERENCE` on several different
+  columns now that the sweep is generic, and "stop_times.txt rows with a stop_id
+  that does not exist" is actionable where the merged row was not. The key is
+  also carried as a structured `IssueGroup` tuple, so the `key.split(':')` rough
+  edge the plan flagged is gone. `OVERRIDES` is rekeyed to match
+  (`routes.txt:INVALID_REFERENCE:agency_id`).
+- The card stayed generic: `IssueItem` is `{ label, detail?, data? }` where
+  `data` is an opaque bag of `data-*` attributes. The card knows nothing about
+  navigation; `page-content-renderer.addEventListeners()` matches
+  `[data-issue-nav]` and dispatches to the existing `onAgencyClick`/
+  `onRouteClick`/`onStopClick`/`onServiceClick`/`onPathwayClick` dependencies.
+  test-track's copy passes no items and renders exactly as before.
+- Only files with their own page get a link (`ENTITY_PAGES` in
+  `feed-issues.ts`: agency, routes, stops, calendar, calendar_dates, pathways).
+  Everything else (stop_times, fare rules, ...) still lists its offending rows,
+  just as unlinked text, since there is no page to land on.
+- Labels need the row, not just the id, so `deriveFeedIssues()` takes an
+  optional `FeedIssueRowSource` (satisfied by `gtfsParser`) and a `RowIndex`
+  builds a pk -> row map **lazily, per file**, only for files that actually have
+  listed entities. Without that, labelling 12 stop_times entities would scan
+  stop_times 12 times.
+- Cap is `MAX_ITEMS = 12` with a `moreCount` tail.
+- Re-vendored as test-track commit `68ccd2d`, `@sha` bumped `7e94bec` ->
+  `a515310`, still `@status modified` (it swaps `escapeHtml` for test-track's
+  `escHtml`).
 
 ### Phase 8: Make them obviously fixable at the use site
 
-- [ ] **Red at the use site:** wherever a foreign key value is rendered
+- [x] **Red at the use site:** wherever a foreign key value is rendered
       read-only, show a dangling value in error color with a `title` explaining
       that the target does not exist. Covers `trips.shape_id` in the timetable
       trip rows and `routes.agency_id` on the route page at minimum. This is the
       read-only counterpart to the picker labelling that already exists.
-- [ ] **Contextual note on the entity page:** an entity whose own row has a
+- [x] **Contextual note on the entity page:** an entity whose own row has a
       dangling reference carries a warning note naming the broken field, so
       arriving from the issue card lands you on something that explains itself.
       Reuse `renderIssueCard` rather than inventing second warning markup.
-- [ ] **Fix path:** verify that clicking the field opens a picker carrying the
+- [x] **Fix path:** verify that clicking the field opens a picker carrying the
       synthetic `"${current} (dangling reference)"` option for every FK type, so
       the value can be repointed without being blanked first. Find and fill any
       FK that does not reach one of the three existing paths
@@ -398,7 +459,38 @@ phase group rather than separately.
       and a red `agency_id`, and clicking it offers a picker that fixes it.
       Separately confirm the `x3_...` dangling `shape_id` shows red on its trips
       and still draws the straight-line fallback.
-- [ ] Commit: `feat(issues): surface and fix dangling references at the use site`
+- [x] Commit: `feat(issues): surface and fix dangling references at the use site`
+
+**Done** (commit `0131a2e`). Notes:
+
+- The use sites read a **module-level dangling index** in `feed-issues.ts`, not
+  a live lookup. `publishFeedIssues(results, source)` (which replaces the
+  `deriveFeedIssues` + `setFeedIssues` pair at the `index.ts` call site) builds
+  two indexes from the `INVALID_REFERENCE` errors: `danglingByValue`, keyed
+  `${file}:${field}:${value}` for the render check, and `danglingByRow`, keyed
+  `${file}:${pk}` for the per-entity note.
+- Live-checking instead was rejected: `resolveForeignLabel` can only tell a
+  value apart when the target field is the target table's whole natural key, so
+  `trips.shape_id` (shapes has a composite pk) could not be checked that way.
+  Reusing the validator's result also keeps the red and the issue card in
+  agreement by construction.
+- The index would otherwise go stale the moment a value is fixed, so both fix
+  paths call `markReferenceResolved(file, field, value)` on commit and strip the
+  error classes from the span in place: `commit()` in `inline-editable-field.ts`
+  and `openTripPropShapePicker()` in `schedule-controller.ts`. A picker can only
+  ever produce an existing value or the same broken one, so nothing needs to
+  re-add an entry.
+- **Red is generic, not per-page.** It went into `renderInlineEditableField()`,
+  which every entity page renders its fields through, so `routes.agency_id`,
+  `stops.parent_station`, `stops.level_id`, `pathways.from_stop_id` etc. are all
+  covered by one change. The note went into `renderInlineEntityFields()` for the
+  same reason.
+- Fix path audit: `specFieldKind()` returns `'foreign'` for **every** field with
+  a `foreignKey`, and both the entity-page picker and the editable-table picker
+  branch on that kind and push the synthetic option, so all FKs are reachable.
+  The timetable is the only bespoke path; it excludes `route_id`/`service_id`/
+  `trip_id` from the trip property rows, leaving `shape_id` as the only FK
+  there, which already has its own picker. No gap to fill.
 
 ---
 
@@ -648,6 +740,186 @@ multi-value editing is out of scope for this pass.
 
 ---
 
+## Phases 18-20: Later additions (small, independent)
+
+These were added to `TODO.md` after the original planning pass. Neither depends
+on any earlier phase, so they can be picked up whenever.
+
+### Phase 18: Replace glyph characters with SVG icons
+
+**Goal:** No text glyphs standing in for icons. Every one becomes a proper inline
+SVG, styled in theme, sharing the existing icon helpers.
+
+`src/modules/modal-utils.ts` is the canonical icon home: `renderTrashIcon`
+(line 1), `renderUploadIcon` (line 5), `renderRouteWaypointsIcon` (line 13), each
+taking a Tailwind `sizeClass` defaulting to `h-4 w-4`. Follow that signature
+exactly for anything new. Decided with the user: **all** of the glyphs below get
+replaced, including the `route-graph.ts` arrow.
+
+Full inventory (this is every glyph in `src/`, verified by grep):
+
+- `src/modules/calendar-modal.ts:236` - `&#9654;` (▶) inside a
+  `badge badge-xs badge-success` marking the feed start date.
+- `src/modules/calendar-modal.ts:240` - `&#9664;` (◀) inside a
+  `badge badge-xs badge-error` marking the feed end date.
+- `src/modules/calendar-modal.ts:427` - `▲` with inline `style="color:#4ade80"`,
+  an added service date in the timeline.
+- `src/modules/calendar-modal.ts:431` - `▼` with inline `style="color:#f87171"`,
+  a removed service date in the timeline.
+- `src/modules/ui.ts` - 9 collapse chevrons set via `chevronEl.textContent`, at
+  lines 912, 944, 996, 999, 1025, 1028, 1068, 1105, 1108. These are assigned
+  imperatively, not templated, so they need `innerHTML` (or a class toggle on a
+  single static SVG) rather than `textContent`.
+- `src/modules/route-graph.ts:166` - `→`.
+
+- [ ] Add the missing icon helpers to `modal-utils.ts`, matching the existing
+      `sizeClass`-parameter signature: a chevron (one icon, rotated via a class
+      for the up/down states, rather than two separate icons), a start/end
+      triangle marker, an up/down service-date marker, and an arrow.
+- [ ] Swap the two calendar-modal date badges (lines 236, 240). Keep them inside
+      their `badge badge-xs badge-success` / `badge-error` wrappers and keep the
+      existing `title` attributes so the hover text is unchanged.
+- [ ] Swap the two calendar-modal timeline markers (lines 427, 431). Replace the
+      inline `style="color:#4ade80"` / `#f87171` hex colors with theme classes
+      (`text-success` / `text-error`) instead of carrying the hardcoded hex onto
+      the SVG. Keep the surrounding `tooltip`/`data-tip` wrapper intact.
+- [ ] Swap the 9 `ui.ts` chevrons. Since these are runtime `textContent`
+      assignments inside expand/collapse handlers, prefer rendering the chevron
+      SVG once into the element and toggling a `rotate-180` class on it, so the
+      handlers stop rebuilding markup on every toggle.
+- [ ] Swap `route-graph.ts:166`. Check first whether that arrow is presentational
+      or part of a string that is measured/parsed (it sits in graph layout code);
+      if it feeds into a width or text computation, an SVG will change layout, so
+      confirm the render path before replacing it.
+- [ ] Size and color must come from Tailwind/DaisyUI classes, not inline styles,
+      so all 9 themes stay correct. Verify light and dark themes.
+- [ ] Re-grep `src/` for glyphs afterwards to confirm none remain (note
+      `page-content-renderer.ts` needs `rg --text` until Phase 10 removes its NUL
+      byte).
+- [ ] Manually verify: calendar modal badges and timeline markers, and every
+      expand/collapse chevron in the file/route list.
+- [ ] Commit: `refactor(icons): replace glyph characters with svg icons`
+
+### Phase 19: Shapes list shows routes and trip counts, with sticky chrome
+
+**Goal:** The Shapes modal table tells you what actually uses each shape, links
+through to those routes, and stays usable with hundreds of shapes.
+
+`src/modules/shapes-manager.ts` (332 lines) is self-contained. `renderBody()`
+(lines 37-79) currently renders a 3-column table (Shape ID / Points / Actions)
+from a `Map<string, number>` of shape_id to point count, built by `getShapes()`
+(lines 91-101) via `gtfsDatabase.getAllRows('shapes')`. `open()` (line 90) wires
+`refreshPanel()` (lines 116-119), which re-renders `renderBody()` into
+`#shapes-panel` after every mutation, so any new data the table needs must be
+recomputed there too, not just on first open.
+
+Decided with the user: the usage count is the **trip** count, plus a link per
+distinct route. Keep it in theme, and share code rather than inlining new markup.
+
+- [ ] Build a shape usage map alongside `getShapes()`: read `trips.txt` (use
+      `gtfsParser.getFileDataSync('trips.txt')`, the pattern at
+      `schedule-controller.ts:746`) and produce
+      `Map<shape_id, { tripCount: number, routeIds: Set<string> }>`. Include
+      shapes with zero trips (they must still render a row, showing 0).
+- [ ] Add a "Trips" column and a "Routes" column to the table in `renderBody()`.
+      Keep the existing "Points" column.
+- [ ] Render each route in the Routes column via the shared helpers, not an
+      inline string: `getRouteDisplay` (`src/utils/entity-display.ts:34`) with
+      `renderOptionLabel`, or `renderRouteReference`
+      (`src/utils/entity-references.ts:107`) if its markup fits the table cell.
+      Check `renderRouteReference` first, and only fall back to the display
+      helpers if the reference card is too heavy for a table row.
+- [ ] Route links must navigate through `PageStateManager`
+      (`{type: 'route', route_id}`), following the delegated-click +
+      `data-route-id` pattern used elsewhere. The Shapes modal has no
+      `PageStateManager` reference today, so `ShapesManager`'s constructor
+      (line 85, currently `gtfsParser` + `patchManager`) needs one injected from
+      `src/index.ts`. Decide whether clicking a route also closes the Shapes
+      modal; navigating behind an open modal is the wrong behavior, so it
+      probably should close.
+- [ ] Make the table body scrollable with the `<thead>` still visible: wrap the
+      table in a fixed-max-height `overflow-y-auto` container and use DaisyUI's
+      `table-pin-rows` (or `position: sticky` on the `th`).
+- [ ] **No horizontal scrolling.** The two new columns must fit without one.
+      `showModal()` takes a `boxClassName` (`modal-utils.ts:58`); the Shapes call
+      (`shapes-manager.ts:105-109`) passes none, so it gets the default narrow
+      box. Widen it the way the Fares modal already does
+      (`fares-modal.ts:588`: `boxClassName: 'max-w-6xl w-11/12'`). Then drop the
+      `overflow-x-auto` wrapper (line 63) and let the Routes column wrap instead
+      of overflowing; a shape used by many routes is the case that will push the
+      table wide, so wrap or truncate that cell rather than growing the table.
+- [ ] Keep the "Upload GPX" button always visible: move it out of the scrolling
+      region into a pinned footer below the scroll container (it is currently at
+      line 76, inside the scrolling flow). The empty-feed branch (lines 38-43)
+      already renders it standalone and needs no change.
+- [ ] Confirm `refreshPanel()` (lines 116-119) recomputes the trips/routes data,
+      not just the point counts, so the columns are correct after a
+      new/replace/delete without reopening the modal.
+- [ ] Watch for cost: `getAllRows('shapes')` already walks every shape point, and
+      this adds a full `trips` scan on every panel refresh. If a large feed makes
+      the modal sluggish, compute the usage map once per `open()` and only
+      recompute the piece a given mutation invalidates.
+- [ ] Manually verify: open Shapes on a feed with many shapes, confirm the header
+      stays put while scrolling and the upload button stays reachable; confirm
+      trip counts and route links are right, including a shape used by more than
+      one route and a shape used by none.
+- [ ] Commit: `feat(shapes): show routes and trip counts in the shapes list`
+
+### Phase 20: Restore field tooltips in the Fares modal
+
+**Goal:** Hovering a column header in any Fares table shows the spec description
+tooltip again, as it does elsewhere in the app.
+
+The plumbing is all still present, which is why this is a regression rather than
+a missing feature:
+
+- `renderFieldLabelContent()` (`src/utils/field-component.ts:196-209`) wraps the
+  label in `<span class="field-tooltip-trigger" tabindex="0"
+  data-tooltip-content="...">` whenever `buildFieldTooltipContent(config)`
+  returns something.
+- `src/modules/editable-table.ts:316` calls `renderFieldLabelContent` for every
+  spec-backed `<th>`, and `fares-modal.ts` renders every fares table through
+  `renderEditableTable()`. So the triggers should be in the DOM.
+- `src/utils/tooltip-position.ts` owns the portal: `initFieldTooltipPortal()`
+  (line 165) registers delegated `pointerover`/`pointerout`/`focusin`/`focusout`
+  listeners on `document`, matching `TRIGGER_SELECTOR = '.field-tooltip-trigger'`
+  (line 19), and appends a `position: fixed`, `z-[100]` portal to `document.body`
+  (lines 90-96). It is called once from `src/index.ts:45`.
+
+Two header paths exist and only one carries a tooltip, which is the first thing
+to check: `editable-table.ts:314` returns a bare `<th>${override.label}</th>` for
+columns with a `columnOverride` label, bypassing `renderFieldLabelContent`
+entirely, and `:327` does the same for `extraColumns`. If the fares tables set
+`columnOverrides` with labels, that alone explains missing tooltips on exactly
+those columns.
+
+- [ ] Diagnose before changing anything. Open the Fares modal and check in
+      devtools: (a) do `.field-tooltip-trigger` elements exist in the fares
+      `<th>`s, (b) if they exist, does the portal element get appended to
+      `document.body` on hover, and (c) if it is appended, is it visible or is it
+      behind the modal / clipped by an ancestor.
+- [ ] If the triggers are missing: the `columnOverride?.label` branch at
+      `editable-table.ts:314` is the cause. Fix by passing the override label
+      through `renderFieldLabelContent` (it already accepts
+      `{ ...fieldConfig, label: override.label }` on the very next branch at
+      line 316) instead of returning a bare `<th>`. Decide separately whether
+      `extraColumns` (line 327) should get tooltips too, since those are not
+      spec-backed and may have no description to show.
+- [ ] If the portal appears but is invisible: it is a stacking or clipping
+      problem between the portal's `z-[100]` and the `showModal()` overlay. Check
+      the overlay's z-index in `modal-utils.ts` and `src/styles/main.css`
+      (lines 43, 52 set `z-index: 40 !important` and `50`). Raise the portal
+      rather than lowering the modal.
+- [ ] Check whether this affects only Fares or every `renderEditableTable()`
+      caller. If it is generic, fix it in `editable-table.ts` / `field-component.ts`
+      once rather than patching the fares call site.
+- [ ] Manually verify: hover and keyboard-focus (`tabindex="0"` means Tab must
+      work too) a column header in each fares table, confirm the tooltip appears
+      above the modal and is fully readable.
+- [ ] Commit: `fix(fares): restore field tooltips on table headers`
+
+---
+
 ## Blocked on live reproduction
 
 The two phases below cannot be root-caused by reading the code: static analysis
@@ -751,6 +1023,13 @@ In the plan (see PLAN_TODO.md)
   else we list services (route page, etc) it would be filtered and contain the
   appropriate links. We might just drop the count of trips etc because that's
   not particularly useful
+- Feat: remove glyph "emojis" like ▶ ◀ ▲ ▼ → and replace them with proper SVG
+  icons, in theme, sharing the icon helpers as much as possible
+- Feat: improve the shapes list. Include the routes using each shape, linking to
+  those routes, and the number of trips using the shape. Make the table
+  scrollable with the header still visible and the upload GPX button always
+  visible. No horizontal scrolling, use a wider modal if needed.
+- Bug: tooltips are not working in the fares tables, they should be back
 - Feat(medium): Lets add support for the tables in fares to have lists
   (reducing repetitive columns). For now, lets do this for fare_products with
   fare_media_id. In fare_leg_rules, lets do it for from_area_id and to_area_id.

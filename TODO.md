@@ -28,6 +28,13 @@ In the plan (see PLAN_TODO.md)
   else we list services (route page, etc) it would be filtered and contain the
   appropriate links. We might just drop the count of trips etc because that's
   not particularly useful
+- Feat: remove glyph "emojis" like ▶ ◀ ▲ ▼ → and replace them with proper SVG
+  icons, in theme, sharing the icon helpers as much as possible
+- Feat: improve the shapes list. Include the routes using each shape, linking to
+  those routes, and the number of trips using the shape. Make the table
+  scrollable with the header still visible and the upload GPX button always
+  visible. No horizontal scrolling, use a wider modal if needed.
+- Bug: tooltips are not working in the fares tables, they should be back
 - Feat(medium): Lets add support for the tables in fares to have lists
   (reducing repetitive columns). For now, lets do this for fare_products with
   fare_media_id. In fare_leg_rules, lets do it for from_area_id and to_area_id.
