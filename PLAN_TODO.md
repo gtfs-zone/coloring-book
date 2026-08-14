@@ -716,24 +716,54 @@ route+service timetable URL states.
 
 ### Phase 11: Extract the timeline renderer into a shared module
 
-- [ ] Create `src/modules/service-timeline.ts` (check for naming conflicts
+- [x] Create `src/modules/service-timeline.ts` (check for naming conflicts
       first). Move `renderTimeline()` and its private helpers (`isServiceActive`,
       `getServiceColor`, `renderWeekdayDots`, `getDaysTooltip`, `hexToRgba`,
       `esc`, and the row-click wiring currently in `attachTimelineListeners`) out
       of `calendar-modal.ts` into this new module, exporting what's needed.
-- [ ] Add service-id filtering so callers can scope the `ServiceDataMap` to a
+- [x] Add service-id filtering so callers can scope the `ServiceDataMap` to a
       specific set of `service_id`s. Prefer a post-filter step
       (`filterServiceDataMap(map, service_ids)`) over a parameter on
       `loadCalendarData()`, to keep the latter simple.
-- [ ] Update `calendar-modal.ts` to import from the new module instead of
+- [x] Update `calendar-modal.ts` to import from the new module instead of
       defining these locally; confirm the Calendar modal still renders
       identically.
-- [ ] Add support for an optional fixed `route_id` context (the route page needs
+- [x] Add support for an optional fixed `route_id` context (the route page needs
       a timeline row to link to a specific timetable, not just a service): an
       optional `data-route-id` attribute on `.timeline-row`, and an `onRowClick`
       callback shape flexible enough to carry `(service_id, route_id?)`.
 - [ ] Manually verify the Calendar modal works exactly as before this refactor.
-- [ ] Commit: `refactor(calendar): extract the services timeline into a shared module`
+- [x] Commit: `refactor(calendar): extract the services timeline into a shared module`
+
+**Done** (commit `e1534fc`). Notes:
+
+- Public surface of `src/modules/service-timeline.ts`: types `ServiceData`,
+  `ServiceDataMap`, `ServiceTimelineSource` (just `getAllRows`),
+  `ServiceTimelineOptions`; functions `loadServiceData`, `filterServiceDataMap`,
+  `isServiceActive`, `getServiceColor`, `renderServiceTimeline`,
+  `attachServiceTimelineListeners`.
+- `loadCalendarData` moved too and is now `loadServiceData`. It is the only
+  producer of a `ServiceDataMap`, so leaving it behind in the modal would have
+  forced Phase 12's callers to import from `calendar-modal.ts`. `CalendarModalDeps.gtfsDatabase`
+  is now typed as `ServiceTimelineSource`, so the shape is declared once.
+- `filterServiceDataMap` deliberately keeps each service's already-assigned
+  color, so a service is the same color on the home page, the route page and in
+  the modal. That means a filtered map's colors are not contiguous in the
+  palette, which is the right tradeoff.
+- The local `esc()` is gone from both files: `src/utils/escape-html.ts`
+  `escapeHtml` already existed and does the same job plus `'`. The modal's
+  `renderMonthGrid`/`renderMonthNav` (which stay in `calendar-modal.ts`) now use
+  it too.
+- Route context is a fixed `options.route_id` on the whole timeline, rendered as
+  `data-route-id` on every `.timeline-row`; `attachServiceTimelineListeners(root,
+  (service_id, route_id?) => ...)` reads it back off the row. Per-service route
+  mapping was not added: no Phase 12 caller needs one row's route to differ from
+  its neighbour's, and the stop page can render one timeline per route if it
+  turns out to need that.
+- `attachServiceTimelineListeners` takes a `ParentNode`, not the whole document,
+  so several timelines can coexist on one page in Phase 12.
+- The modal's timeline markup is byte-identical to before apart from `'` now
+  being escaped as `&#39;` inside attributes.
 
 ### Phase 12: Swap the home, route and stop pages to the timeline view
 
