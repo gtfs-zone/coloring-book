@@ -5,8 +5,9 @@
  * optional explanatory note. Renders nothing when every count is zero, so a
  * clean feed does not leave an empty card as furniture.
  *
- * Shared shape with test-track's status page, which repeats this markup in
- * renderMapIssues / renderStationIssues / renderPaddedColumns.
+ * Vendored into ../test-track, whose status page renders the same card. Keep it
+ * generic: no GTFS or coloring-book types, escaping only. Changing the markup
+ * here means re-vendoring there.
  */
 
 import { escapeHtml } from './escape-html.js';
@@ -27,7 +28,7 @@ export function renderIssueCard(title: string, rows: IssueRow[]): string {
     .map(
       (row) => `
         <div>
-          <div class="flex justify-between gap-2 text-sm">
+          <div class="flex justify-between gap-2 text-xs">
             <span>${escapeHtml(row.label)}</span>
             <span class="tabular-nums font-semibold">${row.count}</span>
           </div>
