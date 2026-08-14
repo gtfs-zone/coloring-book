@@ -852,6 +852,9 @@ containers). Details worth carrying forward:
   reads as one tooltip. Cells outside the range carry no trigger at all.
 - Converted alongside it: the timeline row label, the service edit button, and
   the calendar modal's day chips and feed start/end badges.
+- The portal was at `z-[100]`, below DaisyUI's modal layer (z-index 999), so
+  tooltips triggered inside a modal were painted behind it and looked missing.
+  It is now `z-[2000]`. Any future overlay must stay below that.
 
 ---
 

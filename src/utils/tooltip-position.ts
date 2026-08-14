@@ -88,7 +88,9 @@ function showPortal(trigger: HTMLElement): void {
   }
 
   const portal = document.createElement('div');
-  portal.className = `${PORTAL_CLASS} fixed z-[100] max-w-[36rem] max-h-[60vh] overflow-y-auto overflow-x-hidden text-left text-xs font-normal leading-snug whitespace-normal p-3 rounded-field bg-neutral text-neutral-content pointer-events-auto`;
+  // z-index sits above DaisyUI's modal layer (999) so tooltips triggered
+  // inside a modal aren't painted behind it.
+  portal.className = `${PORTAL_CLASS} fixed z-[2000] max-w-[36rem] max-h-[60vh] overflow-y-auto overflow-x-hidden text-left text-xs font-normal leading-snug whitespace-normal p-3 rounded-field bg-neutral text-neutral-content pointer-events-auto`;
   portal.innerHTML = content;
   portal.addEventListener('pointerenter', clearHideTimeout);
   portal.addEventListener('pointerleave', scheduleHide);

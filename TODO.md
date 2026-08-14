@@ -38,7 +38,9 @@ In the plan (see PLAN_TODO.md)
 - Feat: finish unifying tooltips. The services timeline and calendar modal now
   use the portaled field-tooltip-trigger, but timetable-renderer.ts still uses
   native title attributes (dangling reference cells, brouter/delete buttons,
-  stop rows). Sweep the rest of src/ for title= and DaisyUI tooltip/data-tip
+  stop rows). Sweep the rest of src/ for title= and DaisyUI tooltip/data-tip.
+  Done: the portal now sits at z-[2000], above DaisyUI's modal layer, so
+  tooltips inside modals show up
 - Bug: the Files modal is not scrollable
 - Bug: going back to the Files modal's file list still shows the last file that
   was clicked; that prior-selection behavior should be fully stripped
