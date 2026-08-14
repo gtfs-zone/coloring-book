@@ -29,6 +29,8 @@ const MAX_ITEMS = 12;
 /**
  * Files whose rows have their own page, and the page-state key to navigate by.
  * A file absent here still lists its offending rows, just without a link.
+ * trips.txt is the one exception, handled by `timetableNavData`: a trip has no
+ * page but does have a timetable to open.
  */
 const ENTITY_PAGES: Record<string, { nav: string; idField: string }> = {
   'agency.txt': { nav: 'agency', idField: 'agency_id' },
@@ -169,13 +171,14 @@ function buildIssueItem(entity: ValidationEntity, index: RowIndex): IssueItem {
     ? renderOptionLabel(getEntityDisplay(table, row as Record<string, string>))
     : entity.id || entity.file;
 
-  const data: Record<string, string> = {
-    'issue-field': entity.field,
-    'issue-value': entity.value,
-  };
+  // Only navigation data: the card renders an item as a link whenever it
+  // carries any data attribute, so a row with no page to go to must carry none.
+  const data: Record<string, string> = {};
   if (page && row && String(row[page.idField] ?? '') !== '') {
     data['issue-nav'] = page.nav;
     data['issue-id'] = String(row[page.idField]);
+  } else if (entity.file === 'trips.txt' && row) {
+    Object.assign(data, timetableNavData(row));
   }
 
   return {
@@ -183,6 +186,34 @@ function buildIssueItem(entity: ValidationEntity, index: RowIndex): IssueItem {
     detail: `${entity.field}: ${formatIssueValue(entity.value)}`,
     data,
   };
+}
+
+/**
+ * Navigation data for a trips.txt row.
+ *
+ * A trip has no page of its own: it is shown inside the timetable for its
+ * route and service, which takes three fields off the row rather than the one
+ * id `ENTITY_PAGES` carries. A trip missing either id has no timetable to open,
+ * so it stays a plain item.
+ */
+function timetableNavData(
+  row: Record<string, unknown>
+): Record<string, string> {
+  const route_id = String(row.route_id ?? '');
+  const service_id = String(row.service_id ?? '');
+  if (route_id === '' || service_id === '') {
+    return {};
+  }
+  const data: Record<string, string> = {
+    'issue-nav': 'timetable',
+    'issue-route-id': route_id,
+    'issue-service-id': service_id,
+  };
+  const direction_id = String(row.direction_id ?? '');
+  if (direction_id !== '') {
+    data['issue-direction-id'] = direction_id;
+  }
+  return data;
 }
 
 /**

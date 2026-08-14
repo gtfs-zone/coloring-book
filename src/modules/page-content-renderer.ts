@@ -1003,6 +1003,19 @@ export class PageContentRenderer {
     container.querySelectorAll('[data-issue-nav]').forEach((item) => {
       item.addEventListener('click', () => {
         const nav = item.getAttribute('data-issue-nav');
+        // A trip opens its route+service timetable, not a page of its own.
+        if (nav === 'timetable') {
+          const route_id = item.getAttribute('data-issue-route-id');
+          const service_id = item.getAttribute('data-issue-service-id');
+          if (route_id && service_id) {
+            this.dependencies.onTimetableClick(
+              route_id,
+              service_id,
+              item.getAttribute('data-issue-direction-id') ?? undefined
+            );
+          }
+          return;
+        }
         const id = item.getAttribute('data-issue-id');
         if (!id) {
           return;
