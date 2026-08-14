@@ -937,19 +937,45 @@ new row); grouping only applies to existing rows.
 
 ### Phase 14: Apply list columns to the four fares tables
 
-- [ ] `fare_products`: group by everything except `fare_media_id`, mark
+Done, plus one semantic change to Phase 13's grouping that the multi-list tables
+forced. Phase 13 deduped each list column independently, which is correct with a
+single list column (`fare_products`) but not with a from/to pair: rows
+`(A -> X)` and `(B -> Y)` sharing every other column would have rendered as
+`from: A, B` / `to: X, Y`, claiming four pairings where only two exist.
+
+Decided with the user: **a group only collapses when every combination of its
+listed values is actually present**. `groupRows()` now partitions each candidate
+group (rows identical across all non-list columns) into cross-product blocks via
+`crossProductBlocks()`, a greedy grow-one-value-at-a-time cover that only admits
+a value when all the combinations it implies exist. Rows left over become blocks
+of their own, so a partial product splits into several displayed rows rather
+than lying about one. With fewer than two list columns it short-circuits and the
+Phase 13 behaviour is unchanged. `renderListCell()` needed no change: distinct
+values per column is exactly right once the block is a complete product.
+
+Two details worth remembering:
+
+- Blocks are keyed on the list values only, so two records the rendered columns
+  cannot tell apart (possible when `config.fields` is a subset of the table's
+  fields) share an entry and stay together rather than one being dropped.
+- `fare_leg_join_rules` has *all four* of its columns marked as lists, so the
+  whole table is one candidate group and the cross-product split is the only
+  thing separating its displayed rows.
+
+- [x] `fare_products`: group by everything except `fare_media_id`, mark
       `fare_media_id` as a list column (`FARE_PRODUCTS` entry, ~lines 385-398).
-- [ ] `fare_leg_rules`: mark `from_area_id` and `to_area_id` as list columns
+- [x] `fare_leg_rules`: mark `from_area_id` and `to_area_id` as list columns
       (`FARE_LEG_RULES` entry, ~lines 399-414).
-- [ ] `fare_transfer_rules`: mark `from_leg_group_id` and `to_leg_group_id` as
+- [x] `fare_transfer_rules`: mark `from_leg_group_id` and `to_leg_group_id` as
       list columns (`FARE_TRANSFER_RULES` entry, ~lines 432-445).
-- [ ] `fare_leg_join_rules`: mark both OD pairs (`from_network_id`/`to_network_id`
+- [x] `fare_leg_join_rules`: mark both OD pairs (`from_network_id`/`to_network_id`
       and `from_stop_id`/`to_stop_id`) as list columns (`FARE_LEG_JOIN_RULES`
-      entry, ~lines 415-431). Double check field names against the spec file.
+      entry, ~lines 415-431). Field names confirmed against
+      `src/gtfs-spec/files/fare-leg-join-rules.ts`: those four are the whole table.
 - [ ] Manually verify each of the 4 tables with a feed that has actual
       duplication on these keys (create test rows if the sample feed has none),
-      confirming rows collapse and list correctly.
-- [ ] Commit: `feat(fares): list repeated foreign keys instead of duplicating rows`
+      confirming rows collapse and list correctly. **Left to the user.**
+- [x] Commit: `feat(fares): list repeated foreign keys instead of duplicating rows`
 
 ### Phase 15: Generalize the areas/networks list display
 
