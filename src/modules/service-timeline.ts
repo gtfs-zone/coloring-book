@@ -9,10 +9,12 @@
 import { escapeHtml } from '../utils/escape-html.js';
 import { formatDaysOfWeek } from '../utils/entity-references.js';
 import {
+  formatGtfsDateRange,
   formatGtfsDateWithWeekday,
   parseGtfsDate,
   toGtfsDate as formatGTFS,
 } from '../utils/gtfs-date.js';
+import { renderPencilIcon } from './modal-utils.js';
 
 export interface ServiceData {
   calendar: Record<string, unknown> | null;
@@ -26,6 +28,9 @@ export type ServiceDataMap = Map<string, ServiceData>;
 export interface ServiceTimelineSource {
   getAllRows: (tableName: string) => Promise<Record<string, unknown>[]>;
 }
+
+/** Per-row button that opens the service itself rather than the timetable. */
+const SERVICE_EDIT_BTN = 'timeline-service-edit-btn';
 
 export interface ServiceTimelineOptions {
   /** Fixed route context: every row carries it, so a click can land on a
@@ -333,25 +338,50 @@ export function renderServiceTimeline(
             calStart <= weekEnd &&
             calEnd >= weekStart;
 
+          // One `title` per cell rather than a DaisyUI tooltip: `.tooltip` sets
+          // `display:inline-block`, which would pull every week cell out of the
+          // table layout. Exception dates fold into the same string so a tick
+          // does not need a second, nested tooltip of its own.
           const ticks: string[] = [];
-          for (let t = weekStartTs; t <= weekEndTs; t += 86400000) {
-            const dateStr = formatGTFS(new Date(t));
+          const notes: string[] = [];
+          let runningDays = 0;
+          // The loop starts on a Sunday, so the offset indexes WEEKDAY_KEYS.
+          for (let day = 0; day < 7; day++) {
+            const dateStr = formatGTFS(new Date(weekStartTs + day * 86400000));
             const excType = excByDate.get(dateStr);
             if (excType === 1) {
-              ticks.push(
-                `<span class="tooltip tooltip-top" data-tip="${escapeHtml(formatGtfsDateWithWeekday(dateStr))}"><span style="color:#4ade80">▲</span></span>`
-              );
+              ticks.push(`<span style="color:#4ade80">▲</span>`);
+              notes.push(`Added ${formatGtfsDateWithWeekday(dateStr)}`);
             } else if (excType === 2) {
-              ticks.push(
-                `<span class="tooltip tooltip-top" data-tip="${escapeHtml(formatGtfsDateWithWeekday(dateStr))}"><span style="color:#f87171">▼</span></span>`
-              );
+              ticks.push(`<span style="color:#f87171">▼</span>`);
+              notes.push(`Removed ${formatGtfsDateWithWeekday(dateStr)}`);
+            }
+
+            const runsToday =
+              excType === 1 ||
+              (excType !== 2 &&
+                calStart !== null &&
+                calEnd !== null &&
+                calStart <= dateStr &&
+                calEnd >= dateStr &&
+                Number(sd.calendar![WEEKDAY_KEYS[day]]) === 1);
+            if (runsToday) {
+              runningDays += 1;
             }
           }
+
+          const title = [
+            formatGtfsDateRange(weekStart, weekEnd),
+            runningDays > 0
+              ? `Runs ${runningDays} day${runningDays !== 1 ? 's' : ''}`
+              : 'Does not run',
+            ...notes,
+          ].join(' · ');
 
           const bgStyle = isActive
             ? `background-color:${hexToRgba(sd.color, 0.2)}`
             : '';
-          return `<td class="w-5 min-w-5 h-7 border-r border-base-300/20 text-center align-middle leading-none" style="${bgStyle}">${ticks.join('')}</td>`;
+          return `<td class="w-5 min-w-5 h-7 border-r border-base-300/20 text-center align-middle leading-none" style="${bgStyle}" title="${escapeHtml(title)}">${ticks.join('')}</td>`;
         })
         .join('');
 
@@ -364,7 +394,15 @@ export function renderServiceTimeline(
 
       const dotCell = `<td class="w-14 min-w-14 px-1 py-1 border-b border-base-300/30 text-xs tooltip tooltip-right" data-tip="${escapeHtml(getDaysTooltip(sd.calendar))}">${renderWeekdayDots(sd.calendar)}</td>`;
 
-      return `<tr class="timeline-row cursor-pointer hover:bg-base-300/20" data-service-id="${escapeHtml(sid)}"${routeAttr}>${labelCell}${dotCell}${cells}</tr>`;
+      // Only needed where the row itself goes somewhere else: without a route
+      // context the row already opens the service page.
+      const editCell = options.route_id
+        ? `<td class="w-8 min-w-8 px-1 py-1 border-b border-base-300/30 text-center">
+          <button type="button" class="btn btn-ghost btn-xs px-1 ${SERVICE_EDIT_BTN}" data-service-id="${escapeHtml(sid)}" title="Edit service ${escapeHtml(sid)}">${renderPencilIcon('h-3 w-3')}</button>
+        </td>`
+        : '';
+
+      return `<tr class="timeline-row cursor-pointer hover:bg-base-300/20" data-service-id="${escapeHtml(sid)}"${routeAttr}>${labelCell}${dotCell}${editCell}${cells}</tr>`;
     })
     .join('');
 
@@ -372,8 +410,17 @@ export function renderServiceTimeline(
     ? `<div class="text-xs text-warning mb-2">Date range exceeds 3 years: display truncated.</div>`
     : '';
 
+  const hintHtml = options.route_id
+    ? `<div class="text-xs opacity-70 mb-2">Select a service to show the timetable for that service, or use the pencil to edit the service itself.</div>`
+    : '';
+
+  const editHeader = options.route_id
+    ? `<th class="w-8 min-w-8 border-b border-base-300"></th>`
+    : '';
+
   return `
     <div>
+      ${hintHtml}
       ${warningHtml}
       <div class="overflow-x-auto">
         <table class="text-xs border-collapse">
@@ -381,6 +428,7 @@ export function renderServiceTimeline(
             <tr>
               <th class="sticky left-0 z-10 bg-base-200 border-b border-base-300" style="width:${labelColPx}px;min-width:${labelColPx}px"></th>
               <th class="w-14 min-w-14 px-1 py-0.5 border-b border-base-300 text-center whitespace-nowrap"><span class="font-mono tracking-tight text-base-content/50 text-xs">SMTWTFS</span></th>
+              ${editHeader}
               ${headerHtml}
             </tr>
           </thead>
@@ -396,6 +444,11 @@ export function renderServiceTimeline(
 /**
  * Wire row clicks. `route_id` is only passed when the timeline was rendered
  * with a route context.
+ *
+ * The per-row edit button calls back without a `route_id`, which is the same
+ * shape as a row on a timeline that has no route context, so a caller only
+ * needs the one branch: route present means the timetable, absent means the
+ * service itself.
  */
 export function attachServiceTimelineListeners(
   root: ParentNode,
@@ -406,6 +459,16 @@ export function attachServiceTimelineListeners(
       const sid = row.dataset.serviceId;
       if (sid) {
         onRowClick(sid, row.dataset.routeId);
+      }
+    });
+  });
+
+  root.querySelectorAll<HTMLElement>(`.${SERVICE_EDIT_BTN}`).forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const sid = btn.dataset.serviceId;
+      if (sid) {
+        onRowClick(sid);
       }
     });
   });
