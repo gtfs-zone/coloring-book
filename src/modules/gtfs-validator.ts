@@ -604,6 +604,7 @@ export class GTFSValidator {
     if (calendar) {
       calendar.forEach((service, index: number) => {
         const rowNum = index + 1;
+        const serviceId = this.rowId('calendar', service);
 
         if (!service.service_id || String(service.service_id).trim() === '') {
           this.addError(
@@ -620,19 +621,31 @@ export class GTFSValidator {
           !this.isValidDate(String(service.start_date))
         ) {
           this.addError(
-            `Row ${rowNum}: start_date format is invalid (should be YYYYMMDD)`,
+            `Row ${rowNum}: start_date '${String(service.start_date)}' is invalid (should be YYYYMMDD)`,
             'INVALID_DATE_FORMAT',
             GTFS_TABLES.CALENDAR,
-            rowNum
+            rowNum,
+            {
+              file: GTFS_TABLES.CALENDAR,
+              id: serviceId,
+              field: 'start_date',
+              value: String(service.start_date),
+            }
           );
         }
 
         if (service.end_date && !this.isValidDate(String(service.end_date))) {
           this.addError(
-            `Row ${rowNum}: end_date format is invalid (should be YYYYMMDD)`,
+            `Row ${rowNum}: end_date '${String(service.end_date)}' is invalid (should be YYYYMMDD)`,
             'INVALID_DATE_FORMAT',
             GTFS_TABLES.CALENDAR,
-            rowNum
+            rowNum,
+            {
+              file: GTFS_TABLES.CALENDAR,
+              id: serviceId,
+              field: 'end_date',
+              value: String(service.end_date),
+            }
           );
         }
       });
@@ -656,10 +669,16 @@ export class GTFSValidator {
 
         if (!exception.date || !this.isValidDate(String(exception.date))) {
           this.addError(
-            `Row ${rowNum}: date format is invalid (should be YYYYMMDD)`,
+            `Row ${rowNum}: date '${String(exception.date ?? '')}' is invalid (should be YYYYMMDD)`,
             'INVALID_DATE_FORMAT',
             GTFS_TABLES.CALENDAR_DATES,
-            rowNum
+            rowNum,
+            {
+              file: GTFS_TABLES.CALENDAR_DATES,
+              id: this.rowId('calendar_dates', exception),
+              field: 'date',
+              value: String(exception.date ?? ''),
+            }
           );
         }
 
