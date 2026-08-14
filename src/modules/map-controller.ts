@@ -643,6 +643,49 @@ export class MapController {
   // ========================================
 
   /**
+   * The given stops plus every parent_station above them.
+   *
+   * `getStopIdsForRoute` returns what stop_times references, which in a feed
+   * that models platforms is the children. Those features are not drawn while
+   * their station is collapsed (DEFAULT_STOPS_FILTER keeps only top-level stops
+   * and stations), so marking only them leaves the spotlight invisible: the
+   * station that is drawn never gets the onRoute state, so it is not a
+   * SPECIAL_STOP and gets faded out with everything else.
+   *
+   * Both ends are kept rather than replacing the child with its station, so an
+   * expanded station's platforms stay lit too.
+   */
+  private withAncestors(stop_ids: Set<string>): Set<string> {
+    const stops = this.gtfsParser?.getFileDataSyncTyped<Stops>('stops.txt');
+    if (!stops || stops.length === 0) {
+      return stop_ids;
+    }
+    const parentOf = new Map<string, string>();
+    for (const stop of stops) {
+      const parent = stop.parent_station ? String(stop.parent_station) : '';
+      if (parent) {
+        parentOf.set(String(stop.stop_id), parent);
+      }
+    }
+
+    const result = new Set(stop_ids);
+    for (const stop_id of stop_ids) {
+      const seen = new Set<string>([stop_id]);
+      let current = stop_id;
+      for (;;) {
+        const parent = parentOf.get(current);
+        if (!parent || seen.has(parent)) {
+          break;
+        }
+        seen.add(parent);
+        result.add(parent);
+        current = parent;
+      }
+    }
+    return result;
+  }
+
+  /**
    * Sole owner of the route spotlight: dims non-matching route lines and
    * reveals the given routes' stops (visible/clickable at any zoom). Pass
    * null to clear. Callers must not call routeRenderer.highlightRoute(s) or
@@ -662,7 +705,7 @@ export class MapController {
           stop_ids.add(stop_id);
         }
       }
-      this.layerManager?.setRouteStops([...stop_ids]);
+      this.layerManager?.setRouteStops([...this.withAncestors(stop_ids)]);
     } else {
       this.routeRenderer?.clearHighlight();
       this.layerManager?.setRouteStops([]);
