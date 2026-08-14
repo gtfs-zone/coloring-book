@@ -1,5 +1,5 @@
 import { notify } from './notification-system';
-import { showModal } from './modal-utils.js';
+import { showModal, renderChevronIcon } from './modal-utils.js';
 import { showAtlasSearchModal } from './atlas-search.js';
 import {
   getAgencyFieldDescription,
@@ -216,6 +216,8 @@ export class UIController {
     // Files modal button
     document.getElementById('files-btn')?.addEventListener('click', () => {
       this.updateFileList();
+      // Always open on the list, never a stale editor view from last time
+      this.showFileList();
       (
         document.getElementById('files-modal') as HTMLDialogElement
       )?.showModal();
@@ -575,6 +577,17 @@ export class UIController {
       listView.classList.remove('hidden');
       editorView.classList.add('hidden');
     }
+
+    // Drop the last-opened-file state so the list reads as a clean slate
+    document
+      .getElementById('file-list')
+      ?.querySelectorAll('a.menu-active')
+      .forEach((item) => item.classList.remove('menu-active'));
+
+    const currentFileNameEl = document.getElementById('current-file-name');
+    if (currentFileNameEl) {
+      currentFileNameEl.textContent = 'None';
+    }
   }
 
   async showFileEditor(fileName: string) {
@@ -908,8 +921,8 @@ export class UIController {
         nameEl.textContent = obj.name;
 
         const chevronEl = document.createElement('span');
-        chevronEl.className = 'text-xs opacity-60';
-        chevronEl.textContent = '▼';
+        chevronEl.className = 'inline-flex opacity-60 transition-transform';
+        chevronEl.innerHTML = renderChevronIcon('h-3 w-3');
 
         headerEl.appendChild(iconEl);
         headerEl.appendChild(nameEl);
@@ -940,8 +953,9 @@ export class UIController {
           routeNameEl.textContent = route.name;
 
           const routeChevronEl = document.createElement('span');
-          routeChevronEl.className = 'text-xs opacity-60';
-          routeChevronEl.textContent = '▼';
+          routeChevronEl.className =
+            'inline-flex opacity-60 transition-transform';
+          routeChevronEl.innerHTML = renderChevronIcon('h-3 w-3');
 
           routeHeaderEl.appendChild(colorEl);
           routeHeaderEl.appendChild(routeNameEl);
@@ -993,11 +1007,10 @@ export class UIController {
             isRouteExpanded = !isRouteExpanded;
             if (isRouteExpanded) {
               servicesEl.classList.remove('hidden');
-              routeChevronEl.textContent = '▲';
             } else {
               servicesEl.classList.add('hidden');
-              routeChevronEl.textContent = '▼';
             }
+            routeChevronEl.classList.toggle('rotate-180', isRouteExpanded);
           });
 
           // Route double-click action
@@ -1022,11 +1035,10 @@ export class UIController {
           isExpanded = !isExpanded;
           if (isExpanded) {
             routesEl.classList.remove('hidden');
-            chevronEl.textContent = '▲';
           } else {
             routesEl.classList.add('hidden');
-            chevronEl.textContent = '▼';
           }
+          chevronEl.classList.toggle('rotate-180', isExpanded);
         });
 
         // Agency double-click action
@@ -1064,8 +1076,8 @@ export class UIController {
         nameEl.textContent = obj.name;
 
         const chevronEl = document.createElement('span');
-        chevronEl.className = 'text-xs opacity-60';
-        chevronEl.textContent = '▼';
+        chevronEl.className = 'inline-flex opacity-60 transition-transform';
+        chevronEl.innerHTML = renderChevronIcon('h-3 w-3');
 
         headerEl.appendChild(colorEl);
         headerEl.appendChild(nameEl);
@@ -1102,11 +1114,10 @@ export class UIController {
           isExpanded = !isExpanded;
           if (isExpanded) {
             tripsEl.classList.remove('hidden');
-            chevronEl.textContent = '▲';
           } else {
             tripsEl.classList.add('hidden');
-            chevronEl.textContent = '▼';
           }
+          chevronEl.classList.toggle('rotate-180', isExpanded);
         });
 
         // Route click action
