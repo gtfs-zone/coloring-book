@@ -96,6 +96,33 @@ export function formatDateRange(
   return '';
 }
 
+export interface EntityChipOpts {
+  /** Goes into `data-action`, so the delegated handler knows what to open. */
+  action: string;
+  id: string;
+  label: string;
+  /** CSS color for the leading dot; omitted renders no dot. */
+  color?: string;
+}
+
+/**
+ * Compact clickable entity reference, sized to sit several to a table cell.
+ *
+ * The reference rows above are full `p-3` cards with their own hover state and
+ * View button, far too heavy to stack inside a list row. Rides the delegated
+ * `[data-action]` click handler of whatever panel renders it.
+ */
+export function renderEntityChip(opts: EntityChipOpts): string {
+  const dot = opts.color
+    ? `<span class="w-2 h-2 rounded-full flex-shrink-0" style="background-color: ${opts.color}"></span>`
+    : '';
+  return `
+    <button class="inline-flex items-center gap-1 max-w-full text-xs cursor-pointer hover:underline" data-action="${escapeHtml(opts.action)}" data-entity-id="${escapeHtml(opts.id)}" title="${escapeHtml(opts.label)}">
+      ${dot}
+      <span class="truncate">${escapeHtml(opts.label)}</span>
+    </button>`;
+}
+
 export function renderRouteReference(
   route: Record<string, unknown>,
   opts: RouteReferenceOpts

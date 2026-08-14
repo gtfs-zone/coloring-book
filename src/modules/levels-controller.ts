@@ -1,15 +1,65 @@
-import { showModal, renderCloseIcon } from './modal-utils.js';
+import {
+  showModal,
+  renderScrollableTable,
+  renderTrashIcon,
+} from './modal-utils.js';
 import type { GTFSDatabase } from './gtfs-database.js';
 import type { PatchManager } from './patch-manager.js';
+import { escapeHtml } from '../utils/escape-html.js';
+import { getStopDisplay, renderOptionLabel } from '../utils/entity-display.js';
+import { renderEntityChip } from '../utils/entity-references.js';
+import { navigateToStop } from './navigation-actions.js';
 
-function escapeHtml(text: unknown): string {
-  const div = document.createElement('div');
-  div.textContent = String(text ?? '');
-  return div.innerHTML;
+/** What the levels table shows for one level_id. */
+interface LevelUsage {
+  level: Record<string, unknown>;
+  stops: Record<string, unknown>[];
 }
 
-function escapeAttr(text: unknown): string {
-  return escapeHtml(text).replace(/'/g, '&#39;').replace(/"/g, '&quot;');
+function renderStopChip(stop: Record<string, unknown>): string {
+  return renderEntityChip({
+    action: 'stop',
+    id: String(stop.stop_id ?? ''),
+    label: renderOptionLabel(getStopDisplay(stop as Record<string, string>)),
+  });
+}
+
+function renderBody(levels: Map<string, LevelUsage>): string {
+  const addBtn = `<button class="btn btn-sm btn-primary" data-action="add">Add Level</button>`;
+
+  if (levels.size === 0) {
+    return `
+      <p class="text-base-content/60 text-sm mb-4">No levels defined yet.</p>
+      ${addBtn}
+    `;
+  }
+
+  const rows = Array.from(levels.values())
+    .map(
+      ({ level, stops }) => `
+        <tr>
+          <td class="font-mono text-sm break-all">${escapeHtml(level.level_id)}</td>
+          <td>${escapeHtml(level.level_index ?? '')}</td>
+          <td>${escapeHtml(level.level_name ?? '')}</td>
+          <td>${stops.length}</td>
+          <td>
+            <div class="flex flex-wrap gap-x-2 gap-y-1">${stops.map(renderStopChip).join('')}</div>
+          </td>
+          <td>
+            <button class="btn btn-xs btn-ghost text-error" data-action="delete" data-level-id="${escapeHtml(level.level_id)}" title="Delete level">${renderTrashIcon('h-3 w-3')}</button>
+          </td>
+        </tr>`
+    )
+    .join('');
+
+  // The add button sits below the scroll container so it stays reachable with
+  // a long level list.
+  return `
+    ${renderScrollableTable(['ID', 'Index', 'Name', 'Stops', 'Used by', 'Actions'], rows)}
+    <div class="mt-4">
+      ${addBtn}
+    </div>
+  `;
 }
 
 export class LevelsController {
@@ -24,72 +74,94 @@ export class LevelsController {
     this.patchManager = pm;
   }
 
-  async showLevelsModal(): Promise<void> {
-    const renderBody = async (): Promise<string> => {
-      const levels = await this.db.getAllRows('levels');
-      if (levels.length === 0) {
-        return `<p class="text-center opacity-60 py-4">No levels defined yet.</p>
-          <button id="levels-add-btn" class="btn btn-sm btn-primary w-full">Add Level</button>`;
+  /**
+   * Levels in level_index order, each with the stops that reference it.
+   *
+   * Recomputed on every panel refresh, so an add/delete updates the usage
+   * columns without reopening the modal.
+   */
+  private async getLevels(): Promise<Map<string, LevelUsage>> {
+    const levels = (await this.db.getAllRows('levels')) as Record<
+      string,
+      unknown
+    >[];
+    const sorted = levels.slice().sort((a, b) => {
+      const ai = Number(a.level_index ?? 0);
+      const bi = Number(b.level_index ?? 0);
+      if (!Number.isFinite(ai) && !Number.isFinite(bi)) {
+        return 0;
       }
-      const rows = levels
-        .slice()
-        .sort((a, b) => {
-          const ai = Number(a.level_index ?? 0);
-          const bi = Number(b.level_index ?? 0);
-          if (!Number.isFinite(ai) && !Number.isFinite(bi)) {
-            return 0;
-          }
-          if (!Number.isFinite(ai)) {
-            return 1;
-          }
-          if (!Number.isFinite(bi)) {
-            return -1;
-          }
-          return ai - bi;
-        })
-        .map(
-          (l) => `
-          <tr>
-            <td class="font-mono text-sm">${escapeHtml(l.level_id)}</td>
-            <td>${escapeHtml(l.level_index ?? '')}</td>
-            <td>${escapeHtml(l.level_name ?? '')}</td>
-            <td>
-              <button class="btn btn-xs btn-ghost text-error levels-delete-btn" data-level-id="${escapeAttr(l.level_id)}">${renderCloseIcon('h-3 w-3')}</button>
-            </td>
-          </tr>`
-        )
-        .join('');
-      return `
-        <div class="overflow-x-auto">
-          <table class="table table-sm w-full">
-            <thead><tr><th>ID</th><th>Index</th><th>Name</th><th></th></tr></thead>
-            <tbody>${rows}</tbody>
-          </table>
-        </div>
-        <button id="levels-add-btn" class="btn btn-sm btn-primary mt-3 w-full">Add Level</button>`;
-    };
+      if (!Number.isFinite(ai)) {
+        return 1;
+      }
+      if (!Number.isFinite(bi)) {
+        return -1;
+      }
+      return ai - bi;
+    });
+
+    const map = new Map<string, LevelUsage>();
+    for (const level of sorted) {
+      map.set(String(level.level_id), { level, stops: [] });
+    }
+
+    // A stop pointing at a level_id no levels.txt row defines is skipped: it is
+    // a spec-declared foreign key, so the referential integrity sweep already
+    // reports it as a dangling reference.
+    const stops = (await this.db.getAllRows('stops')) as Record<
+      string,
+      unknown
+    >[];
+    for (const stop of stops) {
+      const usage = map.get(String(stop.level_id ?? ''));
+      if (usage) {
+        usage.stops.push(stop);
+      }
+    }
+
+    return map;
+  }
+
+  async showLevelsModal(): Promise<void> {
+    let currentLevels = await this.getLevels();
 
     await showModal({
       title: 'Levels',
-      body: await renderBody(),
+      body: `<div id="levels-panel">${renderBody(currentLevels)}</div>`,
       escapeAction: 0,
+      boxClassName: 'max-w-4xl w-11/12',
       actions: [{ label: 'Close', onClick: () => {} }],
       onMount: (close) => {
-        document
-          .getElementById('levels-add-btn')
-          ?.addEventListener('click', () => {
-            close();
-            void this.showAddLevelModal().then(() => this.showLevelsModal());
-          });
+        const panel = document.getElementById('levels-panel');
+        if (!panel) {
+          return;
+        }
 
-        document.querySelectorAll('.levels-delete-btn').forEach((btn) => {
-          btn.addEventListener('click', () => {
-            const levelId = btn.getAttribute('data-level-id');
-            if (levelId) {
-              close();
-              void this.deleteLevel(levelId).then(() => this.showLevelsModal());
-            }
-          });
+        const refreshPanel = async () => {
+          currentLevels = await this.getLevels();
+          panel.innerHTML = renderBody(currentLevels);
+        };
+
+        panel.addEventListener('click', (e: Event) => {
+          const btn = (e.target as HTMLElement).closest<HTMLButtonElement>(
+            '[data-action]'
+          );
+          if (!btn) {
+            return;
+          }
+
+          const action = btn.dataset.action;
+
+          if (action === 'add') {
+            void this.showAddLevelModal().then(refreshPanel);
+          } else if (action === 'delete' && btn.dataset.levelId) {
+            void this.deleteLevel(btn.dataset.levelId).then(refreshPanel);
+          } else if (action === 'stop') {
+            // Navigating behind an open modal would leave the stop page
+            // hidden, so the modal goes first.
+            close();
+            void navigateToStop(btn.dataset.entityId ?? '');
+          }
         });
       },
     });

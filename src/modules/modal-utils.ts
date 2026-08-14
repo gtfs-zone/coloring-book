@@ -40,6 +40,29 @@ export function renderTriangleIcon(sizeClass = 'h-4 w-4'): string {
   return `<svg xmlns="http://www.w3.org/2000/svg" class="${sizeClass}" fill="currentColor" viewBox="0 0 24 24"><path d="M8 6l8 6-8 6z" /></svg>`;
 }
 
+/**
+ * A modal list table whose body scrolls under a pinned header.
+ *
+ * Keeps the column headers visible with hundreds of rows; anything that must
+ * stay reachable (an upload/add button) belongs after the returned markup, not
+ * inside it.
+ */
+export function renderScrollableTable(
+  headers: string[],
+  rowsHtml: string,
+  maxHeightClass = 'max-h-[55vh]'
+): string {
+  return `
+    <div class="${maxHeightClass} overflow-y-auto">
+      <table class="table table-sm table-pin-rows">
+        <thead>
+          <tr>${headers.map((h) => `<th>${h}</th>`).join('')}</tr>
+        </thead>
+        <tbody>${rowsHtml}</tbody>
+      </table>
+    </div>`;
+}
+
 export interface ModalAction {
   label: string;
   className?: string;
