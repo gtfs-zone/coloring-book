@@ -1412,19 +1412,19 @@ calls `showFileList()`, so if the modal was last left on the editor view
 line 559), reopening the modal shows the stale editor view instead of the
 list.
 
-- [ ] Make the file list scrollable. `#file-list` (line 698) already has
+- [x] Make the file list scrollable. `#file-list` (line 698) already has
       `overflow-y-auto h-full`, so check whether the ancestor chain
       (`#file-list-view`, the `flex-1 overflow-hidden min-h-0` wrapper at
       line 695) is actually constraining height, or whether the `modal-box`
       itself growing to fit content (see below) is defeating the scroll
       container by never capping its own height.
-- [ ] Give `.modal-box` a fixed height instead of a max-height that shrinks to
+- [x] Give `.modal-box` a fixed height instead of a max-height that shrinks to
       content, e.g. `h-[90vh]` in place of `max-h-[90vh]` (line 667), so
       opening a small file does not shrink the whole modal.
-- [ ] In the `files-btn` click handler (`ui.ts:217-222`), call
+- [x] In the `files-btn` click handler (`ui.ts:217-222`), call
       `this.showFileList()` before `showModal()` so the modal always opens on
       the list view, never a stale editor view from a previous session.
-- [ ] Strip any other place that remembers "last file clicked" for the Files
+- [x] Strip any other place that remembers "last file clicked" for the Files
       modal specifically (e.g. `menu-active` class left on a list item,
       `current-file-name` text) so reopening the modal is a clean state, not
       just visually landing on the list while other stale bits linger.
@@ -1432,9 +1432,25 @@ list.
       button, confirm it shows the list (not the last file); open a small file
       and confirm the modal stays the same size; confirm the file list scrolls
       with many files.
-- [ ] Commit: `fix(files-modal): make list scrollable, reset to list view on reopen, keep fixed size`
+- [x] Commit: `fix(files-modal): make list scrollable, reset to list view on reopen, keep fixed size`
 
-### Phase 21: Share the stop map styles with test-track
+**Notes.** Done in `ef01288`. The scroll bug had no separate cause: the ancestor
+chain was already right, and capping `.modal-box` at `h-[90vh]` is what gives
+`flex-1 overflow-hidden min-h-0` a bounded height to hand `#file-list`. One
+edit fixed both the scroll and the size jump.
+
+The stale-state reset went into `showFileList()` rather than the `files-btn`
+handler, so every route back to the list (the Back button, post-import, the
+`page-content-renderer` path) clears the same things: `menu-active` on the file
+list items and `#current-file-name` back to `None`. The `menu-active` sweep is
+scoped to `#file-list`, not the old global `.menu a`, so it cannot touch the
+navbar or objects menus.
+
+Numbering: this file shipped two headings called "Phase 21". The stop-map-styles
+one is renumbered to Phase 22 below; the summary paragraph at the top still says
+"Phase 21" for it.
+
+### Phase 22: Share the stop map styles with test-track
 
 **Goal:** One source of truth for how a stop circle looks on the map. The stop
 styling coloring-book gained during Phase 9 (focus halo, focus ring, focus-top
@@ -1477,11 +1493,11 @@ Where the two currently diverge:
 Decided: coloring-book's treatment is the one to keep. test-track loses the
 grow-on-focus behaviour and gains the halo.
 
-- [ ] Ask the user first: test-track's `setHoveredStop` growing the circle is
+- [x] Ask the user first: test-track's `setHoveredStop` growing the circle is
       currently the *only* hover affordance there and is noticeably louder than
       a 0.12-opacity halo. Confirm they want it replaced outright rather than
       halo-plus-a-smaller-grow, before touching test-track.
-- [ ] Extract the stop paint expressions from coloring-book's
+- [x] Extract the stop paint expressions from coloring-book's
       `layer-manager.ts` into a new `src/modules/stop-layer-style.ts`, exporting
       pure builders that take primitives and return `ExpressionSpecification`:
       `stopRadiusAt`, `stopFillColor`, `focusHaloRadius`, the `HALO_*`
@@ -1490,14 +1506,14 @@ grow-on-focus behaviour and gains the halo.
       types, no `this`, no map handle**, the same discipline `route-strip.ts`
       follows, or it cannot be vendored. `accent()` and the option values
       (`backgroundColor`, `radius`) get passed in as arguments.
-- [ ] Rewrite coloring-book's `layer-manager.ts` to call the new module. This
+- [x] Rewrite coloring-book's `layer-manager.ts` to call the new module. This
       step must be a pure refactor: the rendered map is byte-identical before
       and after. Verify visually before moving on, because everything after this
       builds on it.
-- [ ] Copy `stop-layer-style.ts` into `../test-track/src/modules/` with the
+- [x] Copy `stop-layer-style.ts` into `../test-track/src/modules/` with the
       `@vendored-from` banner, `@status verbatim`, and add its row to
       `../test-track/VENDORED.md` with the new coloring-book SHA.
-- [ ] In test-track's `layer-manager.ts`: delete the inlined `location_type`
+- [x] In test-track's `layer-manager.ts`: delete the inlined `location_type`
       fill ramp and the focused/hovered multipliers in `stopRadiusAt`, call the
       shared builders instead, and add the `stops-focus-halo`,
       `stops-focus-ring`, and `stops-focus-top` layers. Insert them in
@@ -1506,13 +1522,13 @@ grow-on-focus behaviour and gains the halo.
       layers: `HIT_LAYERS` is unaffected but the spotlight fade in
       `applySpotlight` (line ~337) and any layer-id arrays must include them or
       the halo will not dim with the rest.
-- [ ] Update test-track's `setHoveredStop` / `setFocusedStop` to set the
+- [x] Update test-track's `setHoveredStop` / `setFocusedStop` to set the
       `hovered` / `focused` feature states the halo reads, dropping the radius
       multiplier path. Fix `VENDORED.md`'s `layer-manager.ts` `@changes` bullet,
       which currently records the now-removed "grows the stop circle rather than
       lighting coloring-book's focus-halo layers, which this copy does not
       have".
-- [ ] Check test-track's route layer sort/insert points: coloring-book inserts
+- [x] Check test-track's route layer sort/insert points: coloring-book inserts
       route lines `before` `stops-focus-halo` (line ~1479). test-track has no
       such anchor today, so adding the halo changes what its equivalent insert
       resolves to. Confirm route lines still paint under the stops.
@@ -1520,8 +1536,54 @@ grow-on-focus behaviour and gains the halo.
       drawn above neighbours), hover a stop from the timetable stop column
       (dimmer halo, no size change), and confirm station/entrance/node/boarding
       area colors and sizes are unchanged from before in coloring-book.
-- [ ] Commit in coloring-book: `refactor(map): extract shared stop layer styles`.
+- [x] Commit in coloring-book: `refactor(map): extract shared stop layer styles`.
       Separate commit in test-track: `feat(map): adopt shared stop focus halo styles`.
+
+**Notes.** coloring-book `cfecd04`, test-track `a3472b9`. The user confirmed
+test-track loses grow-on-hover and grow-on-focus outright.
+
+`src/modules/stop-layer-style.ts` ended up larger than the plan's list, because
+stopping at the three focus layers would have left the two apps with separate
+copies of the stop circle itself, which is where they had already drifted. It
+exports `stopRadiusAt`, `stopRadiusByZoom`, `stopFillColor`, `focusHaloRadius`,
+the `HALO_*` expressions, and five paint builders: `focusHaloPaint`,
+`focusRingPaint`, `stopsBackgroundPaint`, `focusTopPaint`, `stationDotPaint`.
+Only `maplibre-gl` types are imported. `stopRadiusByZoom` takes an optional
+`wrap` callback, which is how the focus-top layer collapses every unfocused stop
+to radius 0 without duplicating the zoom ramp.
+
+The accent is an argument, not a resolved theme color: coloring-book passes
+`resolveThemeColor('--color-primary')`, test-track passes its hardcoded
+`FOCUS_ACCENT` red. That keeps the module shared without dragging coloring-book's
+theme layer into test-track, which has no `resolveThemeColor`.
+
+The zoom fade stays per-app for the same reason and comes in as an argument:
+each app's `stopFadeOpacity` / `stationFadeOpacity` reads its own `CONFIG` and
+its own `SPECIAL_STOP` definition.
+
+Two plan expectations did not hold:
+
+- The route insert anchor is a non-issue. test-track's `addLayers()` adds
+  routes, then stops, then vehicles with plain sequential `addLayer` calls and
+  no `before:` anchor anywhere, so the halo landing at the top of
+  `addStopLayers()` keeps route lines under it automatically.
+- The spotlight fade does not need the new ids. `applyStopDim` only repaints
+  `stops-background` and `stops-station-dot`, and the halo, ring, and focus-top
+  layers are only ever visible for a focused or hovered stop, which
+  `SPECIAL_STOP` already exempts from dimming. coloring-book does not dim them
+  either, so adding them there would have been a divergence, not a fix.
+
+test-track's `setHoveredStop` / `setFocusedStop` needed no change at all: they
+already set the `hovered` / `focused` feature states through `syncFeatureState`,
+and the size multipliers lived entirely inside the deleted `stopRadiusAt`.
+Also removed there: the station dot's grow-on-focus, and the focused/hovered
+`FOCUS_ACCENT` stroke on `stops-background` (coloring-book uses a white ring
+against the accent fill). `STOP_RADIUS` / `STOP_FILL_COLOR` / `STOP_STROKE_*`
+collapsed into one `STOP_STYLE: StopStyleOptions` const.
+
+`pnpm vendor:check` in test-track passes with the new row at SHA `cfecd04`.
+Vendored files are exempt from test-track's prettier config (route-strip and
+route-sort fail `--check` too), so the copy stays byte-identical.
 
 ---
 
