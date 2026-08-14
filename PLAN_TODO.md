@@ -1653,6 +1653,13 @@ delete button removes one.
       them change.
 - [x] `table-pin-rows` on the editable table, which pins its header inside the
       scrolling modal body. Affects the fares panes too.
+- [x] `level_id` is `readonly`, so it is set once from the trailing blank row
+      (which renders editors for every field regardless of the override) and
+      never renamed afterwards: a rename would strand every `stops.level_id`
+      and pathway naming it.
+- [x] Count bubble on the navbar levels button, matching shapes: an `indicator`
+      wrapper plus `#levels-count-badge` in `src/index.html`, counted in
+      `navbar-counts.ts` from `getFileDataSync(levels.txt)`.
 - [ ] Manually verify: edit an index and a name inline; add a level from the
       blank row and delete one; assign and unassign stops through the Used by
       picker and confirm `stops.level_id` changed and undo reverts it; confirm
