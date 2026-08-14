@@ -244,6 +244,80 @@ function listFields(config: EditableTableConfig): string[] {
   );
 }
 
+/** Every combination of one value from each set, in set order. */
+function combinations(sets: string[][]): string[][] {
+  return sets.reduce<string[][]>(
+    (acc, values) => acc.flatMap((prefix) => values.map((v) => [...prefix, v])),
+    [[]]
+  );
+}
+
+/**
+ * Split rows that share their non-list columns into blocks whose list values
+ * form a complete set of combinations.
+ *
+ * With one list column that is always the whole set of rows. With two or more,
+ * a block only collapses when every pairing of its listed values is actually
+ * present, so a reader can take any value from one list column together with
+ * any value from another and know that row exists. Rows that do not complete a
+ * combination stay in a block of their own.
+ */
+function crossProductBlocks(
+  rows: Record<string, unknown>[],
+  lists: string[]
+): Record<string, unknown>[][] {
+  if (lists.length < 2) {
+    return [rows];
+  }
+
+  // Keyed by list values only: rows the rendered columns cannot tell apart
+  // share an entry, and stay together in whichever block that entry lands in.
+  const comboKey = (values: string[]) => JSON.stringify(values);
+  const remaining = new Map<string, Record<string, unknown>[]>();
+  for (const row of rows) {
+    const key = comboKey(lists.map((field) => String(row[field] ?? '')));
+    const existing = remaining.get(key);
+    if (existing) {
+      existing.push(row);
+      continue;
+    }
+    remaining.set(key, [row]);
+  }
+
+  const blocks: Record<string, unknown>[][] = [];
+  while (remaining.size > 0) {
+    const seed = remaining.keys().next().value as string;
+    const sets = (JSON.parse(seed) as string[]).map((value) => [value]);
+    // Grow one value at a time, keeping every combination present.
+    let grew = true;
+    while (grew) {
+      grew = false;
+      for (let i = 0; i < lists.length; i++) {
+        const candidates = new Set<string>();
+        for (const key of remaining.keys()) {
+          const values = JSON.parse(key) as string[];
+          if (!sets[i].includes(values[i])) {
+            candidates.add(values[i]);
+          }
+        }
+        for (const candidate of candidates) {
+          const trial = sets.map((set, j) => (j === i ? [candidate] : set));
+          if (combinations(trial).every((c) => remaining.has(comboKey(c)))) {
+            sets[i].push(candidate);
+            grew = true;
+          }
+        }
+      }
+    }
+    const keys = combinations(sets).map(comboKey);
+    blocks.push(keys.flatMap((key) => remaining.get(key)!));
+    for (const key of keys) {
+      remaining.delete(key);
+    }
+  }
+  return blocks;
+}
+
 /**
  * Collapse rows that are identical across every non-list column.
  *
@@ -251,8 +325,8 @@ function listFields(config: EditableTableConfig): string[] {
  * plain one-row-per-record table it was before.
  */
 function groupRows(config: EditableTableConfig): RowGroup[] {
-  const lists = new Set(listFields(config));
-  if (lists.size === 0) {
+  const lists = listFields(config);
+  if (lists.length === 0) {
     return config.rows.map((row) => ({
       key: rowKey(config, row),
       keys: [rowKey(config, row)],
@@ -260,23 +334,29 @@ function groupRows(config: EditableTableConfig): RowGroup[] {
     }));
   }
 
-  const shared = columnFields(config).filter((field) => !lists.has(field));
-  const groups: RowGroup[] = [];
-  const byValues = new Map<string, RowGroup>();
+  const listSet = new Set(lists);
+  const shared = columnFields(config).filter((field) => !listSet.has(field));
+  const candidates: Record<string, unknown>[][] = [];
+  const byValues = new Map<string, Record<string, unknown>[]>();
   for (const row of config.rows) {
-    const key = rowKey(config, row);
     const groupKey = JSON.stringify(shared.map((field) => row[field] ?? ''));
     const existing = byValues.get(groupKey);
     if (existing) {
-      existing.keys.push(key);
-      existing.rows.push(row);
+      existing.push(row);
       continue;
     }
-    const group: RowGroup = { key, keys: [key], rows: [row] };
-    byValues.set(groupKey, group);
-    groups.push(group);
+    const candidate = [row];
+    byValues.set(groupKey, candidate);
+    candidates.push(candidate);
   }
-  return groups;
+
+  return candidates.flatMap((candidate) =>
+    crossProductBlocks(candidate, lists).map((rows) => ({
+      key: rowKey(config, rows[0]),
+      keys: rows.map((row) => rowKey(config, row)),
+      rows,
+    }))
+  );
 }
 
 /** The group a cell or delete button's key belongs to. */

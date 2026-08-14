@@ -391,6 +391,7 @@ const FARES_ENTRIES: FaresEntry[] = [
       'Add one to give a fare a price.'
     ),
     columnOverrides: () => ({
+      fare_media_id: { list: true },
       amount: {
         format: (value, row) => formatCurrencyAmount(value, row.currency),
       },
@@ -407,6 +408,8 @@ const FARES_ENTRIES: FaresEntry[] = [
     columnOverrides: (deps) => ({
       leg_group_id: { suggestions: () => legGroupSuggestions(deps) },
       network_id: { options: () => networkOptions(deps) },
+      from_area_id: { list: true },
+      to_area_id: { list: true },
       from_timeframe_group_id: { options: () => timeframeGroupOptions(deps) },
       to_timeframe_group_id: { options: () => timeframeGroupOptions(deps) },
       fare_product_id: { options: () => fareProductOptions(deps) },
@@ -422,10 +425,10 @@ const FARES_ENTRIES: FaresEntry[] = [
     ),
     note: 'The stop fields go together: name both, or neither. Only stops and stations may be named.',
     columnOverrides: (deps) => ({
-      from_network_id: { options: () => networkOptions(deps) },
-      to_network_id: { options: () => networkOptions(deps) },
-      from_stop_id: { options: () => fareStopOptions(deps) },
-      to_stop_id: { options: () => fareStopOptions(deps) },
+      from_network_id: { options: () => networkOptions(deps), list: true },
+      to_network_id: { options: () => networkOptions(deps), list: true },
+      from_stop_id: { options: () => fareStopOptions(deps), list: true },
+      to_stop_id: { options: () => fareStopOptions(deps), list: true },
     }),
     validateRow: validateFareLegJoinRuleRow,
   },
@@ -439,6 +442,8 @@ const FARES_ENTRIES: FaresEntry[] = [
     ),
     note: 'A fare transfer rule defined from from_leg_group_id to to_leg_group_id does not apply in the reverse direction. The duration fields go together: set both, or neither.',
     columnOverrides: (deps) => ({
+      from_leg_group_id: { list: true },
+      to_leg_group_id: { list: true },
       fare_product_id: { options: () => fareProductOptions(deps) },
     }),
     validateRow: validateFareTransferRuleRow,
