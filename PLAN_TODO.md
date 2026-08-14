@@ -896,21 +896,44 @@ multi-value editing is out of scope for this pass.
 
 ### Phase 13: Display-only grouped-row rendering in editable-table.ts
 
-- [ ] In `src/modules/editable-table.ts`, add support for a column marked as a
+Done. The flag landed as `columnOverrides[field].list?: boolean`. Grouping is a
+pure function of `config.rows` (`groupRows()`), recomputed wherever it is needed
+rather than cached, so the edit and delete handlers always see the same groups
+the user is looking at; `findGroup(config, key)` maps a cell's `data-key` back
+to its group. With no list column every row is its own group, so the plain
+rendering is the same code path as before.
+
+Two semantics the plan left open were decided with the user:
+
+- Editing a non-list cell in a collapsed row applies to **every** row behind it,
+  in one patch (one `recordBatchMixed`, so it undoes as one step). This holds
+  for the re-key path too: all the group's rows are deleted before any is
+  re-inserted, so a key moving onto one still held by a sibling cannot collide.
+  The duplicate-key check ignores the group's own keys for the same reason.
+- Deleting a collapsed row deletes **every** row behind it, again in one patch.
+  The confirm dialog and the button tooltip name the count when it is >1.
+
+`renderCell`'s formatting was pulled out into `cellText()` so `renderListCell()`
+shares it, which is what carries foreign-key labels and `format` overrides into
+the list values for free. The trailing blank add-row still renders a normal
+editable cell for a list column (you have to be able to set `fare_media_id` on a
+new row); grouping only applies to existing rows.
+
+- [x] In `src/modules/editable-table.ts`, add support for a column marked as a
       "list column" (extend `EditableTableColumnOverride` with a `listOf?: boolean`
       or similar flag). When set, rows identical across every *other* rendered
       column collapse into a single visual row, with that column rendering all
       distinct values from the collapsed rows, newline-separated (use
       `white-space: pre-line` or `<br>`-joined markup, not the current `truncate`
       single-line span, which would clip a multi-value list).
-- [ ] Make list-column cells non-interactive/read-only for now, matching how
+- [x] Make list-column cells non-interactive/read-only for now, matching how
       `extraColumns` and `columnOverrides.readonly` already render plain text.
-- [ ] Foreign-key list values should still resolve to display labels (reuse
+- [x] Foreign-key list values should still resolve to display labels (reuse
       `foreignLabelMaps()`, ~lines 237-251) rather than showing raw IDs.
-- [ ] Confirm add-row/delete-row flows still operate correctly against a grouped
+- [x] Confirm add-row/delete-row flows still operate correctly against a grouped
       display: adding or deleting one underlying row must not corrupt the
       collapsed view.
-- [ ] Commit: `feat(editable-table): support list-valued columns via row grouping`
+- [x] Commit: `feat(editable-table): support list-valued columns via row grouping`
 
 ### Phase 14: Apply list columns to the four fares tables
 
