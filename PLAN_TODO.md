@@ -1596,6 +1596,59 @@ route-sort fail `--check` too), so the copy stays byte-identical.
 
 ---
 
+### Phase 23: Levels modal gets the Phase 19 shapes treatment
+
+**Goal:** The Levels modal behaves like the Shapes modal: sticky-header scroll
+chrome, an in-place refresh instead of a close-and-reopen, a usage column
+showing which stops sit on each level, and the shared escape helper. Where the
+two modals now do the same thing, they do it through shared code rather than a
+second copy.
+
+`src/modules/levels-controller.ts` was the last list modal still on the old
+pattern: `overflow-x-auto` around an unpinned table, its own local
+`escapeHtml`/`escapeAttr` pair, and a per-row listener whose add/delete handlers
+called `close()` and then reopened the whole modal.
+
+- [x] Add `renderScrollableTable(headers, rowsHtml, maxHeightClass?)` to
+      `src/modules/modal-utils.ts` and route both the shapes and the levels
+      table through it.
+- [x] Add `renderEntityChip({action, id, label, color?})` to
+      `src/utils/entity-references.ts`; `shapes-manager.ts`'s local
+      `renderRouteChip` becomes a thin wrapper over it and the levels stop chip
+      is the second caller.
+- [x] Give the levels modal a `#levels-panel` wrapper, a `refreshPanel()` that
+      recomputes the data and re-renders, and one delegated `[data-action]`
+      listener replacing the per-button listeners.
+- [x] Add `getLevels()` returning `Map<level_id, {level, stops}>`, sorted by
+      `level_index`, with the stops that reference each level.
+- [x] Add "Stops" (count) and "Used by" (stop chips) columns; chips navigate
+      via `navigateToStop()` after closing the modal.
+- [x] Drop the local `escapeHtml`/`escapeAttr` in favor of
+      `src/utils/escape-html.ts`.
+- [x] Widen the box to `max-w-4xl w-11/12` and move the Add Level button below
+      the scroll container.
+- [ ] Manually verify: add and delete a level and confirm the list updates in
+      place with no modal flicker; confirm the header pins while scrolling;
+      confirm a level used by stops lists them and the chips navigate.
+- [x] Commit: `feat(levels): show stop usage and share the shapes list chrome`
+
+**Notes:**
+
+- The chip carries `data-entity-id`, not `data-route-id`/`data-stop-id`, so one
+  helper serves both panels; `shapes-manager.ts`'s route branch now reads
+  `btn.dataset.entityId`.
+- A stop whose `level_id` matches no `levels.txt` row is skipped rather than
+  synthesizing a row, the same call the shapes list makes for `trips.shape_id`:
+  `stops.level_id` is a spec-declared foreign key, so the Phase 6 sweep already
+  reports it.
+- Delete still has no confirmation step (unchanged behavior), unlike the shapes
+  delete which confirms with a point count. Worth revisiting, since deleting a
+  level that stops reference leaves dangling references behind.
+- Same cost caveat as Phase 19: `refreshPanel()` re-reads all of `stops`, which
+  is what keeps the usage column correct after a mutation.
+
+---
+
 ## Blocked on live reproduction
 
 The two phases below cannot be root-caused by reading the code: static analysis
