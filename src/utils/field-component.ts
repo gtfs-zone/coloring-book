@@ -209,6 +209,24 @@ export function renderFieldLabelContent(config: FieldConfig): string {
 }
 
 /**
+ * Render label content for a spec field without a full `FieldConfig` in hand.
+ *
+ * For labels naming a field of some other table than the one being rendered,
+ * such as an editable-table join column ("Stops" editing `stop_areas.stop_id`),
+ * where building the whole config from the schema would be wasted work.
+ *
+ * Presence is deliberately left off: the field is required of a join row, not
+ * of the row being rendered, so a required mark here would be a lie.
+ */
+export function renderSpecFieldLabelContent(
+  tableName: string,
+  field: string,
+  label: string
+): string {
+  return renderFieldLabelContent({ field, label, type: 'text', tableName });
+}
+
+/**
  * Render a field's label: the spec-linked name, its presence mark, and a lock
  * icon for primary keys.
  *

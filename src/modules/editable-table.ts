@@ -33,6 +33,7 @@ import { patchUpdate } from '../utils/patch-utils.js';
 import {
   generateFieldConfigsFromSchema,
   renderFieldLabelContent,
+  renderSpecFieldLabelContent,
   type FieldConfig,
 } from '../utils/field-component.js';
 import {
@@ -144,6 +145,12 @@ export interface EditableTableColumnOverride {
  */
 export interface EditableTableJoinColumn {
   label: string;
+  /**
+   * The join table and the field this column edits, for the header tooltip.
+   * The column is not a field of the rendered table, so the spec description
+   * has to be looked up against the join table instead.
+   */
+  spec?: { tableName: string; field: string };
   /** The row's current members, already labelled for display. */
   values: (row: Record<string, unknown>) => { value: string; label: string }[];
   options: () => Promise<OptionPickerItem[]>;
@@ -595,7 +602,16 @@ export async function renderEditableTable(
   const joinColumns = config.joinColumns ?? [];
   const joinHeaderHtml = joinColumns
     .map(
-      (column) => `<th class="align-bottom">${escapeHtml(column.label)}</th>`
+      (column) =>
+        `<th class="align-bottom">${
+          column.spec
+            ? renderSpecFieldLabelContent(
+                column.spec.tableName,
+                column.spec.field,
+                column.label
+              )
+            : escapeHtml(column.label)
+        }</th>`
     )
     .join('');
 

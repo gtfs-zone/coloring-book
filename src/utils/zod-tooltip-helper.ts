@@ -12,7 +12,7 @@ import {
   StopTimesSchema,
   ShapesSchema,
   FeedInfoSchema,
-  GTFS_TABLES,
+  GTFS_FIELD_SPECS,
 } from '../types/gtfs.js';
 
 /**
@@ -129,8 +129,14 @@ export function getFeedInfoFieldDescription(fieldName: string): string {
 }
 
 /**
- * Get field description for any GTFS file type
- * @param filename - The GTFS filename (e.g., agency.txt, routes.txt)
+ * Get field description for any GTFS file type.
+ *
+ * Reads the spec layer directly rather than the Zod schemas: descriptions are
+ * verbatim on `GTFS_FIELD_SPECS` for every file, while the derived Zod schemas
+ * attach `.describe()` to the inner type and hide it behind the `.optional()`
+ * wrapper on optional fields.
+ *
+ * @param filename - The GTFS filename (e.g., agency.txt, fare_products.txt)
  * @param fieldName - The field name to get description for
  * @returns Field description string
  */
@@ -138,25 +144,10 @@ export function getGTFSFieldDescription(
   filename: string,
   fieldName: string
 ): string {
-  // Map filenames to schema getter functions
-  const schemaMap: Record<string, (fieldName: string) => string> = {
-    [GTFS_TABLES.AGENCY]: getAgencyFieldDescription,
-    [GTFS_TABLES.ROUTES]: getRouteFieldDescription,
-    [GTFS_TABLES.CALENDAR]: getCalendarFieldDescription,
-    [GTFS_TABLES.CALENDAR_DATES]: getCalendarDatesFieldDescription,
-    [GTFS_TABLES.STOPS]: getStopsFieldDescription,
-    [GTFS_TABLES.TRIPS]: getTripsFieldDescription,
-    [GTFS_TABLES.STOP_TIMES]: getStopTimesFieldDescription,
-    [GTFS_TABLES.SHAPES]: getShapesFieldDescription,
-    [GTFS_TABLES.FEED_INFO]: getFeedInfoFieldDescription,
-  };
-
-  const schemaGetter = schemaMap[filename];
-  if (schemaGetter) {
-    return schemaGetter(getSchemaFieldName(fieldName));
-  }
-
-  return '';
+  return (
+    GTFS_FIELD_SPECS[filename]?.[getSchemaFieldName(fieldName)]?.description ??
+    ''
+  );
 }
 
 /**
