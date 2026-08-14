@@ -8,7 +8,7 @@ interface NavbarCountsDeps {
 }
 
 /**
- * Count bubbles on the navbar buttons (shapes, services, fare products,
+ * Count bubbles on the navbar buttons (shapes, services, levels, fare products,
  * changes).
  *
  * Counts are read from the parser's in-memory tables, which share their row
@@ -36,6 +36,10 @@ export class NavbarCounts {
 
     setBadge('shapes-count-badge', gtfsParser.getShapeIds().length);
     setBadge('calendar-count-badge', this.countServices());
+    setBadge(
+      'levels-count-badge',
+      gtfsParser.getFileDataSync(GTFS_TABLES.LEVELS).length
+    );
     setBadge(
       'fares-count-badge',
       gtfsParser.getFileDataSync(GTFS_TABLES.FARE_PRODUCTS).length
