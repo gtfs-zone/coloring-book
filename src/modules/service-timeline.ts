@@ -219,6 +219,20 @@ function renderWeekdayDots(calendar: Record<string, unknown> | null): string {
   return `<span class="font-mono tracking-tight text-base-content/70">${dots}</span>`;
 }
 
+/**
+ * Wrap content in the app's portaled tooltip trigger (see
+ * `src/utils/tooltip-position.ts`). `text` is plain text; the portal renders
+ * the attribute as HTML, so it is escaped here.
+ */
+function renderTooltipTrigger(
+  text: string,
+  content: string,
+  style = ''
+): string {
+  const styleAttr = style ? ` style="${style}"` : '';
+  return `<span class="field-tooltip-trigger" tabindex="0" data-tooltip-content="${escapeHtml(text)}"${styleAttr}>${content}</span>`;
+}
+
 function getDaysTooltip(calendar: Record<string, unknown> | null): string {
   if (!calendar) {
     return 'No regular days';
@@ -338,23 +352,34 @@ export function renderServiceTimeline(
             calStart <= weekEnd &&
             calEnd >= weekStart;
 
-          // One `title` per cell rather than a DaisyUI tooltip: `.tooltip` sets
-          // `display:inline-block`, which would pull every week cell out of the
-          // table layout. Exception dates fold into the same string so a tick
-          // does not need a second, nested tooltip of its own.
+          // Tooltips are the portaled `.field-tooltip-trigger` ones, not
+          // DaisyUI's CSS tooltip: `.tooltip` sets `display:inline-block`,
+          // which would pull every week cell out of the table layout. A tick
+          // carries its own trigger, and the portal resolves the innermost
+          // trigger under the pointer, so hovering a tick shows the exception
+          // date while the rest of the cell shows the week.
           const ticks: string[] = [];
-          const notes: string[] = [];
           let runningDays = 0;
           // The loop starts on a Sunday, so the offset indexes WEEKDAY_KEYS.
           for (let day = 0; day < 7; day++) {
             const dateStr = formatGTFS(new Date(weekStartTs + day * 86400000));
             const excType = excByDate.get(dateStr);
             if (excType === 1) {
-              ticks.push(`<span style="color:#4ade80">▲</span>`);
-              notes.push(`Added ${formatGtfsDateWithWeekday(dateStr)}`);
+              ticks.push(
+                renderTooltipTrigger(
+                  `Added ${formatGtfsDateWithWeekday(dateStr)}`,
+                  `▲`,
+                  'color:#4ade80'
+                )
+              );
             } else if (excType === 2) {
-              ticks.push(`<span style="color:#f87171">▼</span>`);
-              notes.push(`Removed ${formatGtfsDateWithWeekday(dateStr)}`);
+              ticks.push(
+                renderTooltipTrigger(
+                  `Removed ${formatGtfsDateWithWeekday(dateStr)}`,
+                  `▼`,
+                  'color:#f87171'
+                )
+              );
             }
 
             const runsToday =
@@ -370,35 +395,34 @@ export function renderServiceTimeline(
             }
           }
 
-          const title = [
-            formatGtfsDateRange(weekStart, weekEnd),
+          // Weeks the service skips say nothing beyond the dates: an explicit
+          // "does not run" reads as a claim about the service, not the week.
+          const weekTip =
             runningDays > 0
-              ? `Runs ${runningDays} day${runningDays !== 1 ? 's' : ''}`
-              : 'Does not run',
-            ...notes,
-          ].join(' · ');
+              ? `${formatGtfsDateRange(weekStart, weekEnd)} · Runs ${runningDays} day${runningDays !== 1 ? 's' : ''}`
+              : formatGtfsDateRange(weekStart, weekEnd);
 
           const bgStyle = isActive
             ? `background-color:${hexToRgba(sd.color, 0.2)}`
             : '';
-          return `<td class="w-5 min-w-5 h-7 border-r border-base-300/20 text-center align-middle leading-none" style="${bgStyle}" title="${escapeHtml(title)}">${ticks.join('')}</td>`;
+          return `<td class="w-5 min-w-5 h-7 border-r border-base-300/20 text-center align-middle leading-none field-tooltip-trigger" style="${bgStyle}" data-tooltip-content="${escapeHtml(weekTip)}">${ticks.join('')}</td>`;
         })
         .join('');
 
       const labelCell = `<td class="sticky left-0 z-10 bg-base-200 px-2 py-1 border-b border-base-300/30" style="width:${labelColPx}px;min-width:${labelColPx}px;max-width:${labelColPx}px">
         <span class="inline-flex items-center gap-1 overflow-hidden max-w-full">
           <span class="w-2 h-2 rounded-full flex-shrink-0" style="background-color:${escapeHtml(sd.color)}"></span>
-          <span class="truncate" title="${escapeHtml(sid)}">${escapeHtml(sid)}</span>
+          <span class="truncate field-tooltip-trigger" tabindex="0" data-tooltip-content="${escapeHtml(sid)}">${escapeHtml(sid)}</span>
         </span>
       </td>`;
 
-      const dotCell = `<td class="w-14 min-w-14 px-1 py-1 border-b border-base-300/30 text-xs tooltip tooltip-right" data-tip="${escapeHtml(getDaysTooltip(sd.calendar))}">${renderWeekdayDots(sd.calendar)}</td>`;
+      const dotCell = `<td class="w-14 min-w-14 px-1 py-1 border-b border-base-300/30 text-xs">${renderTooltipTrigger(getDaysTooltip(sd.calendar), renderWeekdayDots(sd.calendar))}</td>`;
 
       // Only needed where the row itself goes somewhere else: without a route
       // context the row already opens the service page.
       const editCell = options.route_id
         ? `<td class="w-8 min-w-8 px-1 py-1 border-b border-base-300/30 text-center">
-          <button type="button" class="btn btn-ghost btn-xs px-1 ${SERVICE_EDIT_BTN}" data-service-id="${escapeHtml(sid)}" title="Edit service ${escapeHtml(sid)}">${renderPencilIcon('h-3 w-3')}</button>
+          <button type="button" class="btn btn-ghost btn-xs px-1 field-tooltip-trigger ${SERVICE_EDIT_BTN}" data-service-id="${escapeHtml(sid)}" data-tooltip-content="${escapeHtml(`Edit service ${sid}`)}">${renderPencilIcon('h-3 w-3')}</button>
         </td>`
         : '';
 

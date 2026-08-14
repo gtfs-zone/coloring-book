@@ -832,6 +832,26 @@ route+service timetable URL states.
 - The route page's `max-h-96 overflow-y-auto` scroll container is kept, now
   wrapping the timeline instead of a `space-y-2` list.
 
+**Follow-up: the timeline uses the app's one tooltip mechanism.** A later commit
+added a per-week `title` attribute plus DaisyUI `tooltip`/`data-tip` on the
+weekday-dot cell; both are now the portaled `.field-tooltip-trigger` +
+`data-tooltip-content` pair from `src/utils/tooltip-position.ts`, which is the
+only tooltip mechanism the app should use (native `title` is unstyled and slow,
+DaisyUI's `.tooltip` sets `display:inline-block` and gets clipped by scroll
+containers). Details worth carrying forward:
+
+- `service-timeline.ts` has a local `renderTooltipTrigger(text, content, style)`
+  helper. The portal writes `data-tooltip-content` as HTML, so plain text goes
+  through `escapeHtml` first.
+- The portal resolves the trigger with `closest()`, so triggers nest: the week
+  cell carries the week tooltip and each exception tick carries its own
+  "Added <date>" / "Removed <date>" tooltip, and the innermost one wins.
+- Week tooltips no longer say "Does not run" (it read as a claim about the
+  service rather than the week). A week the service runs shows
+  `<date range> · Runs N days`; a week it does not shows only the date range.
+- Converted alongside it: the timeline row label, the service edit button, and
+  the calendar modal's day chips and feed start/end badges.
+
 ---
 
 ## Phases 13-15: Fares table list columns (large feat)
@@ -941,39 +961,44 @@ replaced, including the `route-graph.ts` arrow.
 
 Full inventory (this is every glyph in `src/`, verified by grep):
 
-- `src/modules/calendar-modal.ts:236` - `&#9654;` (▶) inside a
+- `src/modules/calendar-modal.ts:105` - `&#9654;` (▶) inside a
   `badge badge-xs badge-success` marking the feed start date.
-- `src/modules/calendar-modal.ts:240` - `&#9664;` (◀) inside a
+- `src/modules/calendar-modal.ts:109` - `&#9664;` (◀) inside a
   `badge badge-xs badge-error` marking the feed end date.
-- `src/modules/calendar-modal.ts:427` - `▲` with inline `style="color:#4ade80"`,
-  an added service date in the timeline.
-- `src/modules/calendar-modal.ts:431` - `▼` with inline `style="color:#f87171"`,
+- `src/modules/service-timeline.ts:371` - `▲` with inline `style="color:#4ade80"`,
+  an added service date in the timeline (moved out of `calendar-modal.ts` by
+  Phase 11).
+- `src/modules/service-timeline.ts:379` - `▼` with inline `style="color:#f87171"`,
   a removed service date in the timeline.
+- `src/modules/calendar-modal.ts:91-92` - `+` / `−` chips marking an
+  added/removed service on a day in the month calendar view.
 - `src/modules/ui.ts` - 9 collapse chevrons set via `chevronEl.textContent`, at
   lines 912, 944, 996, 999, 1025, 1028, 1068, 1105, 1108. These are assigned
   imperatively, not templated, so they need `innerHTML` (or a class toggle on a
   single static SVG) rather than `textContent`.
-- `src/modules/route-graph.ts:166` - `→`.
+- `src/modules/route-graph.ts:166` - `→`, but it is inside a doc comment, not
+  rendered markup. Nothing to swap; confirm and drop it from the inventory.
 
 - [ ] Add the missing icon helpers to `modal-utils.ts`, matching the existing
       `sizeClass`-parameter signature: a chevron (one icon, rotated via a class
       for the up/down states, rather than two separate icons), a start/end
       triangle marker, an up/down service-date marker, and an arrow.
-- [ ] Swap the two calendar-modal date badges (lines 236, 240). Keep them inside
+- [ ] Swap the two calendar-modal date badges (lines 105, 109). Keep them inside
       their `badge badge-xs badge-success` / `badge-error` wrappers and keep the
-      existing `title` attributes so the hover text is unchanged.
-- [ ] Swap the two calendar-modal timeline markers (lines 427, 431). Replace the
-      inline `style="color:#4ade80"` / `#f87171` hex colors with theme classes
-      (`text-success` / `text-error`) instead of carrying the hardcoded hex onto
-      the SVG. Keep the surrounding `tooltip`/`data-tip` wrapper intact.
+      `field-tooltip-trigger` / `data-tooltip-content` attributes so the hover
+      text is unchanged.
+- [ ] Swap the two `service-timeline.ts` timeline markers (lines 371, 379).
+      Replace the inline `style="color:#4ade80"` / `#f87171` hex colors with
+      theme classes (`text-success` / `text-error`) instead of carrying the
+      hardcoded hex onto the SVG. They are rendered through
+      `renderTooltipTrigger(text, content, style)`: keep the trigger wrapper, and
+      pass the color as a class rather than widening the `style` parameter.
 - [ ] Swap the 9 `ui.ts` chevrons. Since these are runtime `textContent`
       assignments inside expand/collapse handlers, prefer rendering the chevron
       SVG once into the element and toggling a `rotate-180` class on it, so the
       handlers stop rebuilding markup on every toggle.
-- [ ] Swap `route-graph.ts:166`. Check first whether that arrow is presentational
-      or part of a string that is measured/parsed (it sits in graph layout code);
-      if it feeds into a width or text computation, an SVG will change layout, so
-      confirm the render path before replacing it.
+- [ ] `route-graph.ts:166` needs no change: the arrow is prose inside a doc
+      comment. Re-grep to confirm, then leave it.
 - [ ] Size and color must come from Tailwind/DaisyUI classes, not inline styles,
       so all 9 themes stay correct. Verify light and dark themes.
 - [ ] Re-grep `src/` for glyphs afterwards to confirm none remain.

@@ -92,21 +92,21 @@ function renderMonthGrid(
               : `<span style="color:#f87171">−</span>`;
         }
         return `<span
-          class="cal-chip cursor-pointer inline-flex items-center gap-0.5 px-1 rounded text-xs text-white font-medium truncate max-w-full"
+          class="cal-chip field-tooltip-trigger cursor-pointer inline-flex items-center gap-0.5 px-1 rounded text-xs text-white font-medium truncate max-w-full"
           style="background-color:${escapeHtml(sd.color)}"
           data-service-id="${escapeHtml(sid)}"
-          title="${escapeHtml(sid)}"
+          data-tooltip-content="${escapeHtml(sid)}"
         >${escapeHtml(sd.label)}${suffix}</span>`;
       })
       .join('');
 
     const feedStartBadge =
       gtfsDate === feedStartDate
-        ? `<span class="badge badge-xs badge-success ml-1" title="Feed start date">&#9654;</span>`
+        ? `<span class="badge badge-xs badge-success ml-1 field-tooltip-trigger" tabindex="0" data-tooltip-content="Feed start date">&#9654;</span>`
         : '';
     const feedEndBadge =
       gtfsDate === feedEndDate
-        ? `<span class="badge badge-xs badge-error ml-1" title="Feed end date">&#9664;</span>`
+        ? `<span class="badge badge-xs badge-error ml-1 field-tooltip-trigger" tabindex="0" data-tooltip-content="Feed end date">&#9664;</span>`
         : '';
 
     cells.push(`
