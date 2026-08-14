@@ -1206,6 +1206,15 @@ were standing in for an X icon. They are swapped too, via a new
 two in `service-days-controller.ts`. The `•` separator in
 `field-descriptions.ts:84` is left alone: it is real typography, not an icon.
 
+**Follow-up: an SVG inside a tooltip trigger killed the tooltip** (commit
+`fc960de`). `findTrigger()` in `src/utils/tooltip-position.ts` started with
+`if (!(target instanceof HTMLElement)) return null`, and an `<svg>` is an
+`SVGElement`, not an `HTMLElement`, so `pointerover` on the new icons matched no
+trigger at all. Both that check and the `relatedTarget` check in
+`handlePointerOut` now test `Element`. This was pre-existing for every trigger
+whose content was already an icon (the timeline's pencil edit button), not new
+breakage, and it is worth checking against Phase 20's missing fares tooltips.
+
 **The `ui.ts` chevrons are not in `51e8536`.** A second session was editing this
 working tree at the same time and committed Phase 21's `ui.ts` changes with
 `git commit -a`, which swallowed the chevron hunks into `ef01288`
