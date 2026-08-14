@@ -101,8 +101,10 @@ function showPortal(trigger: HTMLElement): void {
   positionPortal(trigger, portal);
 }
 
+// Element, not HTMLElement: a trigger's content is often an inline SVG icon,
+// and the pointer lands on the SVGElement, which is not an HTMLElement.
 function findTrigger(target: EventTarget | null): HTMLElement | null {
-  if (!(target instanceof HTMLElement)) {
+  if (!(target instanceof Element)) {
     return null;
   }
   return target.closest<HTMLElement>(TRIGGER_SELECTOR);
@@ -122,7 +124,7 @@ function handlePointerOut(event: PointerEvent): void {
   }
   // Don't hide if the pointer moved to a descendant still within the trigger.
   const related = event.relatedTarget;
-  if (related instanceof HTMLElement && trigger.contains(related)) {
+  if (related instanceof Element && trigger.contains(related)) {
     return;
   }
   scheduleHide();
