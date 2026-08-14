@@ -492,6 +492,27 @@ phase group rather than separately.
   `trip_id` from the trip property rows, leaving `shape_id` as the only FK
   there, which already has its own picker. No gap to fill.
 
+### Follow-up: entity lists only ever appear for `INVALID_REFERENCE`
+
+Found while testing the Nuuk feed, which reports "calendar.txt rows invalid
+date" with nothing under it. The date is genuinely bad: the last row of
+`calendar.txt` ends with a quoted CSV field containing a newline
+(`"20261231\n"`), so the parsed `end_date` fails the `YYYYMMDD` check. The
+report was the problem, not the detection. Fixed for the date checks:
+
+- The three date checks in `validateCalendar()` (`calendar.start_date`,
+  `calendar.end_date`, `calendar_dates.date`) now pass a `ValidationEntity` and
+  name the value in the message, so the card expands to the offending service
+  and links to its page.
+- `formatValue()` in `feed-issues.ts` JSON-quotes a value whose problem is
+  invisible (surrounding whitespace, embedded control chars) and renders `''` as
+  `(empty)`, so `end_date: "20261231\n"` does not read as a valid date.
+
+Still open: every other code that calls `addError` without an entity has the
+same blind card. `INVALID_TIME_FORMAT`, `INVALID_COORDINATE`,
+`MISSING_REQUIRED_FIELD`, `DUPLICATE_ID`, `INVALID_NUMBER`, `INVALID_URL` and
+the rest should each pass one. `rowId()` is already the helper for it.
+
 ---
 
 ## Phase 9: Timetable stop click and hover highlight, in both repos
@@ -503,21 +524,64 @@ Shared with `../test-track`.
 (`../test-track/VENDORED.md`, SHA `9f1f986`), with coloring-book as the canonical
 source. Put shareable highlight logic there so it flows across.
 
-- [ ] Click a stop name/marker in the timetable stop column
+- [x] Click a stop name/marker in the timetable stop column
       (`timetable-renderer.ts:519`, `timetable-cell-renderer.ts:56`, both already
       carry `data-stop-id`) to focus that stop. Find the existing "focus a stop"
       mechanism first (`page-state-manager.ts` `setPageState({type: 'stop', ...})`,
       or a helper in `map-controller.ts` / `interaction-handler.ts`) and reuse it
       rather than reinventing it.
-- [ ] Hover highlights the stop (map and/or strip dot). Put the highlight logic
+- [x] Hover highlights the stop (map and/or strip dot). Put the highlight logic
       in `src/modules/route-strip.ts` so it is shareable.
-- [ ] Apply the same change to `../test-track/src/modules/route-strip.ts` and
+- [x] Apply the same change to `../test-track/src/modules/route-strip.ts` and
       bump its `VENDORED.md` row from SHA `9f1f986` to the new coloring-book SHA,
       keeping `@status verbatim`. test-track already has click-on-name, so
       reconcile with what is there rather than duplicating it.
 - [ ] Manually verify in both apps: click a stop name, confirm focus behaves like
       other focus-stop entry points; hover, confirm the highlight appears.
-- [ ] Commit: `feat(timetable): focus and highlight stops from the stop column`
+- [x] Commit: `feat(timetable): focus and highlight stops from the stop column`
+
+**Done** (commits `69dd3f6`, `f7a054d`; test-track `ad15fef`). Notes:
+
+- **The click target is the rail dot, not the stop name.** The name span was
+  already taken: `.stop-label-span` opens the change-stop picker
+  (`schedule-controller.ts` `openStopPicker`), which is the editor's whole point
+  and must not move. The TODO says "clicking stop markers", and the dot is the
+  marker, so `railCell` grew a `{ stop_id, title }` option that turns the dot
+  into a real `<button data-stop-id>`. Without the option the dot stays a
+  decorative `<span>` inside an `aria-hidden` wrapper, exactly as before.
+- **Focus means `mapController.highlightStop()`, not navigation.** Going through
+  `setPageState({type:'stop'})` would replace the timetable with the stop page,
+  which is wrong while editing a schedule. `highlightStop` is the map-side helper
+  every other focus path lands on (fly-to + focused feature state + route
+  spotlight) and leaves the timetable open.
+- **Hover is split.** The dot scale is pure CSS via a named Tailwind group
+  (`STRIP_ROW_CLASS = 'strip-stop-row group/strip'` on the row,
+  `group-hover/strip:scale-125` on the dot), so it flows to test-track through
+  the vendored file with no JS at all. The map halo is coloring-book-only:
+  `ScheduleController.installStopRowHover()` delegates `pointerover`/`pointerout`
+  (they bubble; `mouseenter`/`mouseleave` do not) to `mapController.hoverStop()`.
+- Map side: a new `hovered` feature state on the `stops` source, read by the two
+  existing `stops-focus-halo`/`stops-focus-ring` layers at lower opacity than
+  `focused`. No new layers, and hover never touches the selection.
+  `LayerManager.setHoveredStop()` mirrors `setFocusedStop()`, is cleared by
+  `clearHighlights()`, and is reset on source recreation.
+- `ScheduleController` had no map or navigation reference, so `index.ts` injects
+  one via `setStopHighlightHandlers({ onStopFocus, onStopHover })`, next to the
+  existing `setPatchManager` call.
+
+Two things worth carrying forward:
+
+- **Tailwind's scanner treats `$` as a class character**, so a utility written
+  immediately before a `${...}` interpolation (`...scale-125${x}`) is extracted
+  as `...scale-125$`, matches nothing, and silently generates no CSS. Verified
+  against the built stylesheet. Every utility in an interpolated class string
+  must be whitespace-separated from the interpolation.
+- **The vendored `route-strip.ts` row was stale**: coloring-book deleted
+  `endpointNote`/`isMinority`/`MINORITY_SHARE` in `8cdd895` (unused here) while
+  test-track still imported them, and the `VENDORED.md` SHA was never bumped, so
+  nothing caught it. Re-vendoring surfaced it as a typecheck failure there. They
+  are restored in coloring-book (commit `f7a054d`) as canonical-source exports,
+  which Phase 10 needs back anyway for its endpoint/minority facts.
 
 ---
 
@@ -917,6 +981,45 @@ those columns.
       work too) a column header in each fares table, confirm the tooltip appears
       above the modal and is fully readable.
 - [ ] Commit: `fix(fares): restore field tooltips on table headers`
+
+### Phase 21: Files modal fixes (scrolling, stale list state, size jump)
+
+**Goal:** Three independent Files modal bugs, fixed together since they're all
+in the same small area of `src/index.html` / `src/modules/ui.ts`.
+
+`src/index.html:666-732` is the Files modal. `.modal-box` (line 667) is
+`w-11/12 max-w-2xl max-h-[90vh] flex flex-col p-0` with no fixed height, so it
+sizes to content: a short file's table shrinks the whole modal. The file list
+view (`#file-list-view`, line 697) and file editor view (`#file-editor-view`,
+line 702) are toggled via `hidden` in `src/modules/ui.ts` `showFileList()`
+(line 571) / `showFileEditor()` (line 580). The `files-btn` click handler
+(`ui.ts:217-222`) only calls `updateFileList()` before `showModal()`; it never
+calls `showFileList()`, so if the modal was last left on the editor view
+(via `back-to-files` not being clicked, or via `showFileInEditor()` at
+line 559), reopening the modal shows the stale editor view instead of the
+list.
+
+- [ ] Make the file list scrollable. `#file-list` (line 698) already has
+      `overflow-y-auto h-full`, so check whether the ancestor chain
+      (`#file-list-view`, the `flex-1 overflow-hidden min-h-0` wrapper at
+      line 695) is actually constraining height, or whether the `modal-box`
+      itself growing to fit content (see below) is defeating the scroll
+      container by never capping its own height.
+- [ ] Give `.modal-box` a fixed height instead of a max-height that shrinks to
+      content, e.g. `h-[90vh]` in place of `max-h-[90vh]` (line 667), so
+      opening a small file does not shrink the whole modal.
+- [ ] In the `files-btn` click handler (`ui.ts:217-222`), call
+      `this.showFileList()` before `showModal()` so the modal always opens on
+      the list view, never a stale editor view from a previous session.
+- [ ] Strip any other place that remembers "last file clicked" for the Files
+      modal specifically (e.g. `menu-active` class left on a list item,
+      `current-file-name` text) so reopening the modal is a clean state, not
+      just visually landing on the list while other stale bits linger.
+- [ ] Manually verify: open a file, close the modal, reopen via the Files
+      button, confirm it shows the list (not the last file); open a small file
+      and confirm the modal stays the same size; confirm the file list scrolls
+      with many files.
+- [ ] Commit: `fix(files-modal): make list scrollable, reset to list view on reopen, keep fixed size`
 
 ---
 
