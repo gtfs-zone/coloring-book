@@ -1317,6 +1317,36 @@ distinct route. Keep it in theme, and share code rather than inlining new markup
 **Goal:** Hovering a column header in any Fares table shows the spec description
 tooltip again, as it does elsewhere in the app.
 
+**Done.** What was actually wrong, after the two problems the plan predicted had
+already been fixed independently (the `columnOverride?.label` branch now passes
+through `renderFieldLabelContent`, and the portal's z-index is `z-[2000]`, above
+DaisyUI's modal layer at 999): the tooltips appeared but had no description.
+`getGTFSFieldDescription` (`src/utils/zod-tooltip-helper.ts`) resolved
+descriptions through a hardcoded `schemaMap` of exactly 9 filenames (agency,
+routes, calendar, calendar_dates, stops, trips, stop_times, shapes, feed_info).
+Every other file, all of fares v2 included, fell through to `''`, so
+`buildFieldTooltipContent` emitted only the "ID:" and "Presence:" lines. Not a
+fares regression at all: it was generic and had never worked outside those 9.
+
+Fixed at the source rather than at the fares call site: `getGTFSFieldDescription`
+now reads `GTFS_FIELD_SPECS[filename]?.[field]?.description`, which the spec
+layer populates verbatim for all 32 files. That also fixes `editor.ts`'s CSV
+header tooltips for the same 23 files. Note the derived Zod schemas are *not* a
+usable source here: `adapter.ts` attaches `.describe()` to the inner type and
+then wraps it in `.optional()`, so `shape[field].description` is undefined for
+every optional field (`getFieldDescription` in `src/types/gtfs.ts` has this
+latent bug too, but it is only used by the `field-descriptions` overlay).
+
+Also handled the `joinColumns` case the plan left open. Those headers ("Stops",
+"Routes" on Areas and Networks) rendered as bare escaped `<th>`s. They are
+spec-backed, just against the *join* table, so `EditableTableJoinColumn` gained
+an optional `spec: { tableName, field }` and `memberJoinColumn` in
+`fares-modal.ts` points it at `stop_areas.stop_id` / `route_networks.route_id`.
+The new shared helper `renderSpecFieldLabelContent(tableName, field, label)` in
+`field-component.ts` builds the config for it and deliberately omits presence:
+the field is required of a join row, not of the row being rendered, so a
+required mark there would be a lie.
+
 The plumbing is all still present, which is why this is a regression rather than
 a missing feature:
 
@@ -1340,30 +1370,30 @@ entirely, and `:327` does the same for `extraColumns`. If the fares tables set
 `columnOverrides` with labels, that alone explains missing tooltips on exactly
 those columns.
 
-- [ ] Diagnose before changing anything. Open the Fares modal and check in
+- [x] Diagnose before changing anything. Open the Fares modal and check in
       devtools: (a) do `.field-tooltip-trigger` elements exist in the fares
       `<th>`s, (b) if they exist, does the portal element get appended to
       `document.body` on hover, and (c) if it is appended, is it visible or is it
       behind the modal / clipped by an ancestor.
-- [ ] If the triggers are missing: the `columnOverride?.label` branch at
+- [x] If the triggers are missing: the `columnOverride?.label` branch at
       `editable-table.ts:314` is the cause. Fix by passing the override label
       through `renderFieldLabelContent` (it already accepts
       `{ ...fieldConfig, label: override.label }` on the very next branch at
       line 316) instead of returning a bare `<th>`. Decide separately whether
       `extraColumns` (line 327) should get tooltips too, since those are not
       spec-backed and may have no description to show.
-- [ ] If the portal appears but is invisible: it is a stacking or clipping
+- [x] If the portal appears but is invisible: it is a stacking or clipping
       problem between the portal's `z-[100]` and the `showModal()` overlay. Check
       the overlay's z-index in `modal-utils.ts` and `src/styles/main.css`
       (lines 43, 52 set `z-index: 40 !important` and `50`). Raise the portal
       rather than lowering the modal.
-- [ ] Check whether this affects only Fares or every `renderEditableTable()`
+- [x] Check whether this affects only Fares or every `renderEditableTable()`
       caller. If it is generic, fix it in `editable-table.ts` / `field-component.ts`
       once rather than patching the fares call site.
 - [ ] Manually verify: hover and keyboard-focus (`tabindex="0"` means Tab must
       work too) a column header in each fares table, confirm the tooltip appears
       above the modal and is fully readable.
-- [ ] Commit: `fix(fares): restore field tooltips on table headers`
+- [x] Commit: `fix(fares): restore field tooltips on table headers`
 
 ### Phase 21: Files modal fixes (scrolling, stale list state, size jump)
 
