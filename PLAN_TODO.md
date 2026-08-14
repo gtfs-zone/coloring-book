@@ -188,28 +188,52 @@ renders and stays. A route with a bad `agency_id` must become *visible*, not
 silently reparented. The goal is that a dangling reference is impossible to miss,
 easy to locate, and straightforward to repoint by hand.
 
-### Context: work already in progress
+### Context: foundation already landed (commit `7e94bec`)
 
-There is uncommitted work in the tree that is the foundation for this. **Keep all
-of it**, do not revert it:
+This is committed, not in-tree work. **Build on it**, do not revert it:
 
 - `src/modules/gtfs-validator.ts` - `ValidationMessage`/`ValidationResults` are
   now exported, and `code` is propagated through `addError`/`addWarning`/
-  `addInfo` instead of being discarded as `_code`.
+  `addInfo` instead of being discarded as `_code`. The `routes.agency_id`
+  `INVALID_REFERENCE` message now names the offending route.
 - `src/modules/feed-issues.ts` (new) - `deriveFeedIssues()` groups error and
-  warning messages by `${file}:${code}` into label/count rows, with a
-  `CODE_LABELS` map and a `NOTES` map for consequences worth spelling out.
-  Module-level `setFeedIssues`/`getFeedIssues` cache the result so the panel does
-  not re-validate on every render (a full pass walks `stop_times`).
+  warning messages by `${file}:${code}` into label/count rows, sorted by count
+  descending. A `CODE_LABELS` map gives per-code wording (falling back to a
+  humanized code), and an `OVERRIDES` map keyed `${file}:${code}` supplies
+  `{ label?, note? }` where the generic phrasing is too vague to act on -
+  currently only `routes.txt:INVALID_REFERENCE`. Module-level
+  `setFeedIssues`/`getFeedIssues` cache the result so the panel does not
+  re-validate on every render (a full pass walks `stop_times`).
 - `src/utils/issue-card.ts` (new) - `renderIssueCard(title, rows)`, a warning
-  card that renders nothing when every count is zero.
+  card that renders nothing when every count is zero. Deliberately generic and
+  free of coloring-book types. **Already vendored into `../test-track`** (its
+  commit `7b21d32`, recorded in its `VENDORED.md` against coloring-book
+  `7e94bec`), where `renderMapIssues` and `renderStationIssues` in
+  `status-page.ts` now call it. Its markup is therefore shared: changing the
+  card's classes here means re-vendoring there. The card is deliberately
+  escaping-only, which is why test-track's `renderPaddedColumns` stayed bespoke
+  (its label and note carry inline `font-mono` markup).
 - `src/index.ts` - `validateAndUpdateInfo()` now runs on boot, publishes the
-  derived issues, and logs a summary.
+  derived issues, and logs a summary. Boot was the missing trigger: previously a
+  feed restored from IndexedDB was never validated at all.
+- `src/modules/ui.ts` - all three load paths now validate *before* refreshing
+  the panel. They used to refresh first, which would render the card stale.
 - `src/modules/page-content-renderer.ts` - the home page renders the card between
   feed info and Agencies.
 
 The gap: the card proves problems *exist* without letting you *find* or *fix*
-them. Phases 6-8 close that gap.
+them. It also only counts what the five hand-written checks happen to look at.
+Phases 6-8 close both gaps.
+
+Two known rough edges for Phase 6/7 to clean up rather than preserve:
+
+- Generic labels read mechanically (`"stops.txt rows missing a required field"`).
+  Once Phase 6 makes the sweep generic, revisit whether `CODE_LABELS` should be
+  keyed by `${file}:${code}` throughout instead of code alone.
+- `deriveFeedIssues()` splits its grouping key on `:` with
+  `key.split(':')`, which is safe only because GTFS filenames contain no colon.
+  Phase 6 should carry `file`/`code` as a structured tuple instead, which falls
+  out naturally from adding the `entity` field.
 
 ### Context: the spec layer already knows every foreign key
 
@@ -269,6 +293,12 @@ phase group rather than separately.
       they are; they only need to thread entities through alongside the counts.
 - [ ] Cap the inline list at a sane length with an "and N more" tail so one
       badly broken file cannot make the home page unusable.
+- [ ] `issue-card.ts` is vendored into `../test-track`, which has no concept of
+      GTFS entity pages. Keep the entity list optional so a row that carries only
+      a label and a count still renders exactly as it does today, then re-vendor
+      and bump the `@sha` in that repo's `VENDORED.md`. If entity linking cannot
+      be made optional cleanly, split it into a coloring-book-only wrapper rather
+      than forking the shared card.
 - [ ] Manually verify: load a feed with a dangling reference, expand the issue
       row, click through to the offending entity's page.
 - [ ] Commit: `feat(issues): list the offending entities under each feed issue`
