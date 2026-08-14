@@ -165,6 +165,11 @@ export class ScheduleController {
   public timetableScrollLeft = 0;
   public timetableScrollTop = 0;
 
+  // Map wiring for the stop column, injected by index.ts
+  private stopFocus: ((stop_id: string) => void) | null = null;
+  private stopHover: ((stop_id: string | null) => void) | null = null;
+  private hoveredStopId: string | null = null;
+
   /**
    * Initialize ScheduleController with required dependencies
    *
@@ -211,6 +216,15 @@ export class ScheduleController {
    */
   private installTimetablePickers(): void {
     document.addEventListener('click', (e) => {
+      const stopDot = (e.target as Element)?.closest?.('.strip-stop-dot');
+      if (stopDot instanceof HTMLElement) {
+        const stop_id = stopDot.dataset.stopId;
+        if (stop_id) {
+          this.stopFocus?.(stop_id);
+        }
+        return;
+      }
+
       const stopLabel = (e.target as Element)?.closest?.('.stop-label-span');
       if (stopLabel instanceof HTMLElement) {
         void this.openStopPicker(stopLabel);
@@ -241,6 +255,57 @@ export class ScheduleController {
         void this.handleDeleteTrip(tripId);
       }
     });
+
+    this.installStopRowHover();
+  }
+
+  /**
+   * Hovering a timetable stop row lights that stop on the map.
+   *
+   * `pointerover`/`pointerout` bubble (unlike mouseenter/mouseleave), so this
+   * can be delegated to `document` like the pickers above. Moving between two
+   * children of the same row fires an out/over pair for the same row, hence
+   * the same-row guard: without it the highlight flickers off and on.
+   */
+  private installStopRowHover(): void {
+    const rowStopId = (e: Event): string | null => {
+      const row = (e.target as Element)?.closest?.('.strip-stop-row');
+      return row instanceof HTMLElement ? (row.dataset.stopId ?? null) : null;
+    };
+
+    document.addEventListener('pointerover', (e) => {
+      const stop_id = rowStopId(e);
+      if (stop_id && stop_id !== this.hoveredStopId) {
+        this.hoveredStopId = stop_id;
+        this.stopHover?.(stop_id);
+      }
+    });
+
+    document.addEventListener('pointerout', (e) => {
+      const stop_id = rowStopId(e);
+      if (stop_id && stop_id === this.hoveredStopId) {
+        // Only really left the row if the pointer landed outside it.
+        const next = (e as PointerEvent).relatedTarget;
+        if (next instanceof Element && next.closest('.strip-stop-row')) {
+          return;
+        }
+        this.hoveredStopId = null;
+        this.stopHover?.(null);
+      }
+    });
+  }
+
+  /**
+   * Wire the timetable stop column to the map: clicking a stop's rail dot
+   * focuses it, hovering its row lights it. Injected from `index.ts` because
+   * ScheduleController has no map or navigation reference of its own.
+   */
+  public setStopHighlightHandlers(handlers: {
+    onStopFocus: (stop_id: string) => void;
+    onStopHover: (stop_id: string | null) => void;
+  }): void {
+    this.stopFocus = handlers.onStopFocus;
+    this.stopHover = handlers.onStopHover;
   }
 
   /**
