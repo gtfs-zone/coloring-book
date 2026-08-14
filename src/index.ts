@@ -10,7 +10,7 @@ import { InfoDisplay } from './modules/info-display';
 import { SearchController } from './modules/search-controller';
 import { buildSearchEntries } from './modules/search-entries';
 import { GTFSValidator } from './modules/gtfs-validator';
-import { deriveFeedIssues, setFeedIssues } from './modules/feed-issues';
+import { publishFeedIssues } from './modules/feed-issues';
 import { KeyboardShortcuts } from './modules/keyboard-shortcuts';
 import { FieldDescriptionsDisplay } from './modules/field-descriptions';
 import { ScheduleController } from './modules/schedule-controller';
@@ -468,8 +468,7 @@ export class GTFSEditor {
     this.navbarCounts.refresh();
 
     const validationResults = this.validator.validateFeed();
-    const issues = deriveFeedIssues(validationResults, this.gtfsParser);
-    setFeedIssues(issues);
+    const issues = publishFeedIssues(validationResults, this.gtfsParser);
     console.log(
       `[GTFSEditor] validation: ${validationResults.errors.length} error(s), ${validationResults.warnings.length} warning(s), ${issues.length} issue group(s)`
     );
