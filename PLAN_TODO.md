@@ -979,20 +979,45 @@ Two details worth remembering:
 
 ### Phase 15: Generalize the areas/networks list display
 
-- [ ] Extract `renderAreaStopLists()`'s presentation (the `<details>`/`<summary>`/
+- [x] Extract `renderAreaStopLists()`'s presentation (the `<details>`/`<summary>`/
       `<ul><li>` markup, item formatting via `getStopDisplay`/`getEntityDisplay` +
       `renderOptionLabel`) into a shared helper taking a
       `Map<id, {label: string, items: string[]}>` and returning the HTML block,
       independent of whether the source join is `stop_areas` or `route_networks`.
-- [ ] Reimplement `renderAreaStopLists()` as a thin wrapper: collect the
+- [x] Reimplement `renderAreaStopLists()` as a thin wrapper: collect the
       `stop_areas`/`stops` join data, then call the shared helper.
-- [ ] Add an equivalent for Networks: collect `route_networks`/`routes` join data
+- [x] Add an equivalent for Networks: collect `route_networks`/`routes` join data
       (reuse the join logic in `countRoutesPerNetwork()`, `fares-modal.ts:70-82`),
       then call the shared helper. Wire it in as the Networks entry's `detail:`
       callback, mirroring Areas at `fares-modal.ts:464`.
 - [ ] Manually verify both the Areas and Networks panes show matching-style list
       details.
-- [ ] Commit: `feat(fares): show a route list detail for networks, matching areas`
+- [x] Commit: `feat(fares): show a route list detail for networks, matching areas`
+
+**Done** (commit `74b7ede`). Notes:
+
+- The split is **two** helpers, not one. `renderMemberLists(heading, emptyItems,
+  sections)` is the presentation half, and `collectMemberSections(deps, spec)` is
+  the join half: the two panes differ only in which tables they read, so the
+  collection loop is as shareable as the markup. `renderAreaStopLists()` and the
+  new `renderNetworkRouteLists()` are each a single call to both.
+- `collectMemberSections` takes `{ groupTable, memberTable, joinTable,
+  groupField, memberField, memberSuffix? }`. `memberSuffix` is the one
+  area-specific behaviour left: the `, and its platforms` note on a station.
+  Networks pass none.
+- Sections are a plain array, not the `Map<id, ...>` the plan sketched. The id
+  was only ever the lookup key while building; nothing renders it, and the group
+  rows already come back in table order, so the map would have been dead weight.
+- Both `getEntityDisplay` calls take `specStoreName(table)`, not the raw
+  `GTFS_TABLES` value: the dispatcher keys on `stops`/`routes`, and passing
+  `stops.txt` would silently fall through to its generic `<singular>_name`
+  branch.
+- `countRoutesPerNetwork()`/`countStopsPerArea()` are untouched. They count join
+  rows without reading the member table at all, so folding them into
+  `collectMemberSections` would have made the Routes/Stops column pay for a full
+  `routes`/`stops` read.
+- Networks now has both a count column and an expandable list, matching Areas,
+  which was the asymmetry Phase 13-15's context called out.
 
 ---
 
