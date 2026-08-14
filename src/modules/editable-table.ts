@@ -120,6 +120,16 @@ export interface EditableTableColumnOverride {
    * foreign keys but where existing values are usually what is wanted.
    */
   suggestions?: () => Promise<string[]>;
+  /**
+   * Collapse rows that differ only in this column into one row, listing every
+   * distinct value here newline-separated. For composite keys whose repeated
+   * member is the only thing that varies (a fare product sold on three media),
+   * so the table shows one product rather than three near-identical rows.
+   *
+   * List cells are read-only. The rest of a collapsed row stays editable, and
+   * an edit or a delete there applies to every row behind it.
+   */
+  list?: boolean;
 }
 
 export interface EditableTableExtraColumn {
@@ -213,6 +223,70 @@ function isKeyField(tableName: string, field: string): boolean {
   return pk.type === 'all_fields' || pk.fields.includes(field);
 }
 
+// ─── Row grouping ─────────────────────────────────────────────────────────────
+
+/**
+ * One visual row: a single record, or several that a list column collapsed.
+ *
+ * Groups are recomputed from `config.rows` wherever they are needed rather
+ * than being cached, so they always describe the rows the user is looking at.
+ */
+interface RowGroup {
+  /** Key of the first row, standing in for the group in the DOM. */
+  key: string;
+  keys: string[];
+  rows: Record<string, unknown>[];
+}
+
+function listFields(config: EditableTableConfig): string[] {
+  return columnFields(config).filter(
+    (field) => config.columnOverrides?.[field]?.list
+  );
+}
+
+/**
+ * Collapse rows that are identical across every non-list column.
+ *
+ * With no list columns each row is its own group, which renders exactly as the
+ * plain one-row-per-record table it was before.
+ */
+function groupRows(config: EditableTableConfig): RowGroup[] {
+  const lists = new Set(listFields(config));
+  if (lists.size === 0) {
+    return config.rows.map((row) => ({
+      key: rowKey(config, row),
+      keys: [rowKey(config, row)],
+      rows: [row],
+    }));
+  }
+
+  const shared = columnFields(config).filter((field) => !lists.has(field));
+  const groups: RowGroup[] = [];
+  const byValues = new Map<string, RowGroup>();
+  for (const row of config.rows) {
+    const key = rowKey(config, row);
+    const groupKey = JSON.stringify(shared.map((field) => row[field] ?? ''));
+    const existing = byValues.get(groupKey);
+    if (existing) {
+      existing.keys.push(key);
+      existing.rows.push(row);
+      continue;
+    }
+    const group: RowGroup = { key, keys: [key], rows: [row] };
+    byValues.set(groupKey, group);
+    groups.push(group);
+  }
+  return groups;
+}
+
+/** The group a cell or delete button's key belongs to. */
+function findGroup(
+  config: EditableTableConfig,
+  key: string
+): RowGroup | undefined {
+  return groupRows(config).find((group) => group.keys.includes(key));
+}
+
 // ─── Foreign key options ──────────────────────────────────────────────────────
 
 /** The field's picker options, or the column's override where one is given. */
@@ -250,6 +324,46 @@ async function foreignLabelMaps(
   return maps;
 }
 
+/** A cell's display text: the column's own formatter, or the spec's. */
+function cellText(
+  config: EditableTableConfig,
+  field: string,
+  spec: GTFSFieldSpec,
+  row: Record<string, unknown>,
+  foreignLabels: Map<string, string> | undefined
+): string {
+  const override = config.columnOverrides?.[field];
+  return override?.format
+    ? override.format(row[field], row)
+    : formatSpecValue(spec, specFieldKind(spec), row[field], foreignLabels);
+}
+
+/**
+ * A list column's cell: every distinct value in the group, one per line.
+ *
+ * Read-only, and not truncated the way a single-value cell is: a clipped list
+ * would hide values with no sign that it had.
+ */
+function renderListCell(
+  config: EditableTableConfig,
+  field: string,
+  spec: GTFSFieldSpec,
+  group: RowGroup,
+  foreignLabels: Map<string, string> | undefined
+): string {
+  const seen = new Set<string>();
+  const values: string[] = [];
+  for (const row of group.rows) {
+    const text = cellText(config, field, spec, row, foreignLabels);
+    if (text === '' || seen.has(text)) {
+      continue;
+    }
+    seen.add(text);
+    values.push(text);
+  }
+  return `<td class="align-middle whitespace-pre-line">${escapeHtml(values.join('\n')) || '-'}</td>`;
+}
+
 function renderCell(
   config: EditableTableConfig,
   field: string,
@@ -262,9 +376,7 @@ function renderCell(
   const kind = specFieldKind(spec);
   const raw =
     row[field] === undefined || row[field] === null ? '' : String(row[field]);
-  const text = override?.format
-    ? override.format(row[field], row)
-    : formatSpecValue(spec, kind, row[field], foreignLabels);
+  const text = cellText(config, field, spec, row, foreignLabels);
 
   if (override?.readonly) {
     return `<td class="align-middle">${escapeHtml(text) || '-'}</td>`;
@@ -328,15 +440,26 @@ export async function renderEditableTable(
     )
     .join('');
 
-  const bodyHtml = config.rows
-    .map((row) => {
-      const key = rowKey(config, row);
+  const groups = groupRows(config);
+  const bodyHtml = groups
+    .map((group) => {
+      const { key } = group;
+      const row = group.rows[0];
       const cells = fields
         .map((field) => {
           const spec = specs[field];
           if (!spec) {
             throw new Error(
               `[EditableTable] ${config.tableName} has no field ${field}`
+            );
+          }
+          if (config.columnOverrides?.[field]?.list) {
+            return renderListCell(
+              config,
+              field,
+              spec,
+              group,
+              labels.get(field)
             );
           }
           return renderCell(config, field, spec, row, key, labels.get(field));
@@ -348,8 +471,12 @@ export async function renderEditableTable(
             `<td class="align-middle">${escapeHtml(column.render(row))}</td>`
         )
         .join('');
+      const deleteTitle =
+        group.rows.length > 1
+          ? `Delete ${group.rows.length} rows`
+          : 'Delete row';
       return `<tr data-et-row="${escapeHtml(key)}">${cells}${extraCells}<td class="align-middle w-8">
-        <button class="editable-table-delete btn btn-xs btn-ghost text-error" data-et="${escapeHtml(config.instanceId)}" data-key="${escapeHtml(key)}" title="Delete row">${renderTrashIcon('h-3.5 w-3.5')}</button>
+        <button class="editable-table-delete btn btn-xs btn-ghost text-error" data-et="${escapeHtml(config.instanceId)}" data-key="${escapeHtml(key)}" title="${escapeHtml(deleteTitle)}">${renderTrashIcon('h-3.5 w-3.5')}</button>
       </td></tr>`;
     })
     .join('');
@@ -622,50 +749,99 @@ async function commitUpdate(
   const { config } = state;
   const key = span.dataset.key ?? '';
   const table = specStoreName(config.tableName);
-  const before = config.rows.find((r) => rowKey(config, r) === key);
-  if (!before) {
+  // A collapsed row is edited as one row: the write covers every record behind
+  // it, in a single patch, so it undoes as one step too.
+  const group = findGroup(config, key);
+  if (!group) {
     console.warn(`[EditableTable] row ${key} is gone from ${table}`);
     return;
   }
 
-  const after = { ...before, [field]: value };
+  const edits = group.rows.map((before, i) => ({
+    key: group.keys[i],
+    before,
+    after: { ...before, [field]: value },
+  }));
 
   if (!isKeyField(config.tableName, field)) {
-    console.log(`[EditableTable] update ${table} ${key}.${field}`);
-    await patchUpdate(
-      config.deps.gtfsDatabase,
-      config.deps.patchManager,
-      table,
-      key,
-      { [field]: before[field] ?? '' },
-      { [field]: value }
+    console.log(
+      `[EditableTable] update ${table} ${key}.${field} (${edits.length} row(s))`
     );
-    replaceRow(config, key, after);
-    config.onUpdate?.(key, after);
+    if (edits.length === 1) {
+      await patchUpdate(
+        config.deps.gtfsDatabase,
+        config.deps.patchManager,
+        table,
+        key,
+        { [field]: edits[0].before[field] ?? '' },
+        { [field]: value }
+      );
+    } else {
+      for (const edit of edits) {
+        await config.deps.gtfsDatabase.updateRow(table, edit.key, {
+          [field]: value,
+        });
+      }
+      await config.deps.patchManager.recordBatchMixed(
+        edits.map((edit) => ({
+          op: 'update' as const,
+          table,
+          id: edit.key,
+          before: { [field]: edit.before[field] ?? '' },
+          after: { [field]: value },
+        })),
+        `Edit ${field} on ${table}`
+      );
+    }
+    edits.forEach((edit) => replaceRow(config, edit.key, edit.after));
+    config.onUpdate?.(key, edits[0].after);
     return;
   }
 
-  // The edit changed the row's identity, so it is a delete plus an insert
+  // The edit changed the rows' identity, so it is a delete plus an insert
   // rather than an in-place write.
-  const newKey = rowKey(config, after);
-  if (newKey !== key && config.rows.some((r) => rowKey(config, r) === newKey)) {
+  const newKeys = edits.map((edit) => rowKey(config, edit.after));
+  const groupKeys = new Set(group.keys);
+  const taken = new Set(
+    config.rows.map((r) => rowKey(config, r)).filter((k) => !groupKeys.has(k))
+  );
+  if (newKeys.some((newKey) => taken.has(newKey))) {
     markCellError(span, 'Another row already uses these key values');
     return;
   }
 
-  console.log(`[EditableTable] rekey ${table} ${key} -> ${newKey}`);
-  await config.deps.gtfsDatabase.deleteRow(table, key);
-  await config.deps.gtfsDatabase.insertRows(table, [after]);
+  console.log(
+    `[EditableTable] rekey ${table} ${key} -> ${newKeys[0]} (${edits.length} row(s))`
+  );
+  // Every delete lands before any insert, so a key moving onto one that is
+  // still occupied by another row of the same group cannot collide.
+  for (const edit of edits) {
+    await config.deps.gtfsDatabase.deleteRow(table, edit.key);
+  }
+  await config.deps.gtfsDatabase.insertRows(
+    table,
+    edits.map((edit) => edit.after)
+  );
   await config.deps.patchManager.recordBatchMixed(
     [
-      { op: 'delete', table, id: key, record: before },
-      { op: 'insert', table, id: newKey, record: after },
+      ...edits.map((edit) => ({
+        op: 'delete' as const,
+        table,
+        id: edit.key,
+        record: edit.before,
+      })),
+      ...edits.map((edit, i) => ({
+        op: 'insert' as const,
+        table,
+        id: newKeys[i],
+        record: edit.after,
+      })),
     ],
     `Edit ${field} on ${table}`
   );
-  replaceRow(config, key, after);
-  rekeyRowElement(span, newKey);
-  config.onUpdate?.(newKey, after);
+  edits.forEach((edit) => replaceRow(config, edit.key, edit.after));
+  rekeyRowElement(span, newKeys[0]);
+  config.onUpdate?.(newKeys[0], edits[0].after);
 }
 
 /**
@@ -781,23 +957,51 @@ async function deleteRow(button: HTMLElement): Promise<void> {
   }
   const { config } = state;
   const table = specStoreName(config.tableName);
-  const record = config.rows.find((r) => rowKey(config, r) === key);
-  if (!record) {
+  // A collapsed row deletes as one row: every record behind it goes, in one
+  // patch.
+  const group = findGroup(config, key);
+  if (!group) {
     console.warn(`[EditableTable] row ${key} is gone from ${table}`);
     return;
   }
 
+  const count = group.rows.length;
+  const question =
+    count === 1
+      ? 'Are you sure you want to delete this record?'
+      : `Are you sure you want to delete these ${count} records?`;
+
   await showModal({
     title: 'Confirm Delete',
-    body: `<p>Are you sure you want to delete this record? This can be undone via Edit -> Undo.</p>`,
+    body: `<p>${question} This can be undone via Edit -> Undo.</p>`,
     actions: [
       {
         label: 'Delete',
         className: 'btn-error',
         onClick: async () => {
-          await config.deps.gtfsDatabase.deleteRow(table, key);
-          await config.deps.patchManager.recordDelete(table, key, record);
-          console.log(`[EditableTable] delete ${table} ${key}`);
+          for (const groupKey of group.keys) {
+            await config.deps.gtfsDatabase.deleteRow(table, groupKey);
+          }
+          if (count === 1) {
+            await config.deps.patchManager.recordDelete(
+              table,
+              key,
+              group.rows[0]
+            );
+          } else {
+            await config.deps.patchManager.recordBatchMixed(
+              group.rows.map((record, i) => ({
+                op: 'delete' as const,
+                table,
+                id: group.keys[i],
+                record,
+              })),
+              `Delete ${count} rows from ${table}`
+            );
+          }
+          console.log(
+            `[EditableTable] delete ${table} ${key} (${count} row(s))`
+          );
           config.onDelete?.(key);
         },
       },
