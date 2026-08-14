@@ -48,11 +48,15 @@ import { navigateToHome } from './navigation-actions.js';
 import type { GTFSParser } from './gtfs-parser.js';
 import { renderRouteDiagram, ROUTE_DIAGRAM_ROW } from './route-diagram.js';
 import { generateCompositeKeyFromRecord } from '../utils/gtfs-primary-keys.js';
+import {
+  attachServiceTimelineListeners,
+  filterServiceDataMap,
+  loadServiceData,
+  renderServiceTimeline,
+  type ServiceTimelineSource,
+} from './service-timeline.js';
 import { normalizeAgencyId } from '../utils/agency-helpers.js';
 import {
-  renderServiceReference,
-  renderTimetableReference,
-  SERVICE_REF_ROW,
   STOP_REF_ROW,
   PATHWAY_REF_ROW,
   ENTITY_REF_BTN,
@@ -205,9 +209,6 @@ export class PageContentRenderer {
       gtfsRelationships: dependencies.gtfsRelationships || {},
       onStopClick: dependencies.onStopClick,
       onPathwayClick: dependencies.onPathwayClick,
-      onTimetableClick: dependencies.onTimetableClick,
-      onRouteClick: dependencies.onRouteClick,
-      onServiceClick: dependencies.onServiceClick,
       onDeleteStop: (stop_id) => this.handleDeleteStop(stop_id),
     };
     this.stopViewController = new StopViewController(stopViewDependencies);
@@ -345,8 +346,9 @@ export class PageContentRenderer {
     // Get feed_info data
     const feedInfo = await this.getFeedInfo();
 
-    // Get all unique services
-    const services = await this.getServices();
+    // Every service in the feed, rendered as the shared timeline
+    const serviceData = await loadServiceData(this.serviceTimelineSource());
+    const serviceCount = serviceData.size;
 
     const agencyItems = agencies
       .map((agency: unknown) => {
@@ -360,31 +362,6 @@ export class PageContentRenderer {
             </div>
           </div>
         `;
-      })
-      .join('');
-
-    const allTrips = (await this.dependencies.gtfsDatabase.getAllRows(
-      'trips'
-    )) as Record<string, unknown>[];
-    const tripCountByService = new Map<string, number>();
-    const routesByService = new Map<string, Set<string>>();
-    for (const trip of allTrips) {
-      const sid = trip.service_id as string;
-      const rid = trip.route_id as string;
-      tripCountByService.set(sid, (tripCountByService.get(sid) ?? 0) + 1);
-      if (!routesByService.has(sid)) {
-        routesByService.set(sid, new Set());
-      }
-      routesByService.get(sid)!.add(rid);
-    }
-
-    const serviceItems = services
-      .map((service: Record<string, unknown>) => {
-        const sid = service.service_id as string;
-        return renderServiceReference(service, {
-          tripCount: tripCountByService.get(sid),
-          routeCount: routesByService.get(sid)?.size,
-        });
       })
       .join('');
 
@@ -438,11 +415,11 @@ export class PageContentRenderer {
                 data-inline-create="service"
                 style="width: 150px;"
               />
-              <div class="badge badge-outline">${services.length} service${services.length !== 1 ? 's' : ''}</div>
+              <div class="badge badge-outline">${serviceCount} service${serviceCount !== 1 ? 's' : ''}</div>
             </div>
           </div>
           ${
-            services.length === 0
+            serviceCount === 0
               ? `<div class="card bg-base-100 shadow-lg">
                   <div class="card-body p-4">
                     <div class="text-center py-6 opacity-70">
@@ -452,9 +429,7 @@ export class PageContentRenderer {
                 </div>`
               : `<div class="card bg-base-100 shadow-lg">
                   <div class="card-body p-4">
-                    <div class="space-y-2">
-                      ${serviceItems}
-                    </div>
+                    ${renderServiceTimeline(serviceData)}
                   </div>
                 </div>`
           }
@@ -480,37 +455,14 @@ export class PageContentRenderer {
     }
   }
 
-  /**
-   * Get all services from calendar
-   */
-  private async getServices(): Promise<Record<string, unknown>[]> {
-    try {
-      const calendarRows = (await this.dependencies.gtfsDatabase.getAllRows(
-        'calendar'
-      )) as Record<string, unknown>[];
-      const calendarDatesRows =
-        (await this.dependencies.gtfsDatabase.getAllRows(
-          'calendar_dates'
-        )) as Record<string, unknown>[];
-
-      const covered = new Set<string>(
-        calendarRows.map((r) => String(r['service_id'] ?? ''))
-      );
-
-      const extraIds = new Set<string>();
-      for (const r of calendarDatesRows) {
-        const id = String(r['service_id'] ?? '');
-        if (id !== '' && !covered.has(id)) {
-          extraIds.add(id);
-        }
-      }
-      const extraServices = [...extraIds].map((id) => ({ service_id: id }));
-
-      return [...calendarRows, ...extraServices];
-    } catch (error) {
-      console.error('Error getting services:', error);
-      return [];
-    }
+  /** Adapter over the injected database for the shared services timeline. */
+  private serviceTimelineSource(): ServiceTimelineSource {
+    return {
+      getAllRows: (tableName: string) =>
+        this.dependencies.gtfsDatabase.getAllRows(tableName) as Promise<
+          Record<string, unknown>[]
+        >,
+    };
   }
 
   /**
@@ -657,21 +609,12 @@ export class PageContentRenderer {
     `
         : '';
 
-    // Build lookup map for calendar data (full calendar rows only)
-    const calendarByServiceId = new Map(
-      allServices.map((s) => [s.service_id as string, s])
+    // Timeline scoped to the services this route actually runs. The fixed
+    // route context makes a row click land on that route's timetable.
+    const routeServiceData = filterServiceDataMap(
+      await loadServiceData(this.serviceTimelineSource()),
+      Object.keys(serviceGroups)
     );
-
-    const calendarDatesByServiceId = new Map<
-      string,
-      Array<{ date: string; exception_type: string | number }>
-    >();
-    for (const row of calendarDatesRows) {
-      const sid = row.service_id as string;
-      const existing = calendarDatesByServiceId.get(sid) ?? [];
-      existing.push(row as { date: string; exception_type: string | number });
-      calendarDatesByServiceId.set(sid, existing);
-    }
 
     // Render timetables list
     const servicesListHTML = `
@@ -690,21 +633,8 @@ export class PageContentRenderer {
                   ? `<div class="text-center py-6 opacity-70 mt-4">
                     No timetables yet. Select a service above to create one.
                   </div>`
-                  : `<div class="space-y-2 max-h-96 overflow-y-auto ${newServiceSelectorHTML ? 'mt-4' : ''}">
-                    ${Object.entries(serviceGroups)
-                      .map(([service_id, serviceTrips]) =>
-                        renderTimetableReference(
-                          routeData,
-                          calendarByServiceId.get(service_id) ?? { service_id },
-                          {
-                            calendarDates:
-                              calendarDatesByServiceId.get(service_id),
-                            tripCount: serviceTrips.length,
-                            hide: 'route',
-                          }
-                        )
-                      )
-                      .join('')}
+                  : `<div class="max-h-96 overflow-y-auto ${newServiceSelectorHTML ? 'mt-4' : ''}">
+                    ${renderServiceTimeline(routeServiceData, { route_id })}
                   </div>`
             }
           </div>
@@ -980,18 +910,14 @@ export class PageContentRenderer {
       });
     });
 
-    // Service reference row clicks go to timetable (route page) or service page (home)
-    const serviceRefRows = container.querySelectorAll(`.${SERVICE_REF_ROW}`);
-    serviceRefRows.forEach((row) => {
-      row.addEventListener('click', () => {
-        const route_id = row.getAttribute('data-route-id');
-        const service_id = row.getAttribute('data-service-id');
-        if (route_id && service_id) {
-          this.dependencies.onTimetableClick(route_id, service_id);
-        } else if (service_id && this.dependencies.onServiceClick) {
-          this.dependencies.onServiceClick(service_id);
-        }
-      });
+    // Timeline row clicks go to the timetable (route page, which supplies a
+    // route context) or to the service page (home page, which does not)
+    attachServiceTimelineListeners(container, (service_id, route_id) => {
+      if (route_id) {
+        this.dependencies.onTimetableClick(route_id, service_id);
+      } else {
+        this.dependencies.onServiceClick?.(service_id);
+      }
     });
 
     // Timetable rows: the row opens the timetable, the buttons branch off to
