@@ -54,6 +54,10 @@ const SKIPPED_FOREIGN_KEYS = new Set([
   'stop_times.txt:location_id',
 ]);
 
+/** Leading/trailing whitespace, or a control character anywhere in the value. */
+// eslint-disable-next-line no-control-regex
+const UNCLEAN_VALUE = /^\s|\s$|[\u0000-\u001f]/;
+
 export interface ValidationResults {
   errors: ValidationMessage[];
   warnings: ValidationMessage[];
@@ -119,6 +123,7 @@ export class GTFSValidator {
     this.validateConditionalPresence();
     this.validateRiderCategoryDefaults();
     this.validateForeignKeys();
+    this.validateFieldWhitespace();
     this.validateReferences();
 
     // Update summary
@@ -960,6 +965,12 @@ export class GTFSValidator {
    * A field naming two tables (trips.service_id, network_id) matches a value
    * present in either. Empty values are skipped: an optional reference left
    * blank is not dangling, and a required one missing is a separate check.
+   *
+   * The match is exact on both sides, never trimmed. An id carrying stray
+   * whitespace really does point at nothing, and trimming it here would report
+   * the reference as fine while every picker and lookup in the app still fails
+   * to resolve it. validateFieldWhitespace names the whitespace separately so
+   * the cause is legible rather than an id that looks correct.
    */
   validateForeignKeys() {
     const valueCache = new Map<string, Set<string>>();
@@ -1003,7 +1014,7 @@ export class GTFSValidator {
       const tableName = file.replace(/\.txt$/, '');
       rows.forEach((row, index: number) => {
         for (const check of checks) {
-          const value = String(row[check.field] ?? '').trim();
+          const value = String(row[check.field] ?? '');
           if (value === '' || check.known.has(value)) {
             continue;
           }
@@ -1018,6 +1029,46 @@ export class GTFSValidator {
               field: check.field,
               value,
             }
+          );
+        }
+      });
+    }
+  }
+
+  /**
+   * Values carrying leading/trailing whitespace or an embedded control
+   * character, across every table.
+   *
+   * These are invisible in every rendering of the value, so on their own they
+   * look like a working id next to an identical-looking one. They are usually
+   * an export bug: a quoted CSV field that swallowed the line ending, which is
+   * how the last row of each file ends up with a trailing newline. Reported as
+   * its own issue so the reference error it causes has a stated cause.
+   */
+  validateFieldWhitespace() {
+    for (const file of Object.values(GTFS_TABLES)) {
+      if (!file.endsWith('.txt')) {
+        continue;
+      }
+      const rows = this.gtfsParser.getFileDataSyncTyped(file);
+      if (rows.length === 0) {
+        continue;
+      }
+
+      const tableName = file.replace(/\.txt$/, '');
+      rows.forEach((row, index: number) => {
+        for (const [field, raw] of Object.entries(row)) {
+          // Numeric fields are already numbers by now, so only strings can
+          // still be carrying the whitespace they arrived with.
+          if (typeof raw !== 'string' || !UNCLEAN_VALUE.test(raw)) {
+            continue;
+          }
+          this.addWarning(
+            `Row ${index + 1}: ${field} ${JSON.stringify(raw)} has surrounding whitespace or a control character`,
+            'UNCLEAN_VALUE',
+            file,
+            index + 1,
+            { file, id: this.rowId(tableName, row), field, value: raw }
           );
         }
       });
@@ -1049,7 +1100,7 @@ export class GTFSValidator {
     }
     const values = new Set<string>();
     for (const row of this.gtfsParser.getFileDataSyncTyped(file)) {
-      const value = String(row[field] ?? '').trim();
+      const value = String(row[field] ?? '');
       if (value !== '') {
         values.add(value);
       }
@@ -1081,7 +1132,8 @@ export class GTFSValidator {
     message: string,
     code: string,
     fileName: string | null = null,
-    rowNum: number | null = null
+    rowNum: number | null = null,
+    entity: ValidationEntity | null = null
   ) {
     this.validationResults.warnings.push({
       level: 'warning',
@@ -1089,6 +1141,8 @@ export class GTFSValidator {
       code,
       file: fileName || undefined,
       line: rowNum || undefined,
+      field: entity?.field,
+      entity: entity || undefined,
     });
   }
 

@@ -60,6 +60,7 @@ const CODE_LABELS: Record<string, string> = {
   NETWORK_ID_CONFLICT: 'conflicting network_id',
   MISSING_CALENDAR_FILE: 'missing calendar file',
   MISSING_COORDS_INHERITED: 'inheriting coordinates from a parent',
+  UNCLEAN_VALUE: 'with hidden whitespace in a value',
 };
 
 // Wording worth spelling out per group, keyed by `${file}:${code}:${field}`.
@@ -127,6 +128,14 @@ export function feedIssueGroupLabel(group: IssueGroup): {
       note: override?.note,
     };
   }
+  if (group.code === 'UNCLEAN_VALUE' && group.field) {
+    return {
+      label: `${group.file} rows whose ${group.field} carries hidden whitespace`,
+      note:
+        override?.note ??
+        'Usually an export bug: a quoted CSV field that swallowed the line ending. The extra characters are invisible but count, so an id carrying them matches nothing.',
+    };
+  }
   const generic =
     CODE_LABELS[group.code] ?? group.code.toLowerCase().replace(/_/g, ' ');
   return { label: `${group.file} rows ${generic}`, note: override?.note };
@@ -171,7 +180,7 @@ function buildIssueItem(entity: ValidationEntity, index: RowIndex): IssueItem {
 
   return {
     label,
-    detail: `${entity.field}: ${formatValue(entity.value)}`,
+    detail: `${entity.field}: ${formatIssueValue(entity.value)}`,
     data,
   };
 }
@@ -181,8 +190,12 @@ function buildIssueItem(entity: ValidationEntity, index: RowIndex): IssueItem {
  * (surrounding whitespace, an embedded newline from a quoted CSV field) is
  * quoted with its control characters escaped, so "20261231\n" does not read as
  * a perfectly good date.
+ *
+ * Shared with the use sites (the read-only field tooltips, the picker's
+ * synthetic option) so a broken value never renders as a clean id in one place
+ * and a quoted one in another.
  */
-function formatValue(value: string): string {
+export function formatIssueValue(value: string): string {
   if (value === '') {
     return '(empty)';
   }

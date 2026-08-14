@@ -19,7 +19,7 @@ import {
 import { TripsSchema, GTFS_TABLES } from '../types/gtfs.js';
 import { getStopDisplay, renderCardLabel } from '../utils/entity-display.js';
 import { escapeHtml } from '../utils/escape-html.js';
-import { isDanglingReference } from './feed-issues.js';
+import { formatIssueValue, isDanglingReference } from './feed-issues.js';
 import { renderTrashIcon, renderRouteWaypointsIcon } from './modal-utils.js';
 import { routeColor } from '../utils/route-colors.js';
 import {
@@ -339,7 +339,7 @@ export class TimetableRenderer {
     // the picker (which offers the current value back) can repoint it.
     const dangling = isDanglingReference('trips.txt', config.field, value);
     const danglingAttrs = dangling
-      ? ` title="${escapeHtml(`No record with ${config.field} '${value}' exists`)}"`
+      ? ` title="${escapeHtml(`No record with ${config.field} ${formatIssueValue(value)} exists`)}"`
       : '';
 
     return `
