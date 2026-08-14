@@ -42,15 +42,18 @@ editor.
 `document.getElementById('files-modal').showModal()` at the end of the post-load
 path, so the Files modal pops open every single time a feed is loaded.
 
-- [ ] Delete that `showModal()` call only. Keep the `this.showFileList()` call
+- [x] Delete that `showModal()` call only. Keep the `this.showFileList()` call
       immediately above it so the list stays populated for when the modal is
       opened deliberately.
-- [ ] Leave the other open sites alone: `ui.ts:217-222` (the `files-btn` click
+- [x] Leave the other open sites alone: `ui.ts:217-222` (the `files-btn` click
       handler), `ui.ts:564` (`showFileInEditor`) and `bottom-sheet.ts:219` are
       all explicit user actions.
 - [ ] Manually verify: load a feed, confirm the map is visible and no modal
       appears; then click the Files button and confirm the list is populated.
-- [ ] Commit: `fix(ui): stop opening the files modal after loading a feed`
+- [x] Commit: `fix(ui): stop opening the files modal after loading a feed`
+
+**Done** (commit `37ab63e`). Confirmed by grep that the only remaining
+`files-modal` open sites are the three explicit user actions the plan listed.
 
 ---
 
@@ -71,19 +74,32 @@ Context:
   `src/modules/editable-table.ts` `openCellEditor`'s `'foreign'` branch). Both
   modals' keydown listeners are live simultaneously.
 
-- [ ] In `src/modules/modal-utils.ts`, add a small module-level stack (array) of
+- [x] In `src/modules/modal-utils.ts`, add a small module-level stack (array) of
       currently-open modal instances (push an identifier/handle in `showModal()`,
       pop it in `close()`).
-- [ ] In the `keydown` handler, before acting on `Escape`/`Enter`, check that this
+- [x] In the `keydown` handler, before acting on `Escape`/`Enter`, check that this
       modal instance is the topmost entry in the stack; if not, return early
       without calling `preventDefault()`/`triggerAction()` (so the topmost modal's
       own listener handles it instead).
-- [ ] Verify nesting depth is preserved through close: closing the picker must
+- [x] Verify nesting depth is preserved through close: closing the picker must
       pop only its own stack entry, not the Fares modal's.
 - [ ] Manually verify: open Fares modal -> open a foreign-key picker -> press
       Escape -> only the picker closes, Fares modal remains open. Press Escape
       again -> Fares modal closes.
-- [ ] Commit: `fix(modals): scope Escape/Enter handling to the topmost modal`
+- [x] Commit: `fix(modals): scope Escape/Enter handling to the topmost modal`
+
+**Done** (commit `433b986`). The stack holds the modal's own root `HTMLElement`,
+pushed right after `document.body.appendChild(modal)` and spliced out by index in
+`close()`, so an out-of-order close cannot corrupt the nesting.
+
+Decided with the user: the stack covers **`showModal()` modals only**. `files-modal`
+and `history-modal` are native `<dialog>` elements whose Escape is handled by the
+browser, so a `showModal()` picker stacked on one of those would still let the
+browser close the dialog underneath. The reported bug (Fares modal) is
+`showModal()`-based, so it is covered.
+
+Not changed: backdrop-click still closes whichever modal's backdrop was clicked,
+regardless of stack position. Only Escape/Enter are scoped.
 
 ---
 
@@ -98,17 +114,25 @@ generic "layers" SVG path. The desired replacement is the existing "Open in
 brouter" icon: `renderRouteWaypointsIcon` in `src/modules/modal-utils.ts:13`,
 used at `src/modules/timetable-renderer.ts:385`.
 
-- [ ] Replace the `shapes-btn` SVG with the markup produced by
+- [x] Replace the `shapes-btn` SVG with the markup produced by
       `renderRouteWaypointsIcon`. Since the icon is a template-string helper
       rather than static markup, set `innerHTML` from `src/index.ts` (where
       `shapes-btn` is wired, lines 272-279) at startup instead of hardcoding SVG
       in `index.html`.
-- [ ] Confirm the icon renders at the same size as sibling navbar icons: check
+- [x] Confirm the icon renders at the same size as sibling navbar icons: check
       `calendar-btn` for the expected size class, since `renderRouteWaypointsIcon`
       is normally invoked at `h-3 w-3` in the timetable context.
 - [ ] Manually verify: navbar shapes button now shows the same icon as
       "Open in brouter" in the timetable view, click behavior unchanged.
-- [ ] Commit: `feat(navbar): use the brouter waypoints icon for the shapes button`
+- [x] Commit: `feat(navbar): use the brouter waypoints icon for the shapes button`
+
+**Done** (commit `8904e0b`). Sibling navbar icons are `h-5 w-5`, so the call site
+is `renderRouteWaypointsIcon('h-5 w-5')`. The button body in `index.html` is now
+just an HTML comment pointing at the injection site.
+
+Interaction with Phase 5: because the icon is set via `innerHTML` on the button,
+Phase 5's count badge was deliberately placed **outside** the button (as a sibling
+inside a DaisyUI `indicator` wrapper), so the innerHTML assignment cannot wipe it.
 
 ---
 
@@ -125,13 +149,13 @@ Currently the "+ New shape from GPX" button (`src/modules/shapes-manager.ts`
 does file-first for the *replace* flow: reuse that ordering. `newShape()`
 (lines 242-315) is the function to restructure.
 
-- [ ] Restructure `newShape()` to call `pickGPXFile()` before asking for a
+- [x] Restructure `newShape()` to call `pickGPXFile()` before asking for a
       shape ID, mirroring `replaceShape()`.
-- [ ] Update the button UI (`renderBody()`, lines 36 and 71): change the
+- [x] Update the button UI (`renderBody()`, lines 36 and 71): change the
       label/affordance from "+ New shape from GPX" to an upload-first control,
       reusing `renderUploadIcon()` from `modal-utils.ts` (already used for the
       "Replace with GPX" button at line 49) for visual consistency.
-- [ ] After the file is picked, default the shape ID text input to the filename
+- [x] After the file is picked, default the shape ID text input to the filename
       with the `.gpx` extension stripped, but keep the input editable before the
       user confirms. Do not auto-lock the id. Keep the existing uniqueness
       validation (lines 275-280) running against whatever id is in the input at
@@ -139,7 +163,24 @@ does file-first for the *replace* flow: reuse that ordering. `newShape()`
 - [ ] Manually verify: click the upload button, pick a `some-name.gpx` file,
       confirm the shape ID field pre-fills to `some-name`, edit it, confirm the
       shape is created under the edited id.
-- [ ] Commit: `feat(shapes): upload GPX first and default the shape id to the filename`
+- [x] Commit: `feat(shapes): upload GPX first and default the shape id to the filename`
+
+**Done** (commit `538895a`). Notes:
+
+- The primary action's label changed from "Choose GPX…" to **"Create"**, since
+  the file is already chosen by the time the modal opens. Both buttons now read
+  as "Upload GPX" (panel) -> "Create" (modal).
+- Extension stripping is `.replace(/\.gpx$/i, '')` only. Decided with the user:
+  no slugifying, no auto-dedupe. The existing uniqueness check still runs on
+  confirm, so a colliding default surfaces the same inline error as before.
+- The picked filename is shown above the input so it is obvious which file is
+  being named.
+- `onMount` focuses and selects the input so the default can be typed over
+  immediately.
+- Added `escAttr()` next to the existing `esc()` in `shapes-manager.ts`: `esc()`
+  builds its output via `div.innerHTML`, which does **not** escape `"`, and the
+  default id is interpolated into a `value="..."` attribute. A filename with a
+  quote in it would otherwise break out of the attribute.
 
 ---
 
@@ -165,16 +206,48 @@ separate modals:
 Badge convention to follow (already used throughout, see `ui.ts:518` and
 `fares-modal.ts:496-504`): a DaisyUI `<span class="badge badge-sm ...">`.
 
-- [ ] Implement the four count sources, reusing the existing query helpers above.
-- [ ] Add a `badge badge-sm` bubble to each of the 4 navbar buttons.
-- [ ] Wire count updates to fire whenever the underlying data changes (patch
+- [x] Implement the four count sources, reusing the existing query helpers above.
+- [x] Add a `badge badge-sm` bubble to each of the 4 navbar buttons.
+- [x] Wire count updates to fire whenever the underlying data changes (patch
       recorded, DB write, feed import, undo/redo). Check how
       `history-controller.ts` already refreshes its own badges as a model for
       hooking into the right update events.
 - [ ] Manually verify: import a feed, confirm all 4 bubbles show correct initial
       counts; make an edit affecting one category, confirm its bubble updates
       without a page refresh.
-- [ ] Commit: `feat(navbar): show item counts as badge bubbles`
+- [x] Commit: `feat(navbar): show item counts as badge bubbles`
+
+**Done** (commit `8e72ae0`). New module `src/modules/navbar-counts.ts` owns all
+four counts; constructed in the `GTFSEditor` constructor and `initialize()`d
+alongside `historyController.initialize()`.
+
+Decisions taken with the user:
+
+- **Changes count is `patchManager.version`** (patches currently applied), not the
+  full log length. It therefore goes *down* on undo and back up on redo, matching
+  what a user reads as "changes I have made".
+- **Zero renders nothing.** `setBadge()` toggles `hidden` when the count is 0, so
+  an empty feed shows a clean navbar.
+- **Placement is a DaisyUI `indicator` wrapper.** Each of the 4 buttons in
+  `index.html` is now wrapped in `<div class="indicator hidden md:inline-flex">`
+  with a sibling `<span class="indicator-item badge badge-xs badge-primary hidden">`.
+  The `hidden md:flex` responsive classes moved from the button to the wrapper.
+  Used `badge-xs`, not the plan's `badge-sm`: `badge-sm` overhangs a `btn-sm
+  btn-square` badly as a corner indicator.
+
+Counts are read **synchronously from the parser's in-memory tables**, not via
+`await gtfsDatabase.getAllRows()`. This is safe and was verified: `setupVirtual()`
+registers the *same array reference* held in `gtfsData[filename].data` (see the
+shared-array invariant comment at `gtfs-parser.ts:652-654`), and `getAllRows()`
+delegates to the virtual table when one exists. So the sync read is never stale
+relative to the DB. `shapes.txt` still goes through the cached `getShapeIds()`
+because reading its rows would copy every shape point.
+
+Refresh triggers: `patchManager.on()` for all four of `change`/`undo`/`redo`/`jump`,
+plus a `navbarCounts.refresh()` at the top of `validateAndUpdateInfo()` in
+`index.ts`. That last one is load coverage: feed import and boot-from-IndexedDB
+write rows directly without emitting patch events, and `validateAndUpdateInfo` is
+already the single hook that runs on boot and on all three `ui.ts` load paths.
 
 ---
 
