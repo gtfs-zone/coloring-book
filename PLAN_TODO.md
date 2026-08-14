@@ -767,26 +767,26 @@ route+service timetable URL states.
 
 ### Phase 12: Swap the home, route and stop pages to the timeline view
 
-- [ ] Home page (`renderHome()`): replace the `renderServiceReference()` list
+- [x] Home page (`renderHome()`): replace the `renderServiceReference()` list
       with the shared timeline renderer, scoped to all services. Wire row clicks
       to the existing `onServiceClick` dependency.
-- [ ] Remove `tripCountByService`/`routesByService` computation in `renderHome()`
+- [x] Remove `tripCountByService`/`routesByService` computation in `renderHome()`
       now that nothing consumes it.
-- [ ] Route page (`renderRoute()`): replace the `renderTimetableReference()` list
+- [x] Route page (`renderRoute()`): replace the `renderTimetableReference()` list
       under "Timetables" with the shared timeline renderer, filtered to the
       route's `service_id`s (from the existing `serviceGroups` grouping), passing
       the fixed `route_id` context from Phase 11 so row clicks navigate to the
       specific timetable. This is the same list Phase 10 made scrollable; keep
       the scroll container.
-- [ ] Remove the now-unused `serviceTrips.length` trip-count plumbing in
+- [x] Remove the now-unused `serviceTrips.length` trip-count plumbing in
       `renderRoute()`.
-- [ ] Stop page (`StopViewController.renderTimetablesSection()`): replace the
+- [x] Stop page (`StopViewController.renderTimetablesSection()`): replace the
       timetables list with the timeline renderer, filtered to the relevant
       `service_id`s (derived from `timetableKeys`), with row clicks carrying both
       `route_id` and `service_id`.
-- [ ] Keep the existing "add new service" / "new timetable" dropdown affordances
+- [x] Keep the existing "add new service" / "new timetable" dropdown affordances
       on all pages. Only the list rendering changes, not the add-new flow.
-- [ ] Remove `TimetableKey.tripCount` computation in `stop-view-controller.ts` if
+- [x] Remove `TimetableKey.tripCount` computation in `stop-view-controller.ts` if
       nothing else consumes it, and remove the `tripBadge` code paths in
       `src/utils/entity-references.ts` that no caller uses anymore. Check every
       call site first: do not remove `renderServiceReference`/
@@ -794,7 +794,43 @@ route+service timetable URL states.
       still uses them.
 - [ ] Manually verify all three pages, including row clicks landing on the right
       timetable.
-- [ ] Commit: `feat(services): use the timeline view on the home, route and stop pages`
+- [x] Commit: `feat(services): use the timeline view on the home, route and stop pages`
+
+**Done** (commit `ff77801`). Notes:
+
+- **`filterServiceDataMap` now fills in missing services instead of dropping
+  them.** A trip can point at a `service_id` no calendar defines; the old
+  `renderTimetableReference` path still listed it (falling back to
+  `{ service_id }`), and a plain filter would have made that timetable vanish
+  from the route and stop pages entirely. It now emits a row with
+  `calendar: null`, no exceptions and a neutral grey (`UNDEFINED_SERVICE_COLOR`),
+  so the broken reference stays visible. It also sorts its output, since callers
+  pass ids in trip order rather than sorted order.
+- **`getServices()` is gone** from `page-content-renderer.ts`: it duplicated
+  `loadServiceData`'s calendar + calendar_dates union, so the home page's service
+  count is now `serviceData.size`. New private `serviceTimelineSource()` adapts
+  the injected `gtfsDatabase` to `ServiceTimelineSource`.
+- **The stop page renders one timeline per route**, not one overall. A timeline
+  carries a single fixed `route_id`, and a stop is typically served by several
+  routes, so `timetableKeys` is grouped by `route_id` into a colored route
+  heading + its own scoped timeline. The `via <platform>` line is preserved,
+  hoisted to the route heading with the descendant stops merged across that
+  route's services (`MAX_VIA_LABELS` moved into `stop-view-controller.ts`, which
+  is now its only user).
+- **Row clicks are wired once, in `PageContentRenderer.addEventListeners()`.**
+  It runs on the container for every page before delegating to the sub
+  controllers, so its single `attachServiceTimelineListeners` call covers the
+  home, route and stop timelines. `route_id` present -> `onTimetableClick`,
+  absent -> `onServiceClick`. `StopViewController` therefore no longer needs
+  `onTimetableClick`/`onRouteClick`/`onServiceClick` at all; those three deps and
+  their handler blocks are removed.
+- Removed as dead: `renderServiceReference`, `SERVICE_REF_ROW`,
+  `ServiceReferenceOpts` (nothing else rendered one), the `viaStops` option and
+  its `viaLine` on `renderTimetableReference`, and `TimetableKey.tripCount`.
+  `renderTimetableReference` itself stays: `service-view-controller.ts` still
+  lists routes with it, `tripCount` included.
+- The route page's `max-h-96 overflow-y-auto` scroll container is kept, now
+  wrapping the timeline instead of a `space-y-2` list.
 
 ---
 
