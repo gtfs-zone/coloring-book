@@ -11,6 +11,11 @@ function esc(s: string): string {
   return div.innerHTML;
 }
 
+// esc() leaves quotes intact, which is unsafe inside a quoted attribute value.
+function escAttr(s: string): string {
+  return esc(s).replace(/"/g, '&quot;');
+}
+
 function pickGPXFile(): Promise<File | null> {
   return new Promise((resolve) => {
     const input = document.createElement('input');
@@ -33,7 +38,7 @@ function renderBody(shapes: Map<string, number>): string {
   if (shapes.size === 0) {
     return `
       <p class="text-base-content/60 text-sm mb-4">No shapes in this feed.</p>
-      <button class="btn btn-sm btn-primary" data-action="new">+ New shape from GPX</button>
+      <button class="btn btn-sm btn-primary" data-action="new">${renderUploadIcon()} Upload GPX</button>
     `;
   }
 
@@ -68,7 +73,7 @@ function renderBody(shapes: Map<string, number>): string {
       </table>
     </div>
     <div class="mt-4">
-      <button class="btn btn-sm btn-primary" data-action="new">+ New shape from GPX</button>
+      <button class="btn btn-sm btn-primary" data-action="new">${renderUploadIcon()} Upload GPX</button>
     </div>
   `;
 }
@@ -240,22 +245,38 @@ export class ShapesManager {
   }
 
   private async newShape(existingShapes: Map<string, number>): Promise<void> {
+    const file = await pickGPXFile();
+    if (!file) {
+      return;
+    }
+
+    // Default the id to the filename without its .gpx extension.
+    const defaultId = file.name.replace(/\.gpx$/i, '');
+
     await showModal({
       title: 'New shape from GPX',
       body: `
         <div class="space-y-3">
+          <p class="text-base-content/60 text-sm">${esc(file.name)}</p>
           <fieldset class="fieldset">
             <label class="label" for="new-shape-id">Shape ID</label>
-            <input id="new-shape-id" class="input w-full" type="text" placeholder="e.g. shape_1" />
+            <input id="new-shape-id" class="input w-full" type="text" placeholder="e.g. shape_1" value="${escAttr(defaultId)}" />
             <p id="new-shape-error" class="text-error text-sm hidden"></p>
           </fieldset>
         </div>
       `,
       escapeAction: 1,
       enterAction: 0,
+      onMount: () => {
+        const inputEl = document.getElementById(
+          'new-shape-id'
+        ) as HTMLInputElement | null;
+        inputEl?.focus();
+        inputEl?.select();
+      },
       actions: [
         {
-          label: 'Choose GPX…',
+          label: 'Create',
           className: 'btn-primary',
           onClick: async () => {
             const inputEl = document.getElementById(
@@ -277,11 +298,6 @@ export class ShapesManager {
             }
             if (existingShapes.has(shapeId)) {
               return showError(`Shape "${shapeId}" already exists.`);
-            }
-
-            const file = await pickGPXFile();
-            if (!file) {
-              return true;
             }
 
             let newRows: Shapes[];
