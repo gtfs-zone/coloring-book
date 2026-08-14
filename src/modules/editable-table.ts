@@ -769,21 +769,22 @@ function openCellEditor(span: HTMLElement): void {
   // a value, and committing reconciles those rows to what was picked.
   if (span.dataset.list === '1') {
     void (async () => {
-      const selected = cellValues(span);
+      const selected = cellValues(span).filter((value) => value !== '');
       const options = await foreignOptions(state.config, field, spec);
       for (const value of selected) {
-        if (value !== '' && !options.some((o) => o.value === value)) {
+        if (!options.some((o) => o.value === value)) {
           options.push({ value, primary: `${value} (dangling reference)` });
         }
       }
       const picked = await showMultiOptionPickerModal({
         title: `Select ${field}`,
-        options: [
-          { value: '', primary: '- blank (matches everything) -' },
-          ...options,
-        ],
+        options,
         selectedValues: selected,
         searchable: true,
+        emptyOption: {
+          label: 'Leave blank',
+          hint: 'matches everything',
+        },
       });
       if (picked !== null) {
         await commitListCell(state, span, field, spec, picked);

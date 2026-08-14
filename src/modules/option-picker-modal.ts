@@ -21,6 +21,12 @@ export interface MultiOptionPickerOptions {
   selectedValues?: string[];
   searchable?: boolean;
   placeholder?: string;
+  /**
+   * A row pinned above the list standing for "none of these", selected exactly
+   * when nothing else is. Choosing it clears the selection, and choosing
+   * anything else drops it, so the two can never both be on.
+   */
+  emptyOption?: { label: string; hint?: string };
 }
 
 const uf = new uFuzzy({ intraIns: 1 });
@@ -62,7 +68,11 @@ interface PickerMode {
  * The shared body of both pickers: a search box over a scrolling result list,
  * with arrow-key navigation and Enter acting on the active row.
  */
-function pickerBody(searchable: boolean, placeholder: string): string {
+function pickerBody(
+  searchable: boolean,
+  placeholder: string,
+  emptyOption?: { label: string; hint?: string }
+): string {
   return `
     <div class="flex flex-col gap-3">
       ${
@@ -74,6 +84,18 @@ function pickerBody(searchable: boolean, placeholder: string): string {
               placeholder="${escapeHtml(placeholder)}"
               autocomplete="off"
             />`
+          : ''
+      }
+      ${
+        emptyOption
+          ? `<button
+              type="button"
+              id="option-picker-empty"
+              class="flex w-full items-center gap-2 rounded border px-3 py-2 text-left text-sm"
+            >
+              <span class="min-w-0 flex-1 truncate">${escapeHtml(emptyOption.label)}</span>
+              ${emptyOption.hint ? `<span class="shrink-0 text-xs opacity-60">${escapeHtml(emptyOption.hint)}</span>` : ''}
+            </button>`
           : ''
       }
       <div
@@ -97,6 +119,21 @@ function mountPicker(
   const searchInput = searchable
     ? (document.getElementById('option-picker-search') as HTMLInputElement)
     : null;
+  const emptyEl = document.getElementById('option-picker-empty');
+
+  // The "none of these" row is not a checkbox: it is on exactly when nothing
+  // else is, so selecting an option turns it off and it needs no state of its
+  // own.
+  const syncEmpty = () => {
+    if (!emptyEl) {
+      return;
+    }
+    const active = mode.selected.size === 0;
+    emptyEl.classList.toggle('border-primary', active);
+    emptyEl.classList.toggle('bg-primary/10', active);
+    emptyEl.classList.toggle('border-base-200', !active);
+    emptyEl.classList.toggle('opacity-60', !active);
+  };
 
   // Selected options lead the list, so a long option set opens on what is
   // already chosen. Fixed at open time: re-sorting as the user types would move
@@ -160,6 +197,7 @@ function mountPicker(
           if (box instanceof HTMLInputElement) {
             box.checked = mode.selected.has(item.value);
           }
+          syncEmpty();
         }
       });
       resultsEl.appendChild(row);
@@ -187,6 +225,7 @@ function mountPicker(
           if (box instanceof HTMLInputElement) {
             box.checked = mode.selected.has(item.value);
           }
+          syncEmpty();
         }
       }
     } else if (e.key === 'ArrowDown' && shown.length > 0) {
@@ -199,6 +238,13 @@ function mountPicker(
   };
 
   render('');
+  syncEmpty();
+
+  emptyEl?.addEventListener('click', () => {
+    mode.selected.clear();
+    render(searchInput?.value ?? '');
+    syncEmpty();
+  });
 
   if (searchInput) {
     searchInput.addEventListener('input', () => {
@@ -262,7 +308,11 @@ export async function showMultiOptionPickerModal(
 
   await showModal({
     title: opts.title,
-    body: pickerBody(searchable, opts.placeholder ?? 'Search…'),
+    body: pickerBody(
+      searchable,
+      opts.placeholder ?? 'Search…',
+      opts.emptyOption
+    ),
     actions: [
       {
         label: 'Done',
