@@ -15,15 +15,16 @@ import {
   validateTransferRow,
 } from '../utils/fares-rules.js';
 
-interface ValidationMessage {
+export interface ValidationMessage {
   level: 'error' | 'warning' | 'info';
   message: string;
+  code?: string;
   file?: string;
   line?: number;
   field?: string;
 }
 
-interface ValidationResults {
+export interface ValidationResults {
   errors: ValidationMessage[];
   warnings: ValidationMessage[];
   info: ValidationMessage[];
@@ -291,7 +292,7 @@ export class GTFSValidator {
       // Validate agency_id reference
       if (route.agency_id && !agency_ids.has(route.agency_id)) {
         this.addError(
-          `Row ${rowNum}: agency_id '${route.agency_id}' not found in agency.txt`,
+          `Row ${rowNum}: route '${route.route_id}' has agency_id '${route.agency_id}' not found in agency.txt`,
           'INVALID_REFERENCE',
           GTFS_TABLES.ROUTES,
           rowNum
@@ -1035,13 +1036,14 @@ export class GTFSValidator {
   // Helper methods
   addError(
     message: string,
-    _code: string,
+    code: string,
     fileName: string | null = null,
     rowNum: number | null = null
   ) {
     this.validationResults.errors.push({
       level: 'error',
       message,
+      code,
       file: fileName || undefined,
       line: rowNum || undefined,
     });
@@ -1049,13 +1051,14 @@ export class GTFSValidator {
 
   addWarning(
     message: string,
-    _code: string,
+    code: string,
     fileName: string | null = null,
     rowNum: number | null = null
   ) {
     this.validationResults.warnings.push({
       level: 'warning',
       message,
+      code,
       file: fileName || undefined,
       line: rowNum || undefined,
     });
@@ -1063,13 +1066,14 @@ export class GTFSValidator {
 
   addInfo(
     message: string,
-    _code: string,
+    code: string,
     fileName: string | null = null,
     rowNum: number | null = null
   ) {
     this.validationResults.info.push({
       level: 'info',
       message,
+      code,
       file: fileName || undefined,
       line: rowNum || undefined,
     });
