@@ -44,7 +44,7 @@ export class NavbarCounts {
       'fares-count-badge',
       gtfsParser.getFileDataSync(GTFS_TABLES.FARE_PRODUCTS).length
     );
-    setBadge('history-count-badge', patchManager.version);
+    setBadge('history-count-badge', patchManager.changeCount);
   }
 
   /** Distinct service_ids across calendar.txt and calendar_dates.txt. */
