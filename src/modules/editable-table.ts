@@ -23,6 +23,7 @@ import {
   type OptionPickerItem,
 } from './option-picker-modal.js';
 import { notify } from './notification-system.js';
+import { formatIssueValue } from './feed-issues.js';
 import { escapeHtml } from '../utils/escape-html.js';
 import { openInlineEditor, openInlineMenu } from '../utils/inline-edit.js';
 import {
@@ -796,7 +797,10 @@ function openCellEditor(span: HTMLElement): void {
       const options = await foreignOptions(state.config, field, spec);
       for (const value of selected) {
         if (!options.some((o) => o.value === value)) {
-          options.push({ value, primary: `${value} (dangling reference)` });
+          options.push({
+            value,
+            primary: `${formatIssueValue(value)} (dangling reference)`,
+          });
         }
       }
       const picked = await showMultiOptionPickerModal({
@@ -839,7 +843,7 @@ function openCellEditor(span: HTMLElement): void {
       if (current && !options.some((o) => o.value === current)) {
         options.push({
           value: current,
-          primary: `${current} (dangling reference)`,
+          primary: `${formatIssueValue(current)} (dangling reference)`,
         });
       }
       const picked = await showOptionPickerModal({
@@ -910,7 +914,10 @@ async function openJoinEditor(span: HTMLElement): Promise<void> {
   const options = await column.options();
   for (const value of selected) {
     if (!options.some((o) => o.value === value)) {
-      options.push({ value, primary: `${value} (dangling reference)` });
+      options.push({
+        value,
+        primary: `${formatIssueValue(value)} (dangling reference)`,
+      });
     }
   }
   const picked = await showMultiOptionPickerModal({

@@ -515,6 +515,44 @@ same blind card. `INVALID_TIME_FORMAT`, `INVALID_COORDINATE`,
 `MISSING_REQUIRED_FIELD`, `DUPLICATE_ID`, `INVALID_NUMBER`, `INVALID_URL` and
 the rest should each pass one. `rowId()` is already the helper for it.
 
+### Follow-up: the FK sweep trimmed away the same corruption
+
+Same Nuuk feed, same root cause, a different column. `trips.shape_id` on
+`RX3_weekday_002` is `"nuuk_x3_eqalugalinnguit\n"`, so it matches no shape. The
+three surfaces disagreed about it: the picker said "(dangling reference)"
+because the raw value is in no option list, while the timetable showed no red
+and Feed Issues listed nothing, because `validateForeignKeys()` and
+`collectValues()` both `.trim()`ed the value before comparing, which made the
+reference look fine.
+
+- **The FK match is now exact on both sides.** An id carrying stray whitespace
+  really does point at nothing, and every picker and lookup in the app already
+  treated it that way. Trimming only in the validator is what let the surfaces
+  disagree; removing it makes the module-level dangling index the one detector
+  again, which is what Phase 8 relies on.
+- **New `UNCLEAN_VALUE` warning** (`validateFieldWhitespace()`), a generic sweep
+  over every table for string values with leading/trailing whitespace or an
+  embedded control character. Without it the reference error reads as an id that
+  looks perfectly correct. Numeric fields are already coerced to numbers by
+  `parseFieldValue`, so only values whose whitespace survived into the data are
+  reported. `addWarning` gained the `entity` parameter `addError` already had,
+  so these expand and link like any other issue row.
+- **`formatValue` is exported as `formatIssueValue`** and now used by the
+  read-only dangling tooltips (`inline-editable-field.ts`,
+  `timetable-renderer.ts`) and by all four synthetic "(dangling reference)"
+  picker options (`editable-table.ts` x3, `schedule-controller.ts`). Previously
+  only the issue card quoted an invisible value, so the same broken id read as
+  clean everywhere else.
+- Blast radius checked before landing: across 38 GTFS zips in `~/Downloads`,
+  only the Nuuk feed has whitespace-bearing id or date fields, and there it is
+  exactly one row per file (always the last line's final field, a quoted CSV
+  field that swallowed the line ending). Re-running the validator over four
+  other feeds produced no new `INVALID_REFERENCE` at all, and two benign
+  `UNCLEAN_VALUE` warnings in `google_transit` (`stop_name`, `stop_desc`).
+- Deliberately not done: normalizing on import. Trimming at parse time would
+  make the reference resolve and the issue vanish, which is the opposite of this
+  phase group's guiding principle.
+
 ---
 
 ## Phase 9: Timetable stop click and hover highlight, in both repos

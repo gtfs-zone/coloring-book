@@ -6,7 +6,7 @@
 
 import { Stops, StopTimes } from '../types/gtfs-entities.js';
 import { notify } from './notification-system';
-import { markReferenceResolved } from './feed-issues.js';
+import { formatIssueValue, markReferenceResolved } from './feed-issues.js';
 import type { GTFSParser } from './gtfs-parser.js';
 import { TimeFormatter } from '../utils/time-formatter.js';
 import {
@@ -484,7 +484,7 @@ export class ScheduleController {
     if (currentValue && !shapeIds.includes(currentValue)) {
       options.push({
         value: currentValue,
-        primary: `${currentValue} (dangling reference)`,
+        primary: `${formatIssueValue(currentValue)} (dangling reference)`,
       });
     }
 
