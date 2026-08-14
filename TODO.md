@@ -35,6 +35,18 @@ In the plan (see PLAN_TODO.md)
   scrollable with the header still visible and the upload GPX button always
   visible. No horizontal scrolling, use a wider modal if needed.
 - Bug: tooltips are not working in the fares tables, they should be back
+- Feat: finish unifying tooltips. The services timeline and calendar modal now
+  use the portaled field-tooltip-trigger, but timetable-renderer.ts still uses
+  native title attributes (dangling reference cells, brouter/delete buttons,
+  stop rows). Sweep the rest of src/ for title= and DaisyUI tooltip/data-tip
+- Bug: the Files modal is not scrollable
+- Bug: going back to the Files modal's file list still shows the last file that
+  was clicked; that prior-selection behavior should be fully stripped
+- Bug: opening a small file in the Files modal shrinks the modal; it should
+  stay the same size regardless of file content
+- Feat: synchronize the better looking stop styles (focus halo/ring, focus-top
+  redraw, hover halo) to ../test-track, sharing the styling code instead of
+  keeping two divergent copies
 - Feat(medium): Lets add support for the tables in fares to have lists
   (reducing repetitive columns). For now, lets do this for fare_products with
   fare_media_id. In fare_leg_rules, lets do it for from_area_id and to_area_id.
