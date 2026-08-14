@@ -9,9 +9,11 @@ feats. Phases 6-8 unify dangling reference handling into one coherent feature
 are the two stop/route diagram features shared with `../test-track`. Phases 11-12
 build the services timeline; Phases 13-15 build the fares list-column feature.
 Phases 16-17 are blocked on live reproduction and sit at the end deliberately.
-Phases 18-20 are small, independent items added after the original pass (glyph
-cleanup, shapes list improvements, a fares tooltip regression); they can be
-picked up at any time and do not depend on anything above.
+Phases 18-21 are small, independent items added after the original pass (glyph
+cleanup, shapes list improvements, a fares tooltip regression, Files modal
+fixes, and sharing the stop map styles with `../test-track`); they can be
+picked up at any time and do not depend on anything above, except that Phase 21
+assumes Phase 9's stop highlighting is already in place.
 
 `TODO.md` itself stays as the user's raw scratchpad. Do not delete items from it
 when you finish a phase here.
@@ -30,9 +32,9 @@ when you finish a phase here.
 - After finishing a phase, update this file: check off the completed items, and
   append any discoveries/surprises to that phase's notes so later phases (or a
   retry of this one) have accurate context.
-- `src/modules/page-content-renderer.ts` contains a literal NUL byte (see
-  Phase 10), so `rg`/`grep` silently skip it as binary. Use `rg --text` when
-  searching that file until Phase 10 fixes it.
+- ~~`src/modules/page-content-renderer.ts` contains a literal NUL byte (see
+  Phase 10), so `rg`/`grep` silently skip it as binary.~~ Fixed in Phase 10; the
+  file searches normally now.
 
 ---
 
@@ -615,24 +617,61 @@ code is a render function analogous to test-track's `renderStrip()`
 (`../test-track/src/modules/pages/route-page.ts:219-331`), minus its realtime
 chrome.
 
-- [ ] Write the render function, modelled on test-track's `renderStrip`, stripped
+- [x] Write the render function, modelled on test-track's `renderStrip`, stripped
       of `placeVehicles` / `vehicleChip` / `eta` / `alertPips` (none of which
       exist in a static editor).
-- [ ] Data: `GTFSRouteSource` + `routeSequence(source, route_id, directionId,
+- [x] Data: `GTFSRouteSource` + `routeSequence(source, route_id, directionId,
       undefined)` + `routeGraph(sequence)`.
-- [ ] Rows: rail SVG + stop name link + endpoint/minority facts from `StopStats`
+- [x] Rows: rail SVG + stop name link + endpoint/minority facts from `StopStats`
       (test-track's `endpointNoteHtml`). No trip counts.
-- [ ] Placement: a new section **below** the timetables list in `renderRoute()`
+- [x] Placement: a new section **below** the timetables list in `renderRoute()`
       (`page-content-renderer.ts:552`).
-- [ ] Give the timetables list a max height with `overflow-y-auto` so the page
+- [x] Give the timetables list a max height with `overflow-y-auto` so the page
       does not run long once the diagram is below it.
-- [ ] Incidental cleanup in the same file: `CREATE_NETWORK` is defined with a
+- [x] Incidental cleanup in the same file: `CREATE_NETWORK` is defined with a
       **literal NUL byte** in the source, which makes `rg`/`grep` treat the whole
       file as binary and skip it. Replace it with the `'\0create-network'` escape.
 - [ ] Manually verify: open a route with branching patterns, confirm the diagram
       covers all trips (not just one service) and matches how test-track draws
       the same route.
-- [ ] Commit: `feat(route): draw the full route diagram on the route page`
+- [x] Commit: `feat(route): draw the full route diagram on the route page`
+
+**Done** (commit `2f51ecf`). Notes:
+
+- New module `src/modules/route-diagram.ts`, exporting `renderRouteDiagram(parser,
+  routeData)` and the `ROUTE_DIAGRAM_ROW` row class. It renders the whole section
+  (heading + card), and returns `''` when the route has no trips with stop times,
+  so the caller drops the section rather than showing an empty card.
+- **One strip per direction, no tabs.** test-track uses direction tabs because it
+  has `PageState.direction_id` to hang them off; the coloring-book route page has
+  no direction in its page state, and adding one would be a navigation change
+  outside this phase. Directions come from `directionsForRoute(source, route_id)`
+  with no service filter, sorted by trip count, and the direction label is only
+  shown as a heading when there is more than one.
+- `renderCoverage` was ported over from test-track verbatim in substance (pattern
+  count, loop note); it is the part that explains what the filled dots and the
+  trip counts mean, so it earns its place.
+- **`PageContentRenderer` had no parser.** `GTFSRouteSource` needs
+  `getTripsByRouteId` / `getStopTimesByTripId` / `getFileDataSyncTyped`, none of
+  which the relationships layer exposes, so `gtfsParser` is now an optional
+  `ContentRendererDependencies` field, threaded `index.ts` -> `BrowseNavigation`
+  (new trailing optional constructor arg) -> `PageContentRenderer`. Optional, so
+  a renderer built without one just skips the diagram.
+- **The row is the click target, not the dot.** Unlike the timetable (where the
+  name span is already taken by the change-stop picker), nothing else on this row
+  is interactive, so the whole row carries `data-stop-id` and navigates to the
+  stop page via the existing `onStopClick` dependency. `railCell` is therefore
+  called *without* `stop_id`, leaving the dot decorative; the row still carries
+  `STRIP_ROW_CLASS`, so the CSS dot-scale hover from Phase 9 works for free.
+- Hit the Phase 9 Tailwind gotcha again while writing this: test-track's
+  `text-sm${minority ? ...}` pattern was copied over and silently produced no
+  `text-sm`. Written as `text-sm ${minority ? 'opacity-60' : ''}` here. Verified
+  the classes are in the built stylesheet.
+- The timetables list scroll cap is `max-h-96 overflow-y-auto` on the inner
+  `space-y-2` list, not the card, so the "add timetable for service" select stays
+  pinned above the scroll region.
+- The NUL byte is gone: `rg` now searches `page-content-renderer.ts` normally, so
+  the `rg --text` note in the ground rules no longer applies.
 
 ---
 
@@ -818,7 +857,7 @@ multi-value editing is out of scope for this pass.
 
 ---
 
-## Phases 18-20: Later additions (small, independent)
+## Phases 18-21: Later additions (small, independent)
 
 These were added to `TODO.md` after the original planning pass. Neither depends
 on any earlier phase, so they can be picked up whenever.
@@ -871,9 +910,7 @@ Full inventory (this is every glyph in `src/`, verified by grep):
       confirm the render path before replacing it.
 - [ ] Size and color must come from Tailwind/DaisyUI classes, not inline styles,
       so all 9 themes stay correct. Verify light and dark themes.
-- [ ] Re-grep `src/` for glyphs afterwards to confirm none remain (note
-      `page-content-renderer.ts` needs `rg --text` until Phase 10 removes its NUL
-      byte).
+- [ ] Re-grep `src/` for glyphs afterwards to confirm none remain.
 - [ ] Manually verify: calendar modal badges and timeline markers, and every
       expand/collapse chevron in the file/route list.
 - [ ] Commit: `refactor(icons): replace glyph characters with svg icons`
@@ -1034,6 +1071,95 @@ list.
       and confirm the modal stays the same size; confirm the file list scrolls
       with many files.
 - [ ] Commit: `fix(files-modal): make list scrollable, reset to list view on reopen, keep fixed size`
+
+### Phase 21: Share the stop map styles with test-track
+
+**Goal:** One source of truth for how a stop circle looks on the map. The stop
+styling coloring-book gained during Phase 9 (focus halo, focus ring, focus-top
+redraw, hover as a dimmer halo) reaches `../test-track` too, and the two apps
+stop carrying separate hand-tuned copies of the same expressions.
+
+Both repos have a `layer-manager.ts`, but they are not the same file:
+`VENDORED.md` marks test-track's copy `modified` with a long `@changes` list
+(fed from `GTFSStatic`, pathways/levels/editing dropped, route layers absorbed,
+realtime vehicles added). So the file itself can never go verbatim. The sharing
+unit is a **new small module holding only the stop paint expressions**, vendored
+verbatim like `route-strip.ts` is, with coloring-book canonical.
+
+Where the two currently diverge:
+
+- coloring-book `src/modules/layer-manager.ts`
+  - `stopRadiusAt(plainRadius, scale)` (line 489): radius encodes
+    `location_type` only. Focus deliberately does not resize, so a focused plain
+    stop can never outgrow an unfocused station.
+  - `stopFillColor(options)` (line 512): the `location_type` color ramp
+    (station white / entrance amber / node purple / boarding area green), with a
+    focused branch inverting to the theme accent.
+  - `HALO_FOCUSED` / `HALO_HOVERED` / `HALO_LIT` feature-state expressions and
+    `focusHaloRadius()` (lines ~530-565), driving `addFocusHaloLayers()`
+    (line 571): `stops-focus-halo` (soft accent disc, opacity 0.18 focused /
+    0.12 hovered) plus `stops-focus-ring`. Visibility is driven by collapsing
+    radius and opacity to 0 when unlit, because layer filters cannot read
+    feature-state.
+  - `addFocusTopLayer()` (line 706): redraws only the focused stop above every
+    other stop layer so a neighbouring stop cannot paint over the selection.
+- test-track `src/modules/layer-manager.ts`
+  - `stopRadiusAt(scale)` (line 646): **no halo layers at all**. It fakes focus
+    by growing the circle instead: `byType(1.7)` focused, `byType(1.35)`
+    hovered, `byType(1)` otherwise. That is exactly the size-hierarchy lie
+    coloring-book's comment warns about.
+  - The `location_type` fill ramp is inlined in `addStopLayers()` (line ~693),
+    duplicated from coloring-book's `stopFillColor` minus the focused branch.
+  - `STOP_RADIUS` is a module constant rather than an option.
+
+Decided: coloring-book's treatment is the one to keep. test-track loses the
+grow-on-focus behaviour and gains the halo.
+
+- [ ] Ask the user first: test-track's `setHoveredStop` growing the circle is
+      currently the *only* hover affordance there and is noticeably louder than
+      a 0.12-opacity halo. Confirm they want it replaced outright rather than
+      halo-plus-a-smaller-grow, before touching test-track.
+- [ ] Extract the stop paint expressions from coloring-book's
+      `layer-manager.ts` into a new `src/modules/stop-layer-style.ts`, exporting
+      pure builders that take primitives and return `ExpressionSpecification`:
+      `stopRadiusAt`, `stopFillColor`, `focusHaloRadius`, the `HALO_*`
+      expressions, and the paint objects for `stops-focus-halo` /
+      `stops-focus-ring` / `stops-focus-top`. **No imports of coloring-book
+      types, no `this`, no map handle**, the same discipline `route-strip.ts`
+      follows, or it cannot be vendored. `accent()` and the option values
+      (`backgroundColor`, `radius`) get passed in as arguments.
+- [ ] Rewrite coloring-book's `layer-manager.ts` to call the new module. This
+      step must be a pure refactor: the rendered map is byte-identical before
+      and after. Verify visually before moving on, because everything after this
+      builds on it.
+- [ ] Copy `stop-layer-style.ts` into `../test-track/src/modules/` with the
+      `@vendored-from` banner, `@status verbatim`, and add its row to
+      `../test-track/VENDORED.md` with the new coloring-book SHA.
+- [ ] In test-track's `layer-manager.ts`: delete the inlined `location_type`
+      fill ramp and the focused/hovered multipliers in `stopRadiusAt`, call the
+      shared builders instead, and add the `stops-focus-halo`,
+      `stops-focus-ring`, and `stops-focus-top` layers. Insert them in
+      coloring-book's order (halo and ring under the stop circles, focus-top
+      above them) and register the new ids everywhere test-track enumerates stop
+      layers: `HIT_LAYERS` is unaffected but the spotlight fade in
+      `applySpotlight` (line ~337) and any layer-id arrays must include them or
+      the halo will not dim with the rest.
+- [ ] Update test-track's `setHoveredStop` / `setFocusedStop` to set the
+      `hovered` / `focused` feature states the halo reads, dropping the radius
+      multiplier path. Fix `VENDORED.md`'s `layer-manager.ts` `@changes` bullet,
+      which currently records the now-removed "grows the stop circle rather than
+      lighting coloring-book's focus-halo layers, which this copy does not
+      have".
+- [ ] Check test-track's route layer sort/insert points: coloring-book inserts
+      route lines `before` `stops-focus-halo` (line ~1479). test-track has no
+      such anchor today, so adding the halo changes what its equivalent insert
+      resolves to. Confirm route lines still paint under the stops.
+- [ ] Manually verify in both apps: click a stop (halo plus ring, focused stop
+      drawn above neighbours), hover a stop from the timetable stop column
+      (dimmer halo, no size change), and confirm station/entrance/node/boarding
+      area colors and sizes are unchanged from before in coloring-book.
+- [ ] Commit in coloring-book: `refactor(map): extract shared stop layer styles`.
+      Separate commit in test-track: `feat(map): adopt shared stop focus halo styles`.
 
 ---
 
