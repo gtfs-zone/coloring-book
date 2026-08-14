@@ -91,7 +91,7 @@ function pickerBody(
           ? `<button
               type="button"
               id="option-picker-empty"
-              class="flex w-full items-center gap-2 rounded border px-3 py-2 text-left text-sm"
+              class="flex w-full cursor-pointer items-center gap-2 rounded border px-3 py-2 text-left text-sm hover:bg-base-200"
             >
               <span class="min-w-0 flex-1 truncate">${escapeHtml(emptyOption.label)}</span>
               ${emptyOption.hint ? `<span class="shrink-0 text-xs opacity-60">${escapeHtml(emptyOption.hint)}</span>` : ''}

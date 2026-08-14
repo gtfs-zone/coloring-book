@@ -977,6 +977,42 @@ Two details worth remembering:
       confirming rows collapse and list correctly. **Left to the user.**
 - [x] Commit: `feat(fares): list repeated foreign keys instead of duplicating rows`
 
+#### Follow-up: list cells are editable (fix pass)
+
+Phases 13-15 shipped list cells read-only, which read as broken next to the
+click-to-edit columns around them. Fixed in `54b620a`/`b8de069`/`37e6a15`:
+
+- [x] `src/modules/option-picker-modal.ts`: the search box, result list, uFuzzy
+      matching and keyboard handling moved into a shared `mountPicker()`, and
+      `showMultiOptionPickerModal()` was added beside `showOptionPickerModal()`.
+      Checkbox rows, toggle on click or Enter, Done resolves `string[]` and
+      Cancel resolves `null`. Selected options lead the list at open time only:
+      re-sorting per keystroke moves rows out from under the pointer.
+- [x] Blank is **not** a checkbox. `emptyOption: {label, hint}` renders a pinned
+      button above the list, highlighted exactly when the selection is empty, so
+      picking an option turns it off and clicking it clears the selection. The
+      exclusivity is structural rather than enforced by handlers, and the picker
+      still resolves a plain `string[]`.
+- [x] `renderListCell()` now emits an `.editable-cell` span carrying
+      `data-list="1"` and `data-values` (the group's distinct **raw** values as
+      JSON). Display caps at `LIST_CELL_MAX = 8` labels plus `+N more`, via
+      `renderListValues()`, which the join columns below share.
+- [x] `commitListCell()` reconciles the rows behind the collapsed row: the block
+      becomes the cross product of the other list columns with the new selection,
+      so Phase 14's complete-product invariant is preserved by construction. A
+      surviving combination reuses its existing record (fields outside
+      `config.fields` are not lost); the rest are deletes plus inserts in one
+      `recordBatchMixed`, so it undoes as one step. Values are coerced and
+      per-field validated first, `validateRow` runs over every new record, and a
+      key colliding with a row outside the group is refused the same way the
+      re-key path refuses one.
+- [x] An empty selection commits as `['']`: one row with the field blank, which
+      in the fare rules is the "matches everything" row rather than no row.
+- [x] New `onRowsChanged?` config hook, kept separate from `onUpdate` because
+      the row count changed and the display cannot be patched in place. Ordinary
+      cell edits still update in place, so a full re-render never destroys an
+      editor the user has moved on to opening.
+
 ### Phase 15: Generalize the areas/networks list display
 
 - [x] Extract `renderAreaStopLists()`'s presentation (the `<details>`/`<summary>`/
@@ -1018,6 +1054,50 @@ Two details worth remembering:
   `routes`/`stops` read.
 - Networks now has both a count column and an expandable list, matching Areas,
   which was the asymmetry Phase 13-15's context called out.
+
+#### Follow-up: members are a column, not a block below the table (fix pass)
+
+The phase as executed left **three** display patterns for one idea (a group and
+the things in it): grouped list cells on the rule tables, a count column on
+Areas/Networks, and a `<details>` block below the table. The point was to unify
+them. Redone in `b8de069`, so everything is now a list column in the table:
+
+- [x] Deleted `renderMemberLists`, `collectMemberSections`, `renderAreaStopLists`,
+      `renderNetworkRouteLists`, `MemberListSection`, `countStopsPerArea`,
+      `countRoutesPerNetwork`, and the `detail?` hook on `FaresEntry` with its
+      concatenation in `refresh()`. Note that this reverses the split described
+      immediately above: the two helpers are gone, not renamed.
+- [x] `EditableTableExtraColumn` / `config.extraColumns` are deleted too, not
+      left behind: the two count columns were their only use, and `fares-modal`
+      is the only consumer of `editable-table`. Replaced by
+      `EditableTableJoinColumn` (`label`, `values(row)`, `options()`,
+      `apply(row, values)`) and `config.joinColumns`.
+- [x] A join column's members live in a join table, so grouping cannot produce
+      them. `editable-table` renders the cell and runs the picker; the **host**
+      owns the write, so nothing in the table module knows a join table's shape.
+      Cells reuse `renderListValues()`, so they cap at 8 with `+N more` exactly
+      like a list column, and carry `data-join="<index>"` rather than
+      `data-field` (a join cell has no spec field, so `resolve()` cannot handle
+      it: `openCellEditor` branches on `data-join` before calling `resolve`).
+- [x] One `memberJoinColumn(deps, spec)` in `fares-modal.ts` builds both panes
+      from `{label, memberTable, joinTable, groupField, memberField, options,
+      memberSuffix?}`. It reads the join once per refresh into a
+      `Map<groupId, {value,label}[]>`; `apply` diffs the picked set against it
+      and writes the join table in one `recordBatchMixed`, keyed with
+      `generateCompositeKeyFromRecord`. `memberSuffix` still carries the
+      `, and its platforms` note on a station; Networks passes none.
+- [x] Added `routeOptions(deps)` beside `networkOptions`. Areas reuses
+      `fareStopOptions`, which already filters to stops and stations, matching
+      what `stop_areas` may name.
+- [x] The `getEntityDisplay(specStoreName(table), ...)` note above still applies
+      and is why stop labels keep going through `getStopDisplay` (the `stops`
+      case of the dispatcher).
+- [x] Both `note:` lines reworded: membership is now editable here as well as on
+      the stop/route page. Station inheritance is unchanged, and this editor
+      writes explicit join rows only, same as `utils/stop-areas-field.ts`.
+- [ ] Manually verify: list cells on all four rule tables edit and undo in one
+      step; Areas/Networks list their members, cap at 8, and agree with the stop
+      and route pages after an edit. **Left to the user.**
 
 ---
 
