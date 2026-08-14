@@ -688,6 +688,14 @@ export class MapController {
   }
 
   /**
+   * Light up a stop the user is hovering elsewhere in the app (the timetable
+   * stop column). Purely visual: no fly-to, no spotlight, no focus change.
+   */
+  public hoverStop(stop_id: string | null): void {
+    this.layerManager?.setHoveredStop(stop_id);
+  }
+
+  /**
    * Highlight specific stop
    */
   public highlightStop(stop_id: string): void {

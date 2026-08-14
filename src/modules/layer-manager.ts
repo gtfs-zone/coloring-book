@@ -98,6 +98,7 @@ export class LayerManager {
 
   private activeStopsFilter: FilterSpecification = DEFAULT_STOPS_FILTER;
   private focusedStopId: string | null = null;
+  private hoveredStopId: string | null = null;
   private focusedPathwayId: string | null = null;
   // Stops of the currently spotlighted route (onRoute feature-state holders)
   private routeStopIds: string[] = [];
@@ -262,6 +263,7 @@ export class LayerManager {
       // would swallow the caller re-focusing the same stop and the selection
       // would never come back after a basemap switch.
       this.focusedStopId = null;
+      this.hoveredStopId = null;
       this.focusedPathwayId = null;
       this.routeStopIds = [];
     }
@@ -525,20 +527,43 @@ export class LayerManager {
   }
 
   /**
+   * The two feature states the halo draws for: a clicked stop, and a stop
+   * being hovered from somewhere else in the app (the timetable stop column).
+   * Hover is the same halo at a lower opacity, so the two never look alike but
+   * also never need a second pair of layers.
+   */
+  private static readonly HALO_FOCUSED: ExpressionSpecification = [
+    'boolean',
+    ['feature-state', 'focused'],
+    false,
+  ];
+  private static readonly HALO_HOVERED: ExpressionSpecification = [
+    'boolean',
+    ['feature-state', 'hovered'],
+    false,
+  ];
+  private static readonly HALO_LIT: ExpressionSpecification = [
+    'any',
+    LayerManager.HALO_FOCUSED,
+    LayerManager.HALO_HOVERED,
+  ] as unknown as ExpressionSpecification;
+
+  /**
    * Radius of the focus halo. Fixed pixel sizes rather than a multiple of the
    * stop radius so the glow stays the same regardless of location_type.
    */
   private focusHaloRadius(): ExpressionSpecification {
+    const lit = LayerManager.HALO_LIT;
     return [
       'interpolate',
       ['linear'],
       ['zoom'],
       11,
-      ['case', ['boolean', ['feature-state', 'focused'], false], 14, 0],
+      ['case', lit, 14, 0],
       16,
-      ['case', ['boolean', ['feature-state', 'focused'], false], 24, 0],
+      ['case', lit, 24, 0],
       19,
-      ['case', ['boolean', ['feature-state', 'focused'], false], 38, 0],
+      ['case', lit, 38, 0],
     ] as unknown as ExpressionSpecification;
   }
 
@@ -554,11 +579,8 @@ export class LayerManager {
     if (this.map.getLayer('stops-focus-halo')) {
       return;
     }
-    const focused: ExpressionSpecification = [
-      'boolean',
-      ['feature-state', 'focused'],
-      false,
-    ];
+    const focused = LayerManager.HALO_FOCUSED;
+    const hovered = LayerManager.HALO_HOVERED;
     const accent = this.accent();
 
     this.map.addLayer({
@@ -573,6 +595,8 @@ export class LayerManager {
           'case',
           focused,
           0.18,
+          hovered,
+          0.12,
           0,
         ] as unknown as ExpressionSpecification,
         'circle-stroke-width': 0,
@@ -594,6 +618,8 @@ export class LayerManager {
           'case',
           focused,
           0.9,
+          hovered,
+          0.55,
           0,
         ] as unknown as ExpressionSpecification,
       },
@@ -1086,6 +1112,7 @@ export class LayerManager {
    */
   public clearHighlights(): void {
     this.setFocusedStop(null);
+    this.setHoveredStop(null);
     if (this.routeStopIds.length > 0) {
       this.setRouteStops([]);
     }
@@ -1126,6 +1153,38 @@ export class LayerManager {
     } catch (error) {
       console.warn(
         '[LayerManager] Could not set focused stop:',
+        stop_id,
+        error
+      );
+    }
+  }
+
+  /**
+   * Light the halo for a stop being hovered elsewhere in the app. Separate
+   * feature state from `focused` so hovering never disturbs the selection, and
+   * so a stop that is both reads as focused.
+   */
+  public setHoveredStop(stop_id: string | null): void {
+    if (this.hoveredStopId === stop_id) {
+      return;
+    }
+    try {
+      if (this.hoveredStopId !== null && this.map.getSource('stops')) {
+        this.map.setFeatureState(
+          { source: 'stops', id: this.hoveredStopId },
+          { hovered: false }
+        );
+      }
+      this.hoveredStopId = stop_id;
+      if (stop_id !== null && this.map.getSource('stops')) {
+        this.map.setFeatureState(
+          { source: 'stops', id: stop_id },
+          { hovered: true }
+        );
+      }
+    } catch (error) {
+      console.warn(
+        '[LayerManager] Could not set hovered stop:',
         stop_id,
         error
       );
