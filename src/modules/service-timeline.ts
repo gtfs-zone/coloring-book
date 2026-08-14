@@ -143,20 +143,32 @@ export async function loadServiceData(
   return result;
 }
 
+/** Row color for a service no calendar row defines. */
+const UNDEFINED_SERVICE_COLOR = '#9ca3af';
+
 /**
  * Scope a loaded map to a set of services. Colors stay as assigned by
  * `loadServiceData`, so a service keeps the same color on every page.
+ *
+ * A requested service that no calendar defines still gets a row: trips can
+ * point at a service_id that does not exist, and dropping it would hide the
+ * timetable entirely instead of surfacing the broken reference.
  */
 export function filterServiceDataMap(
   data: ServiceDataMap,
   service_ids: Iterable<string>
 ): ServiceDataMap {
-  const wanted = new Set(service_ids);
   const result: ServiceDataMap = new Map();
-  for (const [sid, sd] of data) {
-    if (wanted.has(sid)) {
-      result.set(sid, sd);
-    }
+  for (const sid of [...new Set(service_ids)].sort()) {
+    result.set(
+      sid,
+      data.get(sid) ?? {
+        calendar: null,
+        exceptions: [],
+        color: UNDEFINED_SERVICE_COLOR,
+        label: sid,
+      }
+    );
   }
   return result;
 }

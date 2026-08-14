@@ -15,24 +15,35 @@ import type {
 import type { QueryOnlyDatabase } from '../utils/field-component.js';
 import { renderInlineEntityFields } from '../utils/inline-editable-field.js';
 import { GTFS_TABLES } from '../types/gtfs.js';
-import { getStopDisplay, renderCardLabel } from '../utils/entity-display.js';
+import {
+  getRouteDisplay,
+  getStopDisplay,
+  renderCardLabel,
+  renderOptionLabel,
+} from '../utils/entity-display.js';
+import { escapeHtml } from '../utils/escape-html.js';
+import { routeColor } from '../utils/route-colors.js';
+import {
+  filterServiceDataMap,
+  loadServiceData,
+  renderServiceTimeline,
+  type ServiceDataMap,
+} from './service-timeline.js';
 import { pathwayModeLabel } from '../utils/pathway-modes.js';
 import { renderTrashIcon } from './modal-utils.js';
 import {
   renderPathwayReference,
   renderStopReference,
-  renderTimetableReference,
-  TIMETABLE_REF_ROW,
-  VIEW_ROUTE_BTN,
-  VIEW_SERVICE_BTN,
 } from '../utils/entity-references.js';
 import { collectDescendantStops } from '../utils/stop-hierarchy.js';
 import { renderStopAreasField } from '../utils/stop-areas-field.js';
 
+/** How many `via` stop names are spelled out before collapsing to "+N more". */
+const MAX_VIA_LABELS = 3;
+
 interface TimetableKey {
   route_id: string;
   service_id: string;
-  tripCount: number;
   /**
    * Descendant stops whose stop_times produced this timetable, when the page's
    * stop is a station. Empty when the stop itself carries the stop_times.
@@ -53,9 +64,6 @@ export interface StopViewDependencies {
   };
   onStopClick?: (stop_id: string) => void;
   onPathwayClick?: (pathway_id: string) => void;
-  onTimetableClick?: (route_id: string, service_id: string) => void;
-  onRouteClick?: (route_id: string) => void;
-  onServiceClick?: (service_id: string) => void;
   onDeleteStop: (stop_id: string) => Promise<void>;
 }
 
@@ -86,36 +94,15 @@ export class StopViewController {
 
       const { routes, timetableKeys } = await this.fetchStopRelations(stop_id);
 
-      const calendarByServiceId = new Map<string, Record<string, unknown>>();
-      const calendarDatesByServiceId = new Map<
-        string,
-        Array<{ date: string; exception_type: string | number }>
-      >();
-
+      // Loaded over the whole feed so a service keeps the same timeline color
+      // here as on the home and route pages; scoped per route below.
+      let serviceData: ServiceDataMap = new Map();
       if (this.dependencies.gtfsDatabase && timetableKeys.length > 0) {
-        const serviceIdSet = new Set(timetableKeys.map((k) => k.service_id));
-        const allCalendars =
-          await this.dependencies.gtfsDatabase.queryRows('calendar');
-        for (const cal of allCalendars) {
-          const record = cal as Record<string, unknown>;
-          const sid = record['service_id'] as string;
-          if (serviceIdSet.has(sid)) {
-            calendarByServiceId.set(sid, record);
-          }
-        }
-        const allCalendarDates =
-          await this.dependencies.gtfsDatabase.queryRows('calendar_dates');
-        for (const cd of allCalendarDates) {
-          const record = cd as Record<string, unknown>;
-          const sid = record['service_id'] as string;
-          if (serviceIdSet.has(sid)) {
-            const existing = calendarDatesByServiceId.get(sid) ?? [];
-            existing.push(
-              record as { date: string; exception_type: string | number }
-            );
-            calendarDatesByServiceId.set(sid, existing);
-          }
-        }
+        const db = this.dependencies.gtfsDatabase;
+        serviceData = await loadServiceData({
+          getAllRows: (tableName: string) =>
+            db.queryRows(tableName) as Promise<Record<string, unknown>[]>,
+        });
       }
 
       const [childStops, connectedPathways] = await Promise.all([
@@ -169,7 +156,7 @@ export class StopViewController {
           ${!isStation ? boardingAreasHtml : ''}
           ${!isStation ? this.renderPathwaySection('Pathways Out', outPathways, 'to', otherStopLookup) : ''}
           ${!isStation ? this.renderPathwaySection('Pathways In', inPathways, 'from', otherStopLookup) : ''}
-          ${this.renderTimetablesSection(timetableKeys, routes, calendarByServiceId, calendarDatesByServiceId)}
+          ${this.renderTimetablesSection(timetableKeys, routes, serviceData)}
         </div>
       `;
       console.log('Stop view HTML length:', html.length);
@@ -213,11 +200,7 @@ export class StopViewController {
   private renderTimetablesSection(
     timetableKeys: TimetableKey[],
     routes: Routes[],
-    calendarByServiceId: Map<string, Record<string, unknown>>,
-    calendarDatesByServiceId: Map<
-      string,
-      Array<{ date: string; exception_type: string | number }>
-    >
+    serviceData: ServiceDataMap
   ): string {
     if (timetableKeys.length === 0) {
       return `
@@ -236,19 +219,59 @@ export class StopViewController {
 
     const routeById = new Map(routes.map((r) => [String(r.route_id), r]));
 
-    const rows = timetableKeys
-      .map(({ route_id, service_id, tripCount, viaStops }) => {
-        const calendar = calendarByServiceId.get(service_id) ?? { service_id };
-        const route = routeById.get(route_id) ?? { route_id };
-        return renderTimetableReference(
-          route as Record<string, unknown>,
-          calendar,
-          {
-            calendarDates: calendarDatesByServiceId.get(service_id),
-            tripCount,
-            viaStops: viaStops as unknown as Array<Record<string, unknown>>,
-          }
+    // One timeline per route: a timeline carries a single route context, and
+    // the stop is typically served by several routes.
+    const byRoute = new Map<
+      string,
+      { service_ids: string[]; viaStops: Map<string, Stops> }
+    >();
+    for (const { route_id, service_id, viaStops } of timetableKeys) {
+      let entry = byRoute.get(route_id);
+      if (!entry) {
+        entry = { service_ids: [], viaStops: new Map() };
+        byRoute.set(route_id, entry);
+      }
+      entry.service_ids.push(service_id);
+      for (const stop of viaStops) {
+        entry.viaStops.set(String(stop.stop_id), stop);
+      }
+    }
+
+    const sections = [...byRoute.entries()]
+      .map(([route_id, { service_ids, viaStops }]) => {
+        const route = (routeById.get(route_id) ?? { route_id }) as Record<
+          string,
+          unknown
+        >;
+        const color = routeColor(
+          route_id,
+          route.route_color as string | undefined
         );
+        const via = [...viaStops.values()];
+        const viaLine =
+          via.length > 0
+            ? `<div class="text-xs opacity-60 truncate">via ${escapeHtml(
+                via
+                  .slice(0, MAX_VIA_LABELS)
+                  .map((s) =>
+                    renderOptionLabel(
+                      getStopDisplay(s as Record<string, string>)
+                    )
+                  )
+                  .join(', ')
+              )}${via.length > MAX_VIA_LABELS ? ` +${via.length - MAX_VIA_LABELS} more` : ''}</div>`
+            : '';
+
+        return `
+          <div class="space-y-1">
+            <div class="flex items-center gap-2 min-w-0">
+              <div class="w-3 h-3 rounded-full flex-shrink-0" style="background-color: ${color}"></div>
+              <span class="font-medium truncate">${renderCardLabel(getRouteDisplay(route as Record<string, string>))}</span>
+            </div>
+            ${viaLine}
+            ${renderServiceTimeline(filterServiceDataMap(serviceData, service_ids), { route_id })}
+          </div>
+        `;
       })
       .join('');
 
@@ -257,8 +280,8 @@ export class StopViewController {
         <h2 class="text-lg font-semibold">Timetables</h2>
         <div class="card bg-base-100 shadow-lg">
           <div class="card-body p-4">
-            <div class="space-y-2">
-              ${rows}
+            <div class="space-y-4">
+              ${sections}
             </div>
           </div>
         </div>
@@ -541,14 +564,12 @@ export class StopViewController {
             key: {
               route_id: trip.route_id,
               service_id: trip.service_id,
-              tripCount: 0,
               viaStops: [],
             },
             viaIds: new Set(),
           };
           byKey.set(key, entry);
         }
-        entry.key.tripCount += 1;
         for (const id of viaIdsByTrip.get(String(trip.trip_id)) ?? []) {
           entry.viaIds.add(id);
         }
@@ -596,37 +617,6 @@ export class StopViewController {
             await this.dependencies.onDeleteStop(stop_id);
           }
           return;
-        }
-        const routeBtn = (e.target as Element).closest(`.${VIEW_ROUTE_BTN}`);
-        if (routeBtn) {
-          e.stopPropagation();
-          const route_id = routeBtn.getAttribute('data-route-id');
-          if (route_id && this.dependencies.onRouteClick) {
-            this.dependencies.onRouteClick(route_id);
-          }
-          return;
-        }
-        const serviceBtn = (e.target as Element).closest(
-          `.${VIEW_SERVICE_BTN}`
-        );
-        if (serviceBtn) {
-          e.stopPropagation();
-          const service_id = serviceBtn.getAttribute('data-service-id');
-          if (service_id && this.dependencies.onServiceClick) {
-            this.dependencies.onServiceClick(service_id);
-          }
-          return;
-        }
-        const timetableRow = (e.target as Element).closest(
-          `.${TIMETABLE_REF_ROW}`
-        );
-        if (timetableRow && this.dependencies.onTimetableClick) {
-          e.stopPropagation();
-          const route_id = timetableRow.getAttribute('data-route-id');
-          const service_id = timetableRow.getAttribute('data-service-id');
-          if (route_id && service_id) {
-            this.dependencies.onTimetableClick(route_id, service_id);
-          }
         }
       },
       { signal: this.deleteListenerAbortController.signal }
