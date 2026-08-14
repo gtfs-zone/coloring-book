@@ -122,6 +122,7 @@ async function memberJoinColumn(
 
   return {
     label: spec.label,
+    spec: { tableName: spec.joinTable, field: spec.memberField },
     options: spec.options,
     values: (row) => byGroup.get(String(row[spec.groupField] ?? '')) ?? [],
     apply: async (row, picked) => {
