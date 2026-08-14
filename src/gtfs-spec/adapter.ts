@@ -1,5 +1,10 @@
 import { z } from 'zod';
-import type { GTFSSpec, GTFSFieldSpec, GTFSPresence } from './types';
+import type {
+  GTFSSpec,
+  GTFSFieldSpec,
+  GTFSPresence,
+  GTFSForeignKeyTarget,
+} from './types';
 import {
   GTFS_FIELD_TYPE_METADATA,
   GTFSFieldType,
@@ -79,6 +84,38 @@ export function deriveGTFSEnums(
         !(field.name in result)
       ) {
         result[field.name] = field.enumValues;
+      }
+    }
+  }
+  return result;
+}
+
+// ─── Foreign keys ─────────────────────────────────────────────────────────────
+// Flattens every curated `foreignKey` declaration into one list, so referential
+// integrity can be checked generically instead of per file.
+
+export interface GTFSForeignKeyRef {
+  /** Filename the reference lives on, e.g. "trips.txt". */
+  file: string;
+  /** Field on that file holding the reference. */
+  field: string;
+  /** One or more tables the value may be found in. */
+  targets: GTFSForeignKeyTarget[];
+}
+
+export function deriveGTFSForeignKeys(spec: GTFSSpec): GTFSForeignKeyRef[] {
+  const result: GTFSForeignKeyRef[] = [];
+  for (const file of spec.files) {
+    if (!file.fields) {
+      continue;
+    }
+    for (const field of file.fields) {
+      if (field.foreignKey && field.foreignKey.length > 0) {
+        result.push({
+          file: file.filename,
+          field: field.name,
+          targets: field.foreignKey,
+        });
       }
     }
   }

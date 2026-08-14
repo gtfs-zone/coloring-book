@@ -1,5 +1,7 @@
 import { GTFSDatabaseRecord } from './gtfs-database.js';
-import { GTFS_TABLES, GTFS_FIELD_SPECS } from '../types/gtfs.js';
+import { GTFS_TABLES, GTFS_FOREIGN_KEYS } from '../types/gtfs.js';
+import type { GTFSForeignKeyRef } from '../gtfs-spec/adapter.js';
+import { generateCompositeKeyFromRecord } from '../utils/gtfs-primary-keys.js';
 import { GTFSFieldType } from '../types/gtfs-field-types.js';
 import { validateValue } from '../utils/field-formatters.js';
 import {
@@ -15,6 +17,18 @@ import {
   validateTransferRow,
 } from '../utils/fares-rules.js';
 
+/** The offending row, so a message can be traced back to an editable object. */
+export interface ValidationEntity {
+  /** File the offending row lives in, e.g. "trips.txt". */
+  file: string;
+  /** Primary key of that row, as produced by generateCompositeKeyFromRecord. */
+  id: string;
+  /** Field carrying the problem. */
+  field: string;
+  /** Value of that field. */
+  value: string;
+}
+
 export interface ValidationMessage {
   level: 'error' | 'warning' | 'info';
   message: string;
@@ -22,7 +36,23 @@ export interface ValidationMessage {
   file?: string;
   line?: number;
   field?: string;
+  entity?: ValidationEntity;
 }
+
+/**
+ * Declarations the generic sweep must not treat as hard references. They stay
+ * on the spec because the pickers use them to offer options.
+ *
+ * - calendar_dates.service_id: the reference type is "Foreign ID referencing
+ *   calendar.service_id or ID", so a service defined only in calendar_dates.txt
+ *   is valid, not dangling.
+ * - stop_times.location_id: locations.geojson is not a row table, so there is
+ *   no id column to collect values from.
+ */
+const SKIPPED_FOREIGN_KEYS = new Set([
+  'calendar_dates.txt:service_id',
+  'stop_times.txt:location_id',
+]);
 
 export interface ValidationResults {
   errors: ValidationMessage[];
@@ -88,7 +118,7 @@ export class GTFSValidator {
     this.validateTransfers();
     this.validateConditionalPresence();
     this.validateRiderCategoryDefaults();
-    this.validateFaresReferences();
+    this.validateForeignKeys();
     this.validateReferences();
 
     // Update summary
@@ -217,7 +247,6 @@ export class GTFSValidator {
 
   validateRoutes() {
     const routes = this.gtfsParser.getFileDataSyncTyped(GTFS_TABLES.ROUTES);
-    const agencies = this.gtfsParser.getFileDataSyncTyped(GTFS_TABLES.AGENCY);
 
     if (routes.length === 0) {
       this.addError('routes.txt is empty', 'EMPTY_FILE', GTFS_TABLES.ROUTES);
@@ -225,7 +254,6 @@ export class GTFSValidator {
     }
 
     const route_ids = new Set();
-    const agency_ids = new Set((agencies || []).map((a) => a.agency_id));
 
     routes.forEach((route, index: number) => {
       const rowNum = index + 1;
@@ -287,16 +315,6 @@ export class GTFSValidator {
             rowNum
           );
         }
-      }
-
-      // Validate agency_id reference
-      if (route.agency_id && !agency_ids.has(route.agency_id)) {
-        this.addError(
-          `Row ${rowNum}: route '${route.route_id}' has agency_id '${route.agency_id}' not found in agency.txt`,
-          'INVALID_REFERENCE',
-          GTFS_TABLES.ROUTES,
-          rowNum
-        );
       }
     });
 
@@ -440,7 +458,6 @@ export class GTFSValidator {
 
   validateTrips() {
     const trips = this.gtfsParser.getFileDataSyncTyped(GTFS_TABLES.TRIPS);
-    const routes = this.gtfsParser.getFileDataSyncTyped(GTFS_TABLES.ROUTES);
 
     if (trips.length === 0) {
       this.addError('trips.txt is empty', 'EMPTY_FILE', GTFS_TABLES.TRIPS);
@@ -448,7 +465,6 @@ export class GTFSValidator {
     }
 
     const trip_ids = new Set();
-    const route_ids = new Set((routes || []).map((r) => r.route_id));
 
     trips.forEach((trip, index: number) => {
       const rowNum = index + 1;
@@ -480,13 +496,6 @@ export class GTFSValidator {
           GTFS_TABLES.TRIPS,
           rowNum
         );
-      } else if (!route_ids.has(trip.route_id)) {
-        this.addError(
-          `Row ${rowNum}: route_id '${trip.route_id}' not found in routes.txt`,
-          'INVALID_REFERENCE',
-          GTFS_TABLES.TRIPS,
-          rowNum
-        );
       }
 
       if (!trip.service_id || String(trip.service_id).trim() === '') {
@@ -506,8 +515,6 @@ export class GTFSValidator {
     const stopTimes = this.gtfsParser.getFileDataSyncTyped(
       GTFS_TABLES.STOP_TIMES
     );
-    const trips = this.gtfsParser.getFileDataSyncTyped(GTFS_TABLES.TRIPS);
-    const stops = this.gtfsParser.getFileDataSyncTyped(GTFS_TABLES.STOPS);
 
     if (stopTimes.length === 0) {
       this.addError(
@@ -517,9 +524,6 @@ export class GTFSValidator {
       );
       return;
     }
-
-    const trip_ids = new Set((trips || []).map((t) => t.trip_id));
-    const stop_ids = new Set((stops || []).map((s) => s.stop_id));
 
     stopTimes.forEach((stopTime, index: number) => {
       const rowNum = index + 1;
@@ -532,26 +536,12 @@ export class GTFSValidator {
           GTFS_TABLES.STOP_TIMES,
           rowNum
         );
-      } else if (!trip_ids.has(stopTime.trip_id)) {
-        this.addError(
-          `Row ${rowNum}: trip_id '${stopTime.trip_id}' not found in trips.txt`,
-          'INVALID_REFERENCE',
-          GTFS_TABLES.STOP_TIMES,
-          rowNum
-        );
       }
 
       if (!stopTime.stop_id || String(stopTime.stop_id).trim() === '') {
         this.addError(
           `Row ${rowNum}: stop_id is required`,
           'MISSING_REQUIRED_FIELD',
-          GTFS_TABLES.STOP_TIMES,
-          rowNum
-        );
-      } else if (!stop_ids.has(stopTime.stop_id)) {
-        this.addError(
-          `Row ${rowNum}: stop_id '${stopTime.stop_id}' not found in stops.txt`,
-          'INVALID_REFERENCE',
           GTFS_TABLES.STOP_TIMES,
           rowNum
         );
@@ -947,39 +937,34 @@ export class GTFSValidator {
   }
 
   /**
-   * Every foreign key the fares tables declare in the spec, checked against the
-   * tables it names. A field naming two tables (network_id) matches a value
-   * present in either.
+   * Every foreign key the spec declares, checked against the tables it names.
+   * A field naming two tables (trips.service_id, network_id) matches a value
+   * present in either. Empty values are skipped: an optional reference left
+   * blank is not dangling, and a required one missing is a separate check.
    */
-  validateFaresReferences() {
-    const faresTables = [
-      GTFS_TABLES.TIMEFRAMES,
-      GTFS_TABLES.FARE_PRODUCTS,
-      GTFS_TABLES.FARE_LEG_RULES,
-      GTFS_TABLES.FARE_LEG_JOIN_RULES,
-      GTFS_TABLES.FARE_TRANSFER_RULES,
-      GTFS_TABLES.STOP_AREAS,
-      GTFS_TABLES.ROUTE_NETWORKS,
-    ];
+  validateForeignKeys() {
     const valueCache = new Map<string, Set<string>>();
 
-    for (const table of faresTables) {
-      const rows = this.gtfsParser.getFileDataSyncTyped(table);
+    // Group the declarations by file so each table is walked once.
+    const byFile = new Map<string, GTFSForeignKeyRef[]>();
+    for (const ref of GTFS_FOREIGN_KEYS) {
+      if (SKIPPED_FOREIGN_KEYS.has(`${ref.file}:${ref.field}`)) {
+        continue;
+      }
+      const list = byFile.get(ref.file) ?? [];
+      list.push(ref);
+      byFile.set(ref.file, list);
+    }
+
+    for (const [file, refs] of byFile) {
+      const rows = this.gtfsParser.getFileDataSyncTyped(file);
       if (rows.length === 0) {
         continue;
       }
-      const specs = GTFS_FIELD_SPECS[table];
-      if (!specs) {
-        continue;
-      }
 
-      for (const spec of Object.values(specs)) {
-        const targets = spec.foreignKey;
-        if (!targets || targets.length === 0) {
-          continue;
-        }
+      const checks = refs.map((ref) => {
         const known = new Set<string>();
-        for (const target of targets) {
+        for (const target of ref.targets) {
           for (const value of this.collectValues(
             target.file,
             target.field,
@@ -988,26 +973,47 @@ export class GTFSValidator {
             known.add(value);
           }
         }
-
-        const targetNames = targets
+        const targetNames = ref.targets
           .map(
             (target) => `${target.file.replace(/\.txt$/, '')}.${target.field}`
           )
           .join(' or ');
+        return { field: ref.field, known, targetNames };
+      });
 
-        rows.forEach((row, index: number) => {
-          const value = String(row[spec.name] ?? '').trim();
-          if (value === '' || known.has(value)) {
-            return;
+      const tableName = file.replace(/\.txt$/, '');
+      rows.forEach((row, index: number) => {
+        for (const check of checks) {
+          const value = String(row[check.field] ?? '').trim();
+          if (value === '' || check.known.has(value)) {
+            continue;
           }
           this.addError(
-            `Row ${index + 1}: ${spec.name} '${value}' not found in ${targetNames}`,
+            `Row ${index + 1}: ${check.field} '${value}' not found in ${check.targetNames}`,
             'INVALID_REFERENCE',
-            table,
-            index + 1
+            file,
+            index + 1,
+            {
+              file,
+              id: this.rowId(tableName, row),
+              field: check.field,
+              value,
+            }
           );
-        });
-      }
+        }
+      });
+    }
+  }
+
+  /** Primary key of a row, falling back to the row number when it has none. */
+  private rowId(tableName: string, row: GTFSDatabaseRecord): string {
+    try {
+      return generateCompositeKeyFromRecord(
+        tableName,
+        row as Record<string, unknown>
+      );
+    } catch {
+      return '';
     }
   }
 
@@ -1038,7 +1044,8 @@ export class GTFSValidator {
     message: string,
     code: string,
     fileName: string | null = null,
-    rowNum: number | null = null
+    rowNum: number | null = null,
+    entity: ValidationEntity | null = null
   ) {
     this.validationResults.errors.push({
       level: 'error',
@@ -1046,6 +1053,8 @@ export class GTFSValidator {
       code,
       file: fileName || undefined,
       line: rowNum || undefined,
+      field: entity?.field,
+      entity: entity || undefined,
     });
   }
 
