@@ -1186,20 +1186,20 @@ recomputed there too, not just on first open.
 Decided with the user: the usage count is the **trip** count, plus a link per
 distinct route. Keep it in theme, and share code rather than inlining new markup.
 
-- [ ] Build a shape usage map alongside `getShapes()`: read `trips.txt` (use
+- [x] Build a shape usage map alongside `getShapes()`: read `trips.txt` (use
       `gtfsParser.getFileDataSync('trips.txt')`, the pattern at
       `schedule-controller.ts:746`) and produce
       `Map<shape_id, { tripCount: number, routeIds: Set<string> }>`. Include
       shapes with zero trips (they must still render a row, showing 0).
-- [ ] Add a "Trips" column and a "Routes" column to the table in `renderBody()`.
+- [x] Add a "Trips" column and a "Routes" column to the table in `renderBody()`.
       Keep the existing "Points" column.
-- [ ] Render each route in the Routes column via the shared helpers, not an
+- [x] Render each route in the Routes column via the shared helpers, not an
       inline string: `getRouteDisplay` (`src/utils/entity-display.ts:34`) with
       `renderOptionLabel`, or `renderRouteReference`
       (`src/utils/entity-references.ts:107`) if its markup fits the table cell.
       Check `renderRouteReference` first, and only fall back to the display
       helpers if the reference card is too heavy for a table row.
-- [ ] Route links must navigate through `PageStateManager`
+- [x] Route links must navigate through `PageStateManager`
       (`{type: 'route', route_id}`), following the delegated-click +
       `data-route-id` pattern used elsewhere. The Shapes modal has no
       `PageStateManager` reference today, so `ShapesManager`'s constructor
@@ -1207,10 +1207,10 @@ distinct route. Keep it in theme, and share code rather than inlining new markup
       `src/index.ts`. Decide whether clicking a route also closes the Shapes
       modal; navigating behind an open modal is the wrong behavior, so it
       probably should close.
-- [ ] Make the table body scrollable with the `<thead>` still visible: wrap the
+- [x] Make the table body scrollable with the `<thead>` still visible: wrap the
       table in a fixed-max-height `overflow-y-auto` container and use DaisyUI's
       `table-pin-rows` (or `position: sticky` on the `th`).
-- [ ] **No horizontal scrolling.** The two new columns must fit without one.
+- [x] **No horizontal scrolling.** The two new columns must fit without one.
       `showModal()` takes a `boxClassName` (`modal-utils.ts:58`); the Shapes call
       (`shapes-manager.ts:105-109`) passes none, so it gets the default narrow
       box. Widen it the way the Fares modal already does
@@ -1218,11 +1218,11 @@ distinct route. Keep it in theme, and share code rather than inlining new markup
       `overflow-x-auto` wrapper (line 63) and let the Routes column wrap instead
       of overflowing; a shape used by many routes is the case that will push the
       table wide, so wrap or truncate that cell rather than growing the table.
-- [ ] Keep the "Upload GPX" button always visible: move it out of the scrolling
+- [x] Keep the "Upload GPX" button always visible: move it out of the scrolling
       region into a pinned footer below the scroll container (it is currently at
       line 76, inside the scrolling flow). The empty-feed branch (lines 38-43)
       already renders it standalone and needs no change.
-- [ ] Confirm `refreshPanel()` (lines 116-119) recomputes the trips/routes data,
+- [x] Confirm `refreshPanel()` (lines 116-119) recomputes the trips/routes data,
       not just the point counts, so the columns are correct after a
       new/replace/delete without reopening the modal.
 - [ ] Watch for cost: `getAllRows('shapes')` already walks every shape point, and
@@ -1233,7 +1233,42 @@ distinct route. Keep it in theme, and share code rather than inlining new markup
       stays put while scrolling and the upload button stays reachable; confirm
       trip counts and route links are right, including a shape used by more than
       one route and a shape used by none.
-- [ ] Commit: `feat(shapes): show routes and trip counts in the shapes list`
+- [x] Commit: `feat(shapes): show routes and trip counts in the shapes list`
+
+
+**Done** (commit `78024de`). Notes:
+
+- `getShapes()` moved off `open()` and onto the class as a private method
+  returning `Map<shape_id, { pointCount, tripCount, routes }>`. It stores the
+  resolved route *records*, not ids, so `renderBody()` needs no second lookup.
+  A trip pointing at a `shape_id` no `shapes.txt` row defines is skipped rather
+  than synthesizing a row: `trips.shape_id` is a spec-declared foreign key, so
+  the Phase 6 sweep already reports it as a dangling reference.
+- Routes render as a new local `renderRouteChip()`: a colored dot plus
+  `renderOptionLabel(getRouteDisplay(route))`. `renderRouteReference` was
+  checked first and rejected, it is a full `p-3` card row with its own hover
+  and View button, far too heavy to stack several to a table cell. The chip
+  reuses `routeColor()` for the dot so an uncolored route matches the hue it
+  has everywhere else.
+- **No `PageStateManager` injection after all.** `navigation-actions.ts`
+  already exposes `navigateToRoute()` over the module-level page state manager
+  singleton, which `ui.ts`, `browse-navigation.ts` and
+  `page-content-renderer.ts` all use. Importing that keeps `ShapesManager`'s
+  constructor unchanged. The chip is a `data-action="route"` button, so it
+  rides the existing delegated `[data-action]` handler instead of adding a
+  second listener.
+- Clicking a route closes the modal first, then navigates.
+- The local `esc()`/`escAttr()` pair is gone, replaced by `escapeHtml` from
+  `src/utils/escape-html.ts`. It escapes quotes, so the attribute-safe variant
+  was redundant, and it avoids allocating a detached div per call.
+- Scroll chrome: `max-h-[55vh] overflow-y-auto` around the table plus DaisyUI
+  `table-pin-rows` for the sticky `<thead>`; the Upload GPX button already sat
+  after the table, so moving it out of the scroll region was just a matter of
+  the container ending before it. `overflow-x-auto` dropped and the box widened
+  to `max-w-6xl w-11/12` like the Fares modal.
+- The cost item is left unchecked deliberately: `refreshPanel()` recomputes
+  everything (which is what keeps the columns correct), and whether the extra
+  `routes`/`trips` scan is noticeable needs a large feed to judge.
 
 ### Phase 20: Restore field tooltips in the Fares modal
 
