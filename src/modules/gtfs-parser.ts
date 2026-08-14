@@ -451,6 +451,12 @@ export class GTFSParser {
    * rows (not just rows[0]) so columns added later (e.g. when the UI
    * inserts a new stop with `location_type` set, but the original imported
    * CSV didn't have that column) survive the round-trip.
+   *
+   * `newline: '\n'` is not cosmetic. Papa.unparse defaults to `\r\n` between
+   * rows, and the `+ '\n'` terminator here is a bare LF. Papa.parse then
+   * autodetects `\r\n` from the body, so that final LF is not a row terminator
+   * and gets absorbed into the last field of the last row: every export/import
+   * round-trip appended a newline to one value per file.
    */
   private generateCSVFromRows(
     fileName: string,
@@ -466,10 +472,13 @@ export class GTFSParser {
       }
     }
     return (
-      Papa.unparse({
-        fields: Array.from(fields),
-        data: rows,
-      }) + '\n'
+      Papa.unparse(
+        {
+          fields: Array.from(fields),
+          data: rows,
+        },
+        { newline: '\n' }
+      ) + '\n'
     );
   }
 
@@ -1568,10 +1577,13 @@ export class GTFSParser {
     });
 
     const fieldNames = Array.from(allFields);
-    pathwaysData.content = Papa.unparse({
-      fields: fieldNames,
-      data: pathwaysData.data,
-    });
+    pathwaysData.content = Papa.unparse(
+      {
+        fields: fieldNames,
+        data: pathwaysData.data,
+      },
+      { newline: '\n' }
+    );
   }
 
   /**
@@ -1593,10 +1605,13 @@ export class GTFSParser {
 
     // Convert to CSV
     const fieldNames = Array.from(allFields);
-    const csvContent = Papa.unparse({
-      fields: fieldNames,
-      data: stopsData.data,
-    });
+    const csvContent = Papa.unparse(
+      {
+        fields: fieldNames,
+        data: stopsData.data,
+      },
+      { newline: '\n' }
+    );
 
     // Update in-memory content
     stopsData.content = csvContent;
