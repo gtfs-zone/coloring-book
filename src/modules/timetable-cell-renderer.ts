@@ -19,6 +19,7 @@ export class TimetableCellRenderer {
    *
    * @param trip_id - GTFS trip identifier
    * @param stop_id - GTFS stop identifier
+   * @param stopIndex - Position in the supersequence, the row's real key
    * @param arrival_time - Arrival time string or null
    * @param departure_time - Departure time string or null
    * @param editableStopTime - Optional editable stop time data (supplies stop_sequence)
@@ -28,6 +29,7 @@ export class TimetableCellRenderer {
   public renderStackedArrivalDepartureCell(
     trip_id: string,
     stop_id: string,
+    stopIndex: number,
     arrival_time: string | null,
     departure_time: string | null,
     editableStopTime?: EditableStopTime,
@@ -54,6 +56,7 @@ export class TimetableCellRenderer {
           class="time-span block font-mono text-xs cursor-pointer rounded px-1 hover:bg-base-200"
           data-trip-id="${trip_id}"
           data-stop-id="${stop_id}"
+          data-stop-index="${stopIndex}"
           data-time-type="${timeType}"
           data-stop-sequence="${stopSequence}"
           data-pending="${isPendingRow}"

@@ -88,6 +88,8 @@ export class BrowseNavigation {
     timetableScrollLeft: number;
     timetableScrollTop: number;
     resetTimetableScroll: () => void;
+    captureTimetableEditor: () => void;
+    restoreTimetableEditor: () => void;
   } | null = null; // Will be set after initialization
   public serviceDaysController: {
     renderServiceEditor: (service_id: string) => Promise<string>;
@@ -226,6 +228,8 @@ export class BrowseNavigation {
       timetableScrollLeft: number;
       timetableScrollTop: number;
       resetTimetableScroll: () => void;
+      captureTimetableEditor: () => void;
+      restoreTimetableEditor: () => void;
     },
     serviceDaysController?: {
       renderServiceEditor: (service_id: string) => Promise<string>;
@@ -390,6 +394,17 @@ export class BrowseNavigation {
       const savedTimetableScrollTop =
         this.scheduleController?.timetableScrollTop ?? 0;
 
+      // Capture focus before rebuild. An edit committed on blur re-renders the
+      // page while the user is already clicking the next field, so without this
+      // the rebuild drops focus on whatever they just moved to. Only elements
+      // carrying an id can be found again afterwards.
+      const savedFocus = this.captureFocus();
+
+      // Timetable time cells carry no id, so captureFocus cannot see them. The
+      // controller tracks its own open editor, including what has been typed
+      // into it but not yet committed.
+      this.scheduleController?.captureTimetableEditor();
+
       // Get current page state from PageStateManager
       const pageState = getCurrentPageState();
 
@@ -442,10 +457,60 @@ export class BrowseNavigation {
             }
           }
         }
+        this.restoreFocus(savedFocus);
+        this.scheduleController?.restoreTimetableEditor();
       }
     } catch (error) {
       console.error('Error rendering browse navigation:', error);
       this.renderErrorState();
+    }
+  }
+
+  /**
+   * The focused element inside the panel, as something the rebuilt DOM can be
+   * searched for. Returns null when nothing in the panel has focus, or when the
+   * focused element has no id to find it by.
+   */
+  private captureFocus(): { id: string; selectionStart: number | null } | null {
+    const active = document.activeElement;
+    if (
+      !(active instanceof HTMLElement) ||
+      !active.id ||
+      !this.container?.contains(active)
+    ) {
+      return null;
+    }
+    // Only text-like inputs expose a caret; date and number inputs throw.
+    let selectionStart: number | null = null;
+    if (active instanceof HTMLInputElement) {
+      try {
+        selectionStart = active.selectionStart;
+      } catch {
+        selectionStart = null;
+      }
+    }
+    return { id: active.id, selectionStart };
+  }
+
+  private restoreFocus(
+    saved: { id: string; selectionStart: number | null } | null
+  ): void {
+    if (!saved) {
+      return;
+    }
+    const el = this.container?.querySelector<HTMLElement>(
+      `#${CSS.escape(saved.id)}`
+    );
+    if (!el) {
+      return;
+    }
+    el.focus();
+    if (saved.selectionStart !== null && el instanceof HTMLInputElement) {
+      try {
+        el.setSelectionRange(saved.selectionStart, saved.selectionStart);
+      } catch {
+        // Input type does not support a selection range; focus alone is enough.
+      }
     }
   }
 

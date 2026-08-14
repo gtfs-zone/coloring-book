@@ -18,7 +18,12 @@ import { TimetableDatabase, StopTimeEditPlan } from './timetable-database.js';
 import { generateCompositeKeyFromRecord } from '../utils/gtfs-primary-keys.js';
 import { patchUpdate } from '../utils/patch-utils.js';
 import { getStopDisplay } from '../utils/entity-display.js';
-import { openInlineEditor, openInlineMenu } from '../utils/inline-edit.js';
+import {
+  openInlineEditor,
+  openInlineMenu,
+  getLiveEditorState,
+} from '../utils/inline-edit.js';
+import type { GridDirection } from '../utils/grid-navigation.js';
 import { showModal } from './modal-utils.js';
 import {
   showOptionPickerModal,
@@ -164,6 +169,17 @@ export class ScheduleController {
   // because the browser resets both values during async DB awaits.
   public timetableScrollLeft = 0;
   public timetableScrollTop = 0;
+
+  // The time cell the user is editing, so a full re-render can put them back.
+  // Every committed edit records a patch, which rebuilds the whole browse panel
+  // and destroys the input they have already moved on to.
+  private editingCell: {
+    tripId: string;
+    stopIndex: string;
+    timeType: string;
+    value?: string;
+    caret?: number | null;
+  } | null = null;
 
   // Map wiring for the stop column, injected by index.ts
   private stopFocus: ((stop_id: string) => void) | null = null;
@@ -318,8 +334,12 @@ export class ScheduleController {
    * validation failure the restored span still shows the pre-edit value,
    * which is correct since nothing was written.
    */
-  private openTimeEditor(span: HTMLElement): void {
-    const { tripId, stopId, timeType, stopSequence, pending } = span.dataset;
+  private openTimeEditor(
+    span: HTMLElement,
+    seed?: { value: string; caret: number | null }
+  ): void {
+    const { tripId, stopId, stopIndex, timeType, stopSequence, pending } =
+      span.dataset;
     if (
       !tripId ||
       !stopId ||
@@ -328,13 +348,23 @@ export class ScheduleController {
       return;
     }
 
-    const originalText = span.textContent ?? '';
+    const originalText = span.textContent?.trim() ?? '';
+    const displayValue = originalText === '--:--:--' ? '' : originalText;
+
+    this.editingCell = {
+      tripId,
+      stopIndex: stopIndex ?? '',
+      timeType,
+    };
 
     openInlineEditor(span, {
-      value: originalText === '--:--:--' ? '' : originalText,
+      value: displayValue,
+      initialValue: seed?.value,
+      selectionStart: seed?.caret,
       className: 'time-input-live w-20 text-center font-mono',
       placeholder: '--:--:--',
       title: 'Enter a time, e.g. 9:30 or 09:30:00',
+      arrowNavigation: true,
       onCommit: (value) => {
         void this.updateArrivalDepartureTime(
           tripId,
@@ -345,6 +375,128 @@ export class ScheduleController {
           pending === 'true'
         );
       },
+      onNavigate: (direction) => this.moveTimeCell(span, direction),
+    });
+  }
+
+  /**
+   * Every time cell in the rendered timetable, in row-major order.
+   *
+   * Rows are the `<tr>`s that actually contain time cells, which excludes both
+   * the trip-property rows and the "Add stop" row - they share one `<tbody>`
+   * with the stop rows, so they cannot be addressed by index.
+   */
+  private timeCellRows(): HTMLElement[][] {
+    const view = document.getElementById('schedule-view');
+    if (!view) {
+      return [];
+    }
+    return Array.from(view.querySelectorAll('tr'))
+      .map((row) => Array.from(row.querySelectorAll<HTMLElement>('.time-span')))
+      .filter((cells) => cells.length > 0);
+  }
+
+  /**
+   * Commit-and-move: open the editor on the cell in `direction` from `from`.
+   *
+   * Down runs arrival -> departure of the same stop -> arrival of the next
+   * stop, which is the order a trip is actually entered in. Left and right move
+   * between trips at the same stop and clamp at the row's edge rather than
+   * wrapping, so a stray Tab cannot fling the user across a wide timetable.
+   *
+   * At the grid's edge this does nothing: the editor has already committed and
+   * closed, which is the right place to stop.
+   */
+  private moveTimeCell(from: HTMLElement, direction: GridDirection): void {
+    const rows = this.timeCellRows();
+    let rowIndex = -1;
+    let cellIndex = -1;
+    for (let r = 0; r < rows.length; r++) {
+      const c = rows[r].indexOf(from);
+      if (c !== -1) {
+        rowIndex = r;
+        cellIndex = c;
+        break;
+      }
+    }
+    if (rowIndex === -1) {
+      console.warn('[ScheduleController] navigated from a detached time cell');
+      return;
+    }
+
+    // Two spans per trip column: arrival at an even index, departure at odd.
+    let target: HTMLElement | undefined;
+    if (direction === 'down') {
+      target =
+        cellIndex % 2 === 0
+          ? rows[rowIndex][cellIndex + 1]
+          : rows[rowIndex + 1]?.[cellIndex - 1];
+    } else if (direction === 'up') {
+      target =
+        cellIndex % 2 === 1
+          ? rows[rowIndex][cellIndex - 1]
+          : rows[rowIndex - 1]?.[cellIndex + 1];
+    } else {
+      const step = direction === 'right' ? 2 : -2;
+      target = rows[rowIndex][cellIndex + step];
+    }
+
+    if (!target) {
+      this.editingCell = null;
+      return;
+    }
+
+    target.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    this.openTimeEditor(target);
+  }
+
+  /**
+   * Remember the open time editor and what has been typed into it, before a
+   * re-render tears it out of the DOM. Mirrors how the scroll position is
+   * tracked: read it while it still exists, not afterwards.
+   */
+  public captureTimetableEditor(): void {
+    if (!this.editingCell) {
+      return;
+    }
+    const live = getLiveEditorState();
+    if (!live) {
+      this.editingCell = null;
+      return;
+    }
+    this.editingCell.value = live.value;
+    this.editingCell.caret = live.selectionStart;
+  }
+
+  /**
+   * Re-open the editor captured by `captureTimetableEditor` on the freshly
+   * rendered timetable. Call synchronously after the new markup is in place.
+   *
+   * Silently gives up if the cell is gone: the stop or trip may have been
+   * deleted by the very edit that triggered this render.
+   */
+  public restoreTimetableEditor(): void {
+    const cell = this.editingCell;
+    if (!cell || cell.value === undefined) {
+      return;
+    }
+    this.editingCell = null;
+
+    const selector =
+      `.time-span[data-trip-id="${CSS.escape(cell.tripId)}"]` +
+      `[data-stop-index="${CSS.escape(cell.stopIndex)}"]` +
+      `[data-time-type="${CSS.escape(cell.timeType)}"]`;
+    const span = document
+      .getElementById('schedule-view')
+      ?.querySelector<HTMLElement>(selector);
+    if (!span) {
+      console.log('[ScheduleController] edited cell is gone, dropping focus');
+      return;
+    }
+
+    this.openTimeEditor(span, {
+      value: cell.value,
+      caret: cell.caret ?? null,
     });
   }
 
@@ -977,6 +1129,7 @@ export class ScheduleController {
     // because the browser resets scrollLeft during every async DB await.
     const savedScrollLeft = this.timetableScrollLeft;
     const savedScrollTop = this.timetableScrollTop;
+    this.captureTimetableEditor();
 
     const html = await this.renderSchedule(
       this.currentRouteId,
@@ -1004,6 +1157,8 @@ export class ScheduleController {
         newScrollDiv.scrollTop = savedScrollTop;
       }
     }
+
+    this.restoreTimetableEditor();
   }
 
   // Track pending stop that hasn't been saved to database yet

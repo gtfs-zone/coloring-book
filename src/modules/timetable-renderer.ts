@@ -603,6 +603,7 @@ export class TimetableRenderer {
             return this.cellRenderer.renderStackedArrivalDepartureCell(
               trip.trip_id,
               stop_id,
+              stopIndex,
               arrival_time || null,
               departure_time || null,
               editableStopTime,

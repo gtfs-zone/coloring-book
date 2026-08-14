@@ -4,7 +4,9 @@
  * The timetable established the editing contract this app uses everywhere: a
  * display span carrying `data-*` attributes is swapped for a live input on
  * click, blur commits, Enter blurs, Escape cancels, and at most one editor is
- * live at a time. These helpers are that contract, extracted so the timetable
+ * live at a time. Editors in a grid additionally opt into `onNavigate`, which
+ * commits and hands the caller the direction the user asked to move in.
+ * These helpers are that contract, extracted so the timetable
  * and the spec-driven tables share one implementation instead of two copies
  * that drift.
  *
@@ -13,9 +15,21 @@
  */
 
 import { escapeHtml } from './escape-html.js';
+import {
+  keyToGridDirection,
+  isVerticalArrow,
+  type GridDirection,
+} from './grid-navigation.js';
 
 /** Marks the single live editor. Any second editor is refused while it exists. */
 export const LIVE_EDITOR_CLASS = 'editor-input-live';
+
+/**
+ * The live editor's input, for callers that need to read what the user has
+ * typed so far. Held here rather than found by query because a redraw can
+ * detach it from the document before anyone gets to look.
+ */
+let liveInput: HTMLInputElement | null = null;
 
 /** Makes each editor's `<datalist>` id unique for as long as it is in the DOM. */
 let suggestionListSeq = 0;
@@ -36,8 +50,18 @@ export type InlineEditorInputType =
   | 'time';
 
 export interface InlineEditorOptions {
-  /** Value the input opens with. */
+  /**
+   * The stored value. Doubles as the baseline a commit is compared against, so
+   * an untouched editor commits nothing.
+   */
   value: string;
+  /**
+   * Text to put in the box, when it differs from the stored value - an edit
+   * that was in progress when a re-render tore the input out. The commit is
+   * still measured against `value`, so restoring mid-edit text does not make
+   * the editor think nothing changed.
+   */
+  initialValue?: string;
   /** Native input type. Defaults to a text input. */
   inputType?: InlineEditorInputType;
   /** DaisyUI size class for the input. Defaults to the compact `input-xs`. */
@@ -58,6 +82,41 @@ export interface InlineEditorOptions {
    * Never called on Escape.
    */
   onCommit: (value: string) => void;
+  /**
+   * Called after the editor has committed and closed, when the user asked to
+   * move to another cell. Runs after `onCommit`, and unlike it, runs whether or
+   * not the value changed - navigation must not stop on an untouched cell.
+   */
+  onNavigate?: (direction: GridDirection) => void;
+  /**
+   * Let ArrowUp and ArrowDown move between cells. Off by default: only editors
+   * that sit in a grid should steal the vertical arrows.
+   */
+  arrowNavigation?: boolean;
+  /** Caret position to open with. Defaults to selecting the whole value. */
+  selectionStart?: number | null;
+}
+
+/**
+ * What the user has typed into the live editor so far, or null if none is open.
+ *
+ * Used to carry an in-progress edit across a full re-render, which would
+ * otherwise wipe the input mid-keystroke.
+ */
+export function getLiveEditorState(): {
+  value: string;
+  selectionStart: number | null;
+} | null {
+  if (!liveInput) {
+    return null;
+  }
+  let selectionStart: number | null = null;
+  try {
+    selectionStart = liveInput.selectionStart;
+  } catch {
+    // Input type does not expose a caret.
+  }
+  return { value: liveInput.value, selectionStart };
 }
 
 /**
@@ -78,7 +137,7 @@ export function openInlineEditor(
   input.type = options.inputType ?? 'text';
   input.className =
     `${LIVE_EDITOR_CLASS} input ${options.sizeClass ?? 'input-xs'} ${options.className ?? 'w-full'}`.trim();
-  input.value = options.value;
+  input.value = options.initialValue ?? options.value;
   if (options.placeholder !== undefined) {
     input.placeholder = options.placeholder;
   }
@@ -101,13 +160,25 @@ export function openInlineEditor(
   }
 
   span.replaceWith(input);
+  liveInput = input;
   input.focus();
-  input.select();
+  if (options.selectionStart !== undefined && options.selectionStart !== null) {
+    try {
+      input.setSelectionRange(options.selectionStart, options.selectionStart);
+    } catch {
+      input.select();
+    }
+  } else {
+    input.select();
+  }
 
   let settled = false;
   const restore = (): void => {
     input.replaceWith(span);
     datalist?.remove();
+    if (liveInput === input) {
+      liveInput = null;
+    }
   };
   const commit = (): void => {
     if (settled) {
@@ -130,12 +201,31 @@ export function openInlineEditor(
 
   input.addEventListener('blur', commit);
   input.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      cancel();
+      return;
+    }
+
+    // Grid movement, for editors that opted in. Commit first: that restores the
+    // span and clears the single-live-editor guard, so the destination cell can
+    // open. Chaining this off onCommit instead would stall on an unchanged cell,
+    // since onCommit only fires when the value actually changed.
+    const direction = keyToGridDirection(e);
+    if (
+      direction &&
+      options.onNavigate &&
+      (options.arrowNavigation || !isVerticalArrow(e))
+    ) {
+      e.preventDefault();
+      commit();
+      options.onNavigate(direction);
+      return;
+    }
+
     if (e.key === 'Enter') {
       e.preventDefault();
       input.blur();
-    } else if (e.key === 'Escape') {
-      e.preventDefault();
-      cancel();
     }
   });
 }
