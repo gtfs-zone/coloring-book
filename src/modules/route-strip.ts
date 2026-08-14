@@ -221,8 +221,16 @@ export function rowPaths(
 export const ENDPOINT_SHARE = 0.05;
 
 /**
+ * Below this share of trips, a stop is drawn as a deviation from the trunk
+ * and labelled with how many trips actually call there. The label is a raw
+ * count, not a percentage: "87 of 300 trips" is a fact about the timetable,
+ * while "29%" is a number the reader has to unpack before it says anything.
+ */
+export const MINORITY_SHARE = 0.5;
+
+/**
  * The endpoint threshold for a direction, from its total trip count. Compute
- * once per render and pass to `isEndpoint` for every row.
+ * once per render and pass to `isEndpoint`/`endpointNote` for every row.
  */
 export function endpointThreshold(totalTrips: number): number {
   return Math.max(1, totalTrips * ENDPOINT_SHARE);
@@ -231,4 +239,31 @@ export function endpointThreshold(totalTrips: number): number {
 /** Whether enough trips start or end at this stop to call it a terminus. */
 export function isEndpoint(stats: StopStats, threshold: number): boolean {
   return stats.startsHere >= threshold || stats.endsHere >= threshold;
+}
+
+/**
+ * Where trips begin and end, when enough of them do it here to be a fact
+ * about the route rather than about one trip. Empty when neither count meets
+ * the threshold.
+ *
+ * Unused in coloring-book's timetable stop column, which has no room for the
+ * note; test-track's route page renders it, and Phase 10's route-page diagram
+ * will too. It lives here because this module is the canonical source both
+ * repos vendor from.
+ */
+export function endpointNote(stats: StopStats, threshold: number): string {
+  const parts: string[] = [];
+  if (stats.endsHere >= threshold) {
+    parts.push(`${stats.endsHere} end`);
+  }
+  if (stats.startsHere >= threshold) {
+    parts.push(`${stats.startsHere} start`);
+  }
+  return parts.join(' - ');
+}
+
+/** Whether this stop is served by few enough trips to read as a deviation. */
+export function isMinority(stats: StopStats, totalTrips: number): boolean {
+  const share = totalTrips > 0 ? stats.serves / totalTrips : 1;
+  return share < MINORITY_SHARE;
 }
