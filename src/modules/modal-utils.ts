@@ -18,6 +18,28 @@ export function renderRouteWaypointsIcon(sizeClass = 'h-4 w-4'): string {
   return `<svg xmlns="http://www.w3.org/2000/svg" class="${sizeClass}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 4a2 2 0 100 4 2 2 0 000-4zM18 16a2 2 0 100 4 2 2 0 000-4z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 8v3a3 3 0 003 3h6a3 3 0 013 3v-1" /></svg>`;
 }
 
+export function renderCloseIcon(sizeClass = 'h-4 w-4'): string {
+  return `<svg xmlns="http://www.w3.org/2000/svg" class="${sizeClass}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 6l12 12M18 6L6 18" /></svg>`;
+}
+
+/**
+ * Chevron pointing down. Rotate it for the other directions rather than
+ * shipping a second icon: `renderChevronIcon('h-3 w-3 rotate-180')`, or toggle
+ * `rotate-180` on the element for an expand/collapse state.
+ */
+export function renderChevronIcon(sizeClass = 'h-4 w-4'): string {
+  return `<svg xmlns="http://www.w3.org/2000/svg" class="${sizeClass}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>`;
+}
+
+/**
+ * Filled triangle pointing right, centred in its viewBox so rotating it stays
+ * put: `rotate-180` for left, `-rotate-90` for up, `rotate-90` for down. Used
+ * for the feed start/end markers and the added/removed service date markers.
+ */
+export function renderTriangleIcon(sizeClass = 'h-4 w-4'): string {
+  return `<svg xmlns="http://www.w3.org/2000/svg" class="${sizeClass}" fill="currentColor" viewBox="0 0 24 24"><path d="M8 6l8 6-8 6z" /></svg>`;
+}
+
 export interface ModalAction {
   label: string;
   className?: string;
@@ -60,7 +82,7 @@ export async function showModal(options: {
     modal.className = 'modal modal-open';
     modal.innerHTML = `
       <div class="modal-box relative max-h-[80vh] flex flex-col ${options.boxClassName ?? ''}">
-        ${options.escapeAction !== undefined ? '<button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2" data-dismiss>×</button>' : ''}
+        ${options.escapeAction !== undefined ? `<button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2" data-dismiss>${renderCloseIcon()}</button>` : ''}
         <h3 class="font-bold text-lg">${options.title}</h3>
         <div class="flex-1 overflow-y-auto py-4">${options.body}</div>
         <div class="modal-action">

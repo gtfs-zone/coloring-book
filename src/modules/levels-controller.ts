@@ -1,4 +1,4 @@
-import { showModal } from './modal-utils.js';
+import { showModal, renderCloseIcon } from './modal-utils.js';
 import type { GTFSDatabase } from './gtfs-database.js';
 import type { PatchManager } from './patch-manager.js';
 
@@ -54,7 +54,7 @@ export class LevelsController {
             <td>${escapeHtml(l.level_index ?? '')}</td>
             <td>${escapeHtml(l.level_name ?? '')}</td>
             <td>
-              <button class="btn btn-xs btn-ghost text-error levels-delete-btn" data-level-id="${escapeAttr(l.level_id)}">×</button>
+              <button class="btn btn-xs btn-ghost text-error levels-delete-btn" data-level-id="${escapeAttr(l.level_id)}">${renderCloseIcon('h-3 w-3')}</button>
             </td>
           </tr>`
         )

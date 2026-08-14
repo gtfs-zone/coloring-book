@@ -14,7 +14,7 @@ import {
   parseGtfsDate,
   toGtfsDate as formatGTFS,
 } from '../utils/gtfs-date.js';
-import { renderPencilIcon } from './modal-utils.js';
+import { renderPencilIcon, renderTriangleIcon } from './modal-utils.js';
 
 export interface ServiceData {
   calendar: Record<string, unknown> | null;
@@ -227,10 +227,9 @@ function renderWeekdayDots(calendar: Record<string, unknown> | null): string {
 function renderTooltipTrigger(
   text: string,
   content: string,
-  style = ''
+  className = ''
 ): string {
-  const styleAttr = style ? ` style="${style}"` : '';
-  return `<span class="field-tooltip-trigger" tabindex="0" data-tooltip-content="${escapeHtml(text)}"${styleAttr}>${content}</span>`;
+  return `<span class="field-tooltip-trigger ${className}" tabindex="0" data-tooltip-content="${escapeHtml(text)}">${content}</span>`;
 }
 
 function getDaysTooltip(calendar: Record<string, unknown> | null): string {
@@ -366,16 +365,16 @@ export function renderServiceTimeline(
               ticks.push(
                 renderTooltipTrigger(
                   `Added ${formatGtfsDateWithWeekday(dateStr)}`,
-                  `▲`,
-                  'color:#4ade80'
+                  renderTriangleIcon('h-2.5 w-2.5 -rotate-90'),
+                  'inline-flex text-success'
                 )
               );
             } else if (excType === 2) {
               ticks.push(
                 renderTooltipTrigger(
                   `Removed ${formatGtfsDateWithWeekday(dateStr)}`,
-                  `▼`,
-                  'color:#f87171'
+                  renderTriangleIcon('h-2.5 w-2.5 rotate-90'),
+                  'inline-flex text-error'
                 )
               );
             }

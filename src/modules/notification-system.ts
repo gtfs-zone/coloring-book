@@ -1,3 +1,5 @@
+import { renderCloseIcon } from './modal-utils.js';
+
 interface NotificationAction {
   id: string;
   label: string;
@@ -171,7 +173,7 @@ export class NotificationSystem {
         <span class="text-sm [overflow-wrap:anywhere]">${this.formatMessage(message)}</span>
         ${actionsHtml}
       </div>
-      <button class="notification-close btn btn-ghost btn-xs btn-circle shrink-0">×</button>
+      <button class="notification-close btn btn-ghost btn-xs btn-circle shrink-0">${renderCloseIcon('h-3 w-3')}</button>
     `;
 
     notification.element = element;

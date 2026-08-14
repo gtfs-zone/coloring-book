@@ -1,4 +1,4 @@
-import { showModal } from './modal-utils.js';
+import { showModal, renderTriangleIcon } from './modal-utils.js';
 import { escapeHtml } from '../utils/escape-html.js';
 import { toGtfsDate as formatGTFS } from '../utils/gtfs-date.js';
 import {
@@ -88,8 +88,8 @@ function renderMonthGrid(
         if (excForDay) {
           suffix =
             Number(excForDay.exception_type) === 1
-              ? `<span style="color:#4ade80">+</span>`
-              : `<span style="color:#f87171">−</span>`;
+              ? renderTriangleIcon('h-3 w-3 shrink-0 -rotate-90 text-success')
+              : renderTriangleIcon('h-3 w-3 shrink-0 rotate-90 text-error');
         }
         return `<span
           class="cal-chip field-tooltip-trigger cursor-pointer inline-flex items-center gap-0.5 px-1 rounded text-xs text-white font-medium truncate max-w-full"
@@ -102,11 +102,11 @@ function renderMonthGrid(
 
     const feedStartBadge =
       gtfsDate === feedStartDate
-        ? `<span class="badge badge-xs badge-success ml-1 field-tooltip-trigger" tabindex="0" data-tooltip-content="Feed start date">&#9654;</span>`
+        ? `<span class="badge badge-xs badge-success ml-1 field-tooltip-trigger" tabindex="0" data-tooltip-content="Feed start date">${renderTriangleIcon('h-2 w-2')}</span>`
         : '';
     const feedEndBadge =
       gtfsDate === feedEndDate
-        ? `<span class="badge badge-xs badge-error ml-1 field-tooltip-trigger" tabindex="0" data-tooltip-content="Feed end date">&#9664;</span>`
+        ? `<span class="badge badge-xs badge-error ml-1 field-tooltip-trigger" tabindex="0" data-tooltip-content="Feed end date">${renderTriangleIcon('h-2 w-2 rotate-180')}</span>`
         : '';
 
     cells.push(`
