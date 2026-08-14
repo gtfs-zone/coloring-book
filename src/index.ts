@@ -36,6 +36,7 @@ import {
   type CalendarModalDeps,
 } from './modules/calendar-modal';
 import { ShapesManager } from './modules/shapes-manager';
+import { renderRouteWaypointsIcon } from './modules/modal-utils';
 import { PanelResizer } from './modules/panel-resizer';
 import { LevelsController } from './modules/levels-controller';
 import { feedProgressIndicator } from './modules/feed-progress-indicator';
@@ -277,7 +278,12 @@ export class GTFSEditor {
         this.gtfsParser,
         this.patchManager
       );
-      document.getElementById('shapes-btn')?.addEventListener('click', () => {
+      const shapesBtn = document.getElementById('shapes-btn');
+      if (shapesBtn) {
+        // Same icon as the "open in brouter" affordance, at navbar icon size.
+        shapesBtn.innerHTML = renderRouteWaypointsIcon('h-5 w-5');
+      }
+      shapesBtn?.addEventListener('click', () => {
         void shapesManager.open();
       });
 
