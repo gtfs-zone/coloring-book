@@ -135,17 +135,6 @@ function mountPicker(
     emptyEl.classList.toggle('opacity-60', !active);
   };
 
-  // Selected options lead the list, so a long option set opens on what is
-  // already chosen. Fixed at open time: re-sorting as the user types would move
-  // rows out from under the pointer.
-  const ordered =
-    mode.selected.size > 0
-      ? [
-          ...options.filter((o) => mode.selected.has(o.value)),
-          ...options.filter((o) => !mode.selected.has(o.value)),
-        ]
-      : options;
-
   let shown: OptionPickerItem[] = [];
   let activeIndex = 0;
 
@@ -162,14 +151,22 @@ function mountPicker(
     const q = query.trim();
     let filtered: OptionPickerItem[];
     if (!q) {
-      filtered = ordered;
+      filtered = options;
     } else {
-      const haystack = ordered.map((o) => `${o.primary} ${o.secondary ?? ''}`);
+      const haystack = options.map((o) => `${o.primary} ${o.secondary ?? ''}`);
       const [idxs] = uf.search(haystack, q);
-      filtered = idxs && idxs.length > 0 ? idxs.map((i) => ordered[i]) : [];
+      filtered = idxs && idxs.length > 0 ? idxs.map((i) => options[i]) : [];
     }
 
-    shown = filtered.slice(0, MAX_SHOWN);
+    // Selected options lead the list and are never capped: an area with 200
+    // stops out of 8000 has to be able to see and uncheck all 200. Only the
+    // unselected remainder is capped, so the cap is what the note counts.
+    // Partitioning happens per render, not per toggle, so rows only move when
+    // the query changes, never out from under the pointer.
+    const picked = filtered.filter((o) => mode.selected.has(o.value));
+    const rest = filtered.filter((o) => !mode.selected.has(o.value));
+    const hidden = Math.max(rest.length - MAX_SHOWN, 0);
+    shown = [...picked, ...rest.slice(0, MAX_SHOWN)];
 
     if (shown.length === 0) {
       resultsEl.innerHTML = `<div class="text-base-content/60 text-sm p-4 text-center">No options found</div>`;
@@ -203,10 +200,12 @@ function mountPicker(
       resultsEl.appendChild(row);
     });
 
-    if (filtered.length > MAX_SHOWN) {
+    if (hidden > 0) {
       const note = document.createElement('div');
       note.className = 'text-xs text-base-content/50 text-center p-2';
-      note.textContent = `Showing ${MAX_SHOWN} of ${filtered.length} results. Refine your search`;
+      const selectedNote =
+        picked.length > 0 ? `All ${picked.length} selected shown, plus ` : '';
+      note.textContent = `${selectedNote}${shown.length - picked.length} of ${rest.length} more. Refine your search`;
       resultsEl.appendChild(note);
     }
 
