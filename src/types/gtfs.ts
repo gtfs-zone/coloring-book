@@ -13,6 +13,7 @@ import {
   deriveGTFSSchemas,
   deriveGTFSFileInfos,
   deriveGTFSFieldSpecs,
+  deriveGTFSForeignKeys,
 } from '../gtfs-spec/adapter.js';
 import { GTFS_FIELD_TYPE_METADATA } from './gtfs-field-types.js';
 
@@ -37,6 +38,7 @@ export interface GTFSFileInfo {
 export const GTFS_PRIMARY_KEYS = deriveGTFSPrimaryKeys(gtfsSpec);
 export const GTFS_FIELD_TYPES = deriveGTFSFieldTypes(gtfsSpec);
 export const GTFS_FIELD_SPECS = deriveGTFSFieldSpecs(gtfsSpec);
+export const GTFS_FOREIGN_KEYS = deriveGTFSForeignKeys(gtfsSpec);
 export const GTFSSchemas = deriveGTFSSchemas(
   gtfsSpec,
   GTFS_FIELD_TYPE_METADATA
