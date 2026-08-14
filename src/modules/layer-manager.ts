@@ -20,6 +20,18 @@ import {
   type PathwayCategory,
 } from '../utils/pathway-modes.js';
 import { ensureMapIcons } from './map-icons.js';
+import {
+  STOP_FOCUS_HALO_LAYER,
+  STOP_FOCUS_RING_LAYER,
+  STOP_FOCUS_TOP_LAYER,
+  focusHaloPaint,
+  focusRingPaint,
+  focusTopPaint,
+  stationDotPaint,
+  stopFillColor,
+  stopsBackgroundPaint,
+  type StopStyleOptions,
+} from './stop-layer-style.js';
 
 export interface StopLayerOptions {
   showBackground: boolean;
@@ -172,19 +184,16 @@ export class LayerManager {
       color: accent,
     };
 
-    for (const layerId of ['stops-focus-halo', 'stops-focus-ring']) {
+    for (const layerId of [STOP_FOCUS_HALO_LAYER, STOP_FOCUS_RING_LAYER]) {
       if (this.map.getLayer(layerId)) {
         this.map.setPaintProperty(layerId, 'circle-color', accent);
         this.map.setPaintProperty(layerId, 'circle-stroke-color', accent);
       }
     }
-    for (const layerId of ['stops-background', 'stops-focus-top']) {
+    const fill = stopFillColor(accent, this.defaultStopOptions.backgroundColor);
+    for (const layerId of ['stops-background', STOP_FOCUS_TOP_LAYER]) {
       if (this.map.getLayer(layerId)) {
-        this.map.setPaintProperty(
-          layerId,
-          'circle-color',
-          this.stopFillColor(this.defaultStopOptions)
-        );
+        this.map.setPaintProperty(layerId, 'circle-color', fill);
       }
     }
     console.log(`[LayerManager] Accent color refreshed to ${accent}`);
@@ -478,151 +487,43 @@ export class LayerManager {
   }
 
   /**
-   * Per-location-type circle radius, evaluated at one zoom stop. `scale` is
-   * the multiplier relative to the reference zoom (z16). Stations are the
-   * largest so they read as hubs; child node types sit in between.
-   *
-   * Radius encodes location_type and nothing else: focus deliberately does not
-   * change size, or a focused plain stop would outgrow an unfocused station
-   * and the size hierarchy would lie. Selection is carried by the halo.
+   * The subset of StopLayerOptions the shared paint builders need, plus the
+   * theme accent they cannot resolve themselves.
    */
-  private stopRadiusAt(
-    plainRadius: number,
-    scale: number
-  ): ExpressionSpecification {
-    return [
-      'case',
-      ['==', ['get', 'location_type'], 1],
-      8 * scale,
-      ['==', ['get', 'location_type'], 2],
-      4.5 * scale,
-      ['==', ['get', 'location_type'], 3],
-      4.5 * scale,
-      ['==', ['get', 'location_type'], 4],
-      5 * scale,
-      plainRadius * scale,
-    ] as unknown as ExpressionSpecification;
-  }
-
-  /**
-   * Fill for the stop circles. Focused stops invert to the accent so selection
-   * survives at any zoom without a size change. Swapping the focused branch
-   * out is how you go back to keeping the location_type color while selected.
-   */
-  private stopFillColor(options: StopLayerOptions): ExpressionSpecification {
-    return [
-      'case',
-      ['boolean', ['feature-state', 'focused'], false],
-      this.accent(),
-      ['==', ['get', 'location_type'], 1],
-      '#ffffff', // Station: white (black inner dot drawn by stops-station-dot layer)
-      ['==', ['get', 'location_type'], 2],
-      '#f59e0b', // Entrance: amber
-      ['==', ['get', 'location_type'], 3],
-      '#8b5cf6', // Generic node: purple
-      ['==', ['get', 'location_type'], 4],
-      '#10b981', // Boarding area: green
-      options.backgroundColor,
-    ] as unknown as ExpressionSpecification;
-  }
-
-  /**
-   * The two feature states the halo draws for: a clicked stop, and a stop
-   * being hovered from somewhere else in the app (the timetable stop column).
-   * Hover is the same halo at a lower opacity, so the two never look alike but
-   * also never need a second pair of layers.
-   */
-  private static readonly HALO_FOCUSED: ExpressionSpecification = [
-    'boolean',
-    ['feature-state', 'focused'],
-    false,
-  ];
-  private static readonly HALO_HOVERED: ExpressionSpecification = [
-    'boolean',
-    ['feature-state', 'hovered'],
-    false,
-  ];
-  private static readonly HALO_LIT: ExpressionSpecification = [
-    'any',
-    LayerManager.HALO_FOCUSED,
-    LayerManager.HALO_HOVERED,
-  ] as unknown as ExpressionSpecification;
-
-  /**
-   * Radius of the focus halo. Fixed pixel sizes rather than a multiple of the
-   * stop radius so the glow stays the same regardless of location_type.
-   */
-  private focusHaloRadius(): ExpressionSpecification {
-    const lit = LayerManager.HALO_LIT;
-    return [
-      'interpolate',
-      ['linear'],
-      ['zoom'],
-      11,
-      ['case', lit, 14, 0],
-      16,
-      ['case', lit, 24, 0],
-      19,
-      ['case', lit, 38, 0],
-    ] as unknown as ExpressionSpecification;
+  private stopStyle(options: StopLayerOptions): StopStyleOptions {
+    return {
+      accent: this.accent(),
+      backgroundColor: options.backgroundColor,
+      strokeColor: options.strokeColor,
+      strokeWidth: options.strokeWidth,
+      radius: options.radius,
+    };
   }
 
   /**
    * Add the two focus-only layers that sit under the stop circles: a soft
-   * accent disc and a thin crisp ring.
-   *
-   * Layer filters cannot read feature-state, so visibility is driven by
-   * collapsing radius and opacity to 0 when unfocused. That keeps the existing
-   * setFeatureState flow in setFocusedStop working with no setFilter churn.
+   * accent disc and a thin crisp ring. Paint comes from `stop-layer-style.ts`.
    */
   private addFocusHaloLayers(): void {
-    if (this.map.getLayer('stops-focus-halo')) {
+    if (this.map.getLayer(STOP_FOCUS_HALO_LAYER)) {
       return;
     }
-    const focused = LayerManager.HALO_FOCUSED;
-    const hovered = LayerManager.HALO_HOVERED;
     const accent = this.accent();
 
     this.map.addLayer({
-      id: 'stops-focus-halo',
+      id: STOP_FOCUS_HALO_LAYER,
       type: 'circle',
       source: 'stops',
       filter: this.activeStopsFilter,
-      paint: {
-        'circle-radius': this.focusHaloRadius(),
-        'circle-color': accent,
-        'circle-opacity': [
-          'case',
-          focused,
-          0.18,
-          hovered,
-          0.12,
-          0,
-        ] as unknown as ExpressionSpecification,
-        'circle-stroke-width': 0,
-      },
+      paint: focusHaloPaint(accent),
     });
 
     this.map.addLayer({
-      id: 'stops-focus-ring',
+      id: STOP_FOCUS_RING_LAYER,
       type: 'circle',
       source: 'stops',
       filter: this.activeStopsFilter,
-      paint: {
-        'circle-radius': this.focusHaloRadius(),
-        'circle-color': accent,
-        'circle-opacity': 0,
-        'circle-stroke-color': accent,
-        'circle-stroke-width': 1.4,
-        'circle-stroke-opacity': [
-          'case',
-          focused,
-          0.9,
-          hovered,
-          0.55,
-          0,
-        ] as unknown as ExpressionSpecification,
-      },
+      paint: focusRingPaint(accent),
     });
   }
 
@@ -641,59 +542,15 @@ export class LayerManager {
       return;
     }
 
-    const focused: ExpressionSpecification = [
-      'boolean',
-      ['feature-state', 'focused'],
-      false,
-    ];
-    const fadeOpacity = this.stopFadeOpacity(null);
-
     this.map.addLayer({
       id: 'stops-background',
       type: 'circle',
       source: 'stops',
       filter: this.activeStopsFilter,
-      paint: {
-        'circle-radius': [
-          'interpolate',
-          ['linear'],
-          ['zoom'],
-          11,
-          this.stopRadiusAt(options.radius, 0.45),
-          13.5,
-          this.stopRadiusAt(options.radius, 0.7),
-          16,
-          this.stopRadiusAt(options.radius, 1),
-          19,
-          this.stopRadiusAt(options.radius, 1.5),
-        ],
-        'circle-color': this.stopFillColor(options),
-        'circle-stroke-color': [
-          'case',
-          focused,
-          '#ffffff', // Focused: white ring against the accent fill
-          ['==', ['get', 'has_own_coords'], false],
-          '#9ca3af', // No own lat/lon: grey stroke
-          ['==', ['get', 'location_type'], 1],
-          '#111111', // Station: near-black stroke
-          options.strokeColor, // Plain stops: dark slate casing
-        ],
-        // The halo carries the selection now, so the focused ring stays thin
-        // instead of turning the circle into a blob.
-        'circle-stroke-width': [
-          'interpolate',
-          ['linear'],
-          ['zoom'],
-          11,
-          ['case', focused, 1.6, 1.2],
-          16,
-          ['case', focused, 2, options.strokeWidth],
-          19,
-          ['case', focused, 2.4, options.strokeWidth + 0.8],
-        ],
-        'circle-opacity': fadeOpacity,
-        'circle-stroke-opacity': fadeOpacity,
-      },
+      paint: stopsBackgroundPaint(
+        this.stopStyle(options),
+        this.stopFadeOpacity(null)
+      ),
     });
   }
 
@@ -704,54 +561,16 @@ export class LayerManager {
    * feature-state.
    */
   private addFocusTopLayer(options: StopLayerOptions): void {
-    if (this.map.getLayer('stops-focus-top')) {
+    if (this.map.getLayer(STOP_FOCUS_TOP_LAYER)) {
       return;
     }
-    const focused: ExpressionSpecification = [
-      'boolean',
-      ['feature-state', 'focused'],
-      false,
-    ];
-    const onlyFocused = (
-      value: ExpressionSpecification | number
-    ): ExpressionSpecification =>
-      ['case', focused, value, 0] as unknown as ExpressionSpecification;
 
     this.map.addLayer({
-      id: 'stops-focus-top',
+      id: STOP_FOCUS_TOP_LAYER,
       type: 'circle',
       source: 'stops',
       filter: this.activeStopsFilter,
-      paint: {
-        'circle-radius': [
-          'interpolate',
-          ['linear'],
-          ['zoom'],
-          11,
-          onlyFocused(this.stopRadiusAt(options.radius, 0.45)),
-          13.5,
-          onlyFocused(this.stopRadiusAt(options.radius, 0.7)),
-          16,
-          onlyFocused(this.stopRadiusAt(options.radius, 1)),
-          19,
-          onlyFocused(this.stopRadiusAt(options.radius, 1.5)),
-        ],
-        'circle-color': this.stopFillColor(options),
-        'circle-opacity': onlyFocused(1),
-        'circle-stroke-color': '#ffffff',
-        'circle-stroke-width': [
-          'interpolate',
-          ['linear'],
-          ['zoom'],
-          11,
-          onlyFocused(1.6),
-          16,
-          onlyFocused(2),
-          19,
-          onlyFocused(2.4),
-        ],
-        'circle-stroke-opacity': onlyFocused(1),
-      },
+      paint: focusTopPaint(this.stopStyle(options)),
     });
   }
 
@@ -765,12 +584,6 @@ export class LayerManager {
       return;
     }
 
-    const focused: ExpressionSpecification = [
-      'boolean',
-      ['feature-state', 'focused'],
-      false,
-    ];
-
     this.map.addLayer({
       id: 'stops-station-dot',
       type: 'circle',
@@ -780,28 +593,7 @@ export class LayerManager {
         ['get', 'location_type'],
         1,
       ] as unknown as FilterSpecification,
-      paint: {
-        'circle-radius': [
-          'interpolate',
-          ['linear'],
-          ['zoom'],
-          11,
-          1.3,
-          16,
-          2.6,
-          19,
-          3.8,
-        ],
-        // White on a focused station, where the surrounding fill is the accent.
-        'circle-color': [
-          'case',
-          focused,
-          '#ffffff',
-          '#111111',
-        ] as unknown as ExpressionSpecification,
-        'circle-opacity': this.stationFadeOpacity(null),
-        'circle-stroke-width': 0,
-      },
+      paint: stationDotPaint(this.stationFadeOpacity(null)),
     });
   }
 
