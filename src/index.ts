@@ -142,6 +142,13 @@ export class GTFSEditor {
     this.scheduleController.setPatchManager(this.patchManager);
     this.serviceDaysController.setPatchManager(this.patchManager);
 
+    // Timetable stop column -> map: click the rail dot to focus, hover the row
+    // to light it up.
+    this.scheduleController.setStopHighlightHandlers({
+      onStopFocus: (stop_id) => this.mapController.highlightStop(stop_id),
+      onStopHover: (stop_id) => this.mapController.hoverStop(stop_id),
+    });
+
     this.init().catch((error) => {
       console.error('Failed to initialize GTFSEditor:', error);
       notify.error(

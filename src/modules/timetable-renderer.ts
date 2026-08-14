@@ -29,6 +29,7 @@ import {
   endpointThreshold,
   isEndpoint,
   gutterWidth,
+  STRIP_ROW_CLASS,
 } from './route-strip.js';
 import { RouteSequence } from './route-sequence.js';
 import { RouteGraph } from './route-graph.js';
@@ -483,7 +484,8 @@ export class TimetableRenderer {
       color,
       graph.laneCount,
       rowPaths(graph, index, { kind: 'stop', leadIn: false, leadOut: false }),
-      dot
+      dot,
+      { stop_id: stop.stop_id, title: 'Focus this stop on the map' }
     );
 
     const revisitHtml =
@@ -614,7 +616,10 @@ export class TimetableRenderer {
 
         return `
         <tr class="${rowClass}">
-          <th class="stop-name max-w-[320px] py-0 px-2 pl-0 font-medium border-r border-base-300 bg-base-100">
+          <th
+            class="stop-name ${STRIP_ROW_CLASS} max-w-[320px] py-0 px-2 pl-0 font-medium border-r border-base-300 bg-base-100"
+            data-stop-id="${escapeHtml(stop.stop_id)}"
+          >
             ${this.renderStopLabelCell(stop, stopIndex, graph as RouteGraph, sequence as RouteSequence, color)}
           </th>
           ${timeCells}
