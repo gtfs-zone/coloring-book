@@ -846,9 +846,10 @@ containers). Details worth carrying forward:
 - The portal resolves the trigger with `closest()`, so triggers nest: the week
   cell carries the week tooltip and each exception tick carries its own
   "Added <date>" / "Removed <date>" tooltip, and the innermost one wins.
-- Week tooltips no longer say "Does not run" (it read as a claim about the
-  service rather than the week). A week the service runs shows
-  `<date range> · Runs N days`; a week it does not shows only the date range.
+- There is no per-week tooltip. A week is not a meaningful unit (a service can
+  start or end mid-week), so every highlighted cell in a row carries the same
+  content, the service's `start_date` - `end_date`, and the whole shaded span
+  reads as one tooltip. Cells outside the range carry no trigger at all.
 - Converted alongside it: the timeline row label, the service edit button, and
   the calendar modal's day chips and feed start/end badges.
 

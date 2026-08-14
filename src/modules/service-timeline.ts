@@ -357,10 +357,8 @@ export function renderServiceTimeline(
           // which would pull every week cell out of the table layout. A tick
           // carries its own trigger, and the portal resolves the innermost
           // trigger under the pointer, so hovering a tick shows the exception
-          // date while the rest of the cell shows the week.
+          // date while the rest of the highlighted span shows the service dates.
           const ticks: string[] = [];
-          let runningDays = 0;
-          // The loop starts on a Sunday, so the offset indexes WEEKDAY_KEYS.
           for (let day = 0; day < 7; day++) {
             const dateStr = formatGTFS(new Date(weekStartTs + day * 86400000));
             const excType = excByDate.get(dateStr);
@@ -381,31 +379,21 @@ export function renderServiceTimeline(
                 )
               );
             }
-
-            const runsToday =
-              excType === 1 ||
-              (excType !== 2 &&
-                calStart !== null &&
-                calEnd !== null &&
-                calStart <= dateStr &&
-                calEnd >= dateStr &&
-                Number(sd.calendar![WEEKDAY_KEYS[day]]) === 1);
-            if (runsToday) {
-              runningDays += 1;
-            }
           }
 
-          // Weeks the service skips say nothing beyond the dates: an explicit
-          // "does not run" reads as a claim about the service, not the week.
-          const weekTip =
-            runningDays > 0
-              ? `${formatGtfsDateRange(weekStart, weekEnd)} · Runs ${runningDays} day${runningDays !== 1 ? 's' : ''}`
-              : formatGtfsDateRange(weekStart, weekEnd);
+          // Every highlighted cell carries the same service date range, so the
+          // whole span reads as one tooltip. A week is not a meaningful unit
+          // here (a service can start or end mid-week), so cells outside the
+          // range say nothing at all.
+          const tipAttr = isActive
+            ? ` data-tooltip-content="${escapeHtml(formatGtfsDateRange(calStart!, calEnd!))}"`
+            : '';
+          const triggerClass = isActive ? ' field-tooltip-trigger' : '';
 
           const bgStyle = isActive
             ? `background-color:${hexToRgba(sd.color, 0.2)}`
             : '';
-          return `<td class="w-5 min-w-5 h-7 border-r border-base-300/20 text-center align-middle leading-none field-tooltip-trigger" style="${bgStyle}" data-tooltip-content="${escapeHtml(weekTip)}">${ticks.join('')}</td>`;
+          return `<td class="w-5 min-w-5 h-7 border-r border-base-300/20 text-center align-middle leading-none${triggerClass}" style="${bgStyle}"${tipAttr}>${ticks.join('')}</td>`;
         })
         .join('');
 
