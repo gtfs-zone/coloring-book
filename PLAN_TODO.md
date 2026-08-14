@@ -986,8 +986,14 @@ click-to-edit columns around them. Fixed in `54b620a`/`b8de069`/`37e6a15`:
       matching and keyboard handling moved into a shared `mountPicker()`, and
       `showMultiOptionPickerModal()` was added beside `showOptionPickerModal()`.
       Checkbox rows, toggle on click or Enter, Done resolves `string[]` and
-      Cancel resolves `null`. Selected options lead the list at open time only:
-      re-sorting per keystroke moves rows out from under the pointer.
+      Cancel resolves `null`.
+- [x] Selected options lead the list and are **never** capped by `MAX_SHOWN`;
+      only the unselected remainder is, and the note counts that remainder
+      ("All 214 selected shown, plus 50 of 7831 more"). Without this an area
+      with 214 stops out of 8045 could not show, let alone uncheck, most of what
+      it had selected. The partition happens per render rather than per toggle,
+      so rows only move when the query changes, never out from under the
+      pointer.
 - [x] Blank is **not** a checkbox. `emptyOption: {label, hint}` renders a pinned
       button above the list, highlighted exactly when the selection is empty, so
       picking an option turns it off and clicking it clears the selection. The
