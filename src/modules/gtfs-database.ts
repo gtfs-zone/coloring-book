@@ -438,10 +438,16 @@ export class GTFSDatabase {
               // Old schema (v9): stored as raw CSV
               zip.file(`${tableName}.txt`, csv);
             } else if (json) {
-              // New schema (v10): stored as JSON, convert back to CSV for export
+              // New schema (v10): stored as JSON, convert back to CSV for export.
+              // newline: '\n' so the row separators match the '\n' terminator
+              // below; a CRLF body with a bare LF at the end makes Papa.parse
+              // swallow that LF into the last row's final field on re-import.
               const rows = JSON.parse(json) as Record<string, unknown>[];
               if (rows.length > 0) {
-                zip.file(`${tableName}.txt`, Papa.unparse(rows) + '\n');
+                zip.file(
+                  `${tableName}.txt`,
+                  Papa.unparse(rows, { newline: '\n' }) + '\n'
+                );
               }
             }
           }
