@@ -18,6 +18,7 @@
 
 import { showModal, renderTrashIcon } from './modal-utils.js';
 import {
+  showMultiOptionPickerModal,
   showOptionPickerModal,
   type OptionPickerItem,
 } from './option-picker-modal.js';
@@ -126,16 +127,28 @@ export interface EditableTableColumnOverride {
    * member is the only thing that varies (a fare product sold on three media),
    * so the table shows one product rather than three near-identical rows.
    *
-   * List cells are read-only. The rest of a collapsed row stays editable, and
-   * an edit or a delete there applies to every row behind it.
+   * A list cell opens a multi-select, and committing it reconciles the rows
+   * behind the collapsed row to the selection: adding a value inserts the rows
+   * it implies, removing one deletes them. The rest of a collapsed row stays
+   * editable, and an edit or a delete there applies to every row behind it.
    */
   list?: boolean;
 }
 
-export interface EditableTableExtraColumn {
+/**
+ * A column of values that live in a join table rather than on the row.
+ *
+ * Row grouping cannot produce these: an area's stops are `stop_areas` rows, not
+ * a column of `areas`. The table renders and picks; the host owns the write, so
+ * nothing here needs to know the join table's shape.
+ */
+export interface EditableTableJoinColumn {
   label: string;
-  /** Plain text, escaped before it is inserted. */
-  render: (row: Record<string, unknown>) => string;
+  /** The row's current members, already labelled for display. */
+  values: (row: Record<string, unknown>) => { value: string; label: string }[];
+  options: () => Promise<OptionPickerItem[]>;
+  /** Persist the new membership. The host writes and re-renders. */
+  apply: (row: Record<string, unknown>, values: string[]) => Promise<void>;
 }
 
 export interface EditableTableConfig {
@@ -151,10 +164,10 @@ export interface EditableTableConfig {
   primaryKey?: (row: Record<string, unknown>) => string;
   columnOverrides?: Record<string, EditableTableColumnOverride>;
   /**
-   * Read-only columns appended after the spec columns, for values derived from
-   * other tables (a network's route count) rather than stored on the row.
+   * Columns appended after the spec columns, for members named by a join table
+   * (an area's stops) rather than stored on the row.
    */
-  extraColumns?: EditableTableExtraColumn[];
+  joinColumns?: EditableTableJoinColumn[];
   deps: EditableTableDeps;
   /**
    * Shown in place of the rows when the table is empty. Trusted markup: it is
@@ -175,6 +188,11 @@ export interface EditableTableConfig {
   onInsert?: (key: string, record: Record<string, unknown>) => void;
   onUpdate?: (key: string, record: Record<string, unknown>) => void;
   onDelete?: (key: string) => void;
+  /**
+   * A list or join column changed which rows exist. Cell displays are patched
+   * in place elsewhere, but this cannot be: the host has to re-render.
+   */
+  onRowsChanged?: () => void;
 }
 
 interface EditableTableInstance {
@@ -418,11 +436,40 @@ function cellText(
     : formatSpecValue(spec, specFieldKind(spec), row[field], foreignLabels);
 }
 
+/** Labels shown in a list cell before it stops and counts the rest. */
+const LIST_CELL_MAX = 8;
+
+/**
+ * A list of values, one per line, capped so a long list cannot take the row
+ * over. The full set is always in the picker the cell opens.
+ */
+function renderListValues(labels: string[]): string {
+  if (labels.length === 0) {
+    return '-';
+  }
+  const shown = labels.slice(0, LIST_CELL_MAX);
+  const hidden = labels.length - shown.length;
+  const text = hidden > 0 ? [...shown, `+${hidden} more`] : shown;
+  return escapeHtml(text.join('\n'));
+}
+
+/** The distinct raw values of a list column across a group, in row order. */
+function listValues(group: RowGroup, field: string): string[] {
+  const seen = new Set<string>();
+  for (const row of group.rows) {
+    seen.add(
+      row[field] === undefined || row[field] === null ? '' : String(row[field])
+    );
+  }
+  return [...seen];
+}
+
 /**
  * A list column's cell: every distinct value in the group, one per line.
  *
- * Read-only, and not truncated the way a single-value cell is: a clipped list
- * would hide values with no sign that it had.
+ * Not truncated the way a single-value cell is: a clipped list would hide
+ * values with no sign that it had. Clicking it opens a multi-select over the
+ * column's options.
  */
 function renderListCell(
   config: EditableTableConfig,
@@ -432,16 +479,48 @@ function renderListCell(
   foreignLabels: Map<string, string> | undefined
 ): string {
   const seen = new Set<string>();
-  const values: string[] = [];
+  const labels: string[] = [];
   for (const row of group.rows) {
     const text = cellText(config, field, spec, row, foreignLabels);
     if (text === '' || seen.has(text)) {
       continue;
     }
     seen.add(text);
-    values.push(text);
+    labels.push(text);
   }
-  return `<td class="align-middle whitespace-pre-line">${escapeHtml(values.join('\n')) || '-'}</td>`;
+  return `<td class="align-middle p-1">
+    <span
+      class="editable-cell inline-block min-w-8 max-w-full cursor-pointer whitespace-pre-line rounded px-1 hover:bg-base-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
+      tabindex="0"
+      data-et="${escapeHtml(config.instanceId)}"
+      data-key="${escapeHtml(group.key)}"
+      data-field="${escapeHtml(field)}"
+      data-kind="${specFieldKind(spec)}"
+      data-list="1"
+      data-values="${escapeHtml(JSON.stringify(listValues(group, field)))}"
+    >${renderListValues(labels)}</span>
+  </td>`;
+}
+
+/** A join column's cell: the row's members, picked from the join's options. */
+function renderJoinCell(
+  config: EditableTableConfig,
+  column: EditableTableJoinColumn,
+  index: number,
+  row: Record<string, unknown>,
+  key: string
+): string {
+  const members = column.values(row);
+  return `<td class="align-middle p-1">
+    <span
+      class="editable-cell inline-block min-w-8 max-w-full cursor-pointer whitespace-pre-line rounded px-1 hover:bg-base-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
+      tabindex="0"
+      data-et="${escapeHtml(config.instanceId)}"
+      data-key="${escapeHtml(key)}"
+      data-join="${index}"
+      data-values="${escapeHtml(JSON.stringify(members.map((m) => m.value)))}"
+    >${renderListValues(members.map((m) => m.label))}</span>
+  </td>`;
 }
 
 function renderCell(
@@ -513,8 +592,8 @@ export async function renderEditableTable(
     })
     .join('');
 
-  const extraColumns = config.extraColumns ?? [];
-  const extraHeaderHtml = extraColumns
+  const joinColumns = config.joinColumns ?? [];
+  const joinHeaderHtml = joinColumns
     .map(
       (column) => `<th class="align-bottom">${escapeHtml(column.label)}</th>`
     )
@@ -545,17 +624,14 @@ export async function renderEditableTable(
           return renderCell(config, field, spec, row, key, labels.get(field));
         })
         .join('');
-      const extraCells = extraColumns
-        .map(
-          (column) =>
-            `<td class="align-middle">${escapeHtml(column.render(row))}</td>`
-        )
+      const joinCells = joinColumns
+        .map((column, i) => renderJoinCell(config, column, i, row, key))
         .join('');
       const deleteTitle =
         group.rows.length > 1
           ? `Delete ${group.rows.length} rows`
           : 'Delete row';
-      return `<tr data-et-row="${escapeHtml(key)}">${cells}${extraCells}<td class="align-middle w-8">
+      return `<tr data-et-row="${escapeHtml(key)}">${cells}${joinCells}<td class="align-middle w-8">
         <button class="editable-table-delete btn btn-xs btn-ghost text-error" data-et="${escapeHtml(config.instanceId)}" data-key="${escapeHtml(key)}" title="${escapeHtml(deleteTitle)}">${renderTrashIcon('h-3.5 w-3.5')}</button>
       </td></tr>`;
     })
@@ -563,7 +639,7 @@ export async function renderEditableTable(
 
   const emptyHtml =
     config.rows.length === 0 && config.emptyMessage
-      ? `<tr><td colspan="${fields.length + extraColumns.length + 1}" class="text-base-content/60 py-4">${config.emptyMessage}</td></tr>`
+      ? `<tr><td colspan="${fields.length + joinColumns.length + 1}" class="text-base-content/60 py-4">${config.emptyMessage}</td></tr>`
       : '';
 
   // The trailing blank row is how rows are added: typing into any of its cells
@@ -588,8 +664,8 @@ export async function renderEditableTable(
   return `
     <div class="overflow-x-auto">
       <table class="table table-xs">
-        <thead><tr>${headerHtml}${extraHeaderHtml}<th></th></tr></thead>
-        <tbody>${emptyHtml}${bodyHtml}<tr class="editable-table-new-row">${newRowCells}${extraColumns.map(() => '<td></td>').join('')}<td></td></tr></tbody>
+        <thead><tr>${headerHtml}${joinHeaderHtml}<th></th></tr></thead>
+        <tbody>${emptyHtml}${bodyHtml}<tr class="editable-table-new-row">${newRowCells}${joinColumns.map(() => '<td></td>').join('')}<td></td></tr></tbody>
       </table>
     </div>
   `;
@@ -666,13 +742,55 @@ function resolve(
   return { state, spec, field };
 }
 
+/** The values a list or join cell carries, as written by its renderer. */
+function cellValues(span: HTMLElement): string[] {
+  const raw = span.dataset.values;
+  if (!raw) {
+    return [];
+  }
+  const parsed: unknown = JSON.parse(raw);
+  return Array.isArray(parsed) ? parsed.map((v) => String(v)) : [];
+}
+
 function openCellEditor(span: HTMLElement): void {
+  if (span.dataset.join !== undefined) {
+    void openJoinEditor(span);
+    return;
+  }
+
   const resolved = resolve(span);
   if (!resolved) {
     return;
   }
   const { state, spec, field } = resolved;
   const current = span.dataset.value ?? '';
+
+  // A list cell stands for every row behind it, so it picks a set rather than
+  // a value, and committing reconciles those rows to what was picked.
+  if (span.dataset.list === '1') {
+    void (async () => {
+      const selected = cellValues(span);
+      const options = await foreignOptions(state.config, field, spec);
+      for (const value of selected) {
+        if (value !== '' && !options.some((o) => o.value === value)) {
+          options.push({ value, primary: `${value} (dangling reference)` });
+        }
+      }
+      const picked = await showMultiOptionPickerModal({
+        title: `Select ${field}`,
+        options: [
+          { value: '', primary: '- blank (matches everything) -' },
+          ...options,
+        ],
+        selectedValues: selected,
+        searchable: true,
+      });
+      if (picked !== null) {
+        await commitListCell(state, span, field, spec, picked);
+      }
+    })();
+    return;
+  }
 
   if (span.dataset.kind === 'enum') {
     openInlineMenu(span, {
@@ -733,6 +851,56 @@ function openCellEditor(span: HTMLElement): void {
     className: 'w-full',
     onCommit: (value) => void commitCell(state, span, field, spec, value),
   });
+}
+
+/**
+ * A join column's cell: pick the row's members, then hand them to the host.
+ *
+ * No write happens here. The join table's shape belongs to whoever configured
+ * the column, and their `apply` is expected to re-render the table.
+ */
+async function openJoinEditor(span: HTMLElement): Promise<void> {
+  const { et, join, key } = span.dataset;
+  if (!et || join === undefined) {
+    return;
+  }
+  const state = instances.get(et);
+  if (!state) {
+    console.warn(`[EditableTable] no registered instance ${et}`);
+    return;
+  }
+  const column = state.config.joinColumns?.[Number(join)];
+  if (!column) {
+    console.warn(`[EditableTable] no join column ${join}`);
+    return;
+  }
+  const row = state.config.rows.find(
+    (r) => rowKey(state.config, r) === (key ?? '')
+  );
+  if (!row) {
+    console.warn(`[EditableTable] row ${key} is gone`);
+    return;
+  }
+
+  const selected = cellValues(span);
+  const options = await column.options();
+  for (const value of selected) {
+    if (!options.some((o) => o.value === value)) {
+      options.push({ value, primary: `${value} (dangling reference)` });
+    }
+  }
+  const picked = await showMultiOptionPickerModal({
+    title: `Select ${column.label}`,
+    options,
+    selectedValues: selected,
+    searchable: true,
+  });
+  if (picked === null) {
+    return;
+  }
+  await column.apply(row, picked);
+  // The members live outside this table's rows, so the host re-reads them.
+  state.config.onRowsChanged?.();
 }
 
 function markCellError(span: HTMLElement, message: string): void {
@@ -922,6 +1090,158 @@ async function commitUpdate(
   edits.forEach((edit) => replaceRow(config, edit.key, edit.after));
   rekeyRowElement(span, newKeys[0]);
   config.onUpdate?.(newKeys[0], edits[0].after);
+}
+
+/**
+ * Reconcile the rows behind a collapsed row to a list column's new selection.
+ *
+ * The displayed block is a complete cross product of its list columns (see
+ * `crossProductBlocks`), so replacing one column's values means the block
+ * becomes the cross product of the other columns with the new set. Rows that
+ * survive keep their existing record, so fields the table does not render are
+ * not lost; the rest are deleted and the new combinations inserted, all in one
+ * patch so the edit undoes as one step.
+ *
+ * An empty selection means one blank value, which in the fare rules is the
+ * "matches everything" row rather than no row at all.
+ */
+async function commitListCell(
+  state: EditableTableInstance,
+  span: HTMLElement,
+  field: string,
+  spec: GTFSFieldSpec,
+  picked: string[]
+): Promise<void> {
+  const { config } = state;
+  const table = specStoreName(config.tableName);
+  const group = findGroup(config, span.dataset.key ?? '');
+  if (!group) {
+    console.warn(
+      `[EditableTable] row ${span.dataset.key} is gone from ${table}`
+    );
+    return;
+  }
+
+  const values: (string | number)[] = [];
+  for (const raw of picked.length === 0 ? [''] : picked) {
+    const coerced = coerceFieldValue(spec, raw);
+    if ('error' in coerced) {
+      markCellError(span, coerced.error);
+      return;
+    }
+    const error = validateFieldValue(
+      config.tableName,
+      field,
+      spec,
+      coerced.value
+    );
+    if (error) {
+      markCellError(span, error);
+      return;
+    }
+    values.push(coerced.value);
+  }
+
+  // The block's value sets, with this column's replaced by the selection.
+  const lists = listFields(config);
+  const sets = lists.map((listField) =>
+    listField === field
+      ? values.map((v) => String(v))
+      : listValues(group, listField)
+  );
+
+  const byCombo = new Map<string, Record<string, unknown>>();
+  for (const row of group.rows) {
+    byCombo.set(JSON.stringify(lists.map((f) => String(row[f] ?? ''))), row);
+  }
+
+  // A displayed value is a string, but the stored one may be a number, so a
+  // value carried over from another row is written back as that row stored it.
+  const storedAs = new Map<string, unknown>();
+  for (const row of group.rows) {
+    for (const listField of lists) {
+      storedAs.set(
+        `${listField}\0${String(row[listField] ?? '')}`,
+        row[listField]
+      );
+    }
+  }
+  for (const value of values) {
+    storedAs.set(`${field}\0${String(value)}`, value);
+  }
+
+  const records = combinations(sets).map((combo) => {
+    const record = { ...(byCombo.get(JSON.stringify(combo)) ?? group.rows[0]) };
+    lists.forEach((listField, i) => {
+      const stored = storedAs.get(`${listField}\0${combo[i]}`);
+      record[listField] = stored === undefined ? combo[i] : stored;
+    });
+    return record;
+  });
+
+  for (const record of records) {
+    const rowError = config.validateRow?.(record);
+    if (rowError) {
+      markCellError(span, rowError);
+      return;
+    }
+  }
+
+  const newKeys = records.map((record) => rowKey(config, record));
+  const groupKeys = new Set(group.keys);
+  const kept = new Set(newKeys.filter((key) => groupKeys.has(key)));
+  const deletes = group.keys
+    .map((key, i) => ({ key, record: group.rows[i] }))
+    .filter((entry) => !kept.has(entry.key));
+  const inserts = records
+    .map((record, i) => ({ key: newKeys[i], record }))
+    .filter((entry) => !groupKeys.has(entry.key));
+
+  if (deletes.length === 0 && inserts.length === 0) {
+    return;
+  }
+
+  const taken = new Set(
+    config.rows.map((r) => rowKey(config, r)).filter((k) => !groupKeys.has(k))
+  );
+  if (inserts.some((entry) => taken.has(entry.key))) {
+    markCellError(span, 'Another row already uses these key values');
+    return;
+  }
+
+  clearCellError(span);
+  console.log(
+    `[EditableTable] list edit ${table} ${group.key}.${field} (-${deletes.length} +${inserts.length})`
+  );
+  for (const entry of deletes) {
+    await config.deps.gtfsDatabase.deleteRow(table, entry.key);
+  }
+  if (inserts.length > 0) {
+    await config.deps.gtfsDatabase.insertRows(
+      table,
+      inserts.map((entry) => entry.record)
+    );
+  }
+  await config.deps.patchManager.recordBatchMixed(
+    [
+      ...deletes.map((entry) => ({
+        op: 'delete' as const,
+        table,
+        id: entry.key,
+        record: entry.record,
+      })),
+      ...inserts.map((entry) => ({
+        op: 'insert' as const,
+        table,
+        id: entry.key,
+        record: entry.record,
+      })),
+    ],
+    `Edit ${field} on ${table}`
+  );
+
+  // The group gained or lost rows, so the display cannot be patched in place.
+  config.onRowsChanged?.();
 }
 
 /**

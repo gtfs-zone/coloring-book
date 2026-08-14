@@ -15,7 +15,7 @@ import {
   type EditableTableColumnOverride,
   type EditableTableConfig,
   type EditableTableDeps,
-  type EditableTableExtraColumn,
+  type EditableTableJoinColumn,
 } from './editable-table.js';
 import type { OptionPickerItem } from './option-picker-modal.js';
 import { escapeHtml } from '../utils/escape-html.js';
@@ -30,6 +30,7 @@ import {
   formatDaysOfWeek,
 } from '../utils/entity-references.js';
 import { stopLocationType } from '../utils/area-hierarchy.js';
+import { generateCompositeKeyFromRecord } from '../utils/gtfs-primary-keys.js';
 import {
   validateFareLegJoinRuleRow,
   validateFareTransferRuleRow,
@@ -59,110 +60,41 @@ interface FaresEntry {
   /** Conditional rules that span fields, checked before a row is written. */
   validateRow?: (row: Record<string, unknown>) => string | null;
   /** Built on every refresh, since these read other tables. */
-  extraColumns?: (deps: FaresModalDeps) => Promise<EditableTableExtraColumn[]>;
+  joinColumns?: (deps: FaresModalDeps) => Promise<EditableTableJoinColumn[]>;
   /** A line of explanation shown above the table. */
   note?: string;
-  /** Extra markup shown below the table, rebuilt on every refresh. */
-  detail?: (deps: FaresModalDeps) => Promise<string>;
 }
 
-/** How many routes each network has, keyed by `network_id`. */
-async function countRoutesPerNetwork(
-  deps: FaresModalDeps
-): Promise<Map<string, number>> {
-  const counts = new Map<string, number>();
-  const rows = await deps.gtfsDatabase.getAllRows(
-    specStoreName(GTFS_TABLES.ROUTE_NETWORKS)
-  );
-  for (const row of rows) {
-    const id = String(row.network_id ?? '');
-    counts.set(id, (counts.get(id) ?? 0) + 1);
-  }
-  return counts;
-}
-
-/** How many stops each area names directly, keyed by `area_id`. */
-async function countStopsPerArea(
-  deps: FaresModalDeps
-): Promise<Map<string, number>> {
-  const counts = new Map<string, number>();
-  const rows = await deps.gtfsDatabase.getAllRows(
-    specStoreName(GTFS_TABLES.STOP_AREAS)
-  );
-  for (const row of rows) {
-    const id = String(row.area_id ?? '');
-    counts.set(id, (counts.get(id) ?? 0) + 1);
-  }
-  return counts;
-}
-
-/** One collapsible section: the group's own label and the members it names. */
-interface MemberListSection {
+/** The two columns of a join table, and how to label what it names. */
+interface MemberJoinSpec {
+  /** Column header, e.g. "Stops". */
   label: string;
-  items: string[];
+  memberTable: string;
+  joinTable: string;
+  /** The column of the join table matching the rendered row's id. */
+  groupField: string;
+  /** The column of the join table naming the member. */
+  memberField: string;
+  /** The picker's options, which may be narrower than the member table. */
+  options: () => Promise<OptionPickerItem[]>;
+  /** Appended to a member's label, e.g. to note implied platforms. */
+  memberSuffix?: (member: Record<string, unknown>) => string;
 }
 
 /**
- * A collapsible list of the members of each group, one `<details>` per group.
+ * A table column listing the members a join table gives each row, editable
+ * through the same multi-select the list columns use.
  *
- * Shared by the Areas and Networks panes, which differ only in the join table
- * they read and the wording of their headings.
+ * Areas and Networks differ only in which tables they read, so both panes are
+ * one call to this. The membership is read once per refresh; `apply` diffs the
+ * picked set against it and writes the join table in a single patch.
  */
-function renderMemberLists(
-  heading: string,
-  emptyItems: string,
-  sections: MemberListSection[]
-): string {
-  if (sections.length === 0) {
-    return '';
-  }
-  const blocks = sections
-    .map(({ label, items }) => {
-      const body =
-        items.length === 0
-          ? `<li class="opacity-60">${escapeHtml(emptyItems)}</li>`
-          : items.map((item) => `<li>${escapeHtml(item)}</li>`).join('');
-      return `<details class="collapse collapse-arrow bg-base-200 rounded-box">
-        <summary class="collapse-title text-sm py-2 min-h-0">${escapeHtml(label)} (${items.length})</summary>
-        <div class="collapse-content"><ul class="text-xs space-y-1">${body}</ul></div>
-      </details>`;
-    })
-    .join('');
-
-  return `<div class="mt-4 space-y-1">
-    <h3 class="text-sm font-semibold">${escapeHtml(heading)}</h3>
-    ${blocks}
-  </div>`;
-}
-
-/**
- * Collect the members each group names, via a join table.
- *
- * `groupField`/`memberField` are the two columns of the join table; the member
- * label comes from the member table's own row, or falls back to naming the
- * dangling id.
- */
-async function collectMemberSections(
+async function memberJoinColumn(
   deps: FaresModalDeps,
-  spec: {
-    groupTable: string;
-    memberTable: string;
-    joinTable: string;
-    groupField: string;
-    memberField: string;
-    /** Appended to a member's label, e.g. to note implied platforms. */
-    memberSuffix?: (member: Record<string, unknown>) => string;
-  }
-): Promise<MemberListSection[]> {
-  const groups = await deps.gtfsDatabase.getAllRows(
-    specStoreName(spec.groupTable)
-  );
-  if (groups.length === 0) {
-    return [];
-  }
-  const joins = await deps.gtfsDatabase.getAllRows(
-    specStoreName(spec.joinTable)
-  );
+  spec: MemberJoinSpec
+): Promise<EditableTableJoinColumn> {
+  const joinStore = specStoreName(spec.joinTable);
+  const joins = await deps.gtfsDatabase.getAllRows(joinStore);
   const members = await deps.gtfsDatabase.getAllRows(
     specStoreName(spec.memberTable)
   );
@@ -170,7 +102,7 @@ async function collectMemberSections(
     members.map((m) => [String(m[spec.memberField] ?? ''), m])
   );
 
-  const byGroup = new Map<string, string[]>();
+  const byGroup = new Map<string, { value: string; label: string }[]>();
   for (const row of joins) {
     const group_id = String(row[spec.groupField] ?? '');
     const member_id = String(row[spec.memberField] ?? '');
@@ -181,59 +113,70 @@ async function collectMemberSections(
             specStoreName(spec.memberTable),
             member as Record<string, string>
           )
-        )
+        ) + (spec.memberSuffix?.(member) ?? '')
       : `${member_id} (missing from ${spec.memberTable})`;
-    const suffix = member ? (spec.memberSuffix?.(member) ?? '') : '';
     const list = byGroup.get(group_id) ?? [];
-    list.push(`${label}${suffix}`);
+    list.push({ value: member_id, label });
     byGroup.set(group_id, list);
   }
 
-  return groups.map((group) => ({
-    label: renderOptionLabel(
-      getEntityDisplay(
-        specStoreName(spec.groupTable),
-        group as Record<string, string>
-      )
-    ),
-    items: byGroup.get(String(group[spec.groupField] ?? '')) ?? [],
-  }));
-}
+  return {
+    label: spec.label,
+    options: spec.options,
+    values: (row) => byGroup.get(String(row[spec.groupField] ?? '')) ?? [],
+    apply: async (row, picked) => {
+      const group_id = String(row[spec.groupField] ?? '');
+      const current = new Set(
+        (byGroup.get(group_id) ?? []).map((m) => m.value)
+      );
+      const wanted = new Set(picked.filter((value) => value !== ''));
+      const removed = [...current].filter((value) => !wanted.has(value));
+      const added = [...wanted].filter((value) => !current.has(value));
+      if (removed.length === 0 && added.length === 0) {
+        return;
+      }
 
-/**
- * A collapsible list of the stops in each area.
- *
- * Only the explicit `stop_areas` rows are listed. A station's platforms are in
- * the area too, but listing them here would blur the distinction between what
- * the feed says and what the spec implies, so stations are labelled instead.
- */
-async function renderAreaStopLists(deps: FaresModalDeps): Promise<string> {
-  const sections = await collectMemberSections(deps, {
-    groupTable: GTFS_TABLES.AREAS,
-    memberTable: GTFS_TABLES.STOPS,
-    joinTable: GTFS_TABLES.STOP_AREAS,
-    groupField: 'area_id',
-    memberField: 'stop_id',
-    memberSuffix: (stop) =>
-      stopLocationType(stop) === 1 ? ', and its platforms' : '',
-  });
-  return renderMemberLists('Stops by area', 'No stops assigned.', sections);
-}
+      const record = (member_id: string) => ({
+        [spec.groupField]: group_id,
+        [spec.memberField]: member_id,
+      });
+      const deletes = removed.map((member_id) => {
+        const row = record(member_id);
+        return {
+          op: 'delete' as const,
+          table: joinStore,
+          id: generateCompositeKeyFromRecord(joinStore, row),
+          record: row,
+        };
+      });
+      const inserts = added.map((member_id) => {
+        const row = record(member_id);
+        return {
+          op: 'insert' as const,
+          table: joinStore,
+          id: generateCompositeKeyFromRecord(joinStore, row),
+          record: row,
+        };
+      });
 
-/** A collapsible list of the routes in each network. */
-async function renderNetworkRouteLists(deps: FaresModalDeps): Promise<string> {
-  const sections = await collectMemberSections(deps, {
-    groupTable: GTFS_TABLES.NETWORKS,
-    memberTable: GTFS_TABLES.ROUTES,
-    joinTable: GTFS_TABLES.ROUTE_NETWORKS,
-    groupField: 'network_id',
-    memberField: 'route_id',
-  });
-  return renderMemberLists(
-    'Routes by network',
-    'No routes assigned.',
-    sections
-  );
+      console.log(
+        `[Fares] ${joinStore} for ${group_id} (-${deletes.length} +${inserts.length})`
+      );
+      for (const entry of deletes) {
+        await deps.gtfsDatabase.deleteRow(joinStore, entry.id);
+      }
+      if (inserts.length > 0) {
+        await deps.gtfsDatabase.insertRows(
+          joinStore,
+          inserts.map((entry) => entry.record)
+        );
+      }
+      await deps.patchManager.recordBatchMixed(
+        [...deletes, ...inserts],
+        `Edit ${spec.label.toLowerCase()} on ${spec.joinTable}`
+      );
+    },
+  };
 }
 
 /**
@@ -293,6 +236,22 @@ async function networkOptions(
         getEntityDisplay('networks', row as Record<string, string>)
       ),
       secondary: String(row.network_id),
+    }));
+}
+
+/** Every route, for the Networks pane's membership column. */
+async function routeOptions(deps: FaresModalDeps): Promise<OptionPickerItem[]> {
+  const rows = await deps.gtfsDatabase.getAllRows(
+    specStoreName(GTFS_TABLES.ROUTES)
+  );
+  return rows
+    .filter((row) => String(row.route_id ?? '') !== '')
+    .map((row) => ({
+      value: String(row.route_id),
+      primary: renderOptionLabel(
+        getEntityDisplay('routes', row as Record<string, string>)
+      ),
+      secondary: String(row.route_id),
     }));
 }
 
@@ -535,17 +494,19 @@ const FARES_ENTRIES: FaresEntry[] = [
       GTFS_TABLES.AREAS,
       'An area is the group of stops a fare leg rule starts or ends in.'
     ),
-    note: 'Stops join an area on the stop page. A station in an area carries its platforms with it, unless a platform is assigned to an area of its own.',
-    extraColumns: async (deps) => {
-      const counts = await countStopsPerArea(deps);
-      return [
-        {
-          label: 'Stops',
-          render: (row) => String(counts.get(String(row.area_id ?? '')) ?? 0),
-        },
-      ];
-    },
-    detail: (deps) => renderAreaStopLists(deps),
+    note: 'Stops join an area here or on the stop page. A station in an area carries its platforms with it, unless a platform is assigned to an area of its own; only the stops named directly are listed.',
+    joinColumns: async (deps) => [
+      await memberJoinColumn(deps, {
+        label: 'Stops',
+        memberTable: GTFS_TABLES.STOPS,
+        joinTable: GTFS_TABLES.STOP_AREAS,
+        groupField: 'area_id',
+        memberField: 'stop_id',
+        options: () => fareStopOptions(deps),
+        memberSuffix: (stop) =>
+          stopLocationType(stop) === 1 ? ', and its platforms' : '',
+      }),
+    ],
   },
   {
     table: GTFS_TABLES.NETWORKS,
@@ -555,18 +516,17 @@ const FARES_ENTRIES: FaresEntry[] = [
       GTFS_TABLES.NETWORKS,
       'A network is the group of routes a fare leg rule applies to.'
     ),
-    note: 'Routes join a network on the route page. Giving a network a name makes the feed export networks.txt and route_networks.txt; an unnamed network is exported as a network_id column on routes.txt instead.',
-    extraColumns: async (deps) => {
-      const counts = await countRoutesPerNetwork(deps);
-      return [
-        {
-          label: 'Routes',
-          render: (row) =>
-            String(counts.get(String(row.network_id ?? '')) ?? 0),
-        },
-      ];
-    },
-    detail: (deps) => renderNetworkRouteLists(deps),
+    note: 'Routes join a network here or on the route page. Giving a network a name makes the feed export networks.txt and route_networks.txt; an unnamed network is exported as a network_id column on routes.txt instead.',
+    joinColumns: async (deps) => [
+      await memberJoinColumn(deps, {
+        label: 'Routes',
+        memberTable: GTFS_TABLES.ROUTES,
+        joinTable: GTFS_TABLES.ROUTE_NETWORKS,
+        groupField: 'network_id',
+        memberField: 'route_id',
+        options: () => routeOptions(deps),
+      }),
+    ],
   },
 ];
 
@@ -608,6 +568,7 @@ export async function showFaresModal(deps: FaresModalDeps): Promise<void> {
     columnOverrides: activeEntry.columnOverrides?.(deps),
     validateRow: activeEntry.validateRow,
     onInsert: () => void refresh(),
+    onRowsChanged: () => void refresh(),
     onDelete: () => void refresh(),
   };
 
@@ -628,8 +589,8 @@ export async function showFaresModal(deps: FaresModalDeps): Promise<void> {
     tableConfig.emptyMessage = activeEntry.emptyMessage;
     tableConfig.columnOverrides = activeEntry.columnOverrides?.(deps);
     tableConfig.validateRow = activeEntry.validateRow;
-    tableConfig.extraColumns = activeEntry.extraColumns
-      ? await activeEntry.extraColumns(deps)
+    tableConfig.joinColumns = activeEntry.joinColumns
+      ? await activeEntry.joinColumns(deps)
       : undefined;
     tableConfig.rows = await deps.gtfsDatabase.getAllRows(
       specStoreName(activeEntry.table)
@@ -643,9 +604,8 @@ export async function showFaresModal(deps: FaresModalDeps): Promise<void> {
     const note = activeEntry.note
       ? `<p class="text-xs text-base-content/60 mb-2">${escapeHtml(activeEntry.note)}</p>`
       : '';
-    const detail = activeEntry.detail ? await activeEntry.detail(deps) : '';
     sidebarEl.innerHTML = renderSidebar(activeEntry.table, counts);
-    paneEl.innerHTML = note + (await renderEditableTable(tableConfig)) + detail;
+    paneEl.innerHTML = note + (await renderEditableTable(tableConfig));
   };
 
   const body = `
