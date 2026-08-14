@@ -100,7 +100,8 @@ export class GTFSEditor {
       this.relationships,
       this.mapController,
       this.scheduleController,
-      this.serviceDaysController
+      this.serviceDaysController,
+      this.gtfsParser
     );
     this.searchController = new SearchController<PageState>({
       getEntries: () => buildSearchEntries(this.gtfsParser),

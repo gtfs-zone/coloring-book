@@ -20,6 +20,7 @@ import {
   PageContentRenderer,
   ContentRendererDependencies,
 } from './page-content-renderer.js';
+import type { GTFSParser } from './gtfs-parser.js';
 
 export class BrowseNavigation {
   private relationships: {
@@ -96,6 +97,7 @@ export class BrowseNavigation {
   private isLoading: boolean = false;
   private lastRenderedPageState: PageState | null = null;
   private contentRenderer: PageContentRenderer | null = null;
+  private gtfsParser: GTFSParser | null = null;
   private patchManager: {
     recordUpdate: (
       table: string,
@@ -227,9 +229,13 @@ export class BrowseNavigation {
     },
     serviceDaysController?: {
       renderServiceEditor: (service_id: string) => Promise<string>;
-    }
+    },
+    // The route page's diagram reads the parser's virtual tables directly,
+    // through GTFSRouteSource, which the relationships layer does not expose.
+    gtfsParser?: GTFSParser
   ) {
     this.relationships = gtfsRelationships;
+    this.gtfsParser = gtfsParser ?? null;
     this.gtfsRelationshipsInstance =
       gtfsRelationships as unknown as import('./gtfs-relationships.js').GTFSRelationships;
     this.mapController = mapController;
@@ -346,6 +352,7 @@ export class BrowseNavigation {
       ) => navigateToTimetable(route_id, service_id, direction_id),
       onEntityCreated: () => this.render(),
       patchManager: this.patchManager ?? undefined,
+      gtfsParser: this.gtfsParser ?? undefined,
     };
 
     this.contentRenderer = new PageContentRenderer(dependencies);
