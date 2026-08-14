@@ -20,6 +20,15 @@ export interface ModalAction {
   onClick: () => boolean | void | Promise<boolean | void>;
 }
 
+// Stack of currently-open showModal() modals, innermost last. Every open modal
+// has its own document-level keydown listener, so all of them fire on a single
+// Escape; only the topmost is allowed to act on it.
+const modalStack: HTMLElement[] = [];
+
+function isTopmostModal(modal: HTMLElement): boolean {
+  return modalStack[modalStack.length - 1] === modal;
+}
+
 /**
  * Show a DaisyUI modal and wait for the user to click an action.
  * Buttons are disabled while the action's onClick promise is pending.
@@ -62,9 +71,14 @@ export async function showModal(options: {
       </div>
     `;
     document.body.appendChild(modal);
+    modalStack.push(modal);
 
     const close = () => {
       document.removeEventListener('keydown', onKeydown);
+      const idx = modalStack.indexOf(modal);
+      if (idx !== -1) {
+        modalStack.splice(idx, 1);
+      }
       document.body.removeChild(modal);
       resolve();
     };
@@ -84,6 +98,10 @@ export async function showModal(options: {
     };
 
     const onKeydown = (e: KeyboardEvent) => {
+      // Let the modal stacked on top of this one handle the key instead.
+      if (!isTopmostModal(modal)) {
+        return;
+      }
       if (e.key === 'Escape' && options.escapeAction !== undefined) {
         e.preventDefault();
         void triggerAction(options.escapeAction);
