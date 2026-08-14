@@ -554,17 +554,31 @@ source. Put shareable highlight logic there so it flows across.
   which is wrong while editing a schedule. `highlightStop` is the map-side helper
   every other focus path lands on (fly-to + focused feature state + route
   spotlight) and leaves the timetable open.
-- **Hover is split.** The dot scale is pure CSS via a named Tailwind group
+- **Hover is split in two.** The dot scale is pure CSS via a named Tailwind group
   (`STRIP_ROW_CLASS = 'strip-stop-row group/strip'` on the row,
   `group-hover/strip:scale-125` on the dot), so it flows to test-track through
-  the vendored file with no JS at all. The map halo is coloring-book-only:
-  `ScheduleController.installStopRowHover()` delegates `pointerover`/`pointerout`
-  (they bubble; `mouseenter`/`mouseleave` do not) to `mapController.hoverStop()`.
-- Map side: a new `hovered` feature state on the `stops` source, read by the two
-  existing `stops-focus-halo`/`stops-focus-ring` layers at lower opacity than
-  `focused`. No new layers, and hover never touches the selection.
+  the vendored file with no JS at all. The map reaction is per-app, because
+  neither app's `layer-manager.ts` is the other's (test-track's copy is
+  `modified`): each grew its own `setHoveredStop()` and its own delegated
+  `pointerover`/`pointerout` (they bubble; `mouseenter`/`mouseleave` do not).
+- coloring-book map side: a new `hovered` feature state on the `stops` source,
+  read by the two existing `stops-focus-halo`/`stops-focus-ring` layers at lower
+  opacity than `focused`. No new layers, and hover never touches the selection.
   `LayerManager.setHoveredStop()` mirrors `setFocusedStop()`, is cleared by
-  `clearHighlights()`, and is reset on source recreation.
+  `clearHighlights()`, and is reset on source recreation. Wired from
+  `ScheduleController.installStopRowHover()`.
+- test-track map side (commit `7498996`): it has no halo layers at all, so the
+  same `hovered` feature state instead grows the stop circle (1.35x, against
+  focus's 1.7x) and gives it the accent stroke. `hovered` also joins
+  `SPECIAL_STOP`, so pointing at a strip row reveals the stop even when zoomed
+  out past where plain stops fade. Two things there that coloring-book does not
+  have to care about: `syncFeatureState()` wipes *all* feature state on every
+  pass, so hover has to be part of the wanted-state model rather than a
+  fire-and-forget `setFeatureState`; and `setHoveredStop` resolves through
+  `drawnAncestor()` like `setFocus` does, since a platform is never drawn.
+  Wired from `PanelRenderer` via a new `hoverStop` hook, cleared on `show()`/
+  `hide()` because a page change replaces the hovered row without a
+  `pointerout`.
 - `ScheduleController` had no map or navigation reference, so `index.ts` injects
   one via `setStopHighlightHandlers({ onStopFocus, onStopHover })`, next to the
   existing `setPatchManager` call.
