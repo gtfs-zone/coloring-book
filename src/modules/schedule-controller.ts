@@ -6,6 +6,7 @@
 
 import { Stops, StopTimes } from '../types/gtfs-entities.js';
 import { notify } from './notification-system';
+import { markReferenceResolved } from './feed-issues.js';
 import type { GTFSParser } from './gtfs-parser.js';
 import { TimeFormatter } from '../utils/time-formatter.js';
 import {
@@ -432,6 +433,11 @@ export class ScheduleController {
     if (picked !== null && picked !== currentValue) {
       span.textContent = picked || '-';
       span.dataset.value = picked;
+      // The old value was the broken one, so drop the red without waiting for
+      // the next validation pass.
+      markReferenceResolved('trips.txt', 'shape_id', currentValue);
+      span.classList.remove('text-error', 'font-semibold');
+      span.removeAttribute('title');
       void this.updateTripProperty(tripId, 'shape_id', picked);
     }
   }
