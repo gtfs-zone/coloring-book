@@ -1,4 +1,9 @@
-import { showModal, renderTrashIcon, renderUploadIcon } from './modal-utils.js';
+import {
+  showModal,
+  renderScrollableTable,
+  renderTrashIcon,
+  renderUploadIcon,
+} from './modal-utils.js';
 import type { GTFSParser } from './gtfs-parser.js';
 import type { PatchManager } from './patch-manager.js';
 import type { Shapes } from '../types/gtfs-entities.js';
@@ -6,6 +11,7 @@ import { parseGPX } from '../utils/gpx-parser.js';
 import { generateCompositeKeyFromRecord } from '../utils/gtfs-primary-keys.js';
 import { escapeHtml } from '../utils/escape-html.js';
 import { getRouteDisplay, renderOptionLabel } from '../utils/entity-display.js';
+import { renderEntityChip } from '../utils/entity-references.js';
 import { routeColor } from '../utils/route-colors.js';
 import { navigateToRoute } from './navigation-actions.js';
 
@@ -34,19 +40,14 @@ function pickGPXFile(): Promise<File | null> {
   });
 }
 
-// Compact enough to sit several to a table cell, unlike renderRouteReference's
-// full card row.
 function renderRouteChip(route: Record<string, unknown>): string {
   const route_id = String(route.route_id ?? '');
-  const color = routeColor(route_id, route.route_color as string | undefined);
-  const label = renderOptionLabel(
-    getRouteDisplay(route as Record<string, string>)
-  );
-  return `
-    <button class="inline-flex items-center gap-1 max-w-full text-xs cursor-pointer hover:underline" data-action="route" data-route-id="${escapeHtml(route_id)}" title="${escapeHtml(label)}">
-      <span class="w-2 h-2 rounded-full flex-shrink-0" style="background-color: ${color}"></span>
-      <span class="truncate">${escapeHtml(label)}</span>
-    </button>`;
+  return renderEntityChip({
+    action: 'route',
+    id: route_id,
+    label: renderOptionLabel(getRouteDisplay(route as Record<string, string>)),
+    color: routeColor(route_id, route.route_color as string | undefined),
+  });
 }
 
 function renderBody(shapes: Map<string, ShapeUsage>): string {
@@ -80,23 +81,10 @@ function renderBody(shapes: Map<string, ShapeUsage>): string {
     )
     .join('');
 
-  // The table body scrolls under a pinned header, and the upload button sits
-  // below the scroll container so it stays reachable with hundreds of shapes.
+  // The upload button sits below the scroll container so it stays reachable
+  // with hundreds of shapes.
   return `
-    <div class="max-h-[55vh] overflow-y-auto">
-      <table class="table table-sm table-pin-rows">
-        <thead>
-          <tr>
-            <th>Shape ID</th>
-            <th>Points</th>
-            <th>Trips</th>
-            <th>Routes</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-        <tbody>${rows}</tbody>
-      </table>
-    </div>
+    ${renderScrollableTable(['Shape ID', 'Points', 'Trips', 'Routes', 'Actions'], rows)}
     <div class="mt-4">
       ${uploadBtn}
     </div>
@@ -208,7 +196,7 @@ export class ShapesManager {
             // Navigating behind an open modal would leave the route page
             // hidden, so the modal goes first.
             close();
-            void navigateToRoute(btn.dataset.routeId ?? '');
+            void navigateToRoute(btn.dataset.entityId ?? '');
           }
         });
       },
