@@ -96,6 +96,110 @@ async function countStopsPerArea(
   return counts;
 }
 
+/** One collapsible section: the group's own label and the members it names. */
+interface MemberListSection {
+  label: string;
+  items: string[];
+}
+
+/**
+ * A collapsible list of the members of each group, one `<details>` per group.
+ *
+ * Shared by the Areas and Networks panes, which differ only in the join table
+ * they read and the wording of their headings.
+ */
+function renderMemberLists(
+  heading: string,
+  emptyItems: string,
+  sections: MemberListSection[]
+): string {
+  if (sections.length === 0) {
+    return '';
+  }
+  const blocks = sections
+    .map(({ label, items }) => {
+      const body =
+        items.length === 0
+          ? `<li class="opacity-60">${escapeHtml(emptyItems)}</li>`
+          : items.map((item) => `<li>${escapeHtml(item)}</li>`).join('');
+      return `<details class="collapse collapse-arrow bg-base-200 rounded-box">
+        <summary class="collapse-title text-sm py-2 min-h-0">${escapeHtml(label)} (${items.length})</summary>
+        <div class="collapse-content"><ul class="text-xs space-y-1">${body}</ul></div>
+      </details>`;
+    })
+    .join('');
+
+  return `<div class="mt-4 space-y-1">
+    <h3 class="text-sm font-semibold">${escapeHtml(heading)}</h3>
+    ${blocks}
+  </div>`;
+}
+
+/**
+ * Collect the members each group names, via a join table.
+ *
+ * `groupField`/`memberField` are the two columns of the join table; the member
+ * label comes from the member table's own row, or falls back to naming the
+ * dangling id.
+ */
+async function collectMemberSections(
+  deps: FaresModalDeps,
+  spec: {
+    groupTable: string;
+    memberTable: string;
+    joinTable: string;
+    groupField: string;
+    memberField: string;
+    /** Appended to a member's label, e.g. to note implied platforms. */
+    memberSuffix?: (member: Record<string, unknown>) => string;
+  }
+): Promise<MemberListSection[]> {
+  const groups = await deps.gtfsDatabase.getAllRows(
+    specStoreName(spec.groupTable)
+  );
+  if (groups.length === 0) {
+    return [];
+  }
+  const joins = await deps.gtfsDatabase.getAllRows(
+    specStoreName(spec.joinTable)
+  );
+  const members = await deps.gtfsDatabase.getAllRows(
+    specStoreName(spec.memberTable)
+  );
+  const memberById = new Map(
+    members.map((m) => [String(m[spec.memberField] ?? ''), m])
+  );
+
+  const byGroup = new Map<string, string[]>();
+  for (const row of joins) {
+    const group_id = String(row[spec.groupField] ?? '');
+    const member_id = String(row[spec.memberField] ?? '');
+    const member = memberById.get(member_id);
+    const label = member
+      ? renderOptionLabel(
+          getEntityDisplay(
+            specStoreName(spec.memberTable),
+            member as Record<string, string>
+          )
+        )
+      : `${member_id} (missing from ${spec.memberTable})`;
+    const suffix = member ? (spec.memberSuffix?.(member) ?? '') : '';
+    const list = byGroup.get(group_id) ?? [];
+    list.push(`${label}${suffix}`);
+    byGroup.set(group_id, list);
+  }
+
+  return groups.map((group) => ({
+    label: renderOptionLabel(
+      getEntityDisplay(
+        specStoreName(spec.groupTable),
+        group as Record<string, string>
+      )
+    ),
+    items: byGroup.get(String(group[spec.groupField] ?? '')) ?? [],
+  }));
+}
+
 /**
  * A collapsible list of the stops in each area.
  *
@@ -104,57 +208,32 @@ async function countStopsPerArea(
  * the feed says and what the spec implies, so stations are labelled instead.
  */
 async function renderAreaStopLists(deps: FaresModalDeps): Promise<string> {
-  const areas = await deps.gtfsDatabase.getAllRows(
-    specStoreName(GTFS_TABLES.AREAS)
-  );
-  if (areas.length === 0) {
-    return '';
-  }
-  const stopAreas = await deps.gtfsDatabase.getAllRows(
-    specStoreName(GTFS_TABLES.STOP_AREAS)
-  );
-  const stops = await deps.gtfsDatabase.getAllRows(
-    specStoreName(GTFS_TABLES.STOPS)
-  );
-  const stopById = new Map(stops.map((s) => [String(s.stop_id ?? ''), s]));
+  const sections = await collectMemberSections(deps, {
+    groupTable: GTFS_TABLES.AREAS,
+    memberTable: GTFS_TABLES.STOPS,
+    joinTable: GTFS_TABLES.STOP_AREAS,
+    groupField: 'area_id',
+    memberField: 'stop_id',
+    memberSuffix: (stop) =>
+      stopLocationType(stop) === 1 ? ', and its platforms' : '',
+  });
+  return renderMemberLists('Stops by area', 'No stops assigned.', sections);
+}
 
-  const byArea = new Map<string, string[]>();
-  for (const row of stopAreas) {
-    const area_id = String(row.area_id ?? '');
-    const stop_id = String(row.stop_id ?? '');
-    const stop = stopById.get(stop_id);
-    const label = stop
-      ? renderOptionLabel(getStopDisplay(stop as Record<string, string>))
-      : `${stop_id} (missing from stops.txt)`;
-    const suffix =
-      stop && stopLocationType(stop) === 1 ? ', and its platforms' : '';
-    const list = byArea.get(area_id) ?? [];
-    list.push(`${label}${suffix}`);
-    byArea.set(area_id, list);
-  }
-
-  const sections = areas
-    .map((area) => {
-      const area_id = String(area.area_id ?? '');
-      const labels = byArea.get(area_id) ?? [];
-      const heading = renderOptionLabel(
-        getEntityDisplay('areas', area as Record<string, string>)
-      );
-      const body =
-        labels.length === 0
-          ? '<li class="opacity-60">No stops assigned.</li>'
-          : labels.map((l) => `<li>${escapeHtml(l)}</li>`).join('');
-      return `<details class="collapse collapse-arrow bg-base-200 rounded-box">
-        <summary class="collapse-title text-sm py-2 min-h-0">${escapeHtml(heading)} (${labels.length})</summary>
-        <div class="collapse-content"><ul class="text-xs space-y-1">${body}</ul></div>
-      </details>`;
-    })
-    .join('');
-
-  return `<div class="mt-4 space-y-1">
-    <h3 class="text-sm font-semibold">Stops by area</h3>
-    ${sections}
-  </div>`;
+/** A collapsible list of the routes in each network. */
+async function renderNetworkRouteLists(deps: FaresModalDeps): Promise<string> {
+  const sections = await collectMemberSections(deps, {
+    groupTable: GTFS_TABLES.NETWORKS,
+    memberTable: GTFS_TABLES.ROUTES,
+    joinTable: GTFS_TABLES.ROUTE_NETWORKS,
+    groupField: 'network_id',
+    memberField: 'route_id',
+  });
+  return renderMemberLists(
+    'Routes by network',
+    'No routes assigned.',
+    sections
+  );
 }
 
 /**
@@ -487,6 +566,7 @@ const FARES_ENTRIES: FaresEntry[] = [
         },
       ];
     },
+    detail: (deps) => renderNetworkRouteLists(deps),
   },
 ];
 
