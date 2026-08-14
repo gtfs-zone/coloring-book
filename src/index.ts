@@ -10,6 +10,7 @@ import { InfoDisplay } from './modules/info-display';
 import { SearchController } from './modules/search-controller';
 import { buildSearchEntries } from './modules/search-entries';
 import { GTFSValidator } from './modules/gtfs-validator';
+import { deriveFeedIssues, setFeedIssues } from './modules/feed-issues';
 import { KeyboardShortcuts } from './modules/keyboard-shortcuts';
 import { FieldDescriptionsDisplay } from './modules/field-descriptions';
 import { ScheduleController } from './modules/schedule-controller';
@@ -392,6 +393,9 @@ export class GTFSEditor {
         await this.gtfsParser.initializeEmpty();
       }
 
+      // Validate the restored feed so the home panel can show its issues.
+      this.validateAndUpdateInfo();
+
       if (CONFIG.DEBUG_BOOT) {
         console.time('[boot] browse-navigation.refresh');
       }
@@ -443,10 +447,15 @@ export class GTFSEditor {
     }
   }
 
-  // Not called on startup: invoke manually if the validation panel is opened.
+  // Runs on boot and after every import/replace/new-feed action (see ui.ts validateCallback).
+  // Publishes the grouped issues the home panel renders.
   public validateAndUpdateInfo(): void {
     const validationResults = this.validator.validateFeed();
-    void validationResults;
+    const issues = deriveFeedIssues(validationResults);
+    setFeedIssues(issues);
+    console.log(
+      `[GTFSEditor] validation: ${validationResults.errors.length} error(s), ${validationResults.warnings.length} warning(s), ${issues.length} issue group(s)`
+    );
   }
 
   /**

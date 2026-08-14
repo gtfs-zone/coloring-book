@@ -301,6 +301,14 @@ export class UIController {
         document.getElementById('files-modal') as HTMLDialogElement
       )?.showModal();
 
+      // Validate before rendering: the home panel draws the resulting issues.
+      if (this.validateCallback) {
+        console.time('[GTFS] validate');
+        this.validateCallback();
+
+        console.timeEnd('[GTFS] validate');
+      }
+
       // Refresh Objects navigation if available
       if (this.browseNavigation) {
         console.time('[GTFS] navigateToHome + refresh');
@@ -308,14 +316,6 @@ export class UIController {
         this.browseNavigation.refresh();
 
         console.timeEnd('[GTFS] navigateToHome + refresh');
-      }
-
-      // Run validation if callback is available
-      if (this.validateCallback) {
-        console.time('[GTFS] validate');
-        this.validateCallback();
-
-        console.timeEnd('[GTFS] validate');
       }
 
       // Update map tool button states
@@ -419,15 +419,15 @@ export class UIController {
       this.updateFileList();
       await this.mapController!.updateMap();
 
+      // Validate before rendering: the home panel draws the resulting issues.
+      if (this.validateCallback) {
+        this.validateCallback();
+      }
+
       // Refresh Objects navigation if available
       if (this.browseNavigation) {
         await navigateToHome();
         this.browseNavigation.refresh();
-      }
-
-      // Run validation if callback is available
-      if (this.validateCallback) {
-        this.validateCallback();
       }
 
       // Update map tool button states
@@ -1185,15 +1185,15 @@ export class UIController {
       // Clear editor
       this.editor!.clearEditor();
 
+      // Validate before rendering: the home panel draws the resulting issues.
+      if (this.validateCallback) {
+        this.validateCallback();
+      }
+
       // Refresh Objects navigation if available
       if (this.browseNavigation) {
         await navigateToHome();
         this.browseNavigation.refresh();
-      }
-
-      // Run validation if callback is available
-      if (this.validateCallback) {
-        this.validateCallback();
       }
 
       notify.success('New empty GTFS feed created.');
