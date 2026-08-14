@@ -1143,32 +1143,74 @@ Full inventory (this is every glyph in `src/`, verified by grep):
 - `src/modules/route-graph.ts:166` - `→`, but it is inside a doc comment, not
   rendered markup. Nothing to swap; confirm and drop it from the inventory.
 
-- [ ] Add the missing icon helpers to `modal-utils.ts`, matching the existing
+- [x] Add the missing icon helpers to `modal-utils.ts`, matching the existing
       `sizeClass`-parameter signature: a chevron (one icon, rotated via a class
       for the up/down states, rather than two separate icons), a start/end
       triangle marker, an up/down service-date marker, and an arrow.
-- [ ] Swap the two calendar-modal date badges (lines 105, 109). Keep them inside
+- [x] Swap the two calendar-modal date badges (lines 105, 109). Keep them inside
       their `badge badge-xs badge-success` / `badge-error` wrappers and keep the
       `field-tooltip-trigger` / `data-tooltip-content` attributes so the hover
       text is unchanged.
-- [ ] Swap the two `service-timeline.ts` timeline markers (lines 371, 379).
+- [x] Swap the two `service-timeline.ts` timeline markers (lines 371, 379).
       Replace the inline `style="color:#4ade80"` / `#f87171` hex colors with
       theme classes (`text-success` / `text-error`) instead of carrying the
       hardcoded hex onto the SVG. They are rendered through
       `renderTooltipTrigger(text, content, style)`: keep the trigger wrapper, and
       pass the color as a class rather than widening the `style` parameter.
-- [ ] Swap the 9 `ui.ts` chevrons. Since these are runtime `textContent`
+- [x] Swap the 9 `ui.ts` chevrons. Since these are runtime `textContent`
       assignments inside expand/collapse handlers, prefer rendering the chevron
       SVG once into the element and toggling a `rotate-180` class on it, so the
       handlers stop rebuilding markup on every toggle.
-- [ ] `route-graph.ts:166` needs no change: the arrow is prose inside a doc
+- [x] `route-graph.ts:166` needs no change: the arrow is prose inside a doc
       comment. Re-grep to confirm, then leave it.
-- [ ] Size and color must come from Tailwind/DaisyUI classes, not inline styles,
+- [x] Size and color must come from Tailwind/DaisyUI classes, not inline styles,
       so all 9 themes stay correct. Verify light and dark themes.
-- [ ] Re-grep `src/` for glyphs afterwards to confirm none remain.
+- [x] Re-grep `src/` for glyphs afterwards to confirm none remain.
 - [ ] Manually verify: calendar modal badges and timeline markers, and every
       expand/collapse chevron in the file/route list.
-- [ ] Commit: `refactor(icons): replace glyph characters with svg icons`
+- [x] Commit: `refactor(icons): replace glyph characters with svg icons`
+
+**Done** (commit `51e8536`, plus the `ui.ts` half which landed inside `ef01288`,
+see below). Notes:
+
+- **Three helpers, not four.** `renderChevronIcon` (stroke chevron pointing
+  down), `renderTriangleIcon` (filled triangle pointing right), and
+  `renderCloseIcon` (see below). No arrow helper: the only `→` in `src/` is prose
+  in a `route-graph.ts` doc comment, re-grepped and confirmed, so nothing renders
+  one.
+- **One triangle covers all four markers.** Its path is centred on the viewBox
+  (`M8 6l8 6-8 6z`, bounding box 8..16 x 6..18), so rotating it stays put:
+  feed start as-is, feed end `rotate-180`, added `-rotate-90`, removed
+  `rotate-90`. Both rotation and color are passed through the single
+  `sizeClass` parameter, which is just a class string, so the existing helper
+  signature did not have to grow.
+- **The month-grid `+` / `−` chips reuse that same up/down triangle** (decided
+  with the user), so an added/removed date reads identically in the month view
+  and the timeline. No plus/minus icons exist.
+- `renderTooltipTrigger`'s third parameter in `service-timeline.ts` changed from
+  `style` to `className` (its only two style callers were these glyphs), and the
+  ticks pass `inline-flex text-success` / `inline-flex text-error`. `inline-flex`
+  is needed because an SVG inside a bare inline span does not centre in the
+  table cell.
+- The `ui.ts` chevron spans are now `inline-flex opacity-60 transition-transform`
+  with the SVG set once via `innerHTML`; each of the three toggle handlers ends
+  in a single `chevronEl.classList.toggle('rotate-180', isExpanded)` instead of
+  two `textContent` writes. `inline-flex` matters here too: `rotate-180` on a
+  non-replaced inline element does nothing.
+
+**Out-of-inventory glyphs found by the closing re-grep.** The plan's inventory
+claimed to be every glyph in `src/` and was not: five `×` close/remove buttons
+were standing in for an X icon. They are swapped too, via a new
+`renderCloseIcon`, since they are the same defect: `modal-utils.ts`'s shared
+`showModal` dismiss button, `levels-controller.ts`, `notification-system.ts`, and
+two in `service-days-controller.ts`. The `•` separator in
+`field-descriptions.ts:84` is left alone: it is real typography, not an icon.
+
+**The `ui.ts` chevrons are not in `51e8536`.** A second session was editing this
+working tree at the same time and committed Phase 21's `ui.ts` changes with
+`git commit -a`, which swallowed the chevron hunks into `ef01288`
+(`fix(files-modal): ...`). The code is correct and present; only the commit
+message is wrong about it. Nothing to redo.
 
 ### Phase 19: Shapes list shows routes and trip counts, with sticky chrome
 
