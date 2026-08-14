@@ -37,6 +37,7 @@ import {
 } from './modules/calendar-modal';
 import { ShapesManager } from './modules/shapes-manager';
 import { renderRouteWaypointsIcon } from './modules/modal-utils';
+import { NavbarCounts } from './modules/navbar-counts';
 import { PanelResizer } from './modules/panel-resizer';
 import { LevelsController } from './modules/levels-controller';
 import { feedProgressIndicator } from './modules/feed-progress-indicator';
@@ -78,6 +79,7 @@ export class GTFSEditor {
   public pageStateManager: PageStateManager;
   public patchManager: PatchManager;
   public historyController: HistoryController;
+  public navbarCounts: NavbarCounts;
   public tabLock: TabLockController;
   public levelsController: LevelsController;
 
@@ -121,6 +123,10 @@ export class GTFSEditor {
       this.gtfsParser
     );
     this.historyController = new HistoryController();
+    this.navbarCounts = new NavbarCounts({
+      gtfsParser: this.gtfsParser,
+      patchManager: this.patchManager,
+    });
     this.tabLock = new TabLockController();
     this.levelsController = new LevelsController(this.gtfsParser.gtfsDatabase);
 
@@ -187,6 +193,7 @@ export class GTFSEditor {
       }
       feedProgressIndicator.updateProgress('boot', 80, 'Building map...');
       this.historyController.initialize(this.patchManager);
+      this.navbarCounts.initialize();
       this.updateUndoRedoState();
 
       // Initialize all modules
@@ -456,6 +463,10 @@ export class GTFSEditor {
   // Runs on boot and after every import/replace/new-feed action (see ui.ts validateCallback).
   // Publishes the grouped issues the home panel renders.
   public validateAndUpdateInfo(): void {
+    // Feed import writes rows directly, bypassing the patch events the count
+    // badges otherwise listen to.
+    this.navbarCounts.refresh();
+
     const validationResults = this.validator.validateFeed();
     const issues = deriveFeedIssues(validationResults);
     setFeedIssues(issues);
