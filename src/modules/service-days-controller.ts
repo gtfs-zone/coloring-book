@@ -10,6 +10,7 @@ import {
   GTFSTableMap,
 } from '../types/gtfs-entities.js';
 import { notify } from './notification-system';
+import { renderCloseIcon } from './modal-utils.js';
 import { patchUpdate } from '../utils/patch-utils.js';
 import {
   HOLIDAY_PATTERNS,
@@ -611,7 +612,7 @@ export class ServiceDaysController {
                 class="btn btn-ghost btn-xs"
                 onclick="window.gtfsEditor.serviceDaysController.removePatternGroup('${service_id}', '${pattern.id}', ${exception_type})"
               >
-                ×
+                ${renderCloseIcon('h-3 w-3')}
               </button>
             </div>
           `;
@@ -674,7 +675,7 @@ export class ServiceDaysController {
               class="btn btn-ghost btn-xs"
               onclick="window.gtfsEditor.serviceDaysController.removeException('${service_id}', '${exception.date}')"
             >
-              ×
+              ${renderCloseIcon('h-3 w-3')}
             </button>
           </div>
         `;
