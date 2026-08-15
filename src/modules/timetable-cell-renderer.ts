@@ -12,6 +12,10 @@ import { EditableStopTime } from './timetable-data-processor.js';
  * Renders a stop/trip time cell as two plain `<span>`s (arrival, departure).
  * Editing is handled entirely by ScheduleController's delegated click handler,
  * which swaps a span for a live `<input>` on click - see installTimeCellEditor.
+ *
+ * Every span renders with `tabindex="-1"`. ScheduleController promotes exactly
+ * one of them to `tabindex="0"` after each render (see applyTimetableSelection),
+ * so Tab enters the grid at a single cell instead of walking all few thousand.
  */
 export class TimetableCellRenderer {
   /**
@@ -53,7 +57,9 @@ export class TimetableCellRenderer {
       display: string
     ): string => `
         <span
-          class="time-span block font-mono text-xs cursor-pointer rounded px-1 hover:bg-base-200"
+          class="time-span block font-mono text-xs cursor-pointer rounded px-1 hover:bg-base-200 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-primary"
+          role="gridcell"
+          tabindex="-1"
           data-trip-id="${trip_id}"
           data-stop-id="${stop_id}"
           data-stop-index="${stopIndex}"

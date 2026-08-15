@@ -81,16 +81,40 @@ editing) or editing. Arrows move the selection; Enter, F2 or any printable
 character opens the editor. Phase 1's in-editor behaviour is unchanged: from an
 open editor, Enter still commits and opens the next cell down.
 
-- [ ] Add `tabindex="-1"` and `role="gridcell"` to `.time-span` in
+Implemented. Decisions taken during implementation:
+
+- Tab in navigation mode leaves the grid, as the roving tabindex implies. All
+  four arrows move the selection instead, which is free here because a selected
+  cell has no text caret to protect. That needed a second key mapping,
+  `arrowToGridDirection` in `utils/grid-navigation.ts`, alongside phase 1's
+  `keyToGridDirection`: in nav mode Enter and Tab mean something else entirely,
+  so they could not share one function.
+- Trip property rows are not part of the grid. They are a different cell type
+  with a different editor (some open pickers, not inline inputs), so the
+  printable-character and Delete handlers would have needed per-type branching.
+- Delete on the pending add-stop row is a no-op, short-circuited before the DB
+  call rather than relying on `updateArrivalDepartureTime`'s existing early
+  return for a clear with no stop_time behind it.
+
+The one thing the plan underestimated: `restoreTimetableEditor` was not a
+sufficient post-render hook. It is called only inside `browse-navigation`'s
+`isSamePage` guard, so a *freshly opened* timetable never ran it and would have
+had no cell carrying `tabindex="0"` at all, making the grid untabbable in
+exactly the case that matters most. `applyTimetableSelection()` is therefore
+called unconditionally, outside that guard.
+
+- [x] Add `tabindex="-1"` and `role="gridcell"` to `.time-span` in
       `timetable-cell-renderer.ts`. Exactly one span in the grid carries
       `tabindex="0"` (roving tabindex) so Tab enters the grid at a single stop
       and Tab from inside it leaves, rather than walking every cell.
-- [ ] Add `role="grid"` to the table and `role="row"` to the rows in
+- [x] Add `role="grid"` to the table and `role="row"` to the rows in
       `timetable-renderer.ts`.
-- [ ] Track which cell holds the roving tabindex on `ScheduleController`, keyed
+- [x] Track which cell holds the roving tabindex on `ScheduleController`, keyed
       the same way as `editingCell` (trip id, stop index, time type) so it can
       be re-applied after a render. Default it to the first time cell.
-- [ ] Add a delegated `keydown` on `document` inside `installTimetablePickers`
+      Both keys now share a `TimeCellKey` interface and a `findTimeCell(key)`
+      lookup, which `restoreTimetableEditor` was also switched over to.
+- [x] Add a delegated `keydown` on `document` inside `installTimetablePickers`
       (`schedule-controller.ts`), matching `.time-span` targets. Delegate on
       `document` rather than the container, for the same reason the click
       handler does: the container's `innerHTML` is replaced wholesale by several
@@ -105,10 +129,18 @@ open editor, Enter still commits and opens the next cell down.
   - Delete or Backspace: clear the time. Route through
     `updateArrivalDepartureTime` with an empty value so it records a patch like
     any other edit.
-- [ ] Extend the capture/restore pair to carry selection, not just an open
+- [x] Extend the capture/restore pair to carry selection, not just an open
       editor, so arrowing around also survives a re-render. `editingCell`
       already has the right shape; add a sibling `selectedCell` and restore
       whichever is set.
+      `selectedCell` alone was not enough: it survives the user clicking away
+      from the grid, so restoring it would have yanked focus back into the
+      timetable on any unrelated re-render. `captureTimetableEditor` now also
+      records `selectionHadFocus` (was the active element really a `.time-span`)
+      and only that re-focuses. A delegated `focusin` keeps `selectedCell` in
+      step when the user tabs or clicks into a cell, and
+      `resetTimetableScroll` clears it on navigation to another page, since the
+      key means nothing in a different timetable.
 
 ### Phase 2 gotchas
 
@@ -127,7 +159,11 @@ open editor, Enter still commits and opens the next cell down.
   cross into the trip property rows (`.trip-prop-span`, keyed by `data-trip-id`
   plus `data-field`, `timetable-renderer.ts:307`). They are column aligned with
   the time cells so it works, but it mixes two cell types in one grid. Leave it
-  out unless it feels natural in use.
+  out unless it feels natural in use. **Left out.**
+- `role="gridcell"` sits on the span, not the `<td>`, because one `<td>` holds
+  two logical cells (arrival and departure). Strictly that nests a gridcell
+  inside a cell. Fixing it properly means restructuring the table so each time
+  gets its own `<td>`, which is out of scope here.
 
 ## Phase 3: the Files modal
 
@@ -191,7 +227,7 @@ be a follow-up once the pattern has proven itself in the timetable.
 No Playwright. Tests are not maintained on this project and the user tests
 manually.
 
-- [ ] `pnpm typecheck` and `pnpm lint` clean.
+- [x] `pnpm typecheck` and `pnpm lint` clean.
 - [ ] `pnpm dev`, load a feed, open a route timetable.
 - [ ] Phase 2: Tab into the grid from outside and confirm it lands on one cell,
       not every cell. Arrow around without an editor opening. Press a digit and

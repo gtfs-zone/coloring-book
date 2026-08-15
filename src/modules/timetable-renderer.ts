@@ -207,7 +207,7 @@ export class TimetableRenderer {
     // Always render the table structure, even when empty
     return `
       <div class="flex-1 overflow-x-auto">
-        <table class="table table-xs table-pin-rows table-pin-cols">
+        <table class="table table-xs table-pin-rows table-pin-cols" role="grid">
           ${this.renderTimetableHeader(data, !!pendingStopId)}
           ${this.renderTimetableBody(data, pendingStopId)}
         </table>
@@ -616,7 +616,7 @@ export class TimetableRenderer {
         const newTripCell = '<td class="text-center p-2"></td>';
 
         return `
-        <tr class="${rowClass}">
+        <tr class="${rowClass}" role="row">
           <th
             class="stop-name ${STRIP_ROW_CLASS} max-w-[320px] py-0 px-2 pl-0 font-medium border-r border-base-300 bg-base-100"
             data-stop-id="${escapeHtml(stop.stop_id)}"

@@ -35,6 +35,33 @@ export function keyToGridDirection(e: KeyboardEvent): GridDirection | null {
   }
 }
 
+/**
+ * The cell movement an arrow key asks for, with no editor open.
+ *
+ * The counterpart to `keyToGridDirection`: once a cell is merely selected there
+ * is no caret to protect, so the horizontal arrows move between cells too.
+ * Enter and Tab are absent because they mean something else in this mode -
+ * Enter opens the editor, Tab leaves the grid entirely.
+ */
+export function arrowToGridDirection(e: KeyboardEvent): GridDirection | null {
+  if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) {
+    return null;
+  }
+
+  switch (e.key) {
+    case 'ArrowUp':
+      return 'up';
+    case 'ArrowDown':
+      return 'down';
+    case 'ArrowLeft':
+      return 'left';
+    case 'ArrowRight':
+      return 'right';
+    default:
+      return null;
+  }
+}
+
 /** True for the directions only a grid with a vertical axis should act on. */
 export function isVerticalArrow(e: KeyboardEvent): boolean {
   return e.key === 'ArrowUp' || e.key === 'ArrowDown';

@@ -90,6 +90,7 @@ export class BrowseNavigation {
     resetTimetableScroll: () => void;
     captureTimetableEditor: () => void;
     restoreTimetableEditor: () => void;
+    applyTimetableSelection: () => void;
   } | null = null; // Will be set after initialization
   public serviceDaysController: {
     renderServiceEditor: (service_id: string) => Promise<string>;
@@ -230,6 +231,7 @@ export class BrowseNavigation {
       resetTimetableScroll: () => void;
       captureTimetableEditor: () => void;
       restoreTimetableEditor: () => void;
+      applyTimetableSelection: () => void;
     },
     serviceDaysController?: {
       renderServiceEditor: (service_id: string) => Promise<string>;
@@ -425,6 +427,16 @@ export class BrowseNavigation {
       // Render page content
       const pageContent = await this.contentRenderer.renderPage(pageState);
 
+      // Navigating away mid-render (an edit re-renders the current page, the
+      // user clicks elsewhere before it resolves) leaves this holding the old
+      // page's HTML. Drop it: the navigation kicked off its own render.
+      if (JSON.stringify(getCurrentPageState()) !== JSON.stringify(pageState)) {
+        console.log(
+          `[BrowseNavigation] stale render for ${pageState.type}, discarding`
+        );
+        return;
+      }
+
       this.container.innerHTML = `
         <div class="browse-navigation h-full flex flex-col">
           ${this.renderBreadcrumbs(breadcrumbs)}
@@ -460,6 +472,11 @@ export class BrowseNavigation {
         this.restoreFocus(savedFocus);
         this.scheduleController?.restoreTimetableEditor();
       }
+
+      // Outside the isSamePage guard: a freshly opened timetable has no
+      // selection to restore, but still needs one cell carrying tabindex="0"
+      // or the grid cannot be tabbed into.
+      this.scheduleController?.applyTimetableSelection();
     } catch (error) {
       console.error('Error rendering browse navigation:', error);
       this.renderErrorState();
