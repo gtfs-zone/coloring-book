@@ -10,7 +10,10 @@ import { InfoDisplay } from './modules/info-display';
 import { SearchController } from './modules/search-controller';
 import { buildSearchEntries } from './modules/search-entries';
 import { GTFSValidator } from './modules/gtfs-validator';
-import { publishFeedIssues } from './modules/feed-issues';
+import {
+  publishFeedIssues,
+  setFeedIssueRevalidator,
+} from './modules/feed-issues';
 import { KeyboardShortcuts } from './modules/keyboard-shortcuts';
 import { FieldDescriptionsDisplay } from './modules/field-descriptions';
 import { ScheduleController } from './modules/schedule-controller';
@@ -123,6 +126,14 @@ export class GTFSEditor {
       this.gtfsParser.gtfsDatabase,
       this.gtfsParser
     );
+    // Lets the home panel re-run validation itself when the feed has moved on
+    // since the issues it is about to draw were published.
+    setFeedIssueRevalidator({
+      validate: () => this.validator.validateFeed(),
+      source: this.gtfsParser,
+      getVersion: () => this.patchManager.version,
+    });
+
     this.historyController = new HistoryController();
     this.navbarCounts = new NavbarCounts({
       gtfsParser: this.gtfsParser,
