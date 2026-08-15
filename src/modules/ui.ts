@@ -21,6 +21,7 @@ import { Editor } from './editor.js';
 import { BrowseNavigation } from './browse-navigation.js';
 import { ScheduleController } from './schedule-controller.js';
 import { getStopDisplay, renderOptionLabel } from '../utils/entity-display.js';
+import { buildExportFilename } from '../utils/export-filename.js';
 
 function escapeHtml(text: string): string {
   return text
@@ -1213,6 +1214,22 @@ export class UIController {
     }
   }
 
+  /** Feed identity for the export filename: agency name, else feed publisher. */
+  private getFeedName(): string | undefined {
+    const agencies = this.gtfsParser?.getFileDataSync(GTFS_TABLES.AGENCY) ?? [];
+    const agencyName = agencies[0]?.agency_name;
+    if (typeof agencyName === 'string' && agencyName.trim()) {
+      return agencyName;
+    }
+
+    const feedInfo =
+      this.gtfsParser?.getFileDataSync(GTFS_TABLES.FEED_INFO) ?? [];
+    const publisher = feedInfo[0]?.feed_publisher_name;
+    return typeof publisher === 'string' && publisher.trim()
+      ? publisher
+      : undefined;
+  }
+
   async exportGTFS() {
     let loadingNotificationId = null;
 
@@ -1242,7 +1259,7 @@ export class UIController {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = 'gtfs-modified.zip';
+      a.download = buildExportFilename(this.getFeedName());
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
