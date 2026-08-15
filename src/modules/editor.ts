@@ -9,6 +9,7 @@ import {
   generateCompositeKeyFromRecord,
   getGTFSPrimaryKey,
 } from '../utils/gtfs-primary-keys.js';
+import { keyToGridDirection } from '../utils/grid-navigation.js';
 
 interface GTFSParser {
   updateFileInMemory(fileName: string, content: string): void;
@@ -168,7 +169,7 @@ export class Editor {
       // Create table container with proper structure for Clusterize.js
       if (tableContainer) {
         tableContainer.innerHTML = `
-      <div class="clusterize-scroll" id="scrollArea">
+      <div class="clusterize-scroll h-full overflow-auto" id="scrollArea">
         <table class="clusterize-table" id="table">
           <thead>
             <tr>
@@ -239,6 +240,30 @@ export class Editor {
               this.updateTableCell(target);
             }
           });
+
+          // Vertical arrow / Enter navigation between rows. Horizontal movement
+          // is left to native Tab, which already skips the input-less PK cells.
+          scrollArea.addEventListener('keydown', (e) => {
+            const target = e.target as HTMLInputElement;
+            if (!target || target.tagName !== 'INPUT' || !target.dataset.row) {
+              return;
+            }
+            const direction = keyToGridDirection(e);
+            if (direction !== 'up' && direction !== 'down') {
+              return;
+            }
+            const col = target.dataset.col;
+            if (!col) {
+              return;
+            }
+            e.preventDefault();
+            const rowIndex = parseInt(target.dataset.row);
+            this.focusTableCell(
+              rowIndex + (direction === 'down' ? 1 : -1),
+              col,
+              0
+            );
+          });
         }
       }
     } catch (error) {
@@ -248,6 +273,50 @@ export class Editor {
           '<div class="p-4 text-center text-red-500">Error loading table data</div>';
       }
     }
+  }
+
+  /**
+   * Focus the input at (rowIndex, col), scrolling it into the rendered cluster
+   * first if Clusterize has not got it in the DOM.
+   */
+  private focusTableCell(rowIndex: number, col: string, attempt: number): void {
+    if (!this.tableData || rowIndex < 0 || rowIndex >= this.tableData.length) {
+      return;
+    }
+
+    const contentArea = document.getElementById('contentArea');
+    const scrollArea = document.getElementById('scrollArea');
+    if (!contentArea || !scrollArea) {
+      return;
+    }
+
+    const input = contentArea.querySelector<HTMLInputElement>(
+      `input[data-row="${rowIndex}"][data-col="${CSS.escape(col)}"]`
+    );
+    if (input) {
+      input.focus();
+      input.select();
+      input.scrollIntoView({ block: 'nearest' });
+      return;
+    }
+
+    // Outside the rendered cluster: scroll toward the row and let Clusterize
+    // render off its own scroll listener, then look again on the next frame.
+    if (attempt >= 2) {
+      console.warn(
+        `[Editor] gave up focusing row ${rowIndex} col ${col} after ${attempt} scroll attempts`
+      );
+      return;
+    }
+
+    const ratio = rowIndex / this.tableData.length;
+    scrollArea.scrollTop = Math.max(
+      0,
+      ratio * scrollArea.scrollHeight - scrollArea.clientHeight / 2
+    );
+    requestAnimationFrame(() => {
+      this.focusTableCell(rowIndex, col, attempt + 1);
+    });
   }
 
   updateTableCell(input: HTMLInputElement): void {
