@@ -53,4 +53,10 @@ export const CONFIG = {
   // init stage. Leave false in production (logs are noisy and measured overhead
   // accumulates in tight loops).
   DEBUG_BOOT: false,
+
+  // Where the feed catalog and any path-only feed URL resolve to. Always the
+  // deployed feed server: unlike test-track, this app has no local realtime
+  // stack to talk to in dev, so pointing it at localhost would only produce a
+  // failed catalog fetch on every load modal open.
+  RT_BASE: 'https://rt.gtfs.zone',
 } as const;

@@ -17,6 +17,27 @@ import type {
 } from '../workers/gtfs-parser.worker.js';
 import { GTFSTableMap, StopTimes } from '../types/gtfs-entities.js';
 import { generateCompositeKeyFromRecord } from '../utils/gtfs-primary-keys.js';
+import { splitInnerZipPath } from './feed-url-resolve.js';
+
+/**
+ * One nested archive out of another. Fails loudly with the entries that *are*
+ * there: a wrong `#inner.zip` is a typo the user can fix, and the list is the
+ * only thing that tells them what to fix it to.
+ */
+async function extractInnerZip(outer: Blob, innerPath: string): Promise<Blob> {
+  const zip = await JSZip.loadAsync(await outer.arrayBuffer());
+  const entry = zip.file(innerPath);
+  if (!entry) {
+    const found = Object.keys(zip.files)
+      .filter((name) => name.toLowerCase().endsWith('.zip'))
+      .join(', ');
+    throw new Error(
+      `The archive has no entry "${innerPath}"${found ? ` — it contains ${found}` : ''}.`
+    );
+  }
+  return entry.async('blob');
+}
+
 interface GTFSFileData<T = GTFSDatabaseRecord> {
   content: string;
   data: T[];
@@ -973,9 +994,14 @@ export class GTFSParser {
     return fileName.replace('.txt', '').replace('.geojson', '');
   }
 
-  async parseFromURL(url: string): Promise<{ unknownFiles: string[] }> {
+  async parseFromURL(rawUrl: string): Promise<{ unknownFiles: string[] }> {
     const operation = 'parseFile';
-    console.log('[GTFSParser] Fetching GTFS from URL:', url);
+    // `…/outer.zip#inner.zip` names a feed nested inside another archive (SEPTA
+    // ships google_bus.zip and google_rail.zip in one release asset). The
+    // fragment is never sent to the server, so it is stripped before fetching
+    // and replayed as a descent once the outer archive is in hand.
+    const { url, innerPaths } = splitInnerZipPath(rawUrl);
+    console.log('[GTFSParser] Fetching GTFS from URL:', url, innerPaths);
     feedProgressIndicator.startLoading(operation, 'Downloading feed...');
     let response: Response;
     try {
@@ -999,8 +1025,19 @@ export class GTFSParser {
       throw new Error(msg);
     }
 
-    const blob = await response.blob();
+    let blob = await response.blob();
     feedProgressIndicator.updateProgress(operation, 5, 'Preparing...');
+
+    for (const innerPath of innerPaths) {
+      console.log('[GTFSParser] Descending into nested archive:', innerPath);
+      try {
+        blob = await extractInnerZip(blob, innerPath);
+      } catch (error) {
+        feedProgressIndicator.finishLoading(operation);
+        throw error;
+      }
+    }
+
     console.log('[GTFSParser] Download complete, parsing ZIP...');
     const { unknownFiles } = await this.parseFile(blob, true);
     return { unknownFiles };

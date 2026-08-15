@@ -82,7 +82,7 @@ export function processURLCommands(uiController: UIController): void {
       '[page-state-integration] processURLCommands: showing load modal for',
       loadUrl
     );
-    uiController.showFromURLModal(loadUrl);
+    void uiController.openLoadModal(loadUrl);
   }
 }
 

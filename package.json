@@ -30,7 +30,7 @@
     "audit": "audit-ci --config audit-ci.json",
     "perf-test": "pnpm run build && pnpm run lighthouse",
     "commit": "cz commit",
-    "atlas": "tsx scripts/generate-atlas-data.ts"
+    "atlas": "tsx scripts/generate-atlas-data.ts --static-only"
   },
   "keywords": [
     "gtfs",

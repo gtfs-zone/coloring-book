@@ -1,6 +1,8 @@
 import { notify } from './notification-system';
 import { showModal, renderChevronIcon } from './modal-utils.js';
-import { showAtlasSearchModal } from './atlas-search.js';
+import { showLoadModal } from './load-modal.js';
+import type { FeedSelection } from './feed-selection.js';
+import { resolvedStaticUrl } from './feed-selection.js';
 import {
   getAgencyFieldDescription,
   getRouteFieldDescription,
@@ -52,6 +54,11 @@ export class UIController {
   browseNavigation: BrowseNavigation | null;
   scheduleController: ScheduleController | null;
   validateCallback: (() => void) | null;
+  /**
+   * What the load modal last produced. Kept only so reopening the modal seeds
+   * from it; the feed itself lives in IndexedDB, not here.
+   */
+  currentSelection: FeedSelection | null;
 
   constructor() {
     this.gtfsParser = null;
@@ -60,6 +67,7 @@ export class UIController {
     this.browseNavigation = null;
     this.scheduleController = null;
     this.validateCallback = null;
+    this.currentSelection = null;
   }
 
   initialize(
@@ -81,74 +89,10 @@ export class UIController {
   }
 
   setupEventListeners() {
-    // DaisyUI handles dropdown toggle automatically via tabindex and focus
-
-    // Helper to close dropdown
-    const closeLoadDropdown = () => {
-      // Close examples details if open
-      const examplesDetails = document.querySelector(
-        '#load-dropdown details'
-      ) as HTMLDetailsElement;
-      if (examplesDetails) {
-        examplesDetails.open = false;
-      }
-      // Remove focus to close dropdown
-      (document.activeElement as HTMLElement)?.blur();
-    };
-
-    // Empty button (same as New)
-    document.getElementById('empty-btn')?.addEventListener('click', () => {
-      this.createNewFeed();
-      closeLoadDropdown();
-    });
-
-    // Upload button
-    document.getElementById('upload-btn')!.addEventListener('click', () => {
-      document.getElementById('file-input')!.click();
-      closeLoadDropdown();
-    });
-
-    // From URL button
-    document.getElementById('from-url-btn')?.addEventListener('click', () => {
-      closeLoadDropdown();
-      this.showFromURLModal();
-    });
-
-    // Search Atlas button
-    document
-      .getElementById('atlas-search-btn')
-      ?.addEventListener('click', async () => {
-        closeLoadDropdown();
-        const result = await showAtlasSearchModal();
-        if (result) {
-          const effectiveUrl =
-            result.useCors && !result.url.startsWith('https://cors.gtfs.zone/')
-              ? 'https://cors.gtfs.zone/' + result.url
-              : result.url;
-          this.loadGTFSFromURL(effectiveUrl);
-        }
-      });
-
-    // Example buttons
-    document
-      .getElementById('example-columbia')
-      ?.addEventListener('click', (e) => {
-        // Use currentTarget so clicks on child elements (text/icons) still find the data-url
-        const url = (e.currentTarget as HTMLElement).dataset.url;
-        console.log('[UI] Example feed clicked, url:', url);
-        if (url) {
-          this.loadGTFSFromURL(url);
-        }
-        closeLoadDropdown();
-      });
-
-    document.getElementById('example-west')?.addEventListener('click', (e) => {
-      const url = (e.currentTarget as HTMLElement).dataset.url;
-      console.log('[UI] Example feed clicked, url:', url);
-      if (url) {
-        this.loadGTFSFromURL(url);
-      }
-      closeLoadDropdown();
+    // Load button: one modal covering examples, the rt.gtfs.zone catalog, the
+    // TransitLand atlas, a hand-typed URL, and file upload.
+    document.getElementById('load-btn')?.addEventListener('click', () => {
+      void this.openLoadModal();
     });
 
     // File input
@@ -348,58 +292,57 @@ export class UIController {
     }
   }
 
-  showFromURLModal(initialUrl?: string) {
-    showModal({
-      title: 'Load from URL',
-      body: `<input id="gtfs-url-input" type="url" class="input input-bordered w-full" placeholder="https://example.com/gtfs.zip" />`,
-      actionBarContent: `
-        <input type="checkbox" id="cors-proxy-checkbox" class="checkbox checkbox-sm" checked />
-        <span class="label-text text-sm">Use CORS proxy</span>
-        <a
-          href="https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/CORS"
-          target="_blank"
-          rel="noopener noreferrer"
-          class="tooltip tooltip-top btn btn-ghost btn-xs btn-circle"
-          data-tip="For most feeds, this is required. Note that the proxy (running on my computer) will see your request. What is CORS and why does my request fail without this proxy? Click to learn more in a new tab."
-        >?</a>
-      `,
-      enterAction: 1,
-      escapeAction: 0,
-      actions: [
-        { label: 'Cancel', onClick: () => {} },
+  /**
+   * The single entry point into a feed.
+   *
+   * `initialUrl` seeds the static field, which is how `#load=<url>` arrives:
+   * the URL is offered for review rather than fetched behind the user's back.
+   * Otherwise the modal opens on whatever is currently loaded, so reopening it
+   * is also how you edit a feed's URL.
+   */
+  async openLoadModal(initialUrl?: string) {
+    const seed: FeedSelection | null = initialUrl
+      ? {
+          static: {
+            kind: 'url',
+            url: initialUrl,
+            useCors: true,
+            label: 'Linked feed',
+          },
+          realtime: null,
+        }
+      : this.currentSelection;
+
+    const selection = await showLoadModal(seed, {
+      realtime: false,
+      extraActions: [
         {
-          label: 'Load',
-          className: 'btn-primary',
-          onClick: async () => {
-            const input = document.getElementById(
-              'gtfs-url-input'
-            ) as HTMLInputElement;
-            const url = input.value.trim();
-            if (!url) {
-              return true;
-            }
-            const useCors = (
-              document.getElementById('cors-proxy-checkbox') as HTMLInputElement
-            ).checked;
-            const effectiveUrl =
-              useCors && !url.startsWith('https://cors.gtfs.zone/')
-                ? 'https://cors.gtfs.zone/' + url
-                : url;
-            this.loadGTFSFromURL(effectiveUrl);
-            return false;
+          label: 'New Empty Feed',
+          className: 'btn-ghost',
+          onClick: () => {
+            void this.createNewFeed();
           },
         },
       ],
-      onMount: () => {
-        const input = document.getElementById(
-          'gtfs-url-input'
-        ) as HTMLInputElement;
-        if (initialUrl) {
-          input.value = initialUrl;
-        }
-        input.focus();
-      },
     });
+
+    if (selection) {
+      await this.loadSelection(selection);
+    }
+  }
+
+  /** Load whichever half of a selection this app cares about: the static feed. */
+  async loadSelection(selection: FeedSelection) {
+    this.currentSelection = selection;
+    const src = selection.static;
+    if (!src) {
+      return;
+    }
+    if (src.kind === 'file') {
+      await this.loadGTFSFile(src.file);
+    } else {
+      await this.loadGTFSFromURL(resolvedStaticUrl(src));
+    }
   }
 
   async loadGTFSFromURL(url: string) {
