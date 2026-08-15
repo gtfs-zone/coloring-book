@@ -1,3 +1,13 @@
+## v0.26.0 (2026-08-15)
+
+### Feat
+
+- **load**: unify the feed loading process with test-track
+
+### Fix
+
+- **load**: pin the modal height so only the result list scrolls
+
 ## v0.25.0 (2026-08-15)
 
 ### Feat
