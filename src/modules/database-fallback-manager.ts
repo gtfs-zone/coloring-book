@@ -5,6 +5,7 @@
 import { feedProgressIndicator } from './feed-progress-indicator.js';
 import { notify } from './notification-system.js';
 import { showModal } from './modal-utils.js';
+import { buildExportFilename } from '../utils/export-filename.js';
 
 export interface BrowserCapabilities {
   indexedDB: boolean;
@@ -201,7 +202,8 @@ export class DatabaseFallbackManager {
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = 'gtfs-export.zip';
+            // Recovery path: the DB is being cleared, so no feed identity.
+            a.download = buildExportFilename();
             a.click();
             URL.revokeObjectURL(url);
           }
