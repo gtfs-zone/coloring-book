@@ -116,6 +116,9 @@ interface MatchedPattern {
   exception_type: 1 | 2;
 }
 
+/** Marks the date-range inputs the delegated listeners below are responsible for. */
+const DATE_INPUT_CLASS = 'service-date-input';
+
 export class ServiceDaysController {
   private gtfsParser: GTFSParserInterface;
   private patchManager: PatchManagerInterface | null = null;
@@ -129,6 +132,69 @@ export class ServiceDaysController {
    */
   constructor(gtfsParser: GTFSParserInterface) {
     this.gtfsParser = gtfsParser;
+    this.installDateInputListeners();
+  }
+
+  /**
+   * Wire the date-range inputs to their commit rules.
+   *
+   * Bound to `document` once: the panel's HTML is replaced wholesale on every
+   * re-render, which would silently drop a listener bound to the inputs.
+   *
+   * A native date input fires `change` once per completed segment while typing,
+   * so a typed edit must wait for blur or it records a patch per segment. A
+   * picker selection keeps focus, so waiting for blur would leave it unsaved:
+   * a `change` that no keystroke preceded is a pick, and commits at once.
+   */
+  private installDateInputListeners(): void {
+    const dateInput = (e: Event): HTMLInputElement | null => {
+      const target = e.target;
+      return target instanceof HTMLInputElement &&
+        target.classList.contains(DATE_INPUT_CLASS)
+        ? target
+        : null;
+    };
+
+    document.addEventListener('keydown', (e) => {
+      const input = dateInput(e);
+      if (!input) {
+        return;
+      }
+      input.dataset.typing = '1';
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        input.blur();
+      }
+    });
+
+    document.addEventListener('change', (e) => {
+      const input = dateInput(e);
+      if (!input || input.dataset.typing === '1') {
+        return;
+      }
+      void this.commitDateInput(input);
+    });
+
+    // `focusout` rather than `blur`, which does not bubble to the document.
+    document.addEventListener('focusout', (e) => {
+      const input = dateInput(e);
+      if (!input) {
+        return;
+      }
+      delete input.dataset.typing;
+      void this.commitDateInput(input);
+    });
+  }
+
+  /** Route an input's current value to the save path. */
+  private async commitDateInput(input: HTMLInputElement): Promise<void> {
+    const serviceId = input.dataset.serviceId;
+    const dateType = input.dataset.dateType;
+    if (!serviceId || (dateType !== 'start_date' && dateType !== 'end_date')) {
+      console.warn('[ServiceDaysController] date input missing dataset', input);
+      return;
+    }
+    await this.updateDateRange(serviceId, dateType, input.value);
   }
 
   setPatchManager(pm: PatchManagerInterface): void {
@@ -258,6 +324,11 @@ export class ServiceDaysController {
    *
    * @param service_id - GTFS service identifier
    * @param dateType - Either 'start_date' or 'end_date'
+   * Called on blur, not on change: a native date input fires change once per
+   * completed segment while typing, which would record a patch per segment.
+   *
+   * @param service_id - GTFS service identifier
+   * @param dateType - Either 'start_date' or 'end_date'
    * @param newDate - New date in YYYY-MM-DD format
    */
   async updateDateRange(
@@ -266,9 +337,15 @@ export class ServiceDaysController {
     newDate: string
   ): Promise<void> {
     try {
-      this.showSavingIndicator(`date-${dateType}`);
-
       const gtfsDate = fromInputValue(newDate);
+
+      // A cleared or half-typed field is not an edit: both dates are Required.
+      if (!/^\d{8}$/.test(gtfsDate)) {
+        console.warn(
+          `[ServiceDaysController] ignoring incomplete ${dateType} "${newDate}" for service ${service_id}`
+        );
+        return;
+      }
 
       // Get or create calendar entry
       const calendarRows = await this.gtfsParser.gtfsDatabase.queryRows(
@@ -276,6 +353,13 @@ export class ServiceDaysController {
         { service_id }
       );
       let calendar = calendarRows[0];
+
+      // Blur with no edit writes nothing.
+      if (calendar && String(calendar[dateType]) === gtfsDate) {
+        return;
+      }
+
+      this.showSavingIndicator(`date-${dateType}`);
 
       if (!calendar) {
         // Derive date range from existing calendar_dates, fall back to the edited date
@@ -558,9 +642,11 @@ export class ServiceDaysController {
           </label>
           <input
             type="date"
-            class="input input-bordered input-sm text-xs"
+            id="date-start_date-${service_id}"
+            class="input input-bordered input-sm text-xs ${DATE_INPUT_CLASS}"
             value="${startDate}"
-            onchange="window.gtfsEditor.serviceDaysController.updateDateRange('${service_id}', 'start_date', this.value)"
+            data-service-id="${service_id}"
+            data-date-type="start_date"
           />
         </div>
         <div class="form-control">
@@ -572,9 +658,11 @@ export class ServiceDaysController {
           </label>
           <input
             type="date"
-            class="input input-bordered input-sm text-xs"
+            id="date-end_date-${service_id}"
+            class="input input-bordered input-sm text-xs ${DATE_INPUT_CLASS}"
             value="${endDate}"
-            onchange="window.gtfsEditor.serviceDaysController.updateDateRange('${service_id}', 'end_date', this.value)"
+            data-service-id="${service_id}"
+            data-date-type="end_date"
           />
         </div>
       </div>
