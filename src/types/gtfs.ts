@@ -51,14 +51,10 @@ export const GTFS_FILES = deriveGTFSFileInfos(
 // ─── Individual schema exports (backward compat) ───────────────────────────────
 
 export const AgencySchema = GTFSSchemas['agency.txt'];
-export const StopsSchema = GTFSSchemas['stops.txt'];
 export const RoutesSchema = GTFSSchemas['routes.txt'];
 export const TripsSchema = GTFSSchemas['trips.txt'];
 export const StopTimesSchema = GTFSSchemas['stop_times.txt'];
 export const CalendarSchema = GTFSSchemas['calendar.txt'];
-export const CalendarDatesSchema = GTFSSchemas['calendar_dates.txt'];
-export const ShapesSchema = GTFSSchemas['shapes.txt'];
-export const FeedInfoSchema = GTFSSchemas['feed_info.txt'];
 
 // ─── Individual type exports ───────────────────────────────────────────────────
 // Re-exported from gtfs-entities for consumers that import types from this module.
