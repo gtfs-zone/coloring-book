@@ -6,12 +6,6 @@ import {
   AgencySchema,
   RoutesSchema,
   CalendarSchema,
-  CalendarDatesSchema,
-  StopsSchema,
-  TripsSchema,
-  StopTimesSchema,
-  ShapesSchema,
-  FeedInfoSchema,
   GTFS_FIELD_SPECS,
 } from '../types/gtfs.js';
 
@@ -84,48 +78,6 @@ export function getRouteFieldDescription(fieldName: string): string {
  */
 export function getCalendarFieldDescription(fieldName: string): string {
   return getFieldDescription(CalendarSchema, fieldName);
-}
-
-/**
- * Get calendar dates field descriptions
- */
-export function getCalendarDatesFieldDescription(fieldName: string): string {
-  return getFieldDescription(CalendarDatesSchema, fieldName);
-}
-
-/**
- * Get stops field descriptions
- */
-export function getStopsFieldDescription(fieldName: string): string {
-  return getFieldDescription(StopsSchema, fieldName);
-}
-
-/**
- * Get trips field descriptions
- */
-export function getTripsFieldDescription(fieldName: string): string {
-  return getFieldDescription(TripsSchema, fieldName);
-}
-
-/**
- * Get stop times field descriptions
- */
-export function getStopTimesFieldDescription(fieldName: string): string {
-  return getFieldDescription(StopTimesSchema, fieldName);
-}
-
-/**
- * Get shapes field descriptions
- */
-export function getShapesFieldDescription(fieldName: string): string {
-  return getFieldDescription(ShapesSchema, fieldName);
-}
-
-/**
- * Get feed info field descriptions
- */
-export function getFeedInfoFieldDescription(fieldName: string): string {
-  return getFieldDescription(FeedInfoSchema, fieldName);
 }
 
 /**
