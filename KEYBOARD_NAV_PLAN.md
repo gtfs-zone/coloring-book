@@ -177,7 +177,21 @@ select the input", and there is no editing versus navigation mode to build. So
 the Files modal only needs the vertical axis. Tab already works horizontally,
 and because primary key cells contain no input, native Tab skips them for free.
 
-- [ ] In `buildTableEditor` (`editor.ts:225-242`), alongside the existing
+Implemented. Decisions taken during implementation:
+
+- The scroll container gotcha turned out to be worse than a wrong scroll target.
+  `#scrollArea` had no overflow of its own (no Clusterize CSS is imported), so
+  `#table-container` was the element scrolling, and Clusterize's listener, bound
+  to `#scrollArea` (`clusterize.js:100`), never fired. The cluster therefore
+  never advanced past the first block, so rows past ~200 were not in the DOM for
+  any amount of scrolling. Fixed by giving `#scrollArea` `h-full overflow-auto`
+  so it is the real scroller and Clusterize works as designed. This is a
+  pre-existing bug fix that phase 3 depends on.
+- `keyToGridDirection` maps Enter to `down`, so Enter commits and moves down
+  here for free, matching the timetable. Tab maps to left/right and is ignored,
+  falling through to native.
+
+- [x] In `buildTableEditor` (`editor.ts:225-242`), alongside the existing
       delegated `change` and `input` listeners on `#scrollArea`, add a delegated
       `keydown` that runs `keyToGridDirection` from `utils/grid-navigation.ts`.
   - Handle `up` and `down` only. Let `left` and `right` fall through to native
@@ -185,10 +199,10 @@ and because primary key cells contain no input, native Tab skips them for free.
   - `#scrollArea` is recreated by the `innerHTML` assignment on every rebuild,
     so binding there cannot leak or double bind. Match the existing style in
     that function.
-- [ ] Resolve the target as
+- [x] Resolve the target as
       `input[data-row="${rowIndex +/- 1}"][data-col="${col}"]` within
       `#contentArea`, then focus and select it.
-- [ ] Handle virtualization. Clusterize keeps roughly 200 rows in the DOM
+- [x] Handle virtualization. Clusterize keeps roughly 200 rows in the DOM
       (`CLUSTERIZE_ROWS_IN_BLOCK` times `CLUSTERIZE_BLOCKS_IN_CLUSTER`,
       `src/config.ts:11-12`), so the target input often does not exist. When the
       query misses, scroll `#scrollArea` toward
@@ -198,7 +212,7 @@ and because primary key cells contain no input, native Tab skips them for free.
       up with a `[Editor]` warning rather than looping.
   - Moving one row at a time almost always stays inside the loaded cluster. The
     retry path matters mainly for a held-down arrow key.
-- [ ] Do not flush the pending-update debounce before moving. `updateTableCell`
+- [x] Do not flush the pending-update debounce before moving. `updateTableCell`
       (line 253) already captured the value into `this.tableData` and the
       `PendingUpdate` map on the `input` event. The 500ms debounce completing
       later is correct, and moving focus does not disturb it.
