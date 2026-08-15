@@ -23,13 +23,28 @@ import {
   openInlineMenu,
   getLiveEditorState,
 } from '../utils/inline-edit.js';
-import type { GridDirection } from '../utils/grid-navigation.js';
+import {
+  arrowToGridDirection,
+  type GridDirection,
+} from '../utils/grid-navigation.js';
 import { showModal } from './modal-utils.js';
 import {
   showOptionPickerModal,
   OptionPickerItem,
 } from './option-picker-modal.js';
 import { getEnumOptions } from '../types/gtfs-enums.js';
+
+/**
+ * Identifies one time cell across a re-render.
+ *
+ * stopIndex is the supersequence position, not stop_id: a circular route visits
+ * the same stop twice and stop_id alone would match the wrong row.
+ */
+interface TimeCellKey {
+  tripId: string;
+  stopIndex: string;
+  timeType: string;
+}
 
 // Enhanced GTFS interfaces using standard GTFS property names
 
@@ -173,13 +188,22 @@ export class ScheduleController {
   // The time cell the user is editing, so a full re-render can put them back.
   // Every committed edit records a patch, which rebuilds the whole browse panel
   // and destroys the input they have already moved on to.
-  private editingCell: {
-    tripId: string;
-    stopIndex: string;
-    timeType: string;
-    value?: string;
-    caret?: number | null;
-  } | null = null;
+  private editingCell:
+    | (TimeCellKey & {
+        value?: string;
+        caret?: number | null;
+      })
+    | null = null;
+
+  // The time cell holding the roving tabindex: focused but not being edited.
+  // Tracked the same way as editingCell so a re-render can put the selection
+  // back, and so Tab lands on the cell the user was last on.
+  private selectedCell: TimeCellKey | null = null;
+
+  // Whether the selected cell actually had focus before the last re-render.
+  // Without this, a rebuild triggered by an unrelated edit would yank focus
+  // into the timetable from wherever the user really is.
+  private selectionHadFocus = false;
 
   // Map wiring for the stop column, injected by index.ts
   private stopFocus: ((stop_id: string) => void) | null = null;
@@ -272,7 +296,96 @@ export class ScheduleController {
       }
     });
 
+    // Keyboard navigation over the time cells. Delegated to document for the
+    // same reason as the clicks above.
+    document.addEventListener('keydown', (e) => this.handleTimeCellKeydown(e));
+
+    // Tabbing into the grid, or clicking a cell, makes that cell the selection
+    // so a later re-render puts the user back on it.
+    document.addEventListener('focusin', (e) => {
+      const span = (e.target as Element)?.closest?.('.time-span');
+      if (span instanceof HTMLElement) {
+        this.selectTimeCell(span, false);
+      }
+    });
+
     this.installStopRowHover();
+  }
+
+  /**
+   * Keyboard handling for a focused-but-not-editing time cell.
+   *
+   * The spreadsheet model: arrows move the selection without opening anything,
+   * Enter or F2 opens the editor on the current cell, and typing a printable
+   * character opens it seeded with that character. Phase-1 behaviour inside an
+   * open editor is untouched - `openInlineEditor` replaces the span with the
+   * input, so while editing there is no `.time-span` to be the event target and
+   * this handler never fires.
+   *
+   * Tab is deliberately not handled: the roving tabindex means Tab leaves the
+   * grid, which is the only way out of a few thousand cells.
+   */
+  private handleTimeCellKeydown(e: KeyboardEvent): void {
+    const span = (e.target as Element)?.closest?.('.time-span');
+    if (!(span instanceof HTMLElement)) {
+      return;
+    }
+
+    const direction = arrowToGridDirection(e);
+    if (direction) {
+      e.preventDefault();
+      const target = this.resolveNeighbour(span, direction);
+      if (target) {
+        this.selectTimeCell(target, true);
+      }
+      return;
+    }
+
+    if (e.key === 'Enter' || e.key === 'F2') {
+      e.preventDefault();
+      this.openTimeEditor(span);
+      return;
+    }
+
+    if (e.key === 'Delete' || e.key === 'Backspace') {
+      e.preventDefault();
+      this.clearTimeCell(span);
+      return;
+    }
+
+    // A printable character starts editing with that character already typed.
+    // Modifier combinations are left alone so the global shortcuts in
+    // keyboard-shortcuts.ts still fire: a focused span is not an input, so
+    // their isInputField guard no longer suppresses them for us.
+    if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      e.preventDefault();
+      e.stopPropagation();
+      this.openTimeEditor(span, { value: e.key, caret: e.key.length });
+    }
+  }
+
+  /** Clear the time on a selected cell, recording a patch like any other edit. */
+  private clearTimeCell(span: HTMLElement): void {
+    const { tripId, stopId, timeType, stopSequence, pending } = span.dataset;
+    if (
+      !tripId ||
+      !stopId ||
+      (timeType !== 'arrival' && timeType !== 'departure')
+    ) {
+      return;
+    }
+    // The add-stop row has no stop_time behind it, so there is nothing to clear.
+    if (pending === 'true') {
+      return;
+    }
+    void this.updateArrivalDepartureTime(
+      tripId,
+      stopId,
+      timeType,
+      '',
+      stopSequence,
+      false
+    );
   }
 
   /**
@@ -356,6 +469,9 @@ export class ScheduleController {
       stopIndex: stopIndex ?? '',
       timeType,
     };
+    // The edited cell is also the selected one, so closing the editor leaves
+    // the roving tabindex where the user actually is.
+    this.selectTimeCell(span, false);
 
     openInlineEditor(span, {
       value: displayValue,
@@ -397,17 +513,20 @@ export class ScheduleController {
   }
 
   /**
-   * Commit-and-move: open the editor on the cell in `direction` from `from`.
+   * The cell one step in `direction` from `from`, or null at the grid's edge.
    *
    * Down runs arrival -> departure of the same stop -> arrival of the next
    * stop, which is the order a trip is actually entered in. Left and right move
    * between trips at the same stop and clamp at the row's edge rather than
    * wrapping, so a stray Tab cannot fling the user across a wide timetable.
    *
-   * At the grid's edge this does nothing: the editor has already committed and
-   * closed, which is the right place to stop.
+   * Shared by editing and selection so the two cannot disagree about what the
+   * next cell is.
    */
-  private moveTimeCell(from: HTMLElement, direction: GridDirection): void {
+  private resolveNeighbour(
+    from: HTMLElement,
+    direction: GridDirection
+  ): HTMLElement | null {
     const rows = this.timeCellRows();
     let rowIndex = -1;
     let cellIndex = -1;
@@ -421,7 +540,7 @@ export class ScheduleController {
     }
     if (rowIndex === -1) {
       console.warn('[ScheduleController] navigated from a detached time cell');
-      return;
+      return null;
     }
 
     // Two spans per trip column: arrival at an even index, departure at odd.
@@ -441,6 +560,17 @@ export class ScheduleController {
       target = rows[rowIndex][cellIndex + step];
     }
 
+    return target ?? null;
+  }
+
+  /**
+   * Commit-and-move: open the editor on the cell in `direction` from `from`.
+   *
+   * At the grid's edge this does nothing: the editor has already committed and
+   * closed, which is the right place to stop.
+   */
+  private moveTimeCell(from: HTMLElement, direction: GridDirection): void {
+    const target = this.resolveNeighbour(from, direction);
     if (!target) {
       this.editingCell = null;
       return;
@@ -450,12 +580,92 @@ export class ScheduleController {
     this.openTimeEditor(target);
   }
 
+  /** The re-render-stable identity of a time cell, from its data attributes. */
+  private timeCellKey(span: HTMLElement): TimeCellKey | null {
+    const { tripId, stopIndex, timeType } = span.dataset;
+    if (!tripId || !timeType) {
+      return null;
+    }
+    return { tripId, stopIndex: stopIndex ?? '', timeType };
+  }
+
+  /** Find a time cell in the rendered timetable by its key. */
+  private findTimeCell(key: TimeCellKey): HTMLElement | null {
+    const selector =
+      `.time-span[data-trip-id="${CSS.escape(key.tripId)}"]` +
+      `[data-stop-index="${CSS.escape(key.stopIndex)}"]` +
+      `[data-time-type="${CSS.escape(key.timeType)}"]`;
+    return (
+      document
+        .getElementById('schedule-view')
+        ?.querySelector<HTMLElement>(selector) ?? null
+    );
+  }
+
+  /**
+   * Make `span` the selected cell: it takes the roving tabindex, and every
+   * other cell drops back to -1 so the grid stays a single tab stop.
+   */
+  private selectTimeCell(span: HTMLElement, focus: boolean): void {
+    const view = document.getElementById('schedule-view');
+    view
+      ?.querySelectorAll<HTMLElement>('.time-span[tabindex="0"]')
+      .forEach((el) => el.setAttribute('tabindex', '-1'));
+    span.setAttribute('tabindex', '0');
+    this.selectedCell = this.timeCellKey(span);
+
+    if (focus) {
+      span.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+      span.focus();
+    }
+  }
+
+  /**
+   * Put the roving tabindex back after a render, and re-focus the selected cell
+   * if it was focused before the rebuild.
+   *
+   * Call on every timetable render, not just the ones that restore an editor:
+   * without a cell carrying tabindex="0" the grid cannot be tabbed into at all.
+   * Falls back to the first time cell so a freshly opened timetable still has an
+   * entry point.
+   */
+  public applyTimetableSelection(): void {
+    const view = document.getElementById('schedule-view');
+    if (!view) {
+      return;
+    }
+
+    const wasFocused = this.selectionHadFocus;
+    this.selectionHadFocus = false;
+
+    const target = this.selectedCell
+      ? this.findTimeCell(this.selectedCell)
+      : view.querySelector<HTMLElement>('.time-span');
+    if (!target) {
+      // The selected trip or stop was deleted by the edit that caused this
+      // render. Fall back to the grid's entry point rather than losing it.
+      this.selectedCell = null;
+      view
+        .querySelector<HTMLElement>('.time-span')
+        ?.setAttribute('tabindex', '0');
+      return;
+    }
+
+    this.selectTimeCell(target, wasFocused);
+  }
+
   /**
    * Remember the open time editor and what has been typed into it, before a
    * re-render tears it out of the DOM. Mirrors how the scroll position is
    * tracked: read it while it still exists, not afterwards.
    */
   public captureTimetableEditor(): void {
+    // Read before the rebuild: a selected (not edited) cell is a focused span,
+    // and only a span that really had focus should get it back afterwards.
+    this.selectionHadFocus =
+      document.activeElement instanceof HTMLElement &&
+      document.activeElement.classList.contains('time-span');
+
     if (!this.editingCell) {
       return;
     }
@@ -482,13 +692,7 @@ export class ScheduleController {
     }
     this.editingCell = null;
 
-    const selector =
-      `.time-span[data-trip-id="${CSS.escape(cell.tripId)}"]` +
-      `[data-stop-index="${CSS.escape(cell.stopIndex)}"]` +
-      `[data-time-type="${CSS.escape(cell.timeType)}"]`;
-    const span = document
-      .getElementById('schedule-view')
-      ?.querySelector<HTMLElement>(selector);
+    const span = this.findTimeCell(cell);
     if (!span) {
       console.log('[ScheduleController] edited cell is gone, dropping focus');
       return;
@@ -727,10 +931,14 @@ export class ScheduleController {
     return this.stopOptions;
   }
 
-  /** Reset tracked scroll when navigating to a different timetable. */
+  /** Reset tracked scroll and selection when navigating to a different page. */
   resetTimetableScroll(): void {
     this.timetableScrollLeft = 0;
     this.timetableScrollTop = 0;
+    // The selection keys off trip and stop index, which mean nothing in the
+    // next timetable. Drop it so the new grid opens at its first cell.
+    this.selectedCell = null;
+    this.selectionHadFocus = false;
   }
 
   setPatchManager(pm: PatchManagerInterface): void {
@@ -1159,6 +1367,7 @@ export class ScheduleController {
     }
 
     this.restoreTimetableEditor();
+    this.applyTimetableSelection();
   }
 
   // Track pending stop that hasn't been saved to database yet
