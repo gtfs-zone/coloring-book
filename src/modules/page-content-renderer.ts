@@ -29,7 +29,7 @@ import {
 } from '../utils/inline-editable-field.js';
 import { installStopAreasField } from '../utils/stop-areas-field.js';
 import { renderIssueCard } from '../utils/issue-card.js';
-import { getFeedIssues } from './feed-issues.js';
+import { getFeedIssues, refreshFeedIssuesIfStale } from './feed-issues.js';
 import { GTFS_TABLES } from '../types/gtfs.js';
 import { InlineEntityCreator } from '../utils/inline-entity-creator.js';
 import {
@@ -44,7 +44,7 @@ import { showModal, renderTrashIcon } from './modal-utils.js';
 import { showOptionPickerModal } from './option-picker-modal.js';
 import { notify } from './notification-system.js';
 import { escapeHtml } from '../utils/escape-html.js';
-import { navigateToHome } from './navigation-actions.js';
+import { getCurrentPageState, navigateToHome } from './navigation-actions.js';
 import type { GTFSParser } from './gtfs-parser.js';
 import { renderRouteDiagram, ROUTE_DIAGRAM_ROW } from './route-diagram.js';
 import { generateCompositeKeyFromRecord } from '../utils/gtfs-primary-keys.js';
@@ -261,6 +261,8 @@ export class PageContentRenderer {
           dependencies.gtfsDatabase.getAllRows(table) as Promise<
             Record<string, unknown>[]
           >,
+        insertRows: (table, rows) =>
+          dependencies.gtfsDatabase.insertRows(table, rows),
       },
       patchManager: dependencies.patchManager ?? null,
     });
@@ -274,11 +276,52 @@ export class PageContentRenderer {
   }
 
   /**
+   * Point the map at whatever the page being rendered is about.
+   *
+   * Synchronous and up front rather than inside the individual render*
+   * methods: those sit behind awaits, so a re-render triggered by an edit
+   * could resolve after the user had already navigated elsewhere and drag the
+   * map back to the old object. Skipped outright when page state has moved on
+   * since this render was requested.
+   */
+  private applyMapFocus(pageState: PageState): void {
+    if (JSON.stringify(getCurrentPageState()) !== JSON.stringify(pageState)) {
+      console.log(
+        `[PageContentRenderer] stale render for ${pageState.type}, skipping map focus`
+      );
+      return;
+    }
+
+    const map = this.dependencies.mapController;
+    switch (pageState.type) {
+      case 'agency':
+        map.focusOnAgency(pageState.agency_id);
+        break;
+      case 'route':
+      case 'timetable':
+        map.highlightRoute(pageState.route_id);
+        break;
+      case 'stop':
+        map.highlightStop(pageState.stop_id);
+        break;
+      case 'pathway':
+        map.highlightPathway(pageState.pathway_id);
+        break;
+      default:
+        // home and service: no single object to focus, frame the whole feed
+        map.focusFeed();
+        break;
+    }
+  }
+
+  /**
    * Main rendering method - renders content based on page state
    * @param pageState - Current page state to render
    * @returns HTML string for the content
    */
   async renderPage(pageState: PageState): Promise<string> {
+    this.applyMapFocus(pageState);
+
     try {
       // Render based on page type
       switch (pageState.type) {
@@ -340,7 +383,9 @@ export class PageContentRenderer {
    * Render home page (feed info and agencies list)
    */
   private async renderHome(): Promise<string> {
-    this.dependencies.mapController.focusFeed();
+    // Edits since the last pass are not reflected in the published issues.
+    refreshFeedIssuesIfStale();
+
     const agencies = await this.dependencies.relationships.getAgenciesAsync();
 
     // Get feed_info data
@@ -497,9 +542,6 @@ export class PageContentRenderer {
    * Render agency page (agency properties and routes list)
    */
   private async renderAgency(agency_id: string): Promise<string> {
-    // Update map to focus on this agency
-    this.dependencies.mapController.focusOnAgency(agency_id);
-
     // Use the new AgencyViewController for comprehensive agency view
     return await this.agencyViewController.renderAgencyView(agency_id);
   }
@@ -510,9 +552,6 @@ export class PageContentRenderer {
   private async renderRoute(route_id: string): Promise<string> {
     const trips =
       await this.dependencies.relationships.getTripsForRouteAsync(route_id);
-
-    // Update map to highlight this route
-    this.dependencies.mapController.highlightRoute(route_id);
 
     // Fetch route data for the header
     const routeRows = await this.dependencies.gtfsDatabase.queryRows('routes', {
@@ -666,7 +705,6 @@ export class PageContentRenderer {
     direction_id?: string
   ): Promise<string> {
     try {
-      this.dependencies.mapController.highlightRoute(route_id);
       // Get the rendered schedule HTML directly
       return await this.dependencies.scheduleController.renderSchedule(
         route_id,
@@ -683,9 +721,6 @@ export class PageContentRenderer {
    * Render stop page
    */
   private async renderStop(stop_id: string): Promise<string> {
-    // Update map to highlight this stop
-    this.dependencies.mapController.highlightStop(stop_id);
-
     // Use the new StopViewController for comprehensive stop view
     return await this.stopViewController.renderStopView(stop_id);
   }
@@ -694,7 +729,6 @@ export class PageContentRenderer {
    * Render service page
    */
   private async renderService(service_id: string): Promise<string> {
-    this.dependencies.mapController.focusFeed();
     // Use the new ServiceViewController for comprehensive service view
     return await this.serviceViewController.renderServiceView(service_id);
   }
@@ -1651,7 +1685,6 @@ export class PageContentRenderer {
   }
 
   private async renderPathway(pathway_id: string): Promise<string> {
-    this.dependencies.mapController.highlightPathway(pathway_id);
     return this.pathwayViewController.renderPathwayView(pathway_id);
   }
 
