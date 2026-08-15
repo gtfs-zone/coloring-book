@@ -41,6 +41,7 @@ import {
   generateCompositeKeyFromRecord,
 } from '../utils/gtfs-primary-keys.js';
 import { TimeFormatter } from '../utils/time-formatter.js';
+import { buildExportFilename } from '../utils/export-filename.js';
 
 /**
  * Which on-disk form the imported feed expressed its networks in.
@@ -275,7 +276,8 @@ export class GTFSDatabase {
                   const url = URL.createObjectURL(blob);
                   const a = document.createElement('a');
                   a.href = url;
-                  a.download = 'gtfs-export.zip';
+                  // Schema is stale here, so no feed identity to slug in.
+                  a.download = buildExportFilename();
                   a.click();
                   URL.revokeObjectURL(url);
                 }
