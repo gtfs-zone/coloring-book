@@ -1,3 +1,82 @@
+## v0.25.0 (2026-08-15)
+
+### Feat
+
+- **feed-issues**: re-run validation when the panel draws stale issues
+- **service**: commit date-range edits on blur or picker choice
+- **export**: name the export archive after the feed
+- **editor**: move between rows in the Files table from the keyboard
+- **timetable**: navigate the grid without opening an editor
+- **timetable**: navigate between time cells from the keyboard
+- **levels**: lock the level id and badge the level count
+- **levels**: edit levels through the spec-driven table
+- **levels**: show stop usage and share the shapes list chrome
+- **shapes**: show routes and trip counts in the shapes list
+- **option-picker**: pin a blank row that excludes the other options
+- **fares**: make list and membership columns editable
+- **option-picker**: add a multi-select mode with checkboxes
+- **fares**: show a route list detail for networks, matching areas
+- **fares**: list repeated foreign keys instead of duplicating rows
+- **editable-table**: support list-valued columns via row grouping
+- **services**: add week tooltips and a service edit column to the timeline
+- **services**: use the timeline view on the home, route and stop pages
+- **route**: draw the full route diagram on the route page
+- **timetable**: focus and highlight stops from the stop column
+- **issues**: surface and fix dangling references at the use site
+- **issues**: list the offending entities under each feed issue
+- **validation**: check every spec-declared foreign key generically
+- **navbar**: show item counts as badge bubbles
+- **shapes**: upload GPX first and default the shape id to the filename
+- **navbar**: use the brouter waypoints icon for the shapes button
+- **validation**: surface feed issues in the home panel
+- **time**: accept fuzzy time input on all Time fields, not just the timetable
+- **validation**: check fares v2 conditional presence and referential integrity
+- **fares**: edit timeframes and the three fares v2 rule tables
+- **fares**: edit areas from the fares modal and the stop page
+- **networks**: assign routes to networks from the route page
+- **fares**: add the Networks table to the fares modal
+- **networks**: canonicalize networks on import and export
+- **fares**: rebuild the fares modal on the spec-driven table
+- **ui**: move the remaining entity pages to click-to-edit
+- **ui**: add click-to-edit entity property fields
+- **ui**: add the spec-driven editable table
+- **spec**: render verbatim reference descriptions as HTML
+- **spec**: make the GTFS spec layer verbatim against the April 2026 reference
+- **spec**: add check-spec conformance harness
+
+### Fix
+
+- **map**: keep the map focus tied to the page actually being shown
+- **history**: badge the number of applied changes, not the version
+- **feed-issues**: link a flagged trip to its timetable
+- **export**: stop the CSV writer appending a newline to the last value
+- **validation**: report references broken by hidden whitespace
+- **tooltips**: match triggers when the pointer lands on an svg icon
+- **shapes**: give the route chip a pointer cursor
+- **fares**: restore field tooltips on table headers
+- **files-modal**: make list scrollable, reset to list view on reopen, keep fixed size
+- **option-picker**: never cap the selected options in multi-select
+- **option-picker**: give the blank row a pointer cursor and hover
+- **tooltips**: raise the tooltip portal above the modal layer
+- **services**: one date range tooltip per highlighted span
+- **services**: use the unified tooltips in the services timeline
+- **map**: spotlight the stations above a highlighted route's stops
+- **strip**: restore endpointNote and isMinority for the shared strip module
+- **issues**: identify the offending row and value for invalid dates
+- **modals**: scope Escape/Enter handling to the topmost modal
+- **ui**: stop opening the files modal after loading a feed
+- **feed**: reset in-memory state on new/replacement feed load
+- **ui**: resolve tooltip clipping and route page horizontal scroll
+- **tooltip**: make field label tooltips edge-aware and clip-safe
+
+### Refactor
+
+- **types**: drop unused zod tooltip helpers and schema exports
+- **map**: extract shared stop layer styles
+- **icons**: replace glyph characters with svg icons
+- **calendar**: extract the services timeline into a shared module
+- **ui**: extract the click-to-edit primitives from the timetable
+
 ## v0.24.1 (2026-08-05)
 
 ## v0.24.0 (2026-08-05)
