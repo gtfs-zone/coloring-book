@@ -278,6 +278,9 @@ export class GTFSParser {
       update: (key, delta) => {
         const row = byId.get(key);
         if (!row) {
+          console.warn(
+            `[VirtualTable] update dropped: no row ${key} in ${tableName}`
+          );
           return;
         }
         // Remove from old fieldMap buckets for any changed fields

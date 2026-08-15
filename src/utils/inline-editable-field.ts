@@ -51,6 +51,7 @@ import {
   GTFSFieldType,
   getInputTypeForFieldType,
 } from '../types/gtfs-field-types.js';
+import { getGTFSPrimaryKey } from './gtfs-primary-keys.js';
 import type { GTFSFieldSpec } from '../gtfs-spec/types.js';
 import type { z } from 'zod';
 
@@ -58,11 +59,17 @@ import type { z } from 'zod';
 const FIELD_CLASS = 'inline-editable-field';
 
 export interface InlineEditableFieldDeps {
-  /** Reads used to label and pick foreign-ID values. */
-  gtfsDatabase: ForeignKeyRowSource;
+  /** Reads used to label and pick foreign-ID values, plus the first-row write. */
+  gtfsDatabase: ForeignKeyRowSource & {
+    insertRows(
+      tableName: string,
+      rows: Record<string, unknown>[]
+    ): Promise<void>;
+  };
   /**
    * Where committed edits go. `recordUpdate` applies the write itself, so
-   * there is no separate database write here.
+   * there is no separate database write here. `recordInsert` does not, so the
+   * caller writes the row first.
    */
   patchManager: {
     recordUpdate(
@@ -70,6 +77,11 @@ export interface InlineEditableFieldDeps {
       id: string,
       before: Record<string, unknown>,
       after: Record<string, unknown>
+    ): Promise<void>;
+    recordInsert(
+      table: string,
+      id: string,
+      record: Record<string, unknown>
     ): Promise<void>;
   } | null;
 }
@@ -411,6 +423,23 @@ async function commit(
     console.warn('[InlineField] no patch manager, edit dropped');
     return;
   }
+
+  // A single-row table the feed never carried (feed_info) is rendered as a
+  // blank form with no row behind it, and an update patch against a row that
+  // does not exist is a no-op. Insert it on the first committed field instead.
+  if (!(await deps.gtfsDatabase.getRow(store, recordId))) {
+    if (getGTFSPrimaryKey(store)?.type !== 'none') {
+      notify.error('Cannot save: this record no longer exists');
+      console.error(`[InlineField] no row ${recordId} in ${store}`);
+      return;
+    }
+    const record = { [field]: coerced.value };
+    console.log(`[InlineField] creating first ${store} row`);
+    await deps.gtfsDatabase.insertRows(store, [record]);
+    await deps.patchManager.recordInsert(store, recordId, record);
+    return;
+  }
+
   await deps.patchManager.recordUpdate(
     store,
     recordId,
