@@ -23,6 +23,17 @@ export interface FeedIssueRowSource {
   getFileDataSync(fileName: string): Record<string, unknown>[];
 }
 
+/**
+ * What `refreshFeedIssuesIfStale` needs to re-run a pass on its own: the
+ * validator, the rows for the labels, and the patch version that tells it
+ * whether the feed has moved since the last pass.
+ */
+export interface FeedIssueRevalidator {
+  validate(): ValidationResults;
+  source: FeedIssueRowSource;
+  getVersion(): number;
+}
+
 /** Most entities a single issue row lists before it collapses into a tail. */
 const MAX_ITEMS = 12;
 
@@ -83,6 +94,14 @@ interface IssueGroup {
 }
 
 let currentIssues: IssueRow[] = [];
+
+/**
+ * The revalidator and the patch version the published issues were derived at.
+ * `null` until the editor registers one, which is only the case before boot
+ * finishes: until then a render draws the empty list rather than validating.
+ */
+let revalidator: FeedIssueRevalidator | null = null;
+let validatedVersion: number | null = null;
 
 /**
  * Groups messages by file, code and field. Field is part of the key because a
@@ -309,7 +328,38 @@ export function publishFeedIssues(
 
   const issues = deriveFeedIssues(results, source);
   setFeedIssues(issues);
+  validatedVersion = revalidator?.getVersion() ?? null;
   return issues;
+}
+
+export function setFeedIssueRevalidator(next: FeedIssueRevalidator): void {
+  revalidator = next;
+}
+
+/**
+ * Re-run validation if the feed has changed since the issues were published.
+ *
+ * Called by whatever is about to draw the issues (the home panel). Validation
+ * is a full synchronous pass over every table including stop_times, so it is
+ * deliberately not wired to the patch events: an edit costs nothing until
+ * something asks to see the issues again.
+ *
+ * The patch version is the staleness watermark because every user edit goes
+ * through the patch log, and it moves on undo, redo and jump too, so undoing a
+ * fix brings the issue back.
+ */
+export function refreshFeedIssuesIfStale(): void {
+  if (!revalidator) {
+    return;
+  }
+  const version = revalidator.getVersion();
+  if (version === validatedVersion) {
+    return;
+  }
+  console.log(
+    `[FeedIssues] revalidating: issues are from version ${validatedVersion}, feed is at ${version}`
+  );
+  publishFeedIssues(revalidator.validate(), revalidator.source);
 }
 
 export function isDanglingReference(
