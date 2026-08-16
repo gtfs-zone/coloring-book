@@ -20,6 +20,7 @@ import {
 import { BasemapControl } from './basemap-control.js';
 import { notify } from './notification-system.js';
 import type { PatchRecord, SingleGTFSPatch } from '../types/patch.js';
+import { getZoneFeature, zoneBounds } from './zone-store.js';
 
 // Map interaction modes
 export enum MapMode {
@@ -33,6 +34,7 @@ export type FocusedObject =
   | { type: 'pathway'; id: string }
   | { type: 'route'; id: string }
   | { type: 'trip'; id: string }
+  | { type: 'zone'; id: string }
   | { type: 'none' };
 
 // Callback interfaces
@@ -40,6 +42,7 @@ interface MapControllerCallbacks {
   onRouteSelect?: (route_id: string) => void;
   onStopSelect?: (stop_id: string) => void;
   onPathwaySelect?: (pathway_id: string) => void;
+  onZoneSelect?: (location_id: string) => void;
   onModeChange?: (mode: MapMode) => void;
   onEmptyClick?: () => void;
   onStationExpandChange?: () => void;
@@ -214,6 +217,9 @@ export class MapController {
           this.layerManager.invalidateCoordResolver();
           this.layerManager.updateStopsData();
           break;
+        case 'locations':
+          this.layerManager.updateZonesLayer();
+          break;
         default:
           break;
       }
@@ -298,6 +304,7 @@ export class MapController {
       onRouteClick: this.handleRouteClick.bind(this),
       onStopClick: this.handleStopClick.bind(this),
       onPathwayClick: this.handlePathwayClick.bind(this),
+      onZoneClick: this.handleZoneClick.bind(this),
       onPathwayCreated: this.handlePathwayCreated.bind(this),
       onModeChange: this.handleModeChange.bind(this),
       onStopDragComplete: this.handleStopDragComplete.bind(this),
@@ -348,6 +355,8 @@ export class MapController {
             showClickArea: true,
             enableHover: true,
           });
+
+          this.layerManager.updateZonesLayer();
 
           // Restore highlights and expanded station/pathways if any.
           // Reset focusedObject first so applyFocusedObject sees oldStation -> newStation
@@ -419,6 +428,9 @@ export class MapController {
       showClickArea: true,
       enableHover: true,
     });
+
+    // After the route and stop layers exist: zones insert themselves below both.
+    this.layerManager!.updateZonesLayer();
 
     // Fit map to show all data
     this.fitMapToData();
@@ -598,6 +610,7 @@ export class MapController {
     this.focusedObject = obj;
     const newStation = this.deriveExpandedStation();
     this.layerManager?.setFocusedStop(obj.type === 'stop' ? obj.id : null);
+    this.layerManager?.setFocusedZone(obj.type === 'zone' ? obj.id : null);
 
     if (oldStation !== newStation) {
       if (newStation) {
@@ -797,6 +810,46 @@ export class MapController {
     this.applyFocusedObject({ type: 'pathway', id: pathway_id });
 
     console.log(`Highlighted pathway: ${pathway_id}`);
+  }
+
+  /**
+   * Highlight an on-demand zone and fit the map to its polygon. Mirrors
+   * highlightPathway: used when navigation originates off-map.
+   */
+  public highlightZone(location_id: string): void {
+    this.interactionHandler?.setHighlightedStop(null);
+    this.layerManager?.clearHighlights();
+    this.applySpotlight(null);
+
+    this.applyFocusedObject({ type: 'zone', id: location_id });
+    this.fitToZone(location_id);
+
+    console.log(`Highlighted zone: ${location_id}`);
+  }
+
+  /** Fit the viewport to one zone's bounds. No-op if the zone has no geometry. */
+  public fitToZone(location_id: string): void {
+    if (!this.gtfsParser || !this.map) {
+      return;
+    }
+    const feature = getZoneFeature(this.gtfsParser, location_id);
+    const bounds = feature ? zoneBounds(feature) : null;
+    if (!bounds) {
+      console.warn(`[MapController] No bounds for zone ${location_id}`);
+      return;
+    }
+    const [west, south, east, north] = bounds;
+    this.map.fitBounds(new LngLatBounds([west, south], [east, north]), {
+      padding: {
+        top: 80,
+        bottom: 80 + this.bottomPadding,
+        left: 80,
+        right: 80,
+      },
+      maxZoom: CONFIG.STOP_FOCUS_ZOOM,
+      duration: 1000,
+      essential: true,
+    });
   }
 
   /**
@@ -1154,6 +1207,21 @@ export class MapController {
     if (this.callbacks.onPathwaySelect) {
       this.callbacks.onPathwaySelect(pathway_id);
     }
+  }
+
+  /**
+   * Handle zone polygon click events.
+   *
+   * Focus and fit only: the zone browse page it should navigate to does not
+   * exist yet, so the page state is left untouched.
+   */
+  private handleZoneClick(location_id: string): void {
+    console.log('Zone clicked:', location_id);
+
+    this.applyFocusedObject({ type: 'zone', id: location_id });
+    this.fitToZone(location_id);
+
+    this.callbacks.onZoneSelect?.(location_id);
   }
 
   /**

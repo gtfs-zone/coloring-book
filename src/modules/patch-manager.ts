@@ -23,6 +23,13 @@ import { getGTFSPrimaryKey } from '../utils/gtfs-primary-keys.js';
 type PatchEventType = 'undo' | 'redo' | 'change' | 'jump';
 type PatchEventListener = (record?: PatchRecord) => void;
 
+/** The only GeoJSON-backed table: its store name has no `.txt` counterpart. */
+const LOCATIONS_TABLE = 'locations';
+
+function fileNameForTable(table: string): string {
+  return table === LOCATIONS_TABLE ? 'locations.geojson' : `${table}.txt`;
+}
+
 export class PatchManager {
   private db: GTFSDatabase;
   private parser: GTFSParser;
@@ -66,7 +73,7 @@ export class PatchManager {
         if (!getGTFSPrimaryKey(table)) {
           continue;
         } // skip internal/unknown stores
-        const fileName = `${table}.txt`;
+        const fileName = fileNameForTable(table);
         await this.db.clearTable(table);
         if (rows.length > 0) {
           await this.db.insertRows(table, rows as GTFSDatabaseRecord[]);
@@ -125,6 +132,24 @@ export class PatchManager {
       }
       await this.db.updateRow(source.table, source.id, delta);
     }
+
+    await this.syncGeoJSONMemory(source.table);
+  }
+
+  /**
+   * Push a GeoJSON table's IDB rows back into memory.
+   *
+   * Every other table is a virtual table whose in-memory array IS the array the
+   * db.* handlers mutate. locations.geojson has no virtual table (it is one row
+   * holding a whole FeatureCollection), so an applied patch reaches IndexedDB
+   * only and memory would keep serving the pre-undo geometry.
+   */
+  private async syncGeoJSONMemory(table: string): Promise<void> {
+    if (table !== LOCATIONS_TABLE) {
+      return;
+    }
+    const rows = await this.db.getAllRows(table);
+    this.parser.setInMemoryFileData(fileNameForTable(table), rows);
   }
 
   /**
@@ -160,6 +185,8 @@ export class PatchManager {
       }
       await this.db.updateRow(source.table, source.id, delta);
     }
+
+    await this.syncGeoJSONMemory(source.table);
   }
 
   async recordInsert(

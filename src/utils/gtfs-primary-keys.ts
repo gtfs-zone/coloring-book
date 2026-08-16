@@ -220,6 +220,14 @@ export const GTFS_PRIMARY_KEYS: GTFSTablePrimaryKey[] = [
     fields: ['booking_rule_id'],
     type: 'natural',
   },
+  {
+    // locations.geojson is stored as a single row holding the whole
+    // FeatureCollection, so the store holds exactly one row under a fixed key.
+    tableName: 'locations',
+    fields: [],
+    type: 'none',
+    singleRow: true,
+  },
 ];
 
 /**
