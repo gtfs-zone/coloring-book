@@ -1,4 +1,5 @@
 import { GTFS_TABLES } from '../types/gtfs.js';
+import { getZoneCollection } from './zone-store.js';
 import type { GTFSParser } from './gtfs-parser.js';
 import type { PatchManager } from './patch-manager.js';
 
@@ -9,7 +10,7 @@ interface NavbarCountsDeps {
 
 /**
  * Count bubbles on the navbar buttons (shapes, services, levels, fare products,
- * changes).
+ * on-demand objects, changes), and the On-Demand button's visibility.
  *
  * Counts are read from the parser's in-memory tables, which share their row
  * arrays with the virtual tables, so they are current without hitting IndexedDB
@@ -44,7 +45,52 @@ export class NavbarCounts {
       'fares-count-badge',
       gtfsParser.getFileDataSync(GTFS_TABLES.FARE_PRODUCTS).length
     );
+    setBadge('on-demand-count-badge', this.countOnDemandObjects());
     setBadge('history-count-badge', patchManager.changeCount);
+
+    // The On-Demand button is the one navbar affordance that is hidden on a
+    // feed it does not apply to: flex is rare, and an always-visible button
+    // would imply every feed has on-demand service to configure. The wrapper's
+    // base class is `hidden`, so showing it means adding back the responsive
+    // display class rather than removing `hidden`.
+    document
+      .getElementById('on-demand-indicator')
+      ?.classList.toggle('md:inline-flex', this.hasOnDemandService());
+  }
+
+  /** Booking rules, location groups and zones together. */
+  private countOnDemandObjects(): number {
+    const { gtfsParser } = this.deps;
+    return (
+      gtfsParser.getFileDataSync(GTFS_TABLES.BOOKING_RULES).length +
+      gtfsParser.getFileDataSync(GTFS_TABLES.LOCATION_GROUPS).length +
+      getZoneCollection(gtfsParser).features.length
+    );
+  }
+
+  /**
+   * Whether the feed has anything on-demand at all.
+   *
+   * The flex files are the cheap answer, but a feed may legally put a
+   * pickup/drop-off window on an ordinary `stop_id` row and carry none of them,
+   * so stop_times is scanned as a fallback. The scan stops at the first hit and
+   * only runs when every flex file is empty.
+   */
+  private hasOnDemandService(): boolean {
+    if (this.countOnDemandObjects() > 0) {
+      return true;
+    }
+    for (const row of this.deps.gtfsParser.getFileDataSync(
+      GTFS_TABLES.STOP_TIMES
+    )) {
+      if (
+        String(row['start_pickup_drop_off_window'] ?? '') !== '' ||
+        String(row['end_pickup_drop_off_window'] ?? '') !== ''
+      ) {
+        return true;
+      }
+    }
+    return false;
   }
 
   /** Distinct service_ids across calendar.txt and calendar_dates.txt. */

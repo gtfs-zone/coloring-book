@@ -66,7 +66,7 @@ interface FaresEntry {
 }
 
 /** The two columns of a join table, and how to label what it names. */
-interface MemberJoinSpec {
+export interface MemberJoinSpec {
   /** Column header, e.g. "Stops". */
   label: string;
   memberTable: string;
@@ -89,7 +89,7 @@ interface MemberJoinSpec {
  * one call to this. The membership is read once per refresh; `apply` diffs the
  * picked set against it and writes the join table in a single patch.
  */
-async function memberJoinColumn(
+export async function memberJoinColumn(
   deps: FaresModalDeps,
   spec: MemberJoinSpec
 ): Promise<EditableTableJoinColumn> {
@@ -161,7 +161,7 @@ async function memberJoinColumn(
       });
 
       console.log(
-        `[Fares] ${joinStore} for ${group_id} (-${deletes.length} +${inserts.length})`
+        `[JoinColumn] ${joinStore} for ${group_id} (-${deletes.length} +${inserts.length})`
       );
       for (const entry of deletes) {
         await deps.gtfsDatabase.deleteRow(joinStore, entry.id);
@@ -322,7 +322,7 @@ async function timeframeGroupOptions(
 }
 
 /** Services from both `calendar` and `calendar_dates`, labelled by their days. */
-async function serviceOptions(
+export async function serviceOptions(
   deps: FaresModalDeps
 ): Promise<OptionPickerItem[]> {
   const options = new Map<string, OptionPickerItem>();
@@ -378,7 +378,7 @@ async function legGroupSuggestions(deps: FaresModalDeps): Promise<string[]> {
  * full matching algorithm, which belongs in the column tooltips rather than in
  * an empty state.
  */
-function emptyState(table: string, hint: string): string {
+export function emptyState(table: string, hint: string): string {
   const spec = gtfsSpec.files.find((file) => file.filename === table);
   const intro = (spec?.description ?? '')
     .split('\n')[0]
