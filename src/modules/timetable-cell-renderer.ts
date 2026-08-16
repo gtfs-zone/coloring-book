@@ -130,11 +130,16 @@ export class TimetableCellRenderer {
     };
 
     // Booking rules are per stop_time, so the badges live on the cell rather
-    // than the row label. Phase 6 turns these into links into the On-Demand
-    // modal; for now they only surface that a rule applies.
+    // than the row label. Clicking one opens the On-Demand modal on that rule;
+    // schedule-controller delegates the click.
     const badge = (label: string, rule: string | null): string =>
       rule
-        ? `<span class="badge badge-xs badge-outline font-mono" title="${escapeHtml(`${label} booking rule ${rule}`)}">${label} ${escapeHtml(rule)}</span>`
+        ? `<button
+             type="button"
+             class="booking-rule-badge badge badge-xs badge-outline font-mono cursor-pointer"
+             data-booking-rule-id="${escapeHtml(rule)}"
+             title="${escapeHtml(`${label} booking rule ${rule}. Opens the On-Demand editor.`)}"
+           >${label} ${escapeHtml(rule)}</button>`
         : '';
     const badges = [
       badge('PU', editableStopTime.pickup_booking_rule_id),

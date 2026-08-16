@@ -28,12 +28,14 @@ import {
 import { PageStateManager } from './modules/page-state-manager';
 import { navigateToTimetable } from './modules/navigation-actions';
 import type { PageState } from './types/page-state';
+import { GTFS_TABLES } from './types/gtfs';
 import { PatchManager } from './modules/patch-manager';
 import { HistoryController } from './modules/history-controller';
 import { TabLockController } from './modules/tab-lock';
 import { humanLabel } from './utils/patch-label';
 import { showAboutModal } from './modules/about-modal';
 import { showFaresModal } from './modules/fares-modal';
+import { showOnDemandModal } from './modules/on-demand-modal';
 import {
   showCalendarModal,
   type CalendarModalDeps,
@@ -159,6 +161,14 @@ export class GTFSEditor {
     this.scheduleController.setStopHighlightHandlers({
       onStopFocus: (stop_id) => this.mapController.highlightStop(stop_id),
       onStopHover: (stop_id) => this.mapController.hoverStop(stop_id),
+    });
+
+    // Timetable booking-rule badge -> the On-Demand modal, opened on that rule.
+    this.scheduleController.setBookingRuleHandler((booking_rule_id) => {
+      void showOnDemandModal(this.onDemandModalDeps(), {
+        table: GTFS_TABLES.BOOKING_RULES,
+        rowKey: booking_rule_id,
+      });
     });
 
     this.init().catch((error) => {
@@ -322,6 +332,13 @@ export class GTFSEditor {
           patchManager: this.patchManager,
         });
       });
+
+      // Wire on-demand button to open the On-Demand (GTFS Flex) modal
+      document
+        .getElementById('on-demand-btn')
+        ?.addEventListener('click', () => {
+          void showOnDemandModal(this.onDemandModalDeps());
+        });
 
       // Wire calendar button to open Calendar modal
       document.getElementById('calendar-btn')?.addEventListener('click', () => {
@@ -491,6 +508,19 @@ export class GTFSEditor {
     console.log(
       `[GTFSEditor] validation: ${validationResults.errors.length} error(s), ${validationResults.warnings.length} warning(s), ${issues.length} issue group(s)`
     );
+  }
+
+  /** Deps for the On-Demand modal, which several affordances can open. */
+  private onDemandModalDeps(): Parameters<typeof showOnDemandModal>[0] {
+    return {
+      gtfsDatabase: this.gtfsParser.gtfsDatabase as Parameters<
+        typeof showOnDemandModal
+      >[0]['gtfsDatabase'],
+      patchManager: this.patchManager,
+      onZoneClick: (location_id) => {
+        void this.pageStateManager.setPageState({ type: 'zone', location_id });
+      },
+    };
   }
 
   /**
