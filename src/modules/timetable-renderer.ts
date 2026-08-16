@@ -667,19 +667,23 @@ export class TimetableRenderer {
         // Add empty cell for new trip column
         const newTripCell = '<td class="text-center p-2"></td>';
 
-        // Hovering a row lights its stop on the map. A flex row's id is a
-        // location group or zone, which is not on the map yet (Phase 4), so it
-        // carries no data-stop-id and simply does not highlight.
-        const isStopRow =
-          sequence === undefined ||
-          stopIndex >= sequence.stops.length ||
-          sequence.stops[stopIndex].ref.kind === 'stop';
+        // Hovering a row lights what it references on the map. A stop row
+        // carries data-stop-id; a flex row carries data-flex-kind/data-flex-id,
+        // the same pair the route diagram emits.
+        const rowRef =
+          sequence !== undefined && stopIndex < sequence.stops.length
+            ? sequence.stops[stopIndex].ref
+            : undefined;
+        const isStopRow = rowRef === undefined || rowRef.kind === 'stop';
+        const rowRefAttrs = isStopRow
+          ? `data-stop-id="${escapeHtml(stop.stop_id)}"`
+          : `data-flex-kind="${escapeHtml(rowRef!.kind)}" data-flex-id="${escapeHtml(rowRef!.id)}"`;
 
         return `
         <tr class="${rowClass}" role="row">
           <th
             class="stop-name ${STRIP_ROW_CLASS} max-w-[320px] py-0 px-2 pl-0 font-medium border-r border-base-300 bg-base-100"
-            ${isStopRow ? `data-stop-id="${escapeHtml(stop.stop_id)}"` : ''}
+            ${rowRefAttrs}
           >
             ${this.renderStopLabelCell(stop, stopIndex, graph as RouteGraph, sequence as RouteSequence, color)}
           </th>

@@ -35,7 +35,10 @@ import { getStopDisplay, renderCardLabel } from '../utils/entity-display.js';
 import { escapeHtml } from '../utils/escape-html.js';
 import { routeColor } from '../utils/route-colors.js';
 
-/** Marks a diagram row, which carries `data-stop-id` and opens the stop page. */
+/**
+ * Marks a diagram row. Carries either `data-stop-id` (opens the stop page) or
+ * `data-flex-kind` + `data-flex-id` (opens the zone / location group page).
+ */
 export const ROUTE_DIAGRAM_ROW = 'route-diagram-row';
 
 /** Facts about a stop that are worth reading off the strip. */
@@ -88,13 +91,18 @@ function renderRow(
   // stops.txt row and are deliberately kept out of getStopDisplay.
   const isStop = stop.ref.kind === 'stop';
   const row = isStop ? stopsById.get(stop.ref.id) : undefined;
+  // Same badge wording as the timetable's flex name block, so a zone reads the
+  // same in both views.
+  const kindLabel = stop.ref.kind === 'location_group' ? 'Group' : 'Zone';
   const label = isStop
     ? renderCardLabel(
         getStopDisplay(
           (row ?? { stop_id: stop.ref.id }) as unknown as Record<string, string>
         )
       )
-    : escapeHtml(source.refName(stop.ref) ?? stop.ref.id);
+    : `<span class="badge badge-xs badge-info badge-outline shrink-0 mr-1">${kindLabel}</span>${escapeHtml(
+        source.refName(stop.ref) ?? stop.ref.id
+      )}`;
   const revisit =
     stop.occurrence > 0
       ? `<span class="opacity-50 text-xs ml-1">(visit ${stop.occurrence + 1})</span>`
@@ -104,7 +112,11 @@ function renderRow(
     <div
       class="${STRIP_ROW_CLASS} ${ROUTE_DIAGRAM_ROW} grid gap-2 items-stretch cursor-pointer rounded hover:bg-base-200"
       style="grid-template-columns:${gutterWidth(graph.laneCount)}px 1fr"
-      ${isStop ? `data-stop-id="${escapeHtml(stop.ref.id)}"` : ''}
+      ${
+        isStop
+          ? `data-stop-id="${escapeHtml(stop.ref.id)}"`
+          : `data-flex-kind="${escapeHtml(stop.ref.kind)}" data-flex-id="${escapeHtml(stop.ref.id)}"`
+      }
       title="Served by ${stats.serves} of ${sequence.totalTrips} trips"
     >
       ${rail}

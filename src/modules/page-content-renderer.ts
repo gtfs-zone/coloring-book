@@ -52,7 +52,12 @@ import { showModal, renderTrashIcon } from './modal-utils.js';
 import { showOptionPickerModal } from './option-picker-modal.js';
 import { notify } from './notification-system.js';
 import { escapeHtml } from '../utils/escape-html.js';
-import { getCurrentPageState, navigateToHome } from './navigation-actions.js';
+import {
+  getCurrentPageState,
+  navigateToHome,
+  navigateToLocationGroup,
+  navigateToZone,
+} from './navigation-actions.js';
 import type { GTFSParser } from './gtfs-parser.js';
 import { renderRouteDiagram, ROUTE_DIAGRAM_ROW } from './route-diagram.js';
 import { generateCompositeKeyFromRecord } from '../utils/gtfs-primary-keys.js';
@@ -1065,12 +1070,24 @@ export class PageContentRenderer {
       });
     });
 
-    // Route diagram rows go to the stop page
+    // Route diagram rows go to the stop page, or to the zone / location group
+    // page for a flex row. The flex navigations are imported directly rather
+    // than added to ContentRendererDependencies: they take no renderer state,
+    // and it is how schedule-controller already navigates.
     container.querySelectorAll(`.${ROUTE_DIAGRAM_ROW}`).forEach((row) => {
       row.addEventListener('click', () => {
         const stop_id = row.getAttribute('data-stop-id');
         if (stop_id) {
           this.dependencies.onStopClick(stop_id);
+          return;
+        }
+        const flex_id = row.getAttribute('data-flex-id');
+        if (flex_id) {
+          if (row.getAttribute('data-flex-kind') === 'location_group') {
+            void navigateToLocationGroup(flex_id);
+          } else {
+            void navigateToZone(flex_id);
+          }
         }
       });
     });

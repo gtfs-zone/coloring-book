@@ -157,10 +157,25 @@ export class GTFSEditor {
     this.serviceDaysController.setPatchManager(this.patchManager);
 
     // Timetable stop column -> map: click the rail dot to focus, hover the row
-    // to light it up.
+    // to light up whatever it references. A null ref clears all three kinds:
+    // the row is already gone, so its kind is no longer readable.
     this.scheduleController.setStopHighlightHandlers({
       onStopFocus: (stop_id) => this.mapController.highlightStop(stop_id),
-      onStopHover: (stop_id) => this.mapController.hoverStop(stop_id),
+      onRefHover: (ref) => {
+        if (ref === null) {
+          this.mapController.hoverStop(null);
+          this.mapController.hoverZone(null);
+          this.mapController.hoverLocationGroup(null);
+          return;
+        }
+        if (ref.kind === 'stop') {
+          this.mapController.hoverStop(ref.id);
+        } else if (ref.kind === 'location') {
+          this.mapController.hoverZone(ref.id);
+        } else {
+          this.mapController.hoverLocationGroup(ref.id);
+        }
+      },
     });
 
     // Timetable booking-rule badge -> the On-Demand modal, opened on that rule.
