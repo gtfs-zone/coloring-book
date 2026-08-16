@@ -82,6 +82,158 @@ export function validateFlexStopTimeRow(
   return null;
 }
 
+/** Per-field verdict for one stop_times row. `ok` fields are omitted. */
+export type FieldPresenceState = 'ok' | 'required' | 'forbidden';
+
+export interface FieldPresence {
+  state: FieldPresenceState;
+  reason?: string;
+}
+
+/**
+ * The same conditional-presence rules as `validateFlexStopTimeRow`, but
+ * reported per field instead of as the first violation, so the timetable can
+ * decorate each sub-row on its own.
+ *
+ * `validateFlexStopTimeRow` stays the commit gate: this is advisory. Like it,
+ * this tolerates a half-typed row, because it is called mid-edit.
+ *
+ * `position` says whether the row is the trip's first or last stop, which the
+ * arrival/departure requirement needs and which cannot be read off the row.
+ */
+export function stopTimeFieldPresence(
+  row: Record<string, unknown>,
+  position?: { isFirst?: boolean; isLast?: boolean }
+): Map<string, FieldPresence> {
+  const result = new Map<string, FieldPresence>();
+  const mark = (field: string, state: FieldPresenceState, reason: string) => {
+    // First rule to fire wins, matching validateFlexStopTimeRow's ordering.
+    if (!result.has(field)) {
+      result.set(field, { state, reason });
+    }
+  };
+
+  const location_group_id = cell(row, 'location_group_id');
+  const location_id = cell(row, 'location_id');
+  const start = cell(row, 'start_pickup_drop_off_window');
+  const end = cell(row, 'end_pickup_drop_off_window');
+  const arrival = cell(row, 'arrival_time');
+  const departure = cell(row, 'departure_time');
+  const hasWindow = start !== '' || end !== '';
+  const hasTime = arrival !== '' || departure !== '';
+
+  if (hasWindow) {
+    for (const field of ['arrival_time', 'departure_time']) {
+      mark(
+        field,
+        'forbidden',
+        `${field} is forbidden when a pickup/drop-off window is defined`
+      );
+    }
+  } else {
+    if (position?.isFirst || position?.isLast) {
+      if (arrival === '') {
+        mark(
+          'arrival_time',
+          'required',
+          'arrival_time is required for the first and last stop of a trip'
+        );
+      }
+    }
+    if (cell(row, 'timepoint') === '1') {
+      if (arrival === '') {
+        mark(
+          'arrival_time',
+          'required',
+          'arrival_time is required when timepoint=1'
+        );
+      }
+      if (departure === '') {
+        mark(
+          'departure_time',
+          'required',
+          'departure_time is required when timepoint=1'
+        );
+      }
+    }
+  }
+
+  for (const [field, value, other] of [
+    ['start_pickup_drop_off_window', start, end],
+    ['end_pickup_drop_off_window', end, start],
+  ] as const) {
+    if (hasTime) {
+      mark(
+        field,
+        'forbidden',
+        `${field} is forbidden when arrival_time or departure_time is defined`
+      );
+      continue;
+    }
+    if (value !== '') {
+      continue;
+    }
+    if (location_group_id !== '' || location_id !== '') {
+      mark(
+        field,
+        'required',
+        `${field} is required when ${location_group_id !== '' ? 'location_group_id' : 'location_id'} is defined`
+      );
+    } else if (other !== '') {
+      mark(
+        field,
+        'required',
+        'start_pickup_drop_off_window and end_pickup_drop_off_window must both be set, or both left empty'
+      );
+    }
+  }
+
+  if (hasWindow) {
+    const pickup_type = cell(row, 'pickup_type');
+    if (pickup_type === '0' || pickup_type === '3') {
+      mark(
+        'pickup_type',
+        'forbidden',
+        `pickup_type=${pickup_type} is forbidden when a pickup/drop-off window is defined; it must be 1 or 2`
+      );
+    } else if (pickup_type === '') {
+      mark(
+        'pickup_type',
+        'required',
+        'pickup_type must be 1 or 2 when a pickup/drop-off window is defined; empty is equivalent to 0'
+      );
+    }
+
+    const drop_off_type = cell(row, 'drop_off_type');
+    if (drop_off_type === '0') {
+      mark(
+        'drop_off_type',
+        'forbidden',
+        'drop_off_type=0 is forbidden when a pickup/drop-off window is defined; it must be 1, 2 or 3'
+      );
+    } else if (drop_off_type === '') {
+      mark(
+        'drop_off_type',
+        'required',
+        'drop_off_type must be 1, 2 or 3 when a pickup/drop-off window is defined; empty is equivalent to 0'
+      );
+    }
+
+    for (const field of ['continuous_pickup', 'continuous_drop_off']) {
+      const value = cell(row, field);
+      if (value !== '' && value !== '1') {
+        mark(
+          field,
+          'forbidden',
+          `${field}=${value} is forbidden when a pickup/drop-off window is defined; it must be 1 or empty`
+        );
+      }
+    }
+  }
+
+  return result;
+}
+
 /**
  * The `booking_type` matrix: which prior-notice fields each booking type
  * requires and which it forbids.
