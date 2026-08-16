@@ -64,6 +64,19 @@ const ZONE_OUTLINE_OPACITY = 0.8;
 const ZONE_FILL_OPACITY_DIMMED = 0.03;
 const ZONE_OUTLINE_OPACITY_DIMMED = 0.2;
 
+/** Transfer edges of the focused stop. Ephemeral, like `trip-highlight`. */
+const TRANSFER_SOURCE = 'transfer-edges';
+const TRANSFER_DASHED_LAYER = 'transfer-edges-dashed';
+const TRANSFER_SOLID_LAYER = 'transfer-edges-solid';
+const TRANSFER_STUB_LAYER = 'transfer-edges-stub';
+const TRANSFER_LAYER_IDS = [
+  TRANSFER_DASHED_LAYER,
+  TRANSFER_SOLID_LAYER,
+  TRANSFER_STUB_LAYER,
+];
+/** Below this the two endpoints are the same place and the line has nothing to draw. */
+const TRANSFER_STUB_LENGTH_M = 5;
+
 /** Perpendicular spacing between parallel pathways sharing an endpoint pair. */
 const PATHWAY_PARALLEL_OFFSET_M = 2;
 /** Below this length a pathway is a blob rather than a line. */
@@ -237,6 +250,7 @@ export class LayerManager {
       'stops-clickarea',
       'stops-highlight',
       'trip-highlight',
+      ...TRANSFER_LAYER_IDS,
       ZONE_FILL_LAYER,
       ZONE_OUTLINE_LAYER,
       // Legacy layers for backward compatibility
@@ -251,6 +265,7 @@ export class LayerManager {
       'stops',
       'stops-highlight',
       'trip-highlight',
+      TRANSFER_SOURCE,
       ZONE_SOURCE,
     ];
 
@@ -1137,6 +1152,158 @@ export class LayerManager {
   }
 
   /**
+   * Draw the transfers of one stop as edges to the stops they connect to.
+   *
+   * Scoped to the focused stop rather than being a feed-wide layer: transfers
+   * are a property of the stop the user is looking at, and a whole feed's worth
+   * of them is unreadable. Types 4 and 5 link two trips rather than two places,
+   * so they have no geometry here and are left out.
+   */
+  public showTransferEdges(stop_id: string): void {
+    this.clearTransferEdges();
+
+    const stops =
+      this.gtfsParser.getFileDataSyncTyped<Stops>('stops.txt') || [];
+    const pathways =
+      this.gtfsParser.getFileDataSyncTyped<Pathways>('pathways.txt') || [];
+    const transfers = this.gtfsParser.getFileDataSync('transfers.txt') || [];
+    // Own coords where a stop has them, otherwise its laid-out position in the
+    // pathway graph, so an edge lands on the dot that is actually drawn.
+    const resolveCoord = this.getCachedResolver(stops, pathways);
+
+    const features: GeoJSON.Feature[] = [];
+    for (const transfer of transfers) {
+      const from = String(transfer.from_stop_id ?? '');
+      const to = String(transfer.to_stop_id ?? '');
+      if (from !== stop_id && to !== stop_id) {
+        continue;
+      }
+      const type = Number(transfer.transfer_type ?? 0) || 0;
+      if (type === 4 || type === 5) {
+        continue;
+      }
+
+      const fromCoord = from === '' ? null : resolveCoord(from);
+      const toCoord = to === '' ? null : resolveCoord(to);
+      if (!fromCoord || !toCoord) {
+        console.warn(
+          `[LayerManager] transfer ${from || '(none)'} -> ${to || '(none)'} cannot be drawn: endpoint has no coordinates`
+        );
+        continue;
+      }
+
+      const properties = {
+        from_stop_id: from,
+        to_stop_id: to,
+        transfer_type: type,
+      };
+      // Two stops at the same place (a transfer within one station) would be a
+      // zero-length line, which MapLibre draws as nothing at all. Mark the
+      // place with a dot instead of losing the transfer.
+      const geometry: GeoJSON.Geometry =
+        segmentLengthM([fromCoord, toCoord]) < TRANSFER_STUB_LENGTH_M
+          ? { type: 'Point', coordinates: fromCoord }
+          : { type: 'LineString', coordinates: [fromCoord, toCoord] };
+      features.push({ type: 'Feature', geometry, properties });
+    }
+
+    console.log(
+      `[LayerManager] transfer edges for ${stop_id}: ${features.length}`
+    );
+    if (features.length === 0) {
+      return;
+    }
+
+    this.map.addSource(TRANSFER_SOURCE, {
+      type: 'geojson',
+      data: { type: 'FeatureCollection', features },
+    });
+
+    // Red is the error color and type 3 means the transfer is not possible,
+    // which is the one case where it is the right read.
+    const color = [
+      'case',
+      ['==', ['get', 'transfer_type'], 3],
+      resolveThemeColor('--color-error', '#ef4444'),
+      this.accent(),
+    ] as unknown as ExpressionSpecification;
+    // line-dasharray is not data-driven, so the dashed types need their own
+    // layer. 0 (or empty) is a suggestion; 1, 2 and 3 are rules.
+    const before = this.map.getLayer('stops-background')
+      ? 'stops-background'
+      : undefined;
+
+    this.map.addLayer(
+      {
+        id: TRANSFER_DASHED_LAYER,
+        type: 'line',
+        source: TRANSFER_SOURCE,
+        filter: [
+          '==',
+          ['get', 'transfer_type'],
+          0,
+        ] as unknown as FilterSpecification,
+        paint: {
+          'line-color': color,
+          'line-width': 2.5,
+          'line-opacity': 0.9,
+          'line-dasharray': [2, 2],
+        },
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
+      } as unknown as Parameters<MapLibreMap['addLayer']>[0],
+      before
+    );
+
+    this.map.addLayer(
+      {
+        id: TRANSFER_SOLID_LAYER,
+        type: 'line',
+        source: TRANSFER_SOURCE,
+        filter: [
+          '!=',
+          ['get', 'transfer_type'],
+          0,
+        ] as unknown as FilterSpecification,
+        paint: {
+          'line-color': color,
+          'line-width': 2.5,
+          'line-opacity': 0.9,
+        },
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
+      } as unknown as Parameters<MapLibreMap['addLayer']>[0],
+      before
+    );
+
+    // Point features only: a circle layer ignores the line geometries.
+    this.map.addLayer(
+      {
+        id: TRANSFER_STUB_LAYER,
+        type: 'circle',
+        source: TRANSFER_SOURCE,
+        paint: {
+          'circle-radius': 10,
+          'circle-color': 'transparent',
+          'circle-stroke-color': color,
+          'circle-stroke-width': 2.5,
+          'circle-stroke-opacity': 0.9,
+        },
+      } as unknown as Parameters<MapLibreMap['addLayer']>[0],
+      before
+    );
+  }
+
+  public clearTransferEdges(): void {
+    for (const layerId of TRANSFER_LAYER_IDS) {
+      if (this.map.getLayer(layerId)) {
+        this.map.removeLayer(layerId);
+      }
+    }
+    if (this.map.getSource(TRANSFER_SOURCE)) {
+      this.map.removeSource(TRANSFER_SOURCE);
+    }
+  }
+
+  /**
    * Spotlight the stops of a route: mark them with the onRoute feature-state
    * (always visible + clickable at any zoom, see stopFadeOpacity /
    * addStopsClickAreaLayer) and dim all other stops. Pass an empty array to
@@ -1178,6 +1345,7 @@ export class LayerManager {
    * Clear all highlights
    */
   public clearHighlights(): void {
+    this.clearTransferEdges();
     this.setFocusedStop(null);
     this.setHoveredStop(null);
     this.setHoveredZone(null);

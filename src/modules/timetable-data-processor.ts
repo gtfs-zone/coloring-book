@@ -26,7 +26,6 @@ import {
   RouteSequence,
 } from './route-sequence.js';
 import { routeGraph, RouteGraph } from './route-graph.js';
-import type { StopTimeFieldMode } from './timetable-fields.js';
 
 /** Trimmed string value, or null when absent or blank. */
 function emptyToNull(raw: unknown): string | null {
@@ -138,12 +137,6 @@ export interface TimetableData {
   showArrivalDeparture?: boolean; // Whether to show separate arrival/departure columns
   sequence?: RouteSequence;
   graph?: RouteGraph;
-  /**
-   * Which stop_times sub-rows the cells show. Owned by ScheduleController (it
-   * is UI state, persisted in localStorage) and stamped on here per render, so
-   * the renderer never reads localStorage itself.
-   */
-  stopTimeFieldMode?: StopTimeFieldMode;
 }
 
 interface GTFSRelationships {

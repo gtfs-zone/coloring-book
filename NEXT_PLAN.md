@@ -298,30 +298,60 @@ would need a toggle, a legend, and a plan for feeds with tens of thousands of
 transfers, none of which buys anything over drawing the edges of the stop the
 user is looking at.
 
-- [ ] In `src/modules/stop-view-controller.ts`, add
+- [x] In `src/modules/stop-view-controller.ts`, add
       `renderTransfersSection(stop_id)` returning a card listing every transfer
       where `from_stop_id` or `to_stop_id` equals this stop. Render it as a
       `renderEditableTable` instance scoped to those rows, with a
       `Manage all transfers` button opening the Feed Data modal on the
       transfers entry.
-- [ ] Slot the section into `renderStopView`'s template
+- [x] Slot the section into `renderStopView`'s template
       (`src/modules/stop-view-controller.ts:154`), after the pathway sections
       and before Timetables. Show it for both stops and stations, since a
       station-level transfer applies to all child stops.
-- [ ] Label the other end of each transfer with `getStopDisplay` +
+- [x] Label the other end of each transfer with `getStopDisplay` +
       `renderOptionLabel`, never an inline format.
-- [ ] In `src/modules/layer-manager.ts`, add a `transfer-edges` GeoJSON source
+- [x] In `src/modules/layer-manager.ts`, add a `transfer-edges` GeoJSON source
       and a line layer, following the `trip-highlight` pattern (`:1084`).
       Style by `transfer_type`: dashed for `0`, solid for `1` and `2`, and a
       distinct error colour for `3` (transfer not possible).
-- [ ] Add `showTransferEdges(stop_id)` / `clearTransferEdges()` to the layer
+- [x] Add `showTransferEdges(stop_id)` / `clearTransferEdges()` to the layer
       manager, building a `LineString` per transfer between the two stops'
       coordinates.
-- [ ] Call them from `MapController.focusStop` (`:1463`) and `clearFocus`.
-- [ ] For a transfer whose endpoint is a station, draw to the station's
+- [x] Call them from `MapController.focusStop` (`:1463`) and `clearFocus`.
+- [x] For a transfer whose endpoint is a station, draw to the station's
       coordinates, not to every child. For an endpoint with no usable
       coordinates, skip the edge and `console.warn` with the transfer's
       endpoints. Do not silently drop it.
+
+**Discoveries**
+
+- The label requirement is already met by the table: a foreign-ID column's
+  cells are labelled through `buildForeignKeyOptions`
+  (`src/utils/spec-field-edit.ts:174`), which goes through `getEntityDisplay`
+  and so through `getStopDisplay` for a stop. Nothing in this phase formats a
+  stop label itself.
+- `focusStop` / `clearFocus` are one-line aliases for `highlightStop` /
+  `clearHighlights`, so the calls went into those instead. Clearing is
+  automatic: `LayerManager.clearHighlights` now drops the transfer layers, and
+  every other `highlight*` method already calls it first, so navigating from a
+  stop to anything else clears the edges with no new call site.
+- Two line layers plus a circle layer, not one line layer: `line-dasharray` is
+  not data-driven, so type `0` needs its own layer, and the zero-length case
+  needs a `Point`. They share one source, and a layer only draws the geometry
+  type it is for, so the split costs nothing beyond the layer ids.
+- The stop page needed a writing database handle, which
+  `StopViewDependencies` did not have (`QueryOnlyDatabase` only). Added
+  `editableDeps` plus `onTransfersChanged`, built by a new
+  `PageContentRenderer.editableDeps()` that returns `undefined` when there is
+  no patch manager, in which case the section is skipped rather than rendered
+  read-only.
+- `ContentRendererDependencies['patchManager']` needed `recordBatchMixed`,
+  since editing a key field of a six-field composite key re-keys the row.
+  `browse-navigation.ts` had a second hand-written copy of the same shape,
+  which is now a reference to the first rather than a third copy.
+- `installEditableTableHandlers` is called on every render of a stop page. The
+  instance stays registered after navigating away, which is harmless: its cells
+  are gone with the page, and the next stop page overwrites it.
 
 **Gotchas**
 
@@ -329,9 +359,12 @@ user is looking at.
   `from_stop_id` / `to_stop_id` at all. They must not appear on a stop page
   section keyed by stop, and they have no geometry. Filter them out of both, and
   make sure the stop-page section says so rather than looking empty by accident.
+  Done: the section counts the ones that do name this stop and says they are
+  edited in Feed Data.
 - A transfer between two stops at the same coordinates renders as a zero-length
   line, which MapLibre draws as nothing. Detect it and draw a marker or skip it,
-  but decide deliberately.
+  but decide deliberately. Decided: under 5 m the edge becomes a `Point` drawn
+  as a ring, so an in-station transfer is visible rather than absent.
 - Dangling `from_stop_id` / `to_stop_id` are the user's data problem to see, not
   ours to work around: surface them the way `isDanglingReference` /
   `formatIssueValue` already do in the table, and warn in the console when the

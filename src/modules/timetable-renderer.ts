@@ -22,10 +22,7 @@ import {
   renderFieldLabelContent,
   renderSpecFieldLabelContent,
 } from '../utils/field-component.js';
-import {
-  StopTimeFieldMode,
-  visibleStopTimeFields,
-} from './timetable-fields.js';
+import { visibleStopTimeFields, WINDOW_FIELDS } from './timetable-fields.js';
 import { describeFrequency } from '../utils/frequency-rules.js';
 import { TimeFormatter } from '../utils/time-formatter.js';
 import { getEnumOptions } from '../types/gtfs-enums.js';
@@ -100,10 +97,9 @@ const LABEL_COLUMN_REM = 10;
  * than recomputed per cell, so the grid cannot end up ragged.
  */
 interface RenderContext {
-  mode: StopTimeFieldMode;
   fields: readonly string[];
-  /** Used and All show the frozen field-label sub-column; Compact does not. */
-  showLabels: boolean;
+  /** Fields the user added for this visit: labeled as UI-only, removable. */
+  provisional: readonly string[];
 }
 
 /**
@@ -136,57 +132,36 @@ export class TimetableRenderer {
    */
   public renderTimetableHTML(
     data: TimetableData,
-    pendingRef?: StopTimeRef
+    pendingRef?: StopTimeRef,
+    provisionalFields: readonly string[] = []
   ): string {
-    const mode = data.stopTimeFieldMode ?? 'compact';
+    // An on-demand row needs its two window sub-rows even on a feed that has no
+    // window anywhere yet, or a newly added zone row has nothing to type into
+    // and can never be saved. The roster function cannot see the row refs, so
+    // the decision is made here.
+    const hasFlexRow =
+      (data.sequence?.stops ?? []).some((row) => row.ref.kind !== 'stop') ||
+      (pendingRef !== undefined && pendingRef.kind !== 'stop');
+
     const ctx: RenderContext = {
-      mode,
-      fields: visibleStopTimeFields(mode, data.trips),
-      showLabels: mode !== 'compact',
+      fields: visibleStopTimeFields(data.trips, [
+        ...provisionalFields,
+        ...(hasFlexRow ? WINDOW_FIELDS : []),
+      ]),
+      provisional: provisionalFields,
     };
 
-    // Compact swaps a cell's two time sub-rows for the two window fields, so
-    // every cell renders exactly this many spans whatever its row references.
+    // Every cell renders exactly this many spans, whatever its row references.
     // resolveNeighbour reads this to step between cells.
-    const perCell = mode === 'compact' ? 2 : ctx.fields.length;
-
     return `
-      <div id="schedule-view" class="h-full flex flex-col" data-fields-per-cell="${perCell}">
+      <div
+        id="schedule-view"
+        class="h-full flex flex-col"
+        data-fields-per-cell="${ctx.fields.length}"
+        data-fields="${escapeHtml(ctx.fields.join(','))}"
+      >
         ${this.renderDirectionTabs(data)}
-        ${this.renderModeSwitch(mode)}
         ${this.renderTimetableContent(data, ctx, pendingRef)}
-      </div>
-    `;
-  }
-
-  /**
-   * The Compact / Used / All switch over the stop_times sub-rows.
-   *
-   * One global mode rather than per-row expansion: the grid has to stay
-   * rectangular for the keyboard navigation and the fixed column width to work.
-   */
-  private renderModeSwitch(mode: StopTimeFieldMode): string {
-    const button = (
-      value: StopTimeFieldMode,
-      label: string,
-      title: string
-    ): string => `
-      <button
-        type="button"
-        class="stop-time-mode-btn btn btn-xs join-item${value === mode ? ' btn-active' : ''}"
-        data-mode="${value}"
-        title="${escapeHtml(title)}"
-      >${label}</button>
-    `;
-
-    return `
-      <div class="flex items-center gap-2 border-b border-base-300 px-2 py-1">
-        <span class="text-xs opacity-60">stop_times fields</span>
-        <div class="join">
-          ${button('compact', 'Compact', 'Arrival and departure only (the pickup/drop-off window on an on-demand row), plus a nine-slot flag row for the other fields. The flag slots are mouse-only: switch to Used or All to reach those fields by keyboard.')}
-          ${button('used', 'Used', 'Every stop_times field that is used on this route and direction.')}
-          ${button('all', 'All', 'Every editable stop_times field, in spec order.')}
-        </div>
       </div>
     `;
   }
@@ -292,16 +267,16 @@ export class TimetableRenderer {
     return `
       <div class="flex-1 overflow-x-auto">
         <table class="table table-xs table-fixed w-auto table-pin-rows table-pin-cols" role="grid">
-          ${this.renderTimetableHeader(data, ctx)}
+          ${this.renderTimetableHeader(data)}
           ${this.renderTimetableBody(data, ctx, pendingRef)}
         </table>
       </div>
     `;
   }
 
-  /** The frozen first column's width: wider when the field labels are shown. */
-  private labelColumnStyle(ctx: RenderContext): string {
-    return `width:${ctx.showLabels ? 20 + LABEL_COLUMN_REM : 20}rem`;
+  /** The frozen first column's width: the stop name block plus the labels. */
+  private labelColumnStyle(): string {
+    return `width:${20 + LABEL_COLUMN_REM}rem`;
   }
 
   /**
@@ -339,10 +314,7 @@ export class TimetableRenderer {
    * @param data - Complete timetable data including trips
    * @returns HTML string for trip property rows
    */
-  private renderTripPropertyRows(
-    data: TimetableData,
-    ctx: RenderContext
-  ): string {
+  private renderTripPropertyRows(data: TimetableData): string {
     const trips = data.trips;
 
     if (trips.length === 0) {
@@ -372,7 +344,7 @@ export class TimetableRenderer {
 
         return `
         <tr class="trip-property-row" data-property="${config.field}">
-          <th class="stop-name p-2 font-medium border-r border-base-300 bg-base-100" style="${this.labelColumnStyle(ctx)}">
+          <th class="stop-name p-2 font-medium border-r border-base-300 bg-base-100" style="${this.labelColumnStyle()}">
             <div class="stop-name-text truncate">${renderFieldLabelContent(config)}</div>
           </th>
           ${cells}
@@ -382,7 +354,7 @@ export class TimetableRenderer {
       })
       .join('');
 
-    return propertyRows + this.renderFrequencyBand(data, ctx);
+    return propertyRows + this.renderFrequencyBand(data);
   }
 
   /**
@@ -400,7 +372,7 @@ export class TimetableRenderer {
    * stop-time grid would break resolveNeighbour's per-cell index arithmetic
    * against rows with a different span count.
    */
-  private renderFrequencyBand(data: TimetableData, ctx: RenderContext): string {
+  private renderFrequencyBand(data: TimetableData): string {
     const trips = data.trips;
     const bandSize = trips.reduce(
       (max, trip) => Math.max(max, trip.frequencies.length),
@@ -408,7 +380,7 @@ export class TimetableRenderer {
     );
 
     const labelCell = (label: string, muted = false): string => `
-      <th class="stop-name p-2 font-medium border-r border-base-300 bg-base-100" style="${this.labelColumnStyle(ctx)}">
+      <th class="stop-name p-2 font-medium border-r border-base-300 bg-base-100" style="${this.labelColumnStyle()}">
         <div class="stop-name-text truncate${muted ? ' opacity-60 font-normal' : ''}">${label}</div>
       </th>
     `;
@@ -633,10 +605,7 @@ export class TimetableRenderer {
    * @param hasPendingStop - Whether there's a pending stop being added
    * @returns HTML string for the table header
    */
-  private renderTimetableHeader(
-    data: TimetableData,
-    ctx: RenderContext
-  ): string {
+  private renderTimetableHeader(data: TimetableData): string {
     const trips = data.trips;
     const columnStyle = `width:${TRIP_COLUMN_REM}rem`;
     const tripHeaders = trips
@@ -695,7 +664,7 @@ export class TimetableRenderer {
     return `
       <thead>
         <tr class="z-[2]">
-          <th class="stop-header p-2 text-left bg-base-100" style="${this.labelColumnStyle(ctx)}">
+          <th class="stop-header p-2 text-left bg-base-100" style="${this.labelColumnStyle()}">
             Stop
           </th>
           ${tripHeaders}
@@ -804,14 +773,22 @@ export class TimetableRenderer {
    * cells' `p-2`. Do not add JS height syncing here.
    */
   private renderFieldLabelColumn(ctx: RenderContext): string {
-    if (!ctx.showLabels) {
-      return '';
-    }
     const labels = ctx.fields
-      .map(
-        (field) =>
-          `<div class="h-6 leading-6 truncate">${renderSpecFieldLabelContent('stop_times.txt', field, field)}</div>`
-      )
+      .map((field) => {
+        // A provisional field is UI-only and vanishes on leaving the timetable,
+        // so it reads muted and carries its own remove control. A used field has
+        // no ✕: it is in the feed, and the way to drop it is to clear its values.
+        const isProvisional = ctx.provisional.includes(field);
+        const remove = isProvisional
+          ? `<button
+              type="button"
+              class="remove-field-btn btn btn-ghost btn-xs h-4 min-h-0 px-1 align-middle"
+              data-field="${escapeHtml(field)}"
+              title="Stop showing ${escapeHtml(field)}"
+            >&#10005;</button>`
+          : '';
+        return `<div class="h-6 leading-6 truncate${isProvisional ? ' italic opacity-70' : ''}">${remove}${renderSpecFieldLabelContent('stop_times.txt', field, field)}</div>`;
+      })
       .join('');
     return `
       <div
@@ -989,7 +966,6 @@ export class TimetableRenderer {
               stop_id: stop.stop_id,
               stopIndex,
               fields: ctx.fields,
-              mode: ctx.mode,
               editableStopTime,
               isFirstStop:
                 stopSequence !== '' && stopSequence === trip.firstStopSequence,
@@ -1011,7 +987,7 @@ export class TimetableRenderer {
         <tr class="${rowClass}" role="row">
           <th
             class="stop-name ${STRIP_ROW_CLASS} py-0 px-2 pl-0 font-medium border-r border-base-300 bg-base-100"
-            style="${this.labelColumnStyle(ctx)}"
+            style="${this.labelColumnStyle()}"
             ${rowRefAttrs}
           >
             ${this.renderStopLabelCell(stop, stopIndex, graph as RouteGraph, sequence as RouteSequence, color, ctx, isPendingStop ? pendingRef : undefined)}
@@ -1029,7 +1005,7 @@ export class TimetableRenderer {
       .join('');
     const newStopRow = `
       <tr>
-        <th class="stop-name p-2 border-r border-base-300 bg-base-100" style="${this.labelColumnStyle(ctx)}">
+        <th class="stop-name p-2 border-r border-base-300 bg-base-100" style="${this.labelColumnStyle()}">
           <button
             class="add-stop-btn btn btn-ghost btn-sm w-full justify-start opacity-70 hover:opacity-100"
           >Add stop or zone...</button>
@@ -1040,7 +1016,7 @@ export class TimetableRenderer {
     `;
 
     // Add property rows (and the frequency band) before stop rows
-    const propertyRows = this.renderTripPropertyRows(data, ctx);
+    const propertyRows = this.renderTripPropertyRows(data);
 
     return `<tbody>${propertyRows}${rows}${newStopRow}</tbody>`;
   }

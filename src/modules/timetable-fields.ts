@@ -10,13 +10,7 @@
 
 import { gtfsSpec } from '../gtfs-spec/index.js';
 import { GTFSFieldType, mapGTFSTypeString } from '../types/gtfs-field-types.js';
-import { getEnumOptions } from '../types/gtfs-enums.js';
-import type { FieldPresence } from '../utils/flex-rules.js';
-import type { FlagGlyph } from './flag-icons.js';
 import type { AlignedTrip } from './timetable-data-processor.js';
-
-/** Which sub-rows a cell shows. Persisted in localStorage by the controller. */
-export type StopTimeFieldMode = 'compact' | 'used' | 'all';
 
 /** The editor a field's sub-row opens on click. */
 export type StopTimeFieldKind =
@@ -62,13 +56,13 @@ export const STOP_TIME_EDITABLE_FIELDS: readonly string[] = stopTimesFields()
   .map((field) => field.name)
   .filter((name) => !STRUCTURAL_FIELDS.has(name));
 
-/** The two fields compact mode shows on a timed row. */
+/** The two time fields of a scheduled row. Always in the roster. */
 export const TIME_FIELDS: readonly string[] = [
   'arrival_time',
   'departure_time',
 ];
 
-/** The two fields compact mode shows on a windowed row. */
+/** The two time fields of an on-demand row. */
 export const WINDOW_FIELDS: readonly string[] = [
   'start_pickup_drop_off_window',
   'end_pickup_drop_off_window',
@@ -113,8 +107,7 @@ export function stopTimeFieldKind(field: string): StopTimeFieldKind {
 
 /**
  * The fields non-empty on at least one stop_time across the supplied trips,
- * i.e. the current route + direction. This is what Used mode adds to the two
- * time fields.
+ * i.e. the current route + direction.
  */
 export function usedStopTimeFields(trips: AlignedTrip[]): Set<string> {
   const used = new Set<string>();
@@ -141,173 +134,22 @@ export function usedStopTimeFields(trips: AlignedTrip[]): Set<string> {
 }
 
 /**
- * The sub-rows a cell renders, in spec order.
+ * The sub-rows every cell renders, in spec order: the two time fields, every
+ * field the current route + direction actually uses, and whatever `extra`
+ * fields the user has added for this visit to the timetable.
  *
- * Compact returns the two time fields; whether a given cell swaps them for the
- * two window fields is a per-cell decision in the renderer, since a windowed
- * row and a timed row can share a column.
+ * `extra` is filtered through the spec roster rather than trusted, so a UI-only
+ * field name left over from before a spec refresh is dropped silently instead
+ * of throwing in `stopTimeFieldKind`.
  */
 export function visibleStopTimeFields(
-  mode: StopTimeFieldMode,
-  trips: AlignedTrip[]
+  trips: AlignedTrip[],
+  extra: readonly string[] = []
 ): string[] {
-  if (mode === 'compact') {
-    return [...TIME_FIELDS];
-  }
-  if (mode === 'all') {
-    return [...STOP_TIME_EDITABLE_FIELDS];
-  }
-
   const used = usedStopTimeFields(trips);
+  const added = new Set(extra);
   return STOP_TIME_EDITABLE_FIELDS.filter(
-    (field) => TIME_FIELDS.includes(field) || used.has(field)
+    (field) =>
+      TIME_FIELDS.includes(field) || used.has(field) || added.has(field)
   );
-}
-
-/** One slot of the compact cell's flag row. */
-export interface FlagSlot {
-  field: string;
-  value: string;
-  glyph: FlagGlyph;
-  /** `muted` is the field's default or unset state; `error` a forbidden value. */
-  tone: 'muted' | 'normal' | 'error';
-  tooltip: string;
-  /** A hairline follows this slot: the row reads as four clusters. */
-  endsCluster: boolean;
-}
-
-/**
- * The nine flag slots, in fixed cluster order: timepoint, the pickup trio, the
- * drop-off trio, then headsign and distance.
- *
- * Order is constant in every cell - a column of cells reads vertically slot by
- * slot - so this always returns exactly nine entries, unset ones included.
- */
-const FLAG_FIELDS: readonly { field: string; endsCluster: boolean }[] = [
-  { field: 'timepoint', endsCluster: true },
-  { field: 'pickup_type', endsCluster: false },
-  { field: 'pickup_booking_rule_id', endsCluster: false },
-  { field: 'continuous_pickup', endsCluster: true },
-  { field: 'drop_off_type', endsCluster: false },
-  { field: 'drop_off_booking_rule_id', endsCluster: false },
-  { field: 'continuous_drop_off', endsCluster: true },
-  { field: 'stop_headsign', endsCluster: false },
-  { field: 'shape_dist_traveled', endsCluster: false },
-];
-
-/** The glyph and tone for one field's value, before presence is folded in. */
-function flagAppearance(
-  field: string,
-  value: string
-): { glyph: FlagGlyph; muted: boolean } {
-  switch (field) {
-    case 'timepoint':
-      // Empty is not 0 here: an unset timepoint says nothing, a 0 says the time
-      // is explicitly approximate.
-      if (value === '') {
-        return { glyph: 'dot', muted: true };
-      }
-      return value === '0'
-        ? { glyph: 'clock-approx', muted: true }
-        : { glyph: 'clock', muted: false };
-
-    case 'pickup_type':
-    case 'drop_off_type': {
-      const dflt = field === 'pickup_type' ? 'arrow-up' : 'arrow-down';
-      switch (value) {
-        case '1':
-          return { glyph: 'circle-slash', muted: false };
-        case '2':
-          return { glyph: 'phone', muted: false };
-        case '3':
-          return { glyph: 'steering-wheel', muted: false };
-        default:
-          // '' and '0' both mean regularly scheduled.
-          return { glyph: dflt, muted: true };
-      }
-    }
-
-    case 'continuous_pickup':
-    case 'continuous_drop_off': {
-      const line =
-        field === 'continuous_pickup' ? 'continuous-up' : 'continuous-down';
-      switch (value) {
-        case '0':
-          return { glyph: line, muted: false };
-        case '2':
-          return { glyph: 'phone', muted: false };
-        case '3':
-          return { glyph: 'steering-wheel', muted: false };
-        default:
-          // '' inherits from routes.txt and '1' is "not continuous"; neither is
-          // continuous service, so both stay a faint dot.
-          return { glyph: 'dot', muted: true };
-      }
-    }
-
-    case 'pickup_booking_rule_id':
-    case 'drop_off_booking_rule_id':
-      return value === ''
-        ? { glyph: 'dot', muted: true }
-        : { glyph: 'document', muted: false };
-
-    case 'stop_headsign':
-      return value === ''
-        ? { glyph: 'dot', muted: true }
-        : { glyph: 'sign', muted: false };
-
-    case 'shape_dist_traveled':
-      return value === ''
-        ? { glyph: 'dot', muted: true }
-        : { glyph: 'ruler', muted: false };
-
-    default:
-      throw new Error(`[timetable-fields] no flag slot for field '${field}'`);
-  }
-}
-
-/**
- * The nine slots for one stop_time record, or for an empty cell when the trip
- * has no record at this row (every slot a faint dot).
- *
- * `presence` is the same map the sub-rows are decorated from, so a value the
- * spec forbids reads as an error in compact mode too.
- */
-export function stopTimeFlagSlots(
-  row: Record<string, unknown> | null,
-  presence?: Map<string, FieldPresence>
-): FlagSlot[] {
-  return FLAG_FIELDS.map(({ field, endsCluster }) => {
-    const raw = row ? row[field] : null;
-    const value = raw === null || raw === undefined ? '' : String(raw);
-    const { glyph, muted } = flagAppearance(field, value);
-    const state = presence?.get(field);
-
-    const tone: FlagSlot['tone'] =
-      state?.state === 'forbidden' && value !== ''
-        ? 'error'
-        : muted
-          ? 'muted'
-          : 'normal';
-
-    const label =
-      value === ''
-        ? '(unset)'
-        : stopTimeFieldKind(field) === 'enum'
-          ? enumLabel(field, value)
-          : value;
-    const tooltip = [`${field} = ${label}`, state?.reason]
-      .filter(Boolean)
-      .join(' - ');
-
-    return { field, value, glyph, tone, tooltip, endsCluster };
-  });
-}
-
-/** `2 (Must phone agency to arrange pickup)`, falling back to the bare value. */
-function enumLabel(field: string, value: string): string {
-  const option = (getEnumOptions(field) ?? []).find(
-    (opt) => String(opt.value) === value
-  );
-  return option ? `${value} (${option.label})` : value;
 }
