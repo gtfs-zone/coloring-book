@@ -963,6 +963,90 @@ export class GTFSValidator {
         }
       );
     });
+
+    this.validateFlexRowPairing(stopTimes);
+  }
+
+  /**
+   * The documented on-demand shape serves a zone with a *pair* of stop_times on
+   * one trip: the pickup record `(pickup_type=2, drop_off_type=1)` then the
+   * drop-off record `(1,2)`. A trip carrying only one half is legal - a zone can
+   * be pickup-only - so this is a warning, and only raised when the same route
+   * pairs that same ref up on some other trip, which is what makes a lone half
+   * look like an omission rather than a decision. Nothing is auto-created.
+   */
+  private validateFlexRowPairing(stopTimes: GTFSDatabaseRecord[]) {
+    const PAIRS = ['2:1', '1:2'];
+    const refOf = (row: GTFSDatabaseRecord): string | null => {
+      const group = String(row.location_group_id ?? '').trim();
+      if (group !== '') {
+        return `location_group:${group}`;
+      }
+      const location = String(row.location_id ?? '').trim();
+      return location !== '' ? `location:${location}` : null;
+    };
+    const pairOf = (row: GTFSDatabaseRecord): string =>
+      `${String(row.pickup_type ?? '').trim()}:${String(row.drop_off_type ?? '').trim()}`;
+
+    const routeOfTrip = new Map<string, string>();
+    for (const trip of this.gtfsParser.getFileDataSyncTyped(
+      GTFS_TABLES.TRIPS
+    )) {
+      routeOfTrip.set(String(trip.trip_id ?? ''), String(trip.route_id ?? ''));
+    }
+
+    // trip_id -> ref -> how many stop_times on that trip use it.
+    const refsPerTrip = new Map<string, Map<string, number>>();
+    // `route_id|ref` -> which halves of the pair the route uses anywhere.
+    const halvesPerRoute = new Map<string, Set<string>>();
+
+    for (const row of stopTimes) {
+      const ref = refOf(row);
+      if (ref === null) {
+        continue;
+      }
+      const trip_id = String(row.trip_id ?? '');
+      const counts = refsPerTrip.get(trip_id) ?? new Map<string, number>();
+      counts.set(ref, (counts.get(ref) ?? 0) + 1);
+      refsPerTrip.set(trip_id, counts);
+
+      const pair = pairOf(row);
+      if (PAIRS.includes(pair)) {
+        const key = `${routeOfTrip.get(trip_id) ?? ''}|${ref}`;
+        const halves = halvesPerRoute.get(key) ?? new Set<string>();
+        halves.add(pair);
+        halvesPerRoute.set(key, halves);
+      }
+    }
+
+    stopTimes.forEach((row, index: number) => {
+      const ref = refOf(row);
+      const pair = pairOf(row);
+      if (ref === null || !PAIRS.includes(pair)) {
+        return;
+      }
+      const trip_id = String(row.trip_id ?? '');
+      if ((refsPerTrip.get(trip_id)?.get(ref) ?? 0) !== 1) {
+        return;
+      }
+      const key = `${routeOfTrip.get(trip_id) ?? ''}|${ref}`;
+      if ((halvesPerRoute.get(key)?.size ?? 0) < 2) {
+        return;
+      }
+      const missing = pair === '2:1' ? '(1, 2)' : '(2, 1)';
+      this.addWarning(
+        `Row ${index + 1}: trip '${trip_id}' uses ${ref.replace(':', ' ')} once, with pickup_type/drop_off_type ${pair.replace(':', ', ')}. Other trips on this route pair it with a ${missing} row - did you mean to add one?`,
+        'UNPAIRED_FLEX_ROW',
+        GTFS_TABLES.STOP_TIMES,
+        index + 1,
+        {
+          file: GTFS_TABLES.STOP_TIMES,
+          id: this.rowId('stop_times', row),
+          field: 'pickup_type',
+          value: pair,
+        }
+      );
+    });
   }
 
   /**

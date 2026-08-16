@@ -655,6 +655,23 @@ export class TimetableRenderer {
         const rowClass = isPendingStop
           ? 'opacity-60 border-dashed border-2 border-warning'
           : '';
+
+        // What the whole row references, independent of any one trip. Hovering
+        // a row lights this on the map, and it is also what decides whether a
+        // trip's cell here is a window cell or an arrival/departure cell - a
+        // zone row is a zone row on every trip, including the ones with no
+        // stop_time at this position.
+        const rowRef =
+          sequence !== undefined && stopIndex < sequence.stops.length
+            ? sequence.stops[stopIndex].ref
+            : isPendingStop
+              ? pendingRef
+              : undefined;
+        const isStopRow = rowRef === undefined || rowRef.kind === 'stop';
+        const rowRefAttrs = isStopRow
+          ? `data-stop-id="${escapeHtml(stop.stop_id)}"`
+          : `data-flex-kind="${escapeHtml(rowRef.kind)}" data-flex-id="${escapeHtml(rowRef.id)}"`;
+
         const timeCells = data.trips
           .map((trip) => {
             // Use stopIndex as the key for all time lookups
@@ -679,27 +696,14 @@ export class TimetableRenderer {
               departure_time || null,
               editableStopTime,
               isPendingStop,
-              isPendingFlex
+              isPendingFlex,
+              rowRef
             );
           })
           .join('');
 
         // Add empty cell for new trip column
         const newTripCell = '<td class="text-center p-2"></td>';
-
-        // Hovering a row lights what it references on the map. A stop row
-        // carries data-stop-id; a flex row carries data-flex-kind/data-flex-id,
-        // the same pair the route diagram emits.
-        const rowRef =
-          sequence !== undefined && stopIndex < sequence.stops.length
-            ? sequence.stops[stopIndex].ref
-            : isPendingStop
-              ? pendingRef
-              : undefined;
-        const isStopRow = rowRef === undefined || rowRef.kind === 'stop';
-        const rowRefAttrs = isStopRow
-          ? `data-stop-id="${escapeHtml(stop.stop_id)}"`
-          : `data-flex-kind="${escapeHtml(rowRef!.kind)}" data-flex-id="${escapeHtml(rowRef!.id)}"`;
 
         return `
         <tr class="${rowClass}" role="row">
