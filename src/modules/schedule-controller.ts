@@ -5,6 +5,7 @@
  */
 
 import { Stops, StopTimes } from '../types/gtfs-entities.js';
+import type { StopTimeRef } from '../types/gtfs-flex.js';
 import { notify } from './notification-system';
 import { formatIssueValue, markReferenceResolved } from './feed-issues.js';
 import type { GTFSParser } from './gtfs-parser.js';
@@ -225,9 +226,9 @@ export class ScheduleController {
 
   // Map wiring for the stop column, injected by index.ts
   private stopFocus: ((stop_id: string) => void) | null = null;
-  private stopHover: ((stop_id: string | null) => void) | null = null;
+  private refHover: ((ref: StopTimeRef | null) => void) | null = null;
   private bookingRuleOpen: ((booking_rule_id: string) => void) | null = null;
-  private hoveredStopId: string | null = null;
+  private hoveredRef: StopTimeRef | null = null;
 
   /**
    * Initialize ScheduleController with required dependencies
@@ -441,52 +442,73 @@ export class ScheduleController {
   }
 
   /**
-   * Hovering a timetable stop row lights that stop on the map.
+   * Hovering a row lights what it references on the map: a stop, an on-demand
+   * zone, or every member stop of a location group.
    *
    * `pointerover`/`pointerout` bubble (unlike mouseenter/mouseleave), so this
    * can be delegated to `document` like the pickers above. Moving between two
    * children of the same row fires an out/over pair for the same row, hence
    * the same-row guard: without it the highlight flickers off and on.
+   *
+   * Bound to `document` once, so it fires for every `.strip-stop-row` on the
+   * page - the timetable and the route diagram both. Both must emit the same
+   * attribute pair or one of them silently stops hovering.
    */
   private installStopRowHover(): void {
-    const rowStopId = (e: Event): string | null => {
+    const rowRef = (e: Event): StopTimeRef | null => {
       const row = (e.target as Element)?.closest?.('.strip-stop-row');
-      return row instanceof HTMLElement ? (row.dataset.stopId ?? null) : null;
+      if (!(row instanceof HTMLElement)) {
+        return null;
+      }
+      const stop_id = row.dataset.stopId;
+      if (stop_id) {
+        return { kind: 'stop', id: stop_id };
+      }
+      const flex_id = row.dataset.flexId;
+      const kind = row.dataset.flexKind;
+      if (flex_id && (kind === 'location' || kind === 'location_group')) {
+        return { kind, id: flex_id };
+      }
+      return null;
     };
 
+    const same = (a: StopTimeRef | null, b: StopTimeRef | null): boolean =>
+      a !== null && b !== null && a.kind === b.kind && a.id === b.id;
+
     document.addEventListener('pointerover', (e) => {
-      const stop_id = rowStopId(e);
-      if (stop_id && stop_id !== this.hoveredStopId) {
-        this.hoveredStopId = stop_id;
-        this.stopHover?.(stop_id);
+      const ref = rowRef(e);
+      if (ref && !same(ref, this.hoveredRef)) {
+        this.hoveredRef = ref;
+        this.refHover?.(ref);
       }
     });
 
     document.addEventListener('pointerout', (e) => {
-      const stop_id = rowStopId(e);
-      if (stop_id && stop_id === this.hoveredStopId) {
+      const ref = rowRef(e);
+      if (same(ref, this.hoveredRef)) {
         // Only really left the row if the pointer landed outside it.
         const next = (e as PointerEvent).relatedTarget;
         if (next instanceof Element && next.closest('.strip-stop-row')) {
           return;
         }
-        this.hoveredStopId = null;
-        this.stopHover?.(null);
+        this.hoveredRef = null;
+        this.refHover?.(null);
       }
     });
   }
 
   /**
    * Wire the timetable stop column to the map: clicking a stop's rail dot
-   * focuses it, hovering its row lights it. Injected from `index.ts` because
-   * ScheduleController has no map or navigation reference of its own.
+   * focuses it, hovering a row lights whatever it references (stop, zone or
+   * location group). Injected from `index.ts` because ScheduleController has
+   * no map or navigation reference of its own.
    */
   public setStopHighlightHandlers(handlers: {
     onStopFocus: (stop_id: string) => void;
-    onStopHover: (stop_id: string | null) => void;
+    onRefHover: (ref: StopTimeRef | null) => void;
   }): void {
     this.stopFocus = handlers.onStopFocus;
-    this.stopHover = handlers.onStopHover;
+    this.refHover = handlers.onRefHover;
   }
 
   /**

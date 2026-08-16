@@ -758,6 +758,25 @@ export class MapController {
     this.layerManager?.setHoveredStop(stop_id);
   }
 
+  /** The zone counterpart of hoverStop. Purely visual, same as hoverStop. */
+  public hoverZone(location_id: string | null): void {
+    this.layerManager?.setHoveredZone(location_id);
+  }
+
+  /**
+   * A location group has no geometry of its own, so hovering one lights every
+   * member stop at once.
+   */
+  public hoverLocationGroup(location_group_id: string | null): void {
+    if (location_group_id === null) {
+      this.layerManager?.setHoveredStops([]);
+      return;
+    }
+    this.layerManager?.setHoveredStops(
+      this.stopIdsForLocationGroup(location_group_id)
+    );
+  }
+
   /**
    * Highlight specific stop
    */

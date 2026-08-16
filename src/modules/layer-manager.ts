@@ -58,6 +58,7 @@ const ZONE_FILL_LAYER = 'zones-fill';
 const ZONE_OUTLINE_LAYER = 'zones-outline';
 const ZONE_FILL_OPACITY = 0.12;
 const ZONE_FILL_OPACITY_FOCUSED = 0.3;
+const ZONE_FILL_OPACITY_HOVERED = 0.2;
 
 /** Perpendicular spacing between parallel pathways sharing an endpoint pair. */
 const PATHWAY_PARALLEL_OFFSET_M = 2;
@@ -118,9 +119,11 @@ export class LayerManager {
 
   private activeStopsFilter: FilterSpecification = DEFAULT_STOPS_FILTER;
   private focusedStopId: string | null = null;
-  private hoveredStopId: string | null = null;
+  // Several at once: a location group hover lights all of its member stops.
+  private hoveredStopIds: string[] = [];
   private focusedPathwayId: string | null = null;
   private focusedZoneId: string | null = null;
+  private hoveredZoneId: string | null = null;
   // Stops of the currently spotlighted route (onRoute feature-state holders)
   private routeStopIds: string[] = [];
 
@@ -293,6 +296,7 @@ export class LayerManager {
       });
       // A fresh source means setStyle wiped the old one and its feature state.
       this.focusedZoneId = null;
+      this.hoveredZoneId = null;
     }
 
     this.addZoneLayers();
@@ -325,10 +329,14 @@ export class LayerManager {
         source: ZONE_SOURCE,
         paint: {
           'fill-color': accent,
+          // Focused wins over hovered: hovering must never disturb the
+          // selection, same rule as the stop layers.
           'fill-opacity': [
             'case',
             ['boolean', ['feature-state', 'focused'], false],
             ZONE_FILL_OPACITY_FOCUSED,
+            ['boolean', ['feature-state', 'hovered'], false],
+            ZONE_FILL_OPACITY_HOVERED,
             ZONE_FILL_OPACITY,
           ] as unknown as ExpressionSpecification,
         },
@@ -347,6 +355,8 @@ export class LayerManager {
             'case',
             ['boolean', ['feature-state', 'focused'], false],
             3,
+            ['boolean', ['feature-state', 'hovered'], false],
+            2.5,
             1.5,
           ] as unknown as ExpressionSpecification,
           'line-opacity': 0.8,
@@ -397,6 +407,38 @@ export class LayerManager {
   }
 
   /**
+   * Light a zone being hovered elsewhere in the app. Separate feature state
+   * from `focused` for the same reason as stops: hovering must not disturb the
+   * selection, and a zone that is both reads as focused.
+   */
+  public setHoveredZone(location_id: string | null): void {
+    if (this.hoveredZoneId === location_id) {
+      return;
+    }
+    try {
+      if (this.hoveredZoneId !== null && this.map.getSource(ZONE_SOURCE)) {
+        this.map.setFeatureState(
+          { source: ZONE_SOURCE, id: this.hoveredZoneId },
+          { hovered: false }
+        );
+      }
+      this.hoveredZoneId = location_id;
+      if (location_id !== null && this.map.getSource(ZONE_SOURCE)) {
+        this.map.setFeatureState(
+          { source: ZONE_SOURCE, id: location_id },
+          { hovered: true }
+        );
+      }
+    } catch (error) {
+      console.warn(
+        '[LayerManager] Could not set hovered zone:',
+        location_id,
+        error
+      );
+    }
+  }
+
+  /**
    * Add stops to map with enhanced styling and functionality
    */
   public addStopsLayer(options: Partial<StopLayerOptions> = {}): void {
@@ -428,7 +470,7 @@ export class LayerManager {
       // would swallow the caller re-focusing the same stop and the selection
       // would never come back after a basemap switch.
       this.focusedStopId = null;
-      this.hoveredStopId = null;
+      this.hoveredStopIds = [];
       this.focusedPathwayId = null;
       this.routeStopIds = [];
     }
@@ -1061,6 +1103,7 @@ export class LayerManager {
   public clearHighlights(): void {
     this.setFocusedStop(null);
     this.setHoveredStop(null);
+    this.setHoveredZone(null);
     if (this.routeStopIds.length > 0) {
       this.setRouteStops([]);
     }
@@ -1113,27 +1156,45 @@ export class LayerManager {
    * so a stop that is both reads as focused.
    */
   public setHoveredStop(stop_id: string | null): void {
-    if (this.hoveredStopId === stop_id) {
+    this.setHoveredStops(stop_id === null ? [] : [stop_id]);
+  }
+
+  /**
+   * The set-valued form: a location group hover lights every member stop at
+   * once. Clearing always clears the whole previous set, so no stop stays lit
+   * after the pointer leaves.
+   */
+  public setHoveredStops(stop_ids: string[]): void {
+    const next = [...new Set(stop_ids)];
+    const prev = this.hoveredStopIds;
+    if (
+      next.length === prev.length &&
+      next.every((stop_id) => prev.includes(stop_id))
+    ) {
       return;
     }
     try {
-      if (this.hoveredStopId !== null && this.map.getSource('stops')) {
-        this.map.setFeatureState(
-          { source: 'stops', id: this.hoveredStopId },
-          { hovered: false }
-        );
+      if (this.map.getSource('stops')) {
+        for (const stop_id of prev) {
+          this.map.setFeatureState(
+            { source: 'stops', id: stop_id },
+            { hovered: false }
+          );
+        }
       }
-      this.hoveredStopId = stop_id;
-      if (stop_id !== null && this.map.getSource('stops')) {
-        this.map.setFeatureState(
-          { source: 'stops', id: stop_id },
-          { hovered: true }
-        );
+      this.hoveredStopIds = next;
+      if (this.map.getSource('stops')) {
+        for (const stop_id of next) {
+          this.map.setFeatureState(
+            { source: 'stops', id: stop_id },
+            { hovered: true }
+          );
+        }
       }
     } catch (error) {
       console.warn(
-        '[LayerManager] Could not set hovered stop:',
-        stop_id,
+        '[LayerManager] Could not set hovered stops:',
+        stop_ids,
         error
       );
     }
