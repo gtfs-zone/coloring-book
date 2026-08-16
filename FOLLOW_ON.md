@@ -299,12 +299,12 @@ row is stop-only. This is the largest gap left by `CURRENT_PLAN.md` and it is
 what makes the four documented examples unbuildable from scratch. Sequenced
 after Phase 1 because it reuses the flex row data attributes.
 
-- [ ] Generalize the pending-row state in
+- [x] Generalize the pending-row state in
       `src/modules/schedule-controller.ts:1534-1548` from
       `pendingStop?: { stop_id, stop_name }` to
       `pendingRow?: { ref: StopTimeRef; name: string }`. Update
       `clearPendingStop` (`:1541`) to compare refs, and the reset in `:982`.
-- [ ] Replace `getStopOptions()`'s use in `openAddStopPicker` (`:806`) with a
+- [x] Replace `getStopOptions()`'s use in `openAddStopPicker` (`:806`) with a
       combined option list: every stop (as today), then every zone from
       `getZoneFeatures`, then every location group from
       `GTFS_TABLES.LOCATION_GROUPS`. Encode the value as `` `${kind}:${id}` ``
@@ -312,21 +312,21 @@ after Phase 1 because it reuses the flex row data attributes.
       Leave `openStopPicker` (the row-label swap, `:782`) stop-only — repointing
       a timed row at a zone is not a stop swap, which is the reasoning already
       recorded at `:290-292`.
-- [ ] Retitle the button (`timetable-renderer.ts:702`) to "Add stop or zone..."
+- [x] Retitle the button (`timetable-renderer.ts:702`) to "Add stop or zone..."
       and the picker to "Add stop or zone".
-- [ ] Rewrite `addStopFromSelector` (`:1658`) as `addRefFromSelector(value)`:
+- [x] Rewrite `addStopFromSelector` (`:1658`) as `addRefFromSelector(value)`:
       parse the `kind:id` value, resolve a display name per kind (stop name,
       `zoneName(feature)`, `location_group_name`), set `pendingRow`, refresh.
       Keep the "enter a time to save" notification, wording it as "enter a
       pickup window" for the two flex kinds.
-- [ ] In `timetable-renderer.ts:1455-1470` (the pending append) and
+- [x] In `timetable-renderer.ts:1455-1470` (the pending append) and
       `renderStopLabelCell` (`:465`), render a pending flex row with the flex
       name block and kind badge rather than `renderPlainStopLabel`.
-- [ ] In `timetable-cell-renderer.ts`, make a pending flex row's cells render
+- [x] In `timetable-cell-renderer.ts`, make a pending flex row's cells render
       the two window spans (`data-time-type="window-start"|"window-end"`,
       `flex-window`, `data-pending="true"`) rather than arrival/departure spans,
       so the first typed value lands in the right field.
-- [ ] Add an insert path for flex rows. `updateFlexWindow` (`:1135`) currently
+- [x] Add an insert path for flex rows. `updateFlexWindow` (`:1135`) currently
       returns early when no row matches; when the edit comes from the pending
       row it must instead build a new stop_time and record an **insert** patch.
       Do not extend `planStopTimeEdit` for this: it locates rows by
@@ -335,7 +335,7 @@ after Phase 1 because it reuses the flex row data attributes.
       `timetable-database.ts` that appends the row and renumbers
       `stop_sequence` from 0 over the trip's existing order (`reorderByTime`
       leaves untimed rows in place, so an appended flex row stays last).
-- [ ] Defaults for a newly created flex stop_time: the ref field
+- [x] Defaults for a newly created flex stop_time: the ref field
       (`location_id` or `location_group_id`), the edited window field, and
       `pickup_type=2` / `drop_off_type=2` — both booking directions allowed,
       which is valid under the window rules (0 forbidden for both, 3 forbidden
@@ -344,15 +344,35 @@ after Phase 1 because it reuses the flex row data attributes.
       the row through `validateFlexStopTimeRow` from `src/utils/flex-rules.ts`
       before writing, and surface a failure through `showTimeError` rather than
       writing an invalid row.
-- [ ] A pending row for `kind === 'stop'` must keep going through the existing
+- [x] A pending row for `kind === 'stop'` must keep going through the existing
       `planStopTimeEdit(..., forceInsert)` path unchanged. Do not unify the two.
-- [ ] Clear the pending row after the first successful write, on the same path
+- [x] Clear the pending row after the first successful write, on the same path
       that `:1101` already uses (before the patch is recorded, for the reason
       the comment there gives).
-- [ ] Confirm the two-rows-on-the-same-zone case: adding the same zone twice
+- [x] Confirm the two-rows-on-the-same-zone case: adding the same zone twice
       must produce occurrence 0 and 1, two distinct rows, not one. The
       occurrence counter in `route-sequence.ts` keys on `kind:id`, so this
       should hold — verify it against a real add rather than assuming.
+
+**Findings:** the pending row is now `pendingRow: { ref, name }` and the whole
+renderer chain takes a `pendingRef?: StopTimeRef` in place of `pendingStopId`.
+`planFlexStopTimeInsert` does **not** take the edited window field: a window is
+only valid with both ends set (`validateFlexStopTimeRow` rejects one end alone),
+so the first edit seeds *both* ends with the typed value, creating a zero-length
+window the second edit widens. Without that the insert could never pass its own
+validation. `FlexWindowField` moved from `schedule-controller.ts` to
+`timetable-database.ts`, which now needs it too. The occurrence counter was
+verified by reading `route-sequence.ts:109,164` - it keys on `kind:id`, so the
+same zone twice on one trip is occurrence 0 and 1; not yet exercised against a
+real add.
+
+**Discovered gap (not in this phase's scope):** once the pending row is saved to
+its first trip, the *other* trips' cells in that row fall back to
+arrival/departure spans, because `editableStopTimes` has no entry at that
+position for them and only a saved stop_time carries `isFlex`. So a zone can be
+added to one trip from the grid, not to the rest. Fixing it means rendering a
+window cell for every trip in a flex *row* and keying the insert off the row's
+ref rather than off `pendingRow`.
 
 **Gotchas:** `refreshCurrentTimetable` rebuilds the sequence from the database,
 and a pending row exists only in this controller, so anything that reads
