@@ -153,6 +153,7 @@ export interface ContentRendererDependencies {
     clearHighlights: () => void;
     focusOnAgency: (agency_id: string) => void;
     refreshStops: () => void;
+    refreshZones: () => void;
     focusFeed: () => void;
   };
 
@@ -252,7 +253,11 @@ export class PageContentRenderer {
       getTripsForZone: dependencies.relationships.getTripsForZone,
       getRouteAsync: dependencies.relationships.getRouteAsync,
       onRouteClick: dependencies.onRouteClick,
-      onGeometryChanged: () => dependencies.onEntityCreated?.(),
+      onGeometryChanged: () => {
+        // The page re-render does not touch the map, so refresh the polygons too.
+        dependencies.mapController.refreshZones();
+        dependencies.onEntityCreated?.();
+      },
     };
     this.zoneViewController = new ZoneViewController(zoneViewDependencies);
 

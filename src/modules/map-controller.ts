@@ -1481,6 +1481,11 @@ export class MapController {
     this.layerManager?.updateStopsData();
   }
 
+  /** Re-read locations.geojson into the zone polygons after a geometry edit. */
+  public refreshZones(): void {
+    this.layerManager?.updateZonesLayer();
+  }
+
   public setModeChangeCallback(callback: (mode: MapMode) => void): void {
     this.callbacks.onModeChange = callback;
   }
