@@ -33,6 +33,7 @@ import {
 } from './route-strip.js';
 import { RouteSequence } from './route-sequence.js';
 import { RouteGraph } from './route-graph.js';
+import type { StopTimeRef } from '../types/gtfs-flex.js';
 
 function getBrouterProfile(routeType: string | number): string {
   const t = Number(routeType);
@@ -49,6 +50,8 @@ function buildBrouterUrl(
   stops: Stops[],
   routeType: string | number
 ): string | null {
+  // Flex rows contribute a synthetic stop with no coordinates (and are not in
+  // trip.stopTimes at all), so they drop out here and never become waypoints.
   const geocoded = stops.filter(
     (s) =>
       s.stop_lat !== null &&
@@ -475,9 +478,10 @@ export class TimetableRenderer {
     const threshold = endpointThreshold(sequence.totalTrips);
     const endpoint = isEndpoint(stats, threshold);
     const revisit = sequence.stops[index].occurrence;
+    const ref = sequence.stops[index].ref;
     // A flex row references a location group or zone, which has no stop to
     // focus, so its rail stays non-interactive.
-    const isStop = sequence.stops[index].ref.kind === 'stop';
+    const isStop = ref.kind === 'stop';
 
     const dot: RowDot = {
       kind: endpoint ? 'solid' : 'open',
@@ -505,10 +509,14 @@ export class TimetableRenderer {
     // `inset-y-0` resolves to the whole cell. The label clears the rail with a
     // left pad of the rail width plus the usual gap.
     const width = gutterWidth(graph.laneCount);
+    const title = `Served by ${stats.serves} of ${sequence.totalTrips} trips`;
+    const nameBlock = isStop
+      ? this.renderStopNameBlock(stop, revisitHtml, title)
+      : this.renderFlexNameBlock(stop, ref, revisitHtml, title);
     return `
       <div class="absolute top-0 -bottom-px left-0">${rail}</div>
       <div class="min-w-0" style="padding-left:${width + 8}px">
-        ${this.renderStopNameBlock(stop, revisitHtml, `Served by ${stats.serves} of ${sequence.totalTrips} trips`)}
+        ${nameBlock}
       </div>
     `;
   }
@@ -535,6 +543,35 @@ export class TimetableRenderer {
           title="Change stop"
         >${label}${revisitHtml}</span>
         <span class="stop-id-line text-xs opacity-50 font-mono truncate px-1">${escapeHtml(stop.stop_id)}</span>
+      </div>
+    `;
+  }
+
+  /**
+   * The label for an on-demand row: a location group or an on-demand zone.
+   *
+   * Deliberately does not go through `getStopDisplay` - that helper is
+   * documented as stops-only (it formats child stops as `Name (stop_id)`), and
+   * a zone has no parent_station concept. The name comes pre-resolved on the
+   * synthetic row built by TimetableDataProcessor. There is no `data-stop-id`
+   * here, so clicking the label does not open the stop picker: repointing a
+   * flex row at a different zone is not a stop swap.
+   */
+  private renderFlexNameBlock(
+    stop: Stops,
+    ref: StopTimeRef,
+    revisitHtml: string,
+    title: string
+  ): string {
+    const kindLabel = ref.kind === 'location_group' ? 'Group' : 'Zone';
+    return `
+      <div class="flex flex-col justify-center min-w-0 flex-1" title="${title}">
+        <span class="min-w-0 truncate px-1 flex items-center gap-1">
+          <span class="badge badge-xs badge-info badge-outline shrink-0">${kindLabel}</span>
+          <span class="truncate">${escapeHtml(String(stop.stop_name ?? ref.id))}</span>
+          ${revisitHtml}
+        </span>
+        <span class="stop-id-line text-xs opacity-50 font-mono truncate px-1">${escapeHtml(ref.id)}</span>
       </div>
     `;
   }
@@ -620,11 +657,19 @@ export class TimetableRenderer {
         // Add empty cell for new trip column
         const newTripCell = '<td class="text-center p-2"></td>';
 
+        // Hovering a row lights its stop on the map. A flex row's id is a
+        // location group or zone, which is not on the map yet (Phase 4), so it
+        // carries no data-stop-id and simply does not highlight.
+        const isStopRow =
+          sequence === undefined ||
+          stopIndex >= sequence.stops.length ||
+          sequence.stops[stopIndex].ref.kind === 'stop';
+
         return `
         <tr class="${rowClass}" role="row">
           <th
             class="stop-name ${STRIP_ROW_CLASS} max-w-[320px] py-0 px-2 pl-0 font-medium border-r border-base-300 bg-base-100"
-            data-stop-id="${escapeHtml(stop.stop_id)}"
+            ${isStopRow ? `data-stop-id="${escapeHtml(stop.stop_id)}"` : ''}
           >
             ${this.renderStopLabelCell(stop, stopIndex, graph as RouteGraph, sequence as RouteSequence, color)}
           </th>
