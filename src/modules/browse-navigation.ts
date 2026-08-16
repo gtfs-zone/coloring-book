@@ -104,75 +104,11 @@ export class BrowseNavigation {
   private lastRenderedPageState: PageState | null = null;
   private contentRenderer: PageContentRenderer | null = null;
   private gtfsParser: GTFSParser | null = null;
-  private patchManager: {
-    recordUpdate: (
-      table: string,
-      id: string,
-      before: Record<string, unknown>,
-      after: Record<string, unknown>
-    ) => Promise<void>;
-    recordInsert: (
-      table: string,
-      id: string,
-      record: Record<string, unknown>
-    ) => Promise<void>;
-    recordDelete: (
-      table: string,
-      id: string,
-      record: Record<string, unknown>
-    ) => Promise<void>;
-    recordBatchInsert: (
-      ops: Array<{
-        table: string;
-        id: string;
-        record: Record<string, unknown>;
-      }>,
-      label?: string
-    ) => Promise<void>;
-    recordBatchDelete: (
-      ops: Array<{
-        table: string;
-        id: string;
-        record: Record<string, unknown>;
-      }>,
-      label?: string
-    ) => Promise<void>;
-  } | null = null;
+  // The same shape the content renderer takes, which is what it is handed to.
+  private patchManager: ContentRendererDependencies['patchManager'] | null =
+    null;
 
-  setPatchManager(pm: {
-    recordUpdate: (
-      table: string,
-      id: string,
-      before: Record<string, unknown>,
-      after: Record<string, unknown>
-    ) => Promise<void>;
-    recordInsert: (
-      table: string,
-      id: string,
-      record: Record<string, unknown>
-    ) => Promise<void>;
-    recordDelete: (
-      table: string,
-      id: string,
-      record: Record<string, unknown>
-    ) => Promise<void>;
-    recordBatchInsert: (
-      ops: Array<{
-        table: string;
-        id: string;
-        record: Record<string, unknown>;
-      }>,
-      label?: string
-    ) => Promise<void>;
-    recordBatchDelete: (
-      ops: Array<{
-        table: string;
-        id: string;
-        record: Record<string, unknown>;
-      }>,
-      label?: string
-    ) => Promise<void>;
-  }): void {
+  setPatchManager(pm: ContentRendererDependencies['patchManager']): void {
     this.patchManager = pm;
   }
 

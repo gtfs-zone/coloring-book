@@ -37,9 +37,24 @@ import {
 } from '../utils/entity-references.js';
 import { collectDescendantStops } from '../utils/stop-hierarchy.js';
 import { renderStopAreasField } from '../utils/stop-areas-field.js';
+import {
+  renderEditableTable,
+  installEditableTableHandlers,
+  type EditableTableConfig,
+  type EditableTableDeps,
+} from './editable-table.js';
+import { showFeedDataModal } from './feed-data-modal.js';
+import { specStoreName } from '../utils/spec-field-edit.js';
+import { validateTransferRow } from '../utils/fares-rules.js';
 
 /** How many `via` stop names are spelled out before collapsing to "+N more". */
 const MAX_VIA_LABELS = 3;
+
+/** Editable-table instance id for the stop page's transfers section. */
+const TRANSFERS_INSTANCE = 'stop-transfers';
+
+/** Trip-to-trip transfer types: they name trips, not stops. */
+const LINKED_TRIP_TYPES = new Set([4, 5]);
 
 interface TimetableKey {
   route_id: string;
@@ -64,9 +79,16 @@ export interface StopViewDependencies {
     getAgenciesServingStop?: (stop_id: string) => Promise<unknown[]>;
     getRoutesServingStop?: (stop_id: string) => Promise<unknown[]>;
   };
+  /**
+   * Writing handle for the transfers section, which edits rows rather than
+   * only listing them. Absent, the section is skipped.
+   */
+  editableDeps?: EditableTableDeps;
   onStopClick?: (stop_id: string) => void;
   onPathwayClick?: (pathway_id: string) => void;
   onDeleteStop: (stop_id: string) => Promise<void>;
+  /** A transfer was added or removed: re-render the page. */
+  onTransfersChanged?: () => void;
 }
 
 export class StopViewController {
@@ -158,6 +180,7 @@ export class StopViewController {
           ${!isStation ? boardingAreasHtml : ''}
           ${!isStation ? this.renderPathwaySection('Pathways Out', outPathways, 'to', otherStopLookup) : ''}
           ${!isStation ? this.renderPathwaySection('Pathways In', inPathways, 'from', otherStopLookup) : ''}
+          ${await this.renderTransfersSection(stop_id)}
           ${this.renderTimetablesSection(timetableKeys, routes, serviceData)}
         </div>
       `;
@@ -374,6 +397,74 @@ export class StopViewController {
         <div class="card bg-base-100 shadow-lg">
           <div class="card-body p-4">
             <div class="space-y-1">${rows}</div>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  /**
+   * The transfers naming this stop, editable in place.
+   *
+   * Shown for stations too: a transfer on a station applies to all of its child
+   * stops, so it is as much a property of the station as of a platform. Types 4
+   * and 5 are left out because they link two trips rather than two stops; they
+   * are counted in the note so the section does not look empty by accident.
+   */
+  private async renderTransfersSection(stop_id: string): Promise<string> {
+    const deps = this.dependencies.editableDeps;
+    if (!deps) {
+      return '';
+    }
+
+    const all = await deps.gtfsDatabase.getAllRows(
+      specStoreName(GTFS_TABLES.TRANSFERS)
+    );
+    const naming = all.filter(
+      (row) =>
+        String(row.from_stop_id ?? '') === stop_id ||
+        String(row.to_stop_id ?? '') === stop_id
+    );
+    const rows = naming.filter(
+      (row) => !LINKED_TRIP_TYPES.has(Number(row.transfer_type ?? 0) || 0)
+    );
+    const linkedTripCount = naming.length - rows.length;
+
+    const config: EditableTableConfig = {
+      instanceId: TRANSFERS_INSTANCE,
+      tableName: GTFS_TABLES.TRANSFERS,
+      rows,
+      deps,
+      emptyMessage:
+        'No transfers name this stop. Add one to make a connection timed, to give it a minimum time, or to rule it out.',
+      columnOverrides: {
+        from_stop_id: { widthClass: 'min-w-48' },
+        to_stop_id: { widthClass: 'min-w-48' },
+      },
+      validateRow: validateTransferRow,
+      onInsert: () => this.dependencies.onTransfersChanged?.(),
+      onDelete: () => this.dependencies.onTransfersChanged?.(),
+      onRowsChanged: () => this.dependencies.onTransfersChanged?.(),
+    };
+    // Re-registered on every render of a stop page, so the handlers always hold
+    // the rows on screen. The instance outlives the page, but its cells do not.
+    installEditableTableHandlers(config);
+
+    const linkedNote =
+      linkedTripCount > 0
+        ? `<p class="text-xs opacity-60">${linkedTripCount} in-seat transfer${linkedTripCount === 1 ? '' : 's'} (type 4 or 5) also name${linkedTripCount === 1 ? 's' : ''} this stop. Those link two trips rather than two stops, so they are edited in Feed Data.</p>`
+        : '';
+
+    return `
+      <div class="space-y-2">
+        <div class="flex items-center justify-between gap-2">
+          <h2 class="text-lg font-semibold">Transfers</h2>
+          <button class="btn btn-xs btn-outline manage-transfers-btn">Manage all transfers</button>
+        </div>
+        <div class="card bg-base-100 shadow-lg">
+          <div class="card-body p-4 space-y-2">
+            ${await renderEditableTable(config)}
+            ${linkedNote}
           </div>
         </div>
       </div>
@@ -633,6 +724,17 @@ export class StopViewController {
           if (stop_id) {
             await this.dependencies.onDeleteStop(stop_id);
           }
+          return;
+        }
+
+        const manageTransfers = (e.target as Element).closest(
+          '.manage-transfers-btn'
+        );
+        if (manageTransfers && this.dependencies.editableDeps) {
+          await showFeedDataModal(this.dependencies.editableDeps, {
+            table: GTFS_TABLES.TRANSFERS,
+          });
+          this.dependencies.onTransfersChanged?.();
           return;
         }
       },
