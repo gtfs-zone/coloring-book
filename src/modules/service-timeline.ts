@@ -208,6 +208,63 @@ export function filterServiceDataMap(
   return result;
 }
 
+/** Sorts after every real date, so a service with no dates lands last. */
+const NO_DATE = '99999999';
+
+/**
+ * First and last date a service runs: the calendar range widened by any added
+ * exception. Removed exceptions (type 2) never extend the range.
+ */
+function serviceDateBounds(sd: ServiceData): { first: string; last: string } {
+  let first = sd.calendar ? String(sd.calendar.start_date) : NO_DATE;
+  let last = sd.calendar ? String(sd.calendar.end_date) : '';
+  for (const ex of sd.exceptions) {
+    if (Number(ex.exception_type) !== 1) {
+      continue;
+    }
+    const date = String(ex.date);
+    if (date < first) {
+      first = date;
+    }
+    if (date > last) {
+      last = date;
+    }
+  }
+  return { first, last: last === '' ? NO_DATE : last };
+}
+
+/**
+ * Row order: first service date, then last service date, then trip count
+ * (busiest first), then service_id. Trip counts only participate when the
+ * caller supplied them.
+ */
+export function sortServiceEntries(
+  data: ServiceDataMap,
+  tripCounts?: Map<string, number>
+): Array<[string, ServiceData]> {
+  const bounds = new Map<string, { first: string; last: string }>();
+  for (const [sid, sd] of data) {
+    bounds.set(sid, serviceDateBounds(sd));
+  }
+  return [...data.entries()].sort(([aId], [bId]) => {
+    const a = bounds.get(aId)!;
+    const b = bounds.get(bId)!;
+    if (a.first !== b.first) {
+      return a.first < b.first ? -1 : 1;
+    }
+    if (a.last !== b.last) {
+      return a.last < b.last ? -1 : 1;
+    }
+    if (tripCounts) {
+      const diff = (tripCounts.get(bId) ?? 0) - (tripCounts.get(aId) ?? 0);
+      if (diff !== 0) {
+        return diff;
+      }
+    }
+    return aId < bId ? -1 : aId > bId ? 1 : 0;
+  });
+}
+
 function hexToRgba(hex: string, alpha: number): string {
   const r = parseInt(hex.slice(1, 3), 16);
   const g = parseInt(hex.slice(3, 5), 16);
@@ -355,7 +412,7 @@ export function renderServiceTimeline(
     ? ` data-route-id="${escapeHtml(options.route_id)}"`
     : '';
 
-  const rowsHtml = [...data.entries()]
+  const rowsHtml = sortServiceEntries(data, options.tripCounts)
     .map(([sid, sd]) => {
       const calStart = sd.calendar ? String(sd.calendar.start_date) : null;
       const calEnd = sd.calendar ? String(sd.calendar.end_date) : null;
