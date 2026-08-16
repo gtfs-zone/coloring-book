@@ -102,17 +102,17 @@ export class TimetableRenderer {
    * Combines header, direction tabs, and content into a cohesive layout.
    *
    * @param data - Complete timetable data including route, service, stops, and trips
-   * @param pendingStopId - Optional ID of pending stop being added (for styling)
+   * @param pendingRef - Optional ref of the pending row being added (for styling)
    * @returns HTML string for the complete timetable view
    */
   public renderTimetableHTML(
     data: TimetableData,
-    pendingStopId?: string
+    pendingRef?: StopTimeRef
   ): string {
     return `
       <div id="schedule-view" class="h-full flex flex-col">
         ${this.renderDirectionTabs(data)}
-        ${this.renderTimetableContent(data, pendingStopId)}
+        ${this.renderTimetableContent(data, pendingRef)}
       </div>
     `;
   }
@@ -200,19 +200,19 @@ export class TimetableRenderer {
    * Creates responsive table with sticky headers and scrolling.
    *
    * @param data - Complete timetable data with trips and stops
-   * @param pendingStopId - Optional ID of pending stop being added (for styling)
+   * @param pendingRef - Optional ref of the pending row being added (for styling)
    * @returns HTML string for the main timetable content area
    */
   public renderTimetableContent(
     data: TimetableData,
-    pendingStopId?: string
+    pendingRef?: StopTimeRef
   ): string {
     // Always render the table structure, even when empty
     return `
       <div class="flex-1 overflow-x-auto">
         <table class="table table-xs table-pin-rows table-pin-cols" role="grid">
-          ${this.renderTimetableHeader(data, !!pendingStopId)}
-          ${this.renderTimetableBody(data, pendingStopId)}
+          ${this.renderTimetableHeader(data, !!pendingRef)}
+          ${this.renderTimetableBody(data, pendingRef)}
         </table>
       </div>
     `;
@@ -465,13 +465,14 @@ export class TimetableRenderer {
     index: number,
     graph: RouteGraph,
     sequence: RouteSequence,
-    color: string
+    color: string,
+    pendingRef?: StopTimeRef
   ): string {
-    // The pending stop (add-stop preview) is appended to data.stops but has no
+    // The pending row (add-stop preview) is appended to data.stops but has no
     // row in the route sequence/graph, so it has no rail and no stats. Render a
     // plain label for it rather than indexing off the end of stopStats.
     if (index >= sequence.stops.length) {
-      return this.renderPlainStopLabel(stop);
+      return this.renderPlainStopLabel(stop, pendingRef);
     }
 
     const stats = sequence.stopStats[index];
@@ -586,11 +587,26 @@ export class TimetableRenderer {
     `;
   }
 
-  /** A stop label with no rail, for the pending add-stop preview row. */
-  private renderPlainStopLabel(stop: Stops): string {
+  /**
+   * A label with no rail, for the pending add-row preview.
+   *
+   * A pending zone or location group gets the same flex name block (kind badge,
+   * no stop picker) a saved on-demand row gets, so the preview reads as the row
+   * it is about to become.
+   */
+  private renderPlainStopLabel(stop: Stops, pendingRef?: StopTimeRef): string {
+    const nameBlock =
+      pendingRef !== undefined && pendingRef.kind !== 'stop'
+        ? this.renderFlexNameBlock(
+            stop,
+            pendingRef,
+            '',
+            'Pending on-demand row'
+          )
+        : this.renderStopNameBlock(stop, '', 'Pending stop');
     return `
       <div class="flex items-stretch gap-2 min-w-0">
-        ${this.renderStopNameBlock(stop, '', 'Pending stop')}
+        ${nameBlock}
       </div>
     `;
   }
@@ -603,12 +619,12 @@ export class TimetableRenderer {
    * Uses stop position as the key for time lookups.
    *
    * @param data - Complete timetable data with stops, trips, and time mappings
-   * @param pendingStopId - Optional ID of pending stop being added (for styling)
+   * @param pendingRef - Optional ref of the pending row being added (for styling)
    * @returns HTML string for the table body
    */
   public renderTimetableBody(
     data: TimetableData,
-    pendingStopId?: string
+    pendingRef?: StopTimeRef
   ): string {
     if (!data.stops || !data.trips) {
       return '<tbody></tbody>';
@@ -630,9 +646,12 @@ export class TimetableRenderer {
     const rows = data.stops
       .map((stop, stopIndex) => {
         const isPendingStop =
-          pendingStopId !== undefined &&
-          stop.stop_id === pendingStopId &&
+          pendingRef !== undefined &&
+          stop.stop_id === pendingRef.id &&
           stopIndex === data.stops.length - 1;
+        // A pending zone or location group row edits a window, not an
+        // arrival/departure pair, so its cells render like a saved flex row.
+        const isPendingFlex = isPendingStop && pendingRef!.kind !== 'stop';
         const rowClass = isPendingStop
           ? 'opacity-60 border-dashed border-2 border-warning'
           : '';
@@ -659,7 +678,8 @@ export class TimetableRenderer {
               arrival_time || null,
               departure_time || null,
               editableStopTime,
-              isPendingStop
+              isPendingStop,
+              isPendingFlex
             );
           })
           .join('');
@@ -673,7 +693,9 @@ export class TimetableRenderer {
         const rowRef =
           sequence !== undefined && stopIndex < sequence.stops.length
             ? sequence.stops[stopIndex].ref
-            : undefined;
+            : isPendingStop
+              ? pendingRef
+              : undefined;
         const isStopRow = rowRef === undefined || rowRef.kind === 'stop';
         const rowRefAttrs = isStopRow
           ? `data-stop-id="${escapeHtml(stop.stop_id)}"`
@@ -685,7 +707,7 @@ export class TimetableRenderer {
             class="stop-name ${STRIP_ROW_CLASS} max-w-[320px] py-0 px-2 pl-0 font-medium border-r border-base-300 bg-base-100"
             ${rowRefAttrs}
           >
-            ${this.renderStopLabelCell(stop, stopIndex, graph as RouteGraph, sequence as RouteSequence, color)}
+            ${this.renderStopLabelCell(stop, stopIndex, graph as RouteGraph, sequence as RouteSequence, color, isPendingStop ? pendingRef : undefined)}
           </th>
           ${timeCells}
           ${newTripCell}
@@ -703,7 +725,7 @@ export class TimetableRenderer {
         <th class="stop-name max-w-[320px] p-2 border-r border-base-300 bg-base-100">
           <button
             class="add-stop-btn btn btn-ghost btn-sm w-full justify-start opacity-70 hover:opacity-100"
-          >Add stop...</button>
+          >Add stop or zone...</button>
         </th>
         ${newStopTimeCells}
         <td class="text-center p-2"></td>

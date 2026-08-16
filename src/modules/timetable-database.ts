@@ -5,8 +5,14 @@
  */
 
 import { StopTimes, GTFSTableMap } from '../types/gtfs-entities.js';
+import type { StopTimeRef } from '../types/gtfs-flex.js';
 import { StopTimesSchema } from '../types/gtfs.js';
 import { notify } from './notification-system.js';
+
+/** The two ends of a stop_time's pickup/drop-off window. */
+export type FlexWindowField =
+  | 'start_pickup_drop_off_window'
+  | 'end_pickup_drop_off_window';
 
 interface GTFSParserInterface {
   gtfsDatabase: {
@@ -140,6 +146,67 @@ export class TimetableDatabase {
     })) as unknown as StopTimes[];
 
     return { beforeRows, afterRows, isInsert };
+  }
+
+  /**
+   * Plan the creation of an on-demand stop_time on a trip, without writing.
+   *
+   * The sibling of planStopTimeEdit for flex rows. It cannot reuse that method:
+   * that one locates a row by stop_id and re-sorts by arrival/departure, and a
+   * flex row has neither. The new row is appended and the whole trip is
+   * renumbered from 0 over its existing order, so an on-demand row always lands
+   * at the end of the trip.
+   *
+   * Both ends of the window are seeded with the typed value: a window is only
+   * valid with both set, so the first edit creates a zero-length window that the
+   * second edit widens. pickup_type/drop_off_type default to 2 (must phone the
+   * agency, both directions), the only pair that is legal for both fields under
+   * a window.
+   *
+   * @param trip_id - GTFS trip identifier
+   * @param ref - The location group or zone the new row references
+   * @param window - HH:MM:SS value for both ends of the window
+   */
+  async planFlexStopTimeInsert(
+    trip_id: string,
+    ref: StopTimeRef,
+    window: string
+  ): Promise<StopTimeEditPlan> {
+    if (ref.kind === 'stop') {
+      throw new Error(
+        `planFlexStopTimeInsert called with a stop ref (${ref.id}); stops go through planStopTimeEdit`
+      );
+    }
+
+    const beforeRows = await this.gtfsParser.gtfsDatabase.queryRows(
+      'stop_times',
+      { trip_id }
+    );
+    beforeRows.sort(
+      (a, b) => Number(a.stop_sequence) - Number(b.stop_sequence)
+    );
+
+    const refField =
+      ref.kind === 'location_group' ? 'location_group_id' : 'location_id';
+    const newRow = {
+      trip_id,
+      [refField]: ref.id,
+      stop_sequence: 0,
+      arrival_time: null,
+      departure_time: null,
+      start_pickup_drop_off_window: window,
+      end_pickup_drop_off_window: window,
+      pickup_type: 2,
+      drop_off_type: 2,
+    } as unknown as StopTimes;
+
+    const edited = [...beforeRows.map((st) => ({ ...st })), newRow];
+    const afterRows = edited.map((st, index) => ({
+      ...st,
+      stop_sequence: index,
+    })) as unknown as StopTimes[];
+
+    return { beforeRows, afterRows, isInsert: true };
   }
 
   /**

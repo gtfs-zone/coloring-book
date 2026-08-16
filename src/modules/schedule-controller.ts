@@ -15,7 +15,11 @@ import {
   TimetableData,
 } from './timetable-data-processor.js';
 import { TimetableRenderer } from './timetable-renderer.js';
-import { TimetableDatabase, StopTimeEditPlan } from './timetable-database.js';
+import {
+  TimetableDatabase,
+  StopTimeEditPlan,
+  FlexWindowField,
+} from './timetable-database.js';
 import { generateCompositeKeyFromRecord } from '../utils/gtfs-primary-keys.js';
 import { patchUpdate } from '../utils/patch-utils.js';
 import { getStopDisplay } from '../utils/entity-display.js';
@@ -38,6 +42,10 @@ import {
   navigateToLocationGroup,
   navigateToZone,
 } from './navigation-actions.js';
+import { getZoneFeatures, zoneName } from './zone-store.js';
+import { validateFlexStopTimeRow } from '../utils/flex-rules.js';
+import { GTFS_TABLES } from '../types/gtfs.js';
+import type { LocationGroups } from '../types/gtfs-entities.js';
 
 /**
  * Identifies one time cell across a re-render.
@@ -50,10 +58,6 @@ interface TimeCellKey {
   stopIndex: string;
   timeType: string;
 }
-
-type FlexWindowField =
-  | 'start_pickup_drop_off_window'
-  | 'end_pickup_drop_off_window';
 
 /**
  * The `data-time-type` values an on-demand cell uses, and the stop_times field
@@ -415,6 +419,10 @@ export class ScheduleController {
   /** Clear the time on a selected cell, recording a patch like any other edit. */
   private clearTimeCell(span: HTMLElement): void {
     const { tripId, stopId, timeType, stopSequence, pending } = span.dataset;
+    // The pending row has no stop_time behind it, so there is nothing to clear.
+    if (pending === 'true') {
+      return;
+    }
     const windowField = WINDOW_FIELDS[timeType ?? ''];
     if (windowField && tripId) {
       void this.updateFlexWindow(tripId, stopSequence, windowField, '');
@@ -425,10 +433,6 @@ export class ScheduleController {
       !stopId ||
       (timeType !== 'arrival' && timeType !== 'departure')
     ) {
-      return;
-    }
-    // The add-stop row has no stop_time behind it, so there is nothing to clear.
-    if (pending === 'true') {
       return;
     }
     void this.updateArrivalDepartureTime(
@@ -569,7 +573,13 @@ export class ScheduleController {
       arrowNavigation: true,
       onCommit: (value) => {
         if (windowField) {
-          void this.updateFlexWindow(tripId, stopSequence, windowField, value);
+          void this.updateFlexWindow(
+            tripId,
+            stopSequence,
+            windowField,
+            value,
+            pending === 'true'
+          );
           return;
         }
         void this.updateArrivalDepartureTime(
@@ -821,20 +831,22 @@ export class ScheduleController {
   }
 
   /**
-   * Open the searchable stop-picker modal for the "Add stop" row.
+   * Open the searchable picker for the "Add stop or zone" row.
    *
-   * On pick, hands off to the existing `addStopFromSelector` unchanged.
+   * Unlike `openStopPicker` this lists stops, on-demand zones and location
+   * groups in one flat list: the value is the `kind:id` wire form of a
+   * StopTimeRef, so the pick drops straight into the pending-row state.
    */
   private async openAddStopPicker(): Promise<void> {
-    const options = await this.getStopOptions();
+    const options = await this.getRefOptions();
     const picked = await showOptionPickerModal({
-      title: 'Add stop',
+      title: 'Add stop or zone',
       options,
       searchable: true,
     });
 
     if (picked) {
-      void this.addStopFromSelector(picked);
+      void this.addRefFromSelector(picked);
     }
   }
 
@@ -961,6 +973,12 @@ export class ScheduleController {
   private stopOptions: OptionPickerItem[] | null = null;
 
   /**
+   * Cached stop + zone + location group list for the "Add stop or zone" picker.
+   * Built at most once per feed, cleared by invalidateCaches.
+   */
+  private refOptions: OptionPickerItem[] | null = null;
+
+  /**
    * Cached `TimetableData` keyed by `route_id|service_id|direction_id`.
    *
    * `generateTimetableData` redoes SCS alignment across every trip on the
@@ -981,6 +999,7 @@ export class ScheduleController {
   /** Drop the cached picker options and timetable data; call after any edit that could change them. */
   public invalidateCaches(): void {
     this.stopOptions = null;
+    this.refOptions = null;
     this.timetableDataCache.clear();
     this.dataProcessor.invalidateRouteSource();
   }
@@ -993,7 +1012,7 @@ export class ScheduleController {
    * system, so it never fires. Without this, re-rendering the same
    * route/service/direction id (common when re-uploading a corrected feed)
    * could reuse this.timetableDataCache or the GTFSRouteSource's own caches
-   * from the previous feed, and currentRouteId/currentServiceId/pendingStop
+   * from the previous feed, and currentRouteId/currentServiceId/pendingRow
    * would still point at state that may no longer exist.
    */
   public resetForNewFeed(): void {
@@ -1001,7 +1020,7 @@ export class ScheduleController {
     this.currentRouteId = undefined;
     this.currentServiceId = undefined;
     this.currentDirectionId = undefined;
-    this.pendingStop = undefined;
+    this.pendingRow = undefined;
     this.resetTimetableScroll();
   }
 
@@ -1019,6 +1038,52 @@ export class ScheduleController {
       }));
     }
     return this.stopOptions;
+  }
+
+  /**
+   * Stops, on-demand zones and location groups as one option list.
+   *
+   * The value is `kind:id`, the wire form of a StopTimeRef, and the kind is the
+   * secondary line so the three kinds stay tellable apart in a flat list.
+   */
+  private async getRefOptions(): Promise<OptionPickerItem[]> {
+    if (this.refOptions === null) {
+      const stops = await this.getStopOptions();
+      const zones = getZoneFeatures(this.gtfsParser).map((feature) => {
+        const location_id = String(feature.id);
+        const name = zoneName(feature);
+        return {
+          value: `location:${location_id}`,
+          primary: name || location_id,
+          secondary: `On-demand zone - ${location_id}`,
+        };
+      });
+      const groups = this.gtfsParser
+        .getFileDataSyncTyped<LocationGroups>(GTFS_TABLES.LOCATION_GROUPS)
+        .map((group) => {
+          const location_group_id = String(group.location_group_id ?? '');
+          const name = String(group.location_group_name ?? '');
+          return {
+            value: `location_group:${location_group_id}`,
+            primary: name || location_group_id,
+            secondary: `Location group - ${location_group_id}`,
+          };
+        })
+        .filter((option) => option.value !== 'location_group:');
+
+      console.log(
+        `[ScheduleController] building add-row picker options: ${stops.length} stops, ${zones.length} zones, ${groups.length} location groups`
+      );
+      this.refOptions = [
+        ...stops.map((option) => ({
+          ...option,
+          value: `stop:${option.value}`,
+        })),
+        ...zones,
+        ...groups,
+      ];
+    }
+    return this.refOptions;
   }
 
   /** Reset tracked scroll and selection when navigating to a different page. */
@@ -1123,7 +1188,7 @@ export class ScheduleController {
       // Clear the pending row before the patch is recorded: the patch event
       // drives the re-render, which must already show the stop as real.
       if (plan.isInsert) {
-        this.clearPendingStopIfMatches(stop_id);
+        this.clearPendingRowIfMatches({ kind: 'stop', id: stop_id });
       }
 
       const wrote = await this.commitStopTimePlan(plan, label);
@@ -1145,21 +1210,28 @@ export class ScheduleController {
    * Update one end of a stop_time's pickup/drop-off window.
    *
    * A flex row is addressed by trip_id + stop_sequence, not stop_id: it has no
-   * stop_id at all when it references a location group or zone. It also never
-   * inserts - a window belongs to an existing on-demand stop_time, and creating
-   * one is the On-Demand modal's job, not the timetable grid's.
+   * stop_id at all when it references a location group or zone. The pending row
+   * from the "Add stop or zone" picker has no stop_time behind it yet, so it
+   * takes the insert path instead.
    *
    * @param trip_id - GTFS trip identifier
    * @param stopSequence - stop_sequence of the edited row
    * @param field - Which end of the window to write
    * @param newTime - New time value or empty string to clear
+   * @param isPendingRow - The cell belongs to the not-yet-saved pending row
    */
   public async updateFlexWindow(
     trip_id: string,
     stopSequence: string | undefined,
     field: FlexWindowField,
-    newTime: string
+    newTime: string,
+    isPendingRow = false
   ): Promise<void> {
+    if (isPendingRow) {
+      await this.insertFlexStopTime(trip_id, newTime);
+      return;
+    }
+
     if (!stopSequence) {
       console.warn(
         `[ScheduleController] flex window edit for ${trip_id} has no stop_sequence`
@@ -1231,6 +1303,70 @@ export class ScheduleController {
     } catch (error) {
       console.error('Failed to update pickup/drop-off window:', error);
       this.showTimeError(trip_id, rowId, 'Failed to save window change');
+    }
+  }
+
+  /**
+   * Create the on-demand stop_time behind the pending row, on its first window
+   * edit.
+   *
+   * The row is validated by the same `validateFlexStopTimeRow` the On-Demand
+   * editor and the feed validator use, so a row typed here cannot be less valid
+   * than one typed there.
+   *
+   * @param trip_id - Trip the new stop_time belongs to
+   * @param newTime - The window value the user typed
+   */
+  private async insertFlexStopTime(
+    trip_id: string,
+    newTime: string
+  ): Promise<void> {
+    const pending = this.pendingRow;
+    if (!pending || pending.ref.kind === 'stop') {
+      console.warn(
+        `[ScheduleController] flex window insert for ${trip_id} with no pending flex row`
+      );
+      return;
+    }
+
+    // Clearing an empty pending cell has nothing to create.
+    if (!newTime.trim()) {
+      return;
+    }
+
+    const ref = pending.ref;
+    try {
+      const casted = TimeFormatter.castTimeToHHMMSS(newTime);
+      const plan = await this.database.planFlexStopTimeInsert(
+        trip_id,
+        ref,
+        casted
+      );
+      // planFlexStopTimeInsert appends, so the new row is the last one.
+      const newRow = plan.afterRows[plan.afterRows.length - 1];
+      const invalid = validateFlexStopTimeRow(
+        newRow as unknown as Record<string, unknown>
+      );
+      if (invalid) {
+        this.showTimeError(trip_id, ref.id, invalid);
+        return;
+      }
+
+      const label = `Add ${ref.kind} ${ref.id} to trip ${trip_id}`;
+      // Clear the pending row before the patch is recorded: the patch event
+      // drives the re-render, which must already show the row as real.
+      this.clearPendingRowIfMatches(ref);
+
+      const wrote = await this.commitStopTimePlan(plan, label);
+      if (!wrote) {
+        console.log(`No stop_time change for ${trip_id}/${ref.id}`);
+        return;
+      }
+      console.log(`[ScheduleController] ${label}`);
+      notify.success('Added on-demand row to trip', { duration: 2000 });
+    } catch (error) {
+      console.error('Failed to create on-demand stop_time:', error);
+      this.showTimeError(trip_id, ref.id, 'Failed to save on-demand row');
     }
   }
 
@@ -1477,17 +1613,20 @@ export class ScheduleController {
       timetableData.availableDirections = availableDirections;
       timetableData.selectedDirectionId = selectedDirection;
 
-      // Add pending stop to the end of the stops array (UI only, not in database)
-      if (this.pendingStop) {
+      // Add the pending row to the end of the stops array (UI only, not in
+      // database). A zone or location group has no stops.txt row, so it gets a
+      // synthetic one carrying its resolved name, exactly as
+      // TimetableDataProcessor does for saved flex rows.
+      if (this.pendingRow) {
         timetableData.stops.push({
-          stop_id: this.pendingStop.stop_id,
-          stop_name: this.pendingStop.stop_name,
+          stop_id: this.pendingRow.ref.id,
+          stop_name: this.pendingRow.name,
         } as Stops);
       }
 
       return this.renderer.renderTimetableHTML(
         timetableData,
-        this.pendingStop?.stop_id
+        this.pendingRow?.ref
       );
     } catch (error) {
       console.error('Error rendering schedule:', error);
@@ -1553,20 +1692,28 @@ export class ScheduleController {
     this.applyTimetableSelection();
   }
 
-  // Track pending stop that hasn't been saved to database yet
-  private pendingStop?: {
-    stop_id: string;
-    stop_name: string;
+  /**
+   * The row added from the "Add stop or zone" picker but not yet written.
+   *
+   * A stop, an on-demand zone or a location group: it only reaches the database
+   * once the user types a time (or a window) into one of its cells.
+   */
+  private pendingRow?: {
+    ref: StopTimeRef;
+    name: string;
   };
 
   /**
-   * Clear pending stop after first time is entered
+   * Clear the pending row after its first time is entered
    * Called automatically when a time is successfully saved
    */
-  private clearPendingStopIfMatches(stop_id: string): void {
-    if (this.pendingStop && this.pendingStop.stop_id === stop_id) {
-      console.log(`Clearing pending stop ${stop_id} - time has been saved`);
-      this.pendingStop = undefined;
+  private clearPendingRowIfMatches(ref: StopTimeRef): void {
+    const pending = this.pendingRow?.ref;
+    if (pending && pending.kind === ref.kind && pending.id === ref.id) {
+      console.log(
+        `Clearing pending ${ref.kind} ${ref.id} - the row has been saved`
+      );
+      this.pendingRow = undefined;
     }
   }
 
@@ -1670,52 +1817,85 @@ export class ScheduleController {
   }
 
   /**
-   * Add a stop from the selector
+   * Add a stop, zone or location group from the "Add stop or zone" picker.
    *
-   * Called when user selects a stop from the always-visible new stop dropdown.
-   * Sets the stop as "pending" - it will only be saved to DB when user enters a time.
+   * The row is only "pending": it reaches the database when the user types a
+   * time (a stop) or a window (a zone or location group) into one of its cells.
    *
-   * @param stop_id - Selected stop ID
+   * @param value - Picked option value, in `kind:id` form
    */
-  public async addStopFromSelector(stop_id: string): Promise<void> {
-    if (!stop_id) {
+  public async addRefFromSelector(value: string): Promise<void> {
+    const separator = value.indexOf(':');
+    if (separator === -1) {
+      console.warn(`[ScheduleController] unparseable picker value: ${value}`);
       return;
     }
+    const kind = value.slice(0, separator);
+    const id = value.slice(separator + 1);
+    if (
+      !id ||
+      (kind !== 'stop' && kind !== 'location' && kind !== 'location_group')
+    ) {
+      console.warn(`[ScheduleController] unparseable picker value: ${value}`);
+      return;
+    }
+    const ref: StopTimeRef = { kind, id };
 
     try {
       if (!this.currentRouteId || !this.currentServiceId) {
-        console.error('No current timetable to add stop to');
+        console.error('No current timetable to add a row to');
         return;
       }
 
-      // Get stop details
-      const stops = await this.gtfsParser.gtfsDatabase.queryRows('stops', {
-        stop_id,
-      });
-
-      if (stops.length === 0) {
-        notify.error('Stop not found');
+      const name = await this.refDisplayName(ref);
+      if (name === null) {
+        notify.error(`${kind === 'stop' ? 'Stop' : 'Reference'} not found`);
         return;
       }
 
-      const stop = stops[0];
+      // NOT saved to the database yet
+      this.pendingRow = { ref, name };
+      console.log(
+        `[ScheduleController] pending ${ref.kind} ${ref.id}: ${name}`
+      );
 
-      // Set as pending stop (NOT saved to database yet)
-      this.pendingStop = {
-        stop_id: stop.stop_id,
-        stop_name: stop.stop_name || stop.stop_id,
-      };
+      notify.success(
+        ref.kind === 'stop'
+          ? 'Stop added. Enter a time for at least one trip to save.'
+          : 'Row added. Enter a pickup window for at least one trip to save.'
+      );
 
-      console.log(`Set pending stop: ${stop.stop_id} - ${stop.stop_name}`);
-
-      notify.success(`Stop added. Enter a time for at least one trip to save.`);
-
-      // Refresh the timetable to show the new pending stop row
+      // Refresh the timetable to show the new pending row
       await this.refreshCurrentTimetable();
     } catch (error) {
-      console.error('Failed to add stop to timetable:', error);
-      notify.error('Failed to add stop to timetable');
+      console.error('Failed to add row to timetable:', error);
+      notify.error('Failed to add row to timetable');
     }
+  }
+
+  /** The label for a picked ref, or null when it no longer exists. */
+  private async refDisplayName(ref: StopTimeRef): Promise<string | null> {
+    if (ref.kind === 'stop') {
+      const stops = await this.gtfsParser.gtfsDatabase.queryRows('stops', {
+        stop_id: ref.id,
+      });
+      if (stops.length === 0) {
+        return null;
+      }
+      return stops[0].stop_name || stops[0].stop_id;
+    }
+
+    if (ref.kind === 'location') {
+      const feature = getZoneFeatures(this.gtfsParser).find(
+        (f) => String(f.id) === ref.id
+      );
+      return feature ? zoneName(feature) || ref.id : null;
+    }
+
+    const group = this.gtfsParser
+      .getFileDataSyncTyped<LocationGroups>(GTFS_TABLES.LOCATION_GROUPS)
+      .find((g) => String(g.location_group_id ?? '') === ref.id);
+    return group ? String(group.location_group_name || ref.id) : null;
   }
 
   /**
