@@ -12,6 +12,7 @@
 import type { GTFSParser } from './gtfs-parser.js';
 import {
   encodeGeojsonIoUrl,
+  isEncodedGeojsonIoUrl,
   parseGeojsonIoInput,
 } from '../utils/geojson-io.js';
 import {
@@ -85,6 +86,10 @@ export async function renderZoneGeometrySection(
           <button class="btn btn-sm btn-primary zone-geojson-apply" disabled>Save geometry</button>
           <span class="text-xs text-error hidden zone-geojson-error"></span>
         </div>
+        <p class="text-xs opacity-60">
+          To pull an edit back in, use Share in geojson.io and paste the link here.
+          geojson.io no longer keeps the data in the address bar while you draw.
+        </p>
       </div>
     </div>
   `;
@@ -117,11 +122,22 @@ function pickZoneFeature(
   );
 }
 
-/** Accept a bare Feature or a FeatureCollection and return the zone's feature. */
-function readEditedFeature(text: string, location_id: string): GeoJSON.Feature {
+/**
+ * Accept a pasted geojson.io link, a bare Feature or a FeatureCollection and
+ * return the zone's feature. The link carries its payload inline, so it is
+ * decoded here rather than fetched: geojson.io itself only serves its app HTML.
+ */
+async function readEditedFeature(
+  text: string,
+  location_id: string
+): Promise<GeoJSON.Feature> {
   const trimmed = text.trim();
   if (!trimmed) {
     throw new Error('The editor is empty.');
+  }
+
+  if (isEncodedGeojsonIoUrl(trimmed)) {
+    return pickZoneFeature(await parseGeojsonIoInput(trimmed), location_id);
   }
 
   let parsed: unknown;
@@ -164,11 +180,11 @@ async function promptForUrl(): Promise<{
     body: `
       <div class="space-y-3">
         <p class="text-sm opacity-70">
-          Fetch a GeoJSON file (or a geojson.io link) and load it into the editor.
+          Paste a geojson.io share link, or the URL of a GeoJSON file to fetch.
           Nothing is saved until you press Save geometry.
         </p>
-        <input type="url" class="input input-bordered w-full font-mono text-xs zone-import-url"
-          placeholder="https://example.org/zones.geojson" />
+        <input type="text" class="input input-bordered w-full font-mono text-xs zone-import-url"
+          placeholder="https://geojson.io/?data=gz:... or https://example.org/zones.geojson" />
         <label class="label cursor-pointer justify-start gap-2">
           <input type="checkbox" class="checkbox checkbox-sm zone-import-cors" checked />
           <span class="label-text">Use CORS proxy</span>
@@ -255,8 +271,22 @@ export function attachZoneGeometryHandlers(
     if (!target) {
       return;
     }
-    const fetchUrl = maybeProxy(target.url, target.useCors);
     try {
+      // A geojson.io link carries the whole collection in its own URL. Fetching
+      // it would only return the geojson.io app HTML, and the URL is long
+      // enough that a CORS proxy may reject it outright, so decode it here.
+      if (isEncodedGeojsonIoUrl(target.url)) {
+        const collection = await parseGeojsonIoInput(target.url);
+        const feature = pickZoneFeature(collection, location_id);
+        input.value = JSON.stringify({ ...feature, id: location_id }, null, 2);
+        syncSaveState();
+        console.log(
+          `[ZoneGeometry] ${location_id}: decoded geometry from a geojson.io link`
+        );
+        return;
+      }
+
+      const fetchUrl = maybeProxy(target.url, target.useCors);
       let response: Response;
       try {
         response = await fetch(fetchUrl);
@@ -294,7 +324,7 @@ export function attachZoneGeometryHandlers(
   saveButton.addEventListener('click', async () => {
     clearError();
     try {
-      const edited = readEditedFeature(input.value, location_id);
+      const edited = await readEditedFeature(input.value, location_id);
 
       const current = getZoneFeatures(deps.gtfsParser);
       if (!current.some((f) => String(f.id) === location_id)) {
