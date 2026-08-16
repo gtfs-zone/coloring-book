@@ -20,6 +20,7 @@ import {
   type PathwayCategory,
 } from '../utils/pathway-modes.js';
 import { ensureMapIcons } from './map-icons.js';
+import { getZoneFeatures, zoneName } from './zone-store.js';
 import {
   STOP_FOCUS_HALO_LAYER,
   STOP_FOCUS_RING_LAYER,
@@ -50,6 +51,13 @@ export interface HighlightLayerOptions {
   strokeColor: string;
   strokeWidth: number;
 }
+
+/** On-demand zone polygons (locations.geojson). */
+const ZONE_SOURCE = 'zones';
+const ZONE_FILL_LAYER = 'zones-fill';
+const ZONE_OUTLINE_LAYER = 'zones-outline';
+const ZONE_FILL_OPACITY = 0.12;
+const ZONE_FILL_OPACITY_FOCUSED = 0.3;
 
 /** Perpendicular spacing between parallel pathways sharing an endpoint pair. */
 const PATHWAY_PARALLEL_OFFSET_M = 2;
@@ -112,6 +120,7 @@ export class LayerManager {
   private focusedStopId: string | null = null;
   private hoveredStopId: string | null = null;
   private focusedPathwayId: string | null = null;
+  private focusedZoneId: string | null = null;
   // Stops of the currently spotlighted route (onRoute feature-state holders)
   private routeStopIds: string[] = [];
 
@@ -196,6 +205,12 @@ export class LayerManager {
         this.map.setPaintProperty(layerId, 'circle-color', fill);
       }
     }
+    if (this.map.getLayer(ZONE_FILL_LAYER)) {
+      this.map.setPaintProperty(ZONE_FILL_LAYER, 'fill-color', accent);
+    }
+    if (this.map.getLayer(ZONE_OUTLINE_LAYER)) {
+      this.map.setPaintProperty(ZONE_OUTLINE_LAYER, 'line-color', accent);
+    }
     console.log(`[LayerManager] Accent color refreshed to ${accent}`);
   }
 
@@ -213,6 +228,8 @@ export class LayerManager {
       'stops-clickarea',
       'stops-highlight',
       'trip-highlight',
+      ZONE_FILL_LAYER,
+      ZONE_OUTLINE_LAYER,
       // Legacy layers for backward compatibility
       'stops',
       'routes',
@@ -225,6 +242,7 @@ export class LayerManager {
       'stops',
       'stops-highlight',
       'trip-highlight',
+      ZONE_SOURCE,
     ];
 
     layersToRemove.forEach((layerId) => {
@@ -238,6 +256,144 @@ export class LayerManager {
         this.map.removeSource(sourceId);
       }
     });
+  }
+
+  /**
+   * Build (or refresh) the on-demand zone polygons from locations.geojson.
+   *
+   * The stored feature ids are copied into a `location_id` property because
+   * MapLibre coerces non-numeric GeoJSON feature ids, and feature-state (the
+   * focus highlight) has to survive a string id like "zone-north".
+   */
+  public updateZonesLayer(): void {
+    const features: GeoJSON.Feature[] = getZoneFeatures(this.gtfsParser).map(
+      (feature) => ({
+        type: 'Feature',
+        geometry: feature.geometry,
+        properties: {
+          ...(feature.properties ?? {}),
+          location_id: String(feature.id),
+          zone_name: zoneName(feature),
+        },
+      })
+    );
+    const data: GeoJSON.FeatureCollection = {
+      type: 'FeatureCollection',
+      features,
+    };
+
+    const source = this.map.getSource(ZONE_SOURCE) as GeoJSONSource | undefined;
+    if (source) {
+      source.setData(data);
+    } else {
+      this.map.addSource(ZONE_SOURCE, {
+        type: 'geojson',
+        data,
+        promoteId: 'location_id',
+      });
+      // A fresh source means setStyle wiped the old one and its feature state.
+      this.focusedZoneId = null;
+    }
+
+    this.addZoneLayers();
+    console.log(
+      `[LayerManager] Zones layer updated (${features.length} zones)`
+    );
+  }
+
+  /**
+   * Fill + outline for the zone polygons.
+   *
+   * Both go in below the route lines and the stop circles: a zone covers whole
+   * neighbourhoods, and on top it would swallow every stop and route click.
+   */
+  private addZoneLayers(): void {
+    if (this.map.getLayer(ZONE_FILL_LAYER)) {
+      return;
+    }
+    const accent = this.accent();
+    const before = [
+      'routes-casing',
+      'stops-focus-halo',
+      'stops-background',
+    ].find((id) => !!this.map.getLayer(id));
+
+    this.map.addLayer(
+      {
+        id: ZONE_FILL_LAYER,
+        type: 'fill',
+        source: ZONE_SOURCE,
+        paint: {
+          'fill-color': accent,
+          'fill-opacity': [
+            'case',
+            ['boolean', ['feature-state', 'focused'], false],
+            ZONE_FILL_OPACITY_FOCUSED,
+            ZONE_FILL_OPACITY,
+          ] as unknown as ExpressionSpecification,
+        },
+      },
+      before
+    );
+
+    this.map.addLayer(
+      {
+        id: ZONE_OUTLINE_LAYER,
+        type: 'line',
+        source: ZONE_SOURCE,
+        paint: {
+          'line-color': accent,
+          'line-width': [
+            'case',
+            ['boolean', ['feature-state', 'focused'], false],
+            3,
+            1.5,
+          ] as unknown as ExpressionSpecification,
+          'line-opacity': 0.8,
+          'line-dasharray': [4, 2],
+        },
+        layout: {
+          'line-cap': 'round',
+          'line-join': 'round',
+        },
+      },
+      before
+    );
+  }
+
+  /**
+   * Light the focused zone. Separate from setFocusedStop: a zone is a polygon
+   * in its own source and nothing about the stop layers applies to it.
+   */
+  public setFocusedZone(location_id: string | null): void {
+    if (this.focusedZoneId === location_id) {
+      return;
+    }
+    console.log('[LayerManager] setFocusedZone', {
+      prev: this.focusedZoneId,
+      next: location_id,
+    });
+    try {
+      if (this.focusedZoneId !== null && this.map.getSource(ZONE_SOURCE)) {
+        this.map.setFeatureState(
+          { source: ZONE_SOURCE, id: this.focusedZoneId },
+          { focused: false }
+        );
+      }
+      this.focusedZoneId = location_id;
+      if (location_id !== null && this.map.getSource(ZONE_SOURCE)) {
+        this.map.setFeatureState(
+          { source: ZONE_SOURCE, id: location_id },
+          { focused: true }
+        );
+      }
+    } catch (error) {
+      console.warn(
+        '[LayerManager] Could not set focused zone:',
+        location_id,
+        error
+      );
+    }
   }
 
   /**

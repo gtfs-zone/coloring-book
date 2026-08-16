@@ -16,6 +16,7 @@ export interface InteractionCallbacks {
   onRouteClick?: (route_id: string) => void;
   onStopClick?: (stop_id: string) => void;
   onPathwayClick?: (pathway_id: string) => void;
+  onZoneClick?: (location_id: string) => void;
   onPathwayCreated?: (pathway_id: string) => void;
   onModeChange?: (mode: MapMode) => void;
   onStopDragComplete?: (stop_id: string, lat: number, lng: number) => void;
@@ -157,6 +158,20 @@ export class InteractionHandler {
         this.updateCursor(this.currentMode);
       }
     });
+
+    // Zone polygons. Registered up front like the route handlers above: the
+    // layer is added later, when a feed with locations.geojson loads.
+    this.map.on('mouseenter', 'zones-fill', () => {
+      if (this.currentMode === MapMode.NAVIGATE && !this.isDragging) {
+        this.map.getCanvas().style.cursor = 'pointer';
+      }
+    });
+
+    this.map.on('mouseleave', 'zones-fill', () => {
+      if (!this.isDragging) {
+        this.updateCursor(this.currentMode);
+      }
+    });
   }
 
   /**
@@ -244,6 +259,19 @@ export class InteractionHandler {
       if (route_id && this.callbacks.onRouteClick) {
         console.log('clicked on route', route_id);
         this.callbacks.onRouteClick(route_id);
+      }
+      return;
+    }
+
+    // Zones last: they are neighbourhood-sized polygons, so anything drawn on
+    // top of one wins the click.
+    const zoneFeatures = this.queryFeaturesOnLayers(e.point, ['zones-fill']);
+
+    if (zoneFeatures.length > 0) {
+      const location_id = zoneFeatures[0].properties?.location_id;
+      if (location_id && this.callbacks.onZoneClick) {
+        console.log('clicked on zone', location_id);
+        this.callbacks.onZoneClick(location_id);
       }
       return;
     }
