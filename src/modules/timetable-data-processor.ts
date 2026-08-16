@@ -26,6 +26,15 @@ import {
 } from './route-sequence.js';
 import { routeGraph, RouteGraph } from './route-graph.js';
 
+/** Trimmed string value, or null when absent or blank. */
+function emptyToNull(raw: unknown): string | null {
+  if (raw === null || raw === undefined) {
+    return null;
+  }
+  const text = String(raw).trim();
+  return text.length > 0 ? text : null;
+}
+
 /**
  * Editable stop time interface for timetable editing
  * Contains both current and original time values for change tracking
@@ -41,6 +50,16 @@ export interface EditableStopTime {
   isSkipped: boolean;
   originalArrivalTime?: string;
   originalDepartureTime?: string;
+  /**
+   * The cell renders a pickup/drop-off window instead of arrival/departure.
+   * True for a windowed row, and for any non-stop ref (a location group or
+   * zone with no window is a feed error, but it is still not a timed stop).
+   */
+  isFlex: boolean;
+  start_pickup_drop_off_window: string | null;
+  end_pickup_drop_off_window: string | null;
+  pickup_booking_rule_id: string | null;
+  drop_off_booking_rule_id: string | null;
 }
 
 /**
@@ -342,9 +361,13 @@ export class TimetableDataProcessor {
           stopTimeMap.set(position, displayTime);
         }
 
+        const startWindow = emptyToNull(st.start_pickup_drop_off_window);
+        const endWindow = emptyToNull(st.end_pickup_drop_off_window);
+        const isFlex = ref.kind !== 'stop' || !!startWindow || !!endWindow;
+
         // Keep the trip's real platform stop_id, not the collapsed station
         // root - that's what keeps station collapse safe to edit.
-        if (arrival_time || departure_time) {
+        if (arrival_time || departure_time || isFlex) {
           editableStopTimes.set(position, {
             ref,
             stop_id: ref.kind === 'stop' ? ref.id : undefined,
@@ -354,6 +377,11 @@ export class TimetableDataProcessor {
             isSkipped: false,
             originalArrivalTime: arrival_time,
             originalDepartureTime: departure_time,
+            isFlex,
+            start_pickup_drop_off_window: startWindow,
+            end_pickup_drop_off_window: endWindow,
+            pickup_booking_rule_id: emptyToNull(st.pickup_booking_rule_id),
+            drop_off_booking_rule_id: emptyToNull(st.drop_off_booking_rule_id),
           });
         }
       });
