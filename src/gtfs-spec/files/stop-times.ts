@@ -100,7 +100,7 @@ export const stopTimesSpec: GTFSFileSpec = {
       type: 'Enum',
       presence: 'Conditionally Forbidden',
       presenceCondition:
-        'pickup_type=2 or pickup_type=3 is required if stop_times.start_pickup_drop_off_window or stop_times.end_pickup_drop_off_window is defined. Forbidden if stop_times.start_pickup_drop_off_window or stop_times.end_pickup_drop_off_window is defined and the value is 0 or 1.',
+        'pickup_type=1 or pickup_type=2 is required if stop_times.start_pickup_drop_off_window or stop_times.end_pickup_drop_off_window is defined. pickup_type=0 and pickup_type=3 are forbidden.',
       description:
         'Indicates pickup method. Valid options are:<br><br>`0` or empty - Regularly scheduled pickup. <br>`1` - No pickup available.<br>`2` - Must phone agency to arrange pickup.<br>`3` - Must coordinate with driver to arrange pickup.<br><br> **Conditionally Forbidden**: <br>- `pickup_type=0` **forbidden** if `start_pickup_drop_off_window` or `end_pickup_drop_off_window` are defined.<br> - `pickup_type=3` **forbidden** if `start_pickup_drop_off_window` or `end_pickup_drop_off_window` are defined.<br> - Optional otherwise.',
       enumValues: [
@@ -132,7 +132,7 @@ export const stopTimesSpec: GTFSFileSpec = {
       type: 'Enum',
       presence: 'Conditionally Forbidden',
       presenceCondition:
-        'drop_off_type=2 or drop_off_type=3 is required if stop_times.start_pickup_drop_off_window or stop_times.end_pickup_drop_off_window is defined. Forbidden if stop_times.start_pickup_drop_off_window or stop_times.end_pickup_drop_off_window is defined and the value is 0 or 1.',
+        'drop_off_type=1, 2 or 3 is required if stop_times.start_pickup_drop_off_window or stop_times.end_pickup_drop_off_window is defined. drop_off_type=0 is forbidden.',
       description:
         'Indicates drop off method. Valid options are:<br><br>`0` or empty - Regularly scheduled drop off.<br>`1` - No drop off available.<br>`2` - Must phone agency to arrange drop off.<br>`3` - Must coordinate with driver to arrange drop off.<br><br> **Conditionally Forbidden**:<br> - `drop_off_type=0` **forbidden** if `start_pickup_drop_off_window` or `end_pickup_drop_off_window` are defined.<br> - Optional otherwise.',
       enumValues: [
