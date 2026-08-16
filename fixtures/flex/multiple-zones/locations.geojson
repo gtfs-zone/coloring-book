@@ -1,0 +1,43 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "id": "area_713",
+      "properties": {
+        "stop_name": "North service area"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [-93.85, 41.62],
+            [-93.4, 41.62],
+            [-93.4, 41.85],
+            [-93.85, 41.85],
+            [-93.85, 41.62]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "area_714",
+      "properties": {
+        "stop_name": "South service area"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [-93.85, 41.35],
+            [-93.4, 41.35],
+            [-93.4, 41.6],
+            [-93.85, 41.6],
+            [-93.85, 41.35]
+          ]
+        ]
+      }
+    }
+  ]
+}

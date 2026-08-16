@@ -1,0 +1,3 @@
+trip_id,arrival_time,departure_time,stop_id,location_id,stop_sequence,start_pickup_drop_off_window,end_pickup_drop_off_window,pickup_type,drop_off_type,pickup_booking_rule_id,drop_off_booking_rule_id
+dr2_weekday,,,,area_713,1,09:00:00,15:00:00,2,1,prior_day_1700,
+dr2_weekday,,,,area_714,2,09:00:00,15:00:00,1,2,,prior_day_1700

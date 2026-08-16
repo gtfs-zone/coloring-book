@@ -469,7 +469,7 @@ against the four *worked examples* in the official demand-responsive service
 documentation end to end — load, render, edit, export. It is last because it
 needs Phase 3's create path to be able to build the examples at all.
 
-- [ ] Build a fixture for each of the four documented shapes (they can be
+- [x] Build a fixture for each of the four documented shapes (they can be
       hand-written minimal feeds; the datasets themselves need not be
       downloaded):
       1. **Single zone** — one trip, two stop_times, same `location_id`,
@@ -481,32 +481,78 @@ needs Phase 3's create path to be able to build the examples at all.
       4. **Deviated route** — one trip interleaving timed `stop_id` rows with
          windowed `location_id` rows at `(1,3)`, with `shape_dist_traveled` on
          the fixed rows.
-- [ ] Verify for each: the route page renders without throwing, the diagram and
+- [x] Verify for each: the route page renders without throwing, the diagram and
       the timetable show one row per stop_time (crucially **two** rows for the
       same-zone cases, not one), the window renders in the two time spans, and
       the feed validator reports no false positives.
-- [ ] Verify the deviated-route fixture specifically keeps its interleaved
+- [x] Verify the deviated-route fixture specifically keeps its interleaved
       order: timed and windowed rows share one `stop_sequence` run, so any
       re-sort that moves untimed rows would scramble it.
-- [ ] Verify export round-trips each fixture byte-for-byte on the flex columns,
+- [x] Verify export round-trips each fixture byte-for-byte on the flex columns,
       including empty `arrival_time`/`departure_time` on flex rows and empty
       window columns on timed rows.
-- [ ] Make `pickup_type` and `drop_off_type` editable per flex row from the
+- [x] Make `pickup_type` and `drop_off_type` editable per flex row from the
       timetable (a small enum menu on the flex cell, reusing
       `openTripPropEnumMenu`'s pattern), restricted to the values the window
       rules allow: pickup {1,2}, drop-off {1,2,3}. Without this the documented
       `(2,1)` / `(1,2)` pattern cannot be produced from the UI, only from the
       raw editor.
-- [ ] Make `pickup_booking_rule_id` / `drop_off_booking_rule_id` assignable from
+- [x] Make `pickup_booking_rule_id` / `drop_off_booking_rule_id` assignable from
       the flex row. The badges are navigation-only today
       (`schedule-controller.ts:317-327`); add an assign action (a picker over
       `booking_rules.txt`) that keeps the existing click-to-open behaviour for
       an already-set rule.
-- [ ] Check `booking_type=0` (real-time booking) renders sensibly in the
+- [x] Check `booking_type=0` (real-time booking) renders sensibly in the
       On-Demand modal — the documentation's examples only cover types 1 and 2,
       so type 0's field matrix is the least exercised.
-- [ ] Cross-check the documentation's phrasing against the presence conditions
+- [x] Cross-check the documentation's phrasing against the presence conditions
       corrected in Phase 1 of `CURRENT_PLAN.md`, and re-run `pnpm check-spec`.
+
+**Findings:** the fixtures live in `fixtures/flex/<name>/` as loose `.txt` +
+`locations.geojson` sources, with `fixtures/flex/build.sh` zipping each into
+`fixtures/flex/dist/` (gitignored) because the Load dialog only accepts `.zip`.
+`single-zone` and `multiple-zones` ship a header-only `stops.txt`, which is what
+turned up the one real conformance bug in this phase: the validator treated
+`stops.txt` as unconditionally required and fired **two** errors
+(`MISSING_REQUIRED_FILE` and `EMPTY_FILE`) on a legal zone-only feed. The
+reference makes it Conditionally Required - optional when locations.geojson
+defines demand-responsive zones - so both sites now go through
+`hasDemandResponsiveZones()`.
+
+The three "verify" items were checked by reading the code, not by driving the
+browser (per the project's testing convention); the fixtures exist so the user
+can confirm by eye. What the reading established: `tripStops`
+(`route-sequence.ts:130-168`) only collapses consecutive refs when both are
+`kind === 'stop'`, so two stop_times on one zone stay two elements - the
+same-zone cases render two rows. `validateFlexStopTimeRow` returns null early
+for a timed row with no window, so the deviated-route fixture's fixed stops draw
+no conditional-presence error. Export builds each file's header as the union of
+the stored rows' keys and the rows are stored under natural keys with no
+synthetic fields added, so empty flex columns on timed rows and empty
+`arrival_time`/`departure_time` on flex rows survive a round trip.
+
+`booking_type=0` needed no change: the spec's enum labels it "Real time", the
+Booking Rules pane's note already spells out the three types' field matrices,
+and `validateBookingRuleRow` forbids `prior_notice_duration_min`,
+`prior_notice_last_day`, `prior_notice_start_day` and `prior_notice_service_id`
+for it. `location-group` is the fixture that carries a type 0 rule.
+
+The two editing items landed on the flex cell rather than the row label, because
+both fields are per stop_time and so vary trip by trip: two `.flex-type-badge`
+buttons (`PU 2` / `DO 1`) opening an `openInlineMenu` filtered to the allowed
+values, and a `.booking-rule-assign` badge next to each rule badge opening a
+searchable picker over `booking_rules.txt`. The existing `.booking-rule-badge`
+click-to-open is untouched. Both write through one new
+`updateFlexStopTimeField`, which addresses the row by trip_id + stop_sequence
+like `updateFlexWindow` does and runs the whole row through
+`validateFlexStopTimeRow` with the change applied before recording the patch.
+The badges are suppressed on the pending row: there is no stop_time to address
+until the first window is typed.
+
+**Not done:** the Phase 3 "discovered gap" still stands - a flex row added to
+one trip cannot be filled in for the *other* trips from the grid, because those
+cells fall back to arrival/departure spans. It is unchanged by this phase and
+still wants its own follow-up.
 
 **Gotchas:** the documentation's own `stop_times` example for the RufBus service
 contains a typo (`flächenrufbus-angermünde_weekdays` with a hyphen in some rows,

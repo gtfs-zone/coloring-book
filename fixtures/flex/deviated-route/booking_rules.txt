@@ -1,0 +1,2 @@
+booking_rule_id,booking_type,prior_notice_duration_min,prior_notice_duration_max,message,phone_number
+deviation_30,1,30,1440,Call 30 minutes ahead to request a deviation off the fixed route.,+1-555-0103

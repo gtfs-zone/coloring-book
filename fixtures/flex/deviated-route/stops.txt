@@ -1,0 +1,4 @@
+stop_id,stop_name,stop_lat,stop_lon
+dev_1,Transit Center,41.5870,-93.6250
+dev_2,County Hospital,41.6100,-93.5800
+dev_3,North Park and Ride,41.6400,-93.5400

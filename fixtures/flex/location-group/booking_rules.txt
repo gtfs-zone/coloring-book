@@ -1,0 +1,2 @@
+booking_rule_id,booking_type,message,phone_number,info_url,booking_url
+realtime_app,0,Request a ride in the app and a vehicle is dispatched immediately.,+1-555-0102,https://example.com/realtime,https://example.com/app

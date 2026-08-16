@@ -317,6 +317,22 @@ export class ScheduleController {
       }
 
       // Checked before .time-span: the badges sit in the same cell, and a
+      // badge click is a type edit, not a time edit.
+      const typeBadge = (e.target as Element)?.closest?.('.flex-type-badge');
+      if (typeBadge instanceof HTMLElement) {
+        this.openFlexTypeMenu(typeBadge);
+        return;
+      }
+
+      const ruleAssign = (e.target as Element)?.closest?.(
+        '.booking-rule-assign'
+      );
+      if (ruleAssign instanceof HTMLElement) {
+        void this.openBookingRulePicker(ruleAssign);
+        return;
+      }
+
+      // Checked before .time-span: the badges sit in the same cell, and a
       // badge click is a navigation, not a time edit.
       const bookingBadge = (e.target as Element)?.closest?.(
         '.booking-rule-badge'
@@ -922,6 +938,101 @@ export class ScheduleController {
   }
 
   /**
+   * Open the enum menu for a flex row's `pickup_type` / `drop_off_type`.
+   *
+   * Restricted to the values a pickup/drop-off window allows - pickup 1 or 2,
+   * drop-off 1, 2 or 3 - so the documented `(2,1)` / `(1,2)` pattern is
+   * reachable from the grid and an invalid one is not. Empty is not offered:
+   * it is equivalent to 0, which is forbidden under a window.
+   */
+  private openFlexTypeMenu(badge: HTMLElement): void {
+    const { tripId, stopSequence, field, value } = badge.dataset;
+    if (!tripId || !stopSequence || !field) {
+      return;
+    }
+
+    const allowed = field === 'pickup_type' ? ['1', '2'] : ['1', '2', '3'];
+    const enumOptions = (getEnumOptions(field) ?? []).filter((opt) =>
+      allowed.includes(String(opt.value))
+    );
+
+    openInlineMenu(badge, {
+      currentValue: value ?? '',
+      options: enumOptions.map((opt) => ({
+        value: String(opt.value),
+        label: `${opt.value} - ${opt.label}`,
+      })),
+      onPick: (newValue) => {
+        void this.updateFlexStopTimeField(
+          tripId,
+          stopSequence,
+          field as 'pickup_type' | 'drop_off_type',
+          newValue
+        );
+      },
+    });
+  }
+
+  /**
+   * Open the searchable booking-rule picker for a flex row.
+   *
+   * Assignment only - clicking the rule badge itself still opens the On-Demand
+   * editor on that rule, which is how a rule is read and edited.
+   */
+  private async openBookingRulePicker(badge: HTMLElement): Promise<void> {
+    const { tripId, stopSequence, field, value } = badge.dataset;
+    if (!tripId || !stopSequence || !field) {
+      return;
+    }
+
+    const currentValue = value ?? '';
+    const rules = this.gtfsParser.getFileDataSyncTyped<Record<string, unknown>>(
+      GTFS_TABLES.BOOKING_RULES
+    );
+    const options: OptionPickerItem[] = [
+      { value: '', primary: '- none -' },
+      ...rules.map((rule) => {
+        const id = String(rule.booking_rule_id ?? '');
+        const message = String(rule.message ?? '').trim();
+        const bookingType = String(rule.booking_type ?? '');
+        return {
+          value: id,
+          primary: id,
+          secondary: message || `booking_type ${bookingType || '-'}`,
+        };
+      }),
+    ];
+    if (
+      currentValue &&
+      !rules.some((rule) => String(rule.booking_rule_id ?? '') === currentValue)
+    ) {
+      options.push({
+        value: currentValue,
+        primary: `${formatIssueValue(currentValue)} (dangling reference)`,
+      });
+    }
+
+    const picked = await showOptionPickerModal({
+      title:
+        field === 'pickup_booking_rule_id'
+          ? 'Pickup booking rule'
+          : 'Drop-off booking rule',
+      options,
+      selectedValue: currentValue,
+      searchable: true,
+    });
+
+    if (picked !== null && picked !== currentValue) {
+      await this.updateFlexStopTimeField(
+        tripId,
+        stopSequence,
+        field as 'pickup_booking_rule_id' | 'drop_off_booking_rule_id',
+        picked
+      );
+    }
+  }
+
+  /**
    * Open the searchable shape_id modal for a trip property span.
    *
    * A dangling shape_id (not in `getShapeIds()`) is included as its own
@@ -1303,6 +1414,73 @@ export class ScheduleController {
     } catch (error) {
       console.error('Failed to update pickup/drop-off window:', error);
       this.showTimeError(trip_id, rowId, 'Failed to save window change');
+    }
+  }
+
+  /**
+   * Write one non-time field of an existing flex stop_time, addressed the same
+   * way `updateFlexWindow` addresses it: trip_id + stop_sequence, since a flex
+   * row has no stop_id.
+   *
+   * The whole row is run through `validateFlexStopTimeRow` with the change
+   * applied, so the grid cannot produce a row the feed validator would reject.
+   *
+   * @param trip_id - GTFS trip identifier
+   * @param stopSequence - stop_sequence of the edited row
+   * @param field - Which field to write
+   * @param value - New value, or an empty string to clear
+   */
+  private async updateFlexStopTimeField(
+    trip_id: string,
+    stopSequence: string,
+    field:
+      | 'pickup_type'
+      | 'drop_off_type'
+      | 'pickup_booking_rule_id'
+      | 'drop_off_booking_rule_id',
+    value: string
+  ): Promise<void> {
+    const row = this.gtfsParser
+      .getStopTimesByTripId(trip_id)
+      .find((st) => String(st.stop_sequence) === stopSequence);
+    if (!row) {
+      console.warn(
+        `[ScheduleController] no stop_time for ${trip_id} at stop_sequence ${stopSequence}`
+      );
+      return;
+    }
+
+    const rowId = String(
+      row.location_group_id ?? row.location_id ?? row.stop_id ?? ''
+    );
+    const record = row as unknown as Record<string, unknown>;
+    const current = String(record[field] ?? '');
+    if (current === value) {
+      return;
+    }
+
+    const invalid = validateFlexStopTimeRow({ ...record, [field]: value });
+    if (invalid) {
+      this.showTimeError(trip_id, rowId, invalid);
+      return;
+    }
+
+    try {
+      const key = generateCompositeKeyFromRecord('stop_times', record);
+      await patchUpdate(
+        this.gtfsParser.gtfsDatabase,
+        this.patchManager,
+        'stop_times',
+        key,
+        { [field]: current },
+        { [field]: value }
+      );
+      console.log(
+        `[ScheduleController] Set ${field} for ${trip_id}/${rowId} to ${value || '(empty)'}`
+      );
+    } catch (error) {
+      console.error(`Failed to update ${field}:`, error);
+      this.showTimeError(trip_id, rowId, `Failed to save ${field}`);
     }
   }
 

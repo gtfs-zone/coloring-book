@@ -1,0 +1,5 @@
+stop_id,stop_name,stop_lat,stop_lon
+stop_a,Main St and 1st Ave,41.5900,-93.6200
+stop_b,Elm St Clinic,41.6050,-93.6400
+stop_c,Riverside Library,41.6200,-93.6100
+stop_d,Airport Terminal,41.5340,-93.6630

@@ -60,6 +60,9 @@ export interface EditableStopTime {
   end_pickup_drop_off_window: string | null;
   pickup_booking_rule_id: string | null;
   drop_off_booking_rule_id: string | null;
+  /** Editable from the flex cell, restricted to what the window rules allow. */
+  pickup_type: string | null;
+  drop_off_type: string | null;
 }
 
 /**
@@ -382,6 +385,8 @@ export class TimetableDataProcessor {
             end_pickup_drop_off_window: endWindow,
             pickup_booking_rule_id: emptyToNull(st.pickup_booking_rule_id),
             drop_off_booking_rule_id: emptyToNull(st.drop_off_booking_rule_id),
+            pickup_type: emptyToNull(st.pickup_type),
+            drop_off_type: emptyToNull(st.drop_off_type),
           });
         }
       });

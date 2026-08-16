@@ -145,12 +145,27 @@ export class GTFSValidator {
     return this.validationResults;
   }
 
+  /**
+   * Whether the feed defines demand-responsive zones, which is what makes
+   * stops.txt optional rather than required.
+   */
+  private hasDemandResponsiveZones(): boolean {
+    const collection = this.gtfsParser.getFileDataSync(
+      GTFS_TABLES.LOCATIONS_GEOJSON
+    )[0] as unknown as Partial<GeoJSON.FeatureCollection> | undefined;
+    return (collection?.features ?? []).some(
+      (feature) => String(feature.id ?? '').trim() !== ''
+    );
+  }
+
   validateRequiredFiles() {
     const requiredFiles = [
       GTFS_TABLES.AGENCY,
       GTFS_TABLES.ROUTES,
       GTFS_TABLES.TRIPS,
-      GTFS_TABLES.STOPS,
+      // stops.txt is Conditionally Required: optional when the feed defines
+      // demand-responsive zones in locations.geojson, required otherwise.
+      ...(this.hasDemandResponsiveZones() ? [] : [GTFS_TABLES.STOPS]),
       GTFS_TABLES.STOP_TIMES,
     ];
 
@@ -335,7 +350,10 @@ export class GTFSValidator {
   validateStops() {
     const stops = this.gtfsParser.getFileDataSyncTyped(GTFS_TABLES.STOPS);
     if (stops.length === 0) {
-      this.addError('stops.txt is empty', 'EMPTY_FILE', GTFS_TABLES.STOPS);
+      // A zone-only demand-responsive feed legitimately has no stops.
+      if (!this.hasDemandResponsiveZones()) {
+        this.addError('stops.txt is empty', 'EMPTY_FILE', GTFS_TABLES.STOPS);
+      }
       return;
     }
 

@@ -1,0 +1,2 @@
+booking_rule_id,booking_type,prior_notice_duration_min,message,phone_number,info_url,booking_url
+same_day_60,1,60,Call at least an hour before your trip.,+1-555-0100,https://example.com/dial-a-ride,https://example.com/book
