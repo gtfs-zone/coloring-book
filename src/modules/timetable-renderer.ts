@@ -475,6 +475,9 @@ export class TimetableRenderer {
     const threshold = endpointThreshold(sequence.totalTrips);
     const endpoint = isEndpoint(stats, threshold);
     const revisit = sequence.stops[index].occurrence;
+    // A flex row references a location group or zone, which has no stop to
+    // focus, so its rail stays non-interactive.
+    const isStop = sequence.stops[index].ref.kind === 'stop';
 
     const dot: RowDot = {
       kind: endpoint ? 'solid' : 'open',
@@ -485,7 +488,9 @@ export class TimetableRenderer {
       graph.laneCount,
       rowPaths(graph, index, { kind: 'stop', leadIn: false, leadOut: false }),
       dot,
-      { stop_id: stop.stop_id, title: 'Focus this stop on the map' }
+      isStop
+        ? { stop_id: stop.stop_id, title: 'Focus this stop on the map' }
+        : {}
     );
 
     const revisitHtml =

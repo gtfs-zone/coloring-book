@@ -9,6 +9,21 @@ import {
   normalizeAgencyId,
   agencyRouteFilter,
 } from '../utils/agency-helpers.js';
+import type { StopTimeRef } from '../types/gtfs-flex.js';
+import { stopTimeRef } from '../types/gtfs-flex.js';
+
+/** The stop_times column each reference kind lives in. */
+const STOP_TIME_REF_FIELD: Record<StopTimeRef['kind'], string> = {
+  stop: 'stop_id',
+  location_group: 'location_group_id',
+  location: 'location_id',
+};
+
+/** The row's reference, reusing one an earlier mapping already resolved. */
+function resolveRef(row: Record<string, unknown>): StopTimeRef | null {
+  const existing = row.ref as StopTimeRef | null | undefined;
+  return existing !== undefined ? existing : stopTimeRef(row);
+}
 
 interface GTFSParserInterface {
   getFileDataSync: (filename: string) => GTFSDatabaseRecord[];
@@ -125,6 +140,12 @@ export class GTFSRelationships {
       .map((stopTime) => ({
         trip_id: stopTime.trip_id,
         stop_id: stopTime.stop_id,
+        // A flex row references a location group or zone instead of a stop.
+        ref: stopTimeRef(stopTime),
+        location_group_id: stopTime.location_group_id,
+        location_id: stopTime.location_id,
+        start_pickup_drop_off_window: stopTime.start_pickup_drop_off_window,
+        end_pickup_drop_off_window: stopTime.end_pickup_drop_off_window,
         stop_sequence: Number(stopTime.stop_sequence),
         arrival_time: stopTime.arrival_time,
         departure_time: stopTime.departure_time,
@@ -173,11 +194,37 @@ export class GTFSRelationships {
    * Get all trips that serve a specific stop
    */
   getTripsForStop(stop_id: string) {
+    return this.getTripsForRef({ kind: 'stop', id: stop_id });
+  }
+
+  /** Trips whose stop_times reference a location group (flex). */
+  getTripsForLocationGroup(location_group_id: string) {
+    return this.getTripsForRef({
+      kind: 'location_group',
+      id: location_group_id,
+    });
+  }
+
+  /** Trips whose stop_times reference an on-demand zone (flex). */
+  getTripsForZone(location_id: string) {
+    return this.getTripsForRef({ kind: 'location', id: location_id });
+  }
+
+  /**
+   * Trips serving one stop_time reference of any kind. Only the field for the
+   * requested kind is compared, so a flex row with no stop_id cannot match a
+   * stop lookup by way of undefined === undefined.
+   */
+  private getTripsForRef(target: StopTimeRef) {
+    if (!target.id) {
+      return [];
+    }
+    const field = STOP_TIME_REF_FIELD[target.kind];
     const stopTimesData = this.gtfsParser.getFileDataSync('stop_times.txt');
     const trip_ids = [
       ...new Set(
         stopTimesData
-          .filter((stopTime) => stopTime.stop_id === stop_id)
+          .filter((stopTime) => String(stopTime[field] ?? '') === target.id)
           .map((stopTime) => stopTime.trip_id)
       ),
     ];
@@ -241,7 +288,10 @@ export class GTFSRelationships {
    */
   enrichStopTimesWithStops(stopTimes: Record<string, unknown>[]) {
     return stopTimes.map((stopTime: Record<string, unknown>) => {
-      const stop = this.getStopById(stopTime.stop_id as string);
+      // Flex rows reference a location group or zone, so there is no stop to
+      // join. Looking one up by an undefined stop_id would match nothing.
+      const ref = resolveRef(stopTime);
+      const stop = ref?.kind === 'stop' ? this.getStopById(ref.id) : null;
       return {
         ...stopTime,
         stop: stop,
@@ -547,6 +597,12 @@ export class GTFSRelationships {
         .map((stopTime) => ({
           trip_id: stopTime.trip_id,
           stop_id: stopTime.stop_id,
+          // A flex row references a location group or zone instead of a stop.
+          ref: stopTimeRef(stopTime),
+          location_group_id: stopTime.location_group_id,
+          location_id: stopTime.location_id,
+          start_pickup_drop_off_window: stopTime.start_pickup_drop_off_window,
+          end_pickup_drop_off_window: stopTime.end_pickup_drop_off_window,
           stop_sequence: stopTime.stop_sequence,
           arrival_time: stopTime.arrival_time,
           departure_time: stopTime.departure_time,
@@ -717,7 +773,10 @@ export class GTFSRelationships {
     try {
       const enrichedStopTimes = await Promise.all(
         stopTimes.map(async (stopTime: Record<string, unknown>) => {
-          const stop = await this.getStopByIdAsync(stopTime.stop_id as string);
+          // Flex rows have no stop to join; see enrichStopTimesWithStops.
+          const ref = resolveRef(stopTime);
+          const stop =
+            ref?.kind === 'stop' ? await this.getStopByIdAsync(ref.id) : null;
           return {
             ...stopTime,
             stop: stop,

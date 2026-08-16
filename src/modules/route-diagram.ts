@@ -61,6 +61,7 @@ function statsNotes(sequence: RouteSequence, index: number): string {
 }
 
 function renderRow(
+  source: GTFSRouteSource,
   sequence: RouteSequence,
   index: number,
   color: string,
@@ -83,12 +84,17 @@ function renderRow(
     dot
   );
 
-  const row = stopsById.get(stop.stop_id);
-  const label = renderCardLabel(
-    getStopDisplay(
-      (row ?? { stop_id: stop.stop_id }) as unknown as Record<string, string>
-    )
-  );
+  // Flex rows reference a location group or an on-demand zone, which have no
+  // stops.txt row and are deliberately kept out of getStopDisplay.
+  const isStop = stop.ref.kind === 'stop';
+  const row = isStop ? stopsById.get(stop.ref.id) : undefined;
+  const label = isStop
+    ? renderCardLabel(
+        getStopDisplay(
+          (row ?? { stop_id: stop.ref.id }) as unknown as Record<string, string>
+        )
+      )
+    : escapeHtml(source.refName(stop.ref) ?? stop.ref.id);
   const revisit =
     stop.occurrence > 0
       ? `<span class="opacity-50 text-xs ml-1">(visit ${stop.occurrence + 1})</span>`
@@ -98,7 +104,7 @@ function renderRow(
     <div
       class="${STRIP_ROW_CLASS} ${ROUTE_DIAGRAM_ROW} grid gap-2 items-stretch cursor-pointer rounded hover:bg-base-200"
       style="grid-template-columns:${gutterWidth(graph.laneCount)}px 1fr"
-      data-stop-id="${escapeHtml(stop.stop_id)}"
+      ${isStop ? `data-stop-id="${escapeHtml(stop.ref.id)}"` : ''}
       title="Served by ${stats.serves} of ${sequence.totalTrips} trips"
     >
       ${rail}
@@ -132,6 +138,7 @@ function renderCoverage(sequence: RouteSequence): string {
 }
 
 function renderDirection(
+  source: GTFSRouteSource,
   sequence: RouteSequence,
   label: string,
   showLabel: boolean,
@@ -145,7 +152,7 @@ function renderDirection(
     ? `<h3 class="text-sm font-semibold opacity-70">${escapeHtml(label)}</h3>`
     : '';
   const rows = sequence.stops
-    .map((_stop, index) => renderRow(sequence, index, color, stopsById))
+    .map((_stop, index) => renderRow(source, sequence, index, color, stopsById))
     .join('');
   return `
     <div class="space-y-2">
@@ -185,6 +192,7 @@ export function renderRouteDiagram(
   const sections = directions
     .map((direction) =>
       renderDirection(
+        source,
         // service_id omitted: the diagram covers every trip of the route.
         routeSequence(source, route_id, direction.direction_id),
         direction.label,
