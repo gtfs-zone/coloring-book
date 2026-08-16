@@ -14,6 +14,8 @@ import {
   TIME_FIELDS,
   WINDOW_FIELDS,
 } from './timetable-fields.js';
+import { FieldPresence, stopTimeFieldPresence } from '../utils/flex-rules.js';
+import { formatIssueValue, isDanglingReference } from './feed-issues.js';
 
 /** Everything one cell needs to render its stack of sub-rows. */
 export interface StopTimeCellParams {
@@ -38,6 +40,31 @@ export interface StopTimeCellParams {
    * the stored times are a template and only the offsets carry meaning.
    */
   frequencyOrigin: string | null;
+  /** This row is the trip's first stop_sequence: arrival_time is required. */
+  isFirstStop: boolean;
+  /** This row is the trip's last stop_sequence: arrival_time is required. */
+  isLastStop: boolean;
+}
+
+/** Which stop_times field a row ref lands in, for the presence rules. */
+const REF_FIELD: Record<StopTimeRef['kind'], string> = {
+  stop: 'stop_id',
+  location_group: 'location_group_id',
+  location: 'location_id',
+};
+
+/**
+ * The stop_times row the presence rules judge, rebuilt from the cell's record.
+ *
+ * `EditableStopTime` splits the row's reference out into `ref`, but the rules
+ * read `location_group_id` / `location_id` off the row itself, so the ref has
+ * to be folded back in.
+ */
+function presenceRow(record: EditableStopTime): Record<string, unknown> {
+  const row: Record<string, unknown> = { ...record };
+  delete row.ref;
+  row[REF_FIELD[record.ref.kind]] = record.ref.id;
+  return row;
 }
 
 /** The offset of `time` from the trip's first departure, as `+MM:SS`. */
@@ -97,9 +124,20 @@ export class TimetableCellRenderer {
       isPendingFlex,
       rowRef,
       frequencyOrigin,
+      isFirstStop,
+      isLastStop,
     } = params;
 
     const record = editableStopTime ?? null;
+    // Advisory decoration only: validateFlexStopTimeRow is still the gate that
+    // decides whether an edit commits. A cell with no record has no row to
+    // judge, and its non-time sub-rows are already non-editable.
+    const presence = record
+      ? stopTimeFieldPresence(presenceRow(record), {
+          isFirst: isFirstStop,
+          isLast: isLastStop,
+        })
+      : new Map<string, FieldPresence>();
     const isFlexRow =
       (rowRef !== undefined && rowRef.kind !== 'stop') ||
       record?.isFlex === true ||
@@ -137,6 +175,7 @@ export class TimetableCellRenderer {
           isPendingRow,
           isWindowed,
           frequencyOrigin,
+          presence: presence.get(field),
         })
       )
       .join('');
@@ -168,6 +207,7 @@ export class TimetableCellRenderer {
     isPendingRow: boolean;
     isWindowed: boolean;
     frequencyOrigin: string | null;
+    presence?: FieldPresence;
   }): string {
     const {
       field,
@@ -179,6 +219,7 @@ export class TimetableCellRenderer {
       isPendingRow,
       isWindowed,
       frequencyOrigin,
+      presence,
     } = args;
 
     const kind = stopTimeFieldKind(field);
@@ -187,9 +228,18 @@ export class TimetableCellRenderer {
       : null;
     const value = raw === null || raw === undefined ? '' : String(raw);
 
+    // A value the spec forbids here stays editable, so it can be cleared from
+    // the grid. Only an empty forbidden field is inert: there is nothing to fix
+    // and offering an editor would invite writing a violation.
+    const forbiddenEmpty = presence?.state === 'forbidden' && value === '';
+
     // Only a time edit may create a stop_time: every other field is an edit to
     // an existing record, and there is nothing to address it to without one.
-    const editable = record !== null || kind === 'time';
+    const editable = (record !== null || kind === 'time') && !forbiddenEmpty;
+
+    const dangling =
+      kind === 'booking_rule' &&
+      isDanglingReference('stop_times.txt', field, value);
 
     const titleParts = [field];
     if (kind === 'time' && value && frequencyOrigin) {
@@ -198,16 +248,32 @@ export class TimetableCellRenderer {
         titleParts.push(offset);
       }
     }
-    if (!editable) {
+    if (presence?.reason) {
+      titleParts.push(presence.reason);
+    }
+    if (dangling) {
+      titleParts.push(
+        `No record with ${field} ${formatIssueValue(value)} exists`
+      );
+    }
+    if (!editable && !forbiddenEmpty) {
       titleParts.push('no stop_time on this trip yet');
     }
 
     const classes = [
       'time-span block font-mono text-xs h-6 leading-6 truncate rounded px-1',
       kind === 'time' && isWindowed ? 'text-info' : '',
-      editable
-        ? 'cursor-pointer hover:bg-base-200 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-primary'
-        : 'opacity-40 cursor-default',
+      // A forbidden value and a dangling reference read the same way: an error
+      // that is still editable, exactly as renderPropertyCell shows one.
+      (presence?.state === 'forbidden' && value !== '') || dangling
+        ? 'text-error font-semibold'
+        : '',
+      presence?.state === 'required' ? 'text-warning' : '',
+      forbiddenEmpty
+        ? 'opacity-40 cursor-not-allowed pointer-events-none'
+        : editable
+          ? 'cursor-pointer hover:bg-base-200 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-primary'
+          : 'opacity-40 cursor-default',
     ]
       .filter(Boolean)
       .join(' ');

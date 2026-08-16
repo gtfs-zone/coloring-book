@@ -103,6 +103,13 @@ export interface AlignedTrip extends Trips {
   frequencies: TripFrequency[];
   /** First departure (or arrival) of the trip, '' when it has no stop_times. */
   firstDepartureTime: string;
+  /**
+   * The trip's lowest and highest stop_sequence, '' when it has no stop_times.
+   * The spec requires arrival_time on both, which is a per-cell decoration the
+   * cell itself cannot work out: it only sees one row of one trip.
+   */
+  firstStopSequence: string;
+  lastStopSequence: string;
 }
 
 /**
@@ -338,9 +345,16 @@ export class TimetableDataProcessor {
             parseInt(String(b.stop_sequence))
         );
       const first = stopTimes[0];
+      const last = stopTimes[stopTimes.length - 1];
       const firstDepartureTime =
         first?.departure_time || first?.arrival_time || '';
-      return { trip, stopTimes, firstDepartureTime };
+      return {
+        trip,
+        stopTimes,
+        firstDepartureTime,
+        firstStopSequence: first ? String(first.stop_sequence) : '',
+        lastStopSequence: last ? String(last.stop_sequence) : '',
+      };
     });
 
     // Sort by first departure time
@@ -358,7 +372,13 @@ export class TimetableDataProcessor {
 
     const alignedTrips: AlignedTrip[] = [];
 
-    for (const { trip, stopTimes, firstDepartureTime } of tripsWithStopTimes) {
+    for (const {
+      trip,
+      stopTimes,
+      firstDepartureTime,
+      firstStopSequence,
+      lastStopSequence,
+    } of tripsWithStopTimes) {
       const stopTimeMap = new Map<number, string>();
       const arrival_timeMap = new Map<number, string>();
       const departure_timeMap = new Map<number, string>();
@@ -442,6 +462,8 @@ export class TimetableDataProcessor {
         editableStopTimes,
         frequencies: frequenciesByTrip.get(trip.trip_id) ?? [],
         firstDepartureTime,
+        firstStopSequence,
+        lastStopSequence,
       });
     }
 
