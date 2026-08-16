@@ -49,6 +49,8 @@ interface TimetableKey {
    * stop is a station. Empty when the stop itself carries the stop_times.
    */
   viaStops: Stops[];
+  /** Trips of this route/service that actually call at this stop. */
+  tripCount: number;
 }
 
 interface StopRelations {
@@ -223,22 +225,35 @@ export class StopViewController {
     // the stop is typically served by several routes.
     const byRoute = new Map<
       string,
-      { service_ids: string[]; viaStops: Map<string, Stops> }
+      {
+        service_ids: string[];
+        viaStops: Map<string, Stops>;
+        tripCounts: Map<string, number>;
+      }
     >();
-    for (const { route_id, service_id, viaStops } of timetableKeys) {
+    for (const { route_id, service_id, viaStops, tripCount } of timetableKeys) {
       let entry = byRoute.get(route_id);
       if (!entry) {
-        entry = { service_ids: [], viaStops: new Map() };
+        entry = {
+          service_ids: [],
+          viaStops: new Map(),
+          tripCounts: new Map(),
+        };
         byRoute.set(route_id, entry);
       }
       entry.service_ids.push(service_id);
+      // Counted over trips calling at this stop, not the whole route.
+      entry.tripCounts.set(
+        service_id,
+        (entry.tripCounts.get(service_id) ?? 0) + tripCount
+      );
       for (const stop of viaStops) {
         entry.viaStops.set(String(stop.stop_id), stop);
       }
     }
 
     const sections = [...byRoute.entries()]
-      .map(([route_id, { service_ids, viaStops }]) => {
+      .map(([route_id, { service_ids, viaStops, tripCounts }]) => {
         const route = (routeById.get(route_id) ?? { route_id }) as Record<
           string,
           unknown
@@ -264,12 +279,12 @@ export class StopViewController {
 
         return `
           <div class="space-y-1">
-            <div class="flex items-center gap-2 min-w-0">
+            <div class="route-card flex items-center gap-2 min-w-0 w-fit max-w-full px-1 -mx-1 rounded cursor-pointer hover:bg-base-200 hover:underline" data-route-id="${escapeHtml(route_id)}" title="Open route">
               <div class="w-3 h-3 rounded-full flex-shrink-0" style="background-color: ${color}"></div>
               <span class="font-medium truncate">${renderCardLabel(getRouteDisplay(route as Record<string, string>))}</span>
             </div>
             ${viaLine}
-            ${renderServiceTimeline(filterServiceDataMap(serviceData, service_ids), { route_id })}
+            ${renderServiceTimeline(filterServiceDataMap(serviceData, service_ids), { route_id, tripCounts })}
           </div>
         `;
       })
@@ -565,11 +580,13 @@ export class StopViewController {
               route_id: trip.route_id,
               service_id: trip.service_id,
               viaStops: [],
+              tripCount: 0,
             },
             viaIds: new Set(),
           };
           byKey.set(key, entry);
         }
+        entry.key.tripCount++;
         for (const id of viaIdsByTrip.get(String(trip.trip_id)) ?? []) {
           entry.viaIds.add(id);
         }
