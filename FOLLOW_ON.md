@@ -8,7 +8,9 @@ service documentation.
 
 ## Summary
 
-Five follow-ups. Zones and location groups are rendered and browsable but they
+Six follow-ups (Phase 6 was added after the first five landed, to close the
+multi-trip gap that Phases 3 and 5 both recorded and neither fixed). Zones and
+location groups are rendered and browsable but they
 are not yet *first-class objects in the interaction model*: the route diagram
 will not open them, hovering them lights nothing on the map, fitting the
 viewport ignores their geometry entirely, and there is no way to create an
@@ -559,6 +561,257 @@ contains a typo (`flächenrufbus-angermünde_weekdays` with a hyphen in some row
 underscore in others). Do not encode either spelling as a rule — it is a
 dangling foreign key, which `validateForeignKeys` should already report, and
 that is the correct behaviour under the standing "surface, don't fix" rule.
+
+---
+
+## Phase 6: A flex row is editable on every trip, not just the one that made it
+
+The gap Phase 3 discovered and Phase 5 left standing. Timetable rows are the
+route's supersequence keyed `kind:id occurrence` (`route-sequence.ts:107`);
+columns are trips. A zone row therefore spans every trip on the route, but only
+the trips that already have a `stop_times` record there are editable. Heartland
+Express is the canonical case: four trips, two zones, each zone appearing twice
+per trip (the pickup record then the drop-off record), and no trip serves more
+than one zone.
+
+```
+row                       | A t_..944   | B t_..945   | C t_..946   | D t_..947
+                          | New Ulm AM  | County day  | New Ulm PM  | Sunday
+--------------------------+-------------+-------------+-------------+------------
+area_715 #0  (PU 2, DO 1) | 06:15-08:00 |    dead     | 17:00-17:45 | 08:00-12:00
+area_715 #1  (PU 1, DO 2) | 06:15-08:00 |    dead     | 17:00-17:45 | 08:00-12:45
+area_708 #0  (PU 2, DO 1) |    dead     | 08:00-17:00 |    dead     |    dead
+area_708 #1  (PU 1, DO 2) |    dead     | 08:00-17:00 |    dead     |    dead
+```
+
+Ten of the sixteen cells are dead, and worse than inert:
+
+1. **They render a lie.** `timetable-cell-renderer.ts:45` selects the window
+   cell on `editableStopTime?.isFlex`, which comes from a *saved* stop_time
+   (`timetable-data-processor.ts:369`). With no saved row the cell falls to the
+   arrival/departure branch, so a zone row shows two `--:--:--` arrival and
+   departure spans. Under a window the spec forbids both fields.
+2. **Typing in one corrupts the trip.** The span carries
+   `data-stop-id="area_715"` — a flex row's synthetic stop takes the ref id as
+   its `stop_id` (`timetable-data-processor.ts:250`) — and an empty
+   `data-stop-sequence`. `updateArrivalDepartureTime` -> `planStopTimeEdit`
+   falls through to the `st.stop_id === stop_id` lookup, matches nothing, takes
+   `isInsert`, and writes `{trip_id: B, stop_id: "area_715", arrival_time: ...}`,
+   renumbering the whole trip. That is a dangling `stops.txt` foreign key on a
+   zone id.
+3. **There is no other way in.** `insertFlexStopTime` (`:1498`) keys entirely
+   off `this.pendingRow`, which the picker sets once and
+   `clearPendingRowIfMatches` deletes on the first successful write. Heartland's
+   four trips cannot be built from the grid: you get one, then finish in the raw
+   editor.
+
+**Governing principle for this phase — the grid is a see-through layer over
+`stop_times.txt`.** A cell shows the record that exists or shows nothing; an
+empty cell means *no record*, never a record with blank fields. Typing creates
+exactly one record and clearing removes exactly one record, both visible in the
+Changes panel as a single patch. Nothing here writes a row the user did not
+type: the pair-completion prompt was rejected for that reason, and the sibling
+copy below is a *default for fields the user would otherwise have to retype*,
+announced when it happens, never an inference the user cannot see.
+
+**Chosen approach and decisions:**
+
+- **Cells route on the row's ref, not on the saved stop_time.** The row ref is
+  already computed in `renderTimetableBody` (`:693-702`) for the hover
+  attributes; it just never reaches the cell renderer. Passing it down removes
+  the arrival/departure fallback for flex rows entirely, which is what makes
+  the bad write in (2) unreachable rather than merely guarded.
+- **An unserved flex cell renders as empty window spans**, the same shape a
+  skipped stop already has, with no type or booking-rule badges (there is no
+  record to address them to). Grid navigation and the roving tabindex stay
+  uniform.
+- **New records inherit the row's shape from a sibling trip.** `pickup_type`,
+  `drop_off_type` and both booking rule ids are copied from any existing
+  stop_time on the same ref+occurrence row, falling back to `2`/`2` and empty
+  rules when the row is empty everywhere. The window is **never** copied — a
+  differing window per trip is the entire reason Heartland has four trips.
+  Copying within one row into a different trip cannot create a zone-overlap
+  violation, since that constraint is scoped to a single `trip_id`.
+- **The new record lands where the supersequence says**, not appended.
+  `sequence.positionOf(trip_id, i)` already maps each of a trip's stop_times
+  indices to a strip position, so the insert point is the first of the trip's
+  rows whose position exceeds the edited row's. Appending would scramble the
+  deviated-route shape, where a deviation zone must sit between its two timed
+  stops.
+- **Clearing either window end deletes that trip's record.** A flex stop_time
+  with no window fails `validateFlexStopTimeRow`, so "clear" can only mean
+  "this trip does not serve this zone".
+
+### Relevant context
+
+- `src/modules/timetable-cell-renderer.ts:35` `renderStackedArrivalDepartureCell`
+  (the `editableStopTime?.isFlex || isPendingFlex` branch at `:45`), `:111`
+  `renderFlexWindowCell` (already handles a null `editableStopTime` for the
+  pending row, and suppresses badges on it at `:189`).
+- `src/modules/timetable-renderer.ts:646-717` the row map: `isPendingStop` /
+  `isPendingFlex` at `:648-654`, the per-trip cell call at `:658-685`, and
+  `rowRef` at `:693-702` — the value this phase needs to thread into the cell.
+- `src/modules/timetable-data-processor.ts:330-395` — where `editableStopTimes`
+  is keyed by supersequence position and `isFlex` is set (`:369`).
+- `src/modules/route-sequence.ts:94` `positionOf(tripId, stopIndex)`,
+  `:107` `elementKey` (the `kind:id occurrence` row key), `:69` `stops`.
+- `src/modules/schedule-controller.ts:1334` `updateFlexWindow`,
+  `:1498` `insertFlexStopTime`, `:1433` `updateFlexStopTimeField` (the
+  addressing pattern to reuse), `:1552+` `commitStopTimePlan` (writes a plan as
+  one patch, deletes-then-inserts when keys move), `:1879` `pendingRow`.
+- `src/modules/timetable-database.ts:170` `planFlexStopTimeInsert` (appends and
+  renumbers from 0), `:245` `reorderByTime` (untimed rows keep their slot).
+- `src/modules/gtfs-validator.ts:896` `validateFlexLocations`, `:1233`
+  `addWarning` — where the unpaired-row warning goes.
+- `src/utils/flex-rules.ts` `validateFlexStopTimeRow`.
+
+### Steps
+
+- [x] Thread the row's `StopTimeRef` into the cell. Pass the `rowRef` already
+      computed at `timetable-renderer.ts:693-702` into
+      `renderStackedArrivalDepartureCell` as a new `rowRef?: StopTimeRef`
+      parameter, and select the flex branch on
+      `rowRef !== undefined && rowRef.kind !== 'stop'` **or**
+      `editableStopTime?.isFlex` (a timed stop row that carries a window is
+      still flex) **or** `isPendingFlex`. Compute `rowRef` once per row, above
+      the `data.trips.map`, rather than per cell.
+- [x] In `renderFlexWindowCell`, keep the existing null-`editableStopTime`
+      handling but stop treating "no record" as "pending": take an explicit
+      `hasRecord: boolean`. No record means empty spans, no badges, and
+      `data-stop-sequence=""`. Add `data-flex-kind`/`data-flex-id` from the row
+      ref to the two spans so the insert path knows what to create without
+      re-deriving it from `data-stop-id`.
+- [x] Stop emitting `data-stop-id` on a flex cell's spans. It is the zone id
+      today, which is precisely what feeds the bad `planStopTimeEdit` insert.
+      Check every reader of `data-stop-id` on a `.time-span`
+      (`installTimeCellEditor` around `schedule-controller.ts:560`,
+      `showTimeError`, the selection helpers) and make each one tolerate its
+      absence on a flex cell, keyed on the flex id instead.
+- [x] In `installTimeCellEditor`'s `onCommit` (`:589-608`), route a window edit
+      with no `data-stop-sequence` to a new insert path rather than to
+      `updateFlexWindow`'s update path. Keep `pending === 'true'` working as it
+      does — the pending row is still the only way to add a ref that no trip on
+      the route uses yet.
+- [x] Add `planFlexStopTimeInsertAt(trip_id, ref, window, insertIndex, shape)`
+      to `timetable-database.ts` beside `planFlexStopTimeInsert` — or give the
+      existing function the two new parameters, if the pending path can pass
+      `insertIndex = beforeRows.length` and an empty shape without contortion.
+      Prefer widening the existing one; two nearly identical planners is the
+      abstraction this codebase says not to build. `shape` carries
+      `pickup_type`, `drop_off_type`, `pickup_booking_rule_id`,
+      `drop_off_booking_rule_id`. Both window ends are still seeded with the
+      typed value, for the reason `:160-164` already records.
+- [x] Compute `insertIndex` in `schedule-controller`, not in the database
+      module: walk the trip's stop_times in `stop_sequence` order, map each
+      through `sequence.positionOf(trip_id, i)`, and take the first index whose
+      position exceeds the edited row's supersequence position; fall back to
+      `beforeRows.length` when none does or when `positionOf` returns null.
+      The renumber in the planner already rewrites every `stop_sequence` from 0,
+      so the insert only has to land in the right array slot.
+- [x] Compute the inherited shape from `sequence` + the route's trips: for the
+      edited row's supersequence position, find the first other trip with an
+      `editableStopTimes` entry at that position and read its four fields.
+      `TimetableData` is already in hand at edit time; do not re-query the
+      database for this. Fall back to `pickup_type: 2, drop_off_type: 2` and
+      empty rule ids.
+- [x] Surface the inheritance in the success notification: "Added area_715 to
+      trip C (pickup 2, drop-off 1 copied from t_5374944)" versus the plain
+      wording when nothing was copied. The user must be able to see that four
+      fields were written from one keystroke without opening the Changes panel.
+- [x] Validate the assembled row through `validateFlexStopTimeRow` before
+      writing, exactly as `insertFlexStopTime` does at `:1525`, and surface a
+      failure through `showTimeError` instead of writing.
+- [x] Add the delete path: in `updateFlexWindow`, when the new value is empty
+      **and** the row is a saved flex row, delete that stop_time and renumber
+      the trip rather than writing `''`. Build it as a plan
+      (`beforeRows`/`afterRows` with the row removed and sequences renumbered
+      from 0) and push it through `commitStopTimePlan` so it lands as one patch
+      and undo restores the row with its types and rules intact. Confirm by eye
+      that undo works — a delete-plus-renumber moves every later row's primary
+      key.
+- [x] Do not delete on an empty value for a *timed* row that happens to carry a
+      window (the deviated-route fixed stops). Only a row whose ref is a zone or
+      location group is deletable this way; a timed row clearing its window is a
+      plain field clear.
+- [x] Add an unpaired-row warning to `validateFlexLocations` in
+      `gtfs-validator.ts`: for each trip, a stop_time whose ref appears exactly
+      once on that trip with `pickup_type=2, drop_off_type=1` (or the mirror)
+      and whose route has trips using both halves of the pair gets an
+      `addWarning`, not an `addError`. Pickup-only service in a zone is legal —
+      this is a "did you mean" and must read as one. Do not auto-create the
+      missing row.
+- [x] Re-check the `single-zone` and `location-group` fixtures in
+      `fixtures/flex/`: after this phase both should be buildable end to end
+      from an empty route through the grid alone. Add a fourth trip to the
+      `single-zone` fixture if that is what it takes to exercise a multi-trip
+      row.
+
+**Findings:** the cell renderer's flex branch now selects on the row ref first,
+so an unserved zone cell can no longer fall through to the arrival/departure
+spans — the corrupting `planStopTimeEdit` insert is unreachable rather than
+merely guarded. `renderFlexWindowCell` takes the row ref and derives
+`hasRecord` from `editableStopTime !== null` rather than taking a separate
+boolean: the two were always the same value, and the pending row and an unserved
+cell want identical treatment (empty spans, empty `data-stop-sequence`, no
+badges). `isPendingRow` still reaches the span as `data-pending`, which is what
+keeps the pending path distinct from the new one.
+
+`planFlexStopTimeInsert` was widened rather than duplicated, as the plan
+preferred. It gained `insertIndex` and `shape`, both optional, and the plan it
+returns now carries `insertedIndex` — the pending path used to read
+`afterRows[afterRows.length - 1]`, which stops being the new row once an insert
+can land mid-trip. `planFlexStopTimeDelete` is a new sibling; it returns null
+when no row matches rather than throwing, since a stale `data-stop-sequence`
+after a concurrent patch is a miss, not a bug.
+
+`openTimeEditor`'s guard was split: `stop_id` is now required for
+arrival/departure editing only, because a flex cell deliberately carries none.
+The window branch reads `data-flex-kind`/`data-flex-id` off the span and passes
+the ref plus the supersequence index into `updateFlexWindow`, which routes on
+"no `stop_sequence`" — the pending row to `insertFlexStopTime` (unchanged),
+anything else to the new `insertFlexStopTimeOnTrip`. Clearing an unserved cell
+has nothing to do, so `clearTimeCell` skips a flex cell with no `stop_sequence`
+rather than warning about it.
+
+The delete path keys off the row itself (`row.location_id ||
+row.location_group_id`), not off a parameter: that is what keeps a deviated
+route's timed stop clearing its window a plain field clear while a zone row
+clearing its window removes the record. No new state was needed for the
+distinction.
+
+`currentTimetableData()` reads the already-cached `TimetableData` for the
+route/service/direction on screen, so neither the insert index nor the inherited
+shape re-queries the database. Both degrade rather than throw: a cache miss logs
+and returns, `positionOf` returning null falls through to an append, and a row
+that is empty on every other trip falls back to `2`/`2` with no rules.
+
+The unpaired-row check landed as a private `validateFlexRowPairing` called from
+the end of `validateFlexLocations`. It only fires when the route pairs that same
+ref up on some *other* trip, which is what keeps a genuinely pickup-only zone
+quiet.
+
+Fixtures: `single-zone` gained a second trip (`dr1_weekday_pm`) so its two zone
+rows span more than one trip column, and `multiple-zones` gained `dr2_evening`,
+which serves `area_714` only — that is the fixture carrying the dead cells this
+phase is about, and it exercises the inherit-from-sibling path without tripping
+the new pairing warning. Both were preferred over a trip with no `stop_times` at
+all, which would have been an invalid feed.
+
+**Not verified by driving the browser** (per the project's testing convention):
+undo of the delete-plus-renumber, and undo of a mid-trip insert. Both record as
+deletes-then-inserts through `commitStopTimePlan`; the gotcha below still stands,
+and the fixtures exist so it can be checked by eye.
+
+**Gotchas:** `data.stops[i].stop_id` is the *ref id* on a flex row, not a real
+stop — that conflation is the root of the corrupting write, so resist reusing it
+as an identifier anywhere new. `positionOf` returns null for a trip whose
+pattern was dropped from the ordering; the insert must degrade to an append
+rather than throw. `commitStopTimePlan` collapses to a field update only when
+every key survives — an insert or delete in the middle of a trip never does, so
+both paths here record deletes plus inserts, which is also why undo needs
+checking by eye. `refreshCurrentTimetable` is for pending-row state only; every
+write in this phase is a patch and redraws through the `patch:change` listener,
+so calling both would double-render.
 
 ---
 

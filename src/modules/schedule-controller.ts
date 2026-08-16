@@ -19,6 +19,7 @@ import {
   TimetableDatabase,
   StopTimeEditPlan,
   FlexWindowField,
+  FlexRowShape,
 } from './timetable-database.js';
 import { generateCompositeKeyFromRecord } from '../utils/gtfs-primary-keys.js';
 import { patchUpdate } from '../utils/patch-utils.js';
@@ -441,7 +442,10 @@ export class ScheduleController {
     }
     const windowField = WINDOW_FIELDS[timeType ?? ''];
     if (windowField && tripId) {
-      void this.updateFlexWindow(tripId, stopSequence, windowField, '');
+      // An unserved flex cell has no stop_sequence and so no record to clear.
+      if (stopSequence) {
+        void this.updateFlexWindow(tripId, stopSequence, windowField, '');
+      }
       return;
     }
     if (
@@ -554,13 +558,25 @@ export class ScheduleController {
     span: HTMLElement,
     seed?: { value: string; caret: number | null }
   ): void {
-    const { tripId, stopId, stopIndex, timeType, stopSequence, pending } =
-      span.dataset;
+    const {
+      tripId,
+      stopId,
+      stopIndex,
+      timeType,
+      stopSequence,
+      pending,
+      flexKind,
+      flexId,
+    } = span.dataset;
     const windowField = WINDOW_FIELDS[timeType ?? ''];
+    // A flex cell carries no stop_id at all - only the window fields and the
+    // ref - so stop_id is required for arrival/departure editing only.
+    if (!tripId) {
+      return;
+    }
     if (
-      !tripId ||
-      !stopId ||
-      (!windowField && timeType !== 'arrival' && timeType !== 'departure')
+      !windowField &&
+      (!stopId || (timeType !== 'arrival' && timeType !== 'departure'))
     ) {
       return;
     }
@@ -589,18 +605,24 @@ export class ScheduleController {
       arrowNavigation: true,
       onCommit: (value) => {
         if (windowField) {
+          const cellRef: StopTimeRef | undefined =
+            flexId && (flexKind === 'location' || flexKind === 'location_group')
+              ? { kind: flexKind, id: flexId }
+              : undefined;
           void this.updateFlexWindow(
             tripId,
             stopSequence,
             windowField,
             value,
-            pending === 'true'
+            pending === 'true',
+            cellRef,
+            stopIndex === undefined ? undefined : Number(stopIndex)
           );
           return;
         }
         void this.updateArrivalDepartureTime(
           tripId,
-          stopId,
+          stopId as string,
           timeType as 'arrival' | 'departure',
           value,
           stopSequence,
@@ -1321,22 +1343,30 @@ export class ScheduleController {
    * Update one end of a stop_time's pickup/drop-off window.
    *
    * A flex row is addressed by trip_id + stop_sequence, not stop_id: it has no
-   * stop_id at all when it references a location group or zone. The pending row
-   * from the "Add stop or zone" picker has no stop_time behind it yet, so it
-   * takes the insert path instead.
+   * stop_id at all when it references a location group or zone.
+   *
+   * Three cells reach here with no stop_sequence, and each one creates a record
+   * rather than updating one: the pending row from the "Add stop or zone"
+   * picker (a ref no trip on the route uses yet), and any zone row cell on a
+   * trip that does not serve that zone. Clearing a window end on a flex-ref row
+   * deletes the record instead, since a flex row with no window is invalid.
    *
    * @param trip_id - GTFS trip identifier
-   * @param stopSequence - stop_sequence of the edited row
+   * @param stopSequence - stop_sequence of the edited row, when a record exists
    * @param field - Which end of the window to write
    * @param newTime - New time value or empty string to clear
    * @param isPendingRow - The cell belongs to the not-yet-saved pending row
+   * @param cellRef - What this cell's row references, for the insert path
+   * @param stopIndex - Supersequence position of the row, for the insert path
    */
   public async updateFlexWindow(
     trip_id: string,
     stopSequence: string | undefined,
     field: FlexWindowField,
     newTime: string,
-    isPendingRow = false
+    isPendingRow = false,
+    cellRef?: StopTimeRef,
+    stopIndex?: number
   ): Promise<void> {
     if (isPendingRow) {
       await this.insertFlexStopTime(trip_id, newTime);
@@ -1344,6 +1374,19 @@ export class ScheduleController {
     }
 
     if (!stopSequence) {
+      // Clearing a cell with no record behind it has nothing to do.
+      if (!newTime.trim()) {
+        return;
+      }
+      if (cellRef && cellRef.kind !== 'stop' && stopIndex !== undefined) {
+        await this.insertFlexStopTimeOnTrip(
+          trip_id,
+          cellRef,
+          stopIndex,
+          newTime
+        );
+        return;
+      }
       console.warn(
         `[ScheduleController] flex window edit for ${trip_id} has no stop_sequence`
       );
@@ -1367,6 +1410,17 @@ export class ScheduleController {
     const casted = isClear ? '' : TimeFormatter.castTimeToHHMMSS(newTime);
     const current = String(row[field] ?? '');
     if (current === casted) {
+      return;
+    }
+
+    // Clearing a window end on a zone or location group row means "this trip
+    // does not serve this ref": a flex row with no window fails
+    // validateFlexStopTimeRow, so there is no valid half-cleared state to write.
+    // A timed stop that happens to carry a window is a different case - there
+    // the row survives its window, so that is a plain field clear.
+    const isFlexRefRow = !!(row.location_id || row.location_group_id);
+    if (isClear && isFlexRefRow) {
+      await this.deleteFlexStopTime(trip_id, stopSequence, rowId);
       return;
     }
 
@@ -1520,8 +1574,7 @@ export class ScheduleController {
         ref,
         casted
       );
-      // planFlexStopTimeInsert appends, so the new row is the last one.
-      const newRow = plan.afterRows[plan.afterRows.length - 1];
+      const newRow = plan.afterRows[plan.insertedIndex ?? 0];
       const invalid = validateFlexStopTimeRow(
         newRow as unknown as Record<string, unknown>
       );
@@ -1546,6 +1599,195 @@ export class ScheduleController {
       console.error('Failed to create on-demand stop_time:', error);
       this.showTimeError(trip_id, ref.id, 'Failed to save on-demand row');
     }
+  }
+
+  /**
+   * Create the on-demand stop_time for a trip that does not yet serve a zone
+   * row the route already has.
+   *
+   * The sibling of `insertFlexStopTime`: that one is for a ref no trip on the
+   * route uses at all (the pending row), this one is for the empty cells in a
+   * row that already exists. The new record lands where the supersequence says
+   * rather than at the end of the trip, and inherits the row's
+   * pickup/drop-off types and booking rules from whichever trip already has a
+   * record at this position - the four fields the user would otherwise have to
+   * retype. The window is never inherited: a differing window per trip is the
+   * reason the route has several trips.
+   *
+   * @param trip_id - Trip gaining the record
+   * @param ref - The zone or location group the row references
+   * @param stopIndex - The row's supersequence position
+   * @param newTime - The window value the user typed
+   */
+  private async insertFlexStopTimeOnTrip(
+    trip_id: string,
+    ref: StopTimeRef,
+    stopIndex: number,
+    newTime: string
+  ): Promise<void> {
+    const data = this.currentTimetableData();
+    if (!data) {
+      console.warn(
+        `[ScheduleController] no timetable data in hand for a flex insert on ${trip_id}`
+      );
+      return;
+    }
+
+    const inherited = this.inheritedFlexShape(data, stopIndex, trip_id);
+    try {
+      const casted = TimeFormatter.castTimeToHHMMSS(newTime);
+      const plan = await this.database.planFlexStopTimeInsert(
+        trip_id,
+        ref,
+        casted,
+        this.flexInsertIndex(data, trip_id, stopIndex),
+        inherited?.shape
+      );
+      const newRow = plan.afterRows[plan.insertedIndex ?? 0];
+      const invalid = validateFlexStopTimeRow(
+        newRow as unknown as Record<string, unknown>
+      );
+      if (invalid) {
+        this.showTimeError(trip_id, ref.id, invalid);
+        return;
+      }
+
+      const label = `Add ${ref.kind} ${ref.id} to trip ${trip_id}`;
+      const wrote = await this.commitStopTimePlan(plan, label);
+      if (!wrote) {
+        console.log(`No stop_time change for ${trip_id}/${ref.id}`);
+        return;
+      }
+      console.log(`[ScheduleController] ${label}`);
+
+      // Four fields written from one keystroke has to be visible without
+      // opening the Changes panel.
+      notify.success(
+        inherited
+          ? `Added ${ref.id} to trip ${trip_id} (pickup ${inherited.shape.pickup_type}, drop-off ${inherited.shape.drop_off_type} copied from ${inherited.from})`
+          : `Added ${ref.id} to trip ${trip_id}`,
+        { duration: 4000 }
+      );
+    } catch (error) {
+      console.error('Failed to create on-demand stop_time:', error);
+      this.showTimeError(trip_id, ref.id, 'Failed to save on-demand row');
+    }
+  }
+
+  /**
+   * Delete one on-demand stop_time and renumber the trip, as a single patch.
+   *
+   * @param trip_id - GTFS trip identifier
+   * @param stopSequence - stop_sequence of the row to remove
+   * @param rowId - The row's ref id, for error reporting
+   */
+  private async deleteFlexStopTime(
+    trip_id: string,
+    stopSequence: string,
+    rowId: string
+  ): Promise<void> {
+    try {
+      const plan = await this.database.planFlexStopTimeDelete(
+        trip_id,
+        stopSequence
+      );
+      if (!plan) {
+        console.warn(
+          `[ScheduleController] no stop_time for ${trip_id} at stop_sequence ${stopSequence} to delete`
+        );
+        return;
+      }
+      const label = `Remove ${rowId} from trip ${trip_id}`;
+      const wrote = await this.commitStopTimePlan(plan, label);
+      if (!wrote) {
+        return;
+      }
+      console.log(`[ScheduleController] ${label}`);
+      notify.success(`Removed ${rowId} from trip ${trip_id}`, {
+        duration: 3000,
+      });
+    } catch (error) {
+      console.error('Failed to delete on-demand stop_time:', error);
+      this.showTimeError(trip_id, rowId, 'Failed to remove on-demand row');
+    }
+  }
+
+  /** The `TimetableData` currently on screen, if the cache still holds it. */
+  private currentTimetableData(): TimetableData | undefined {
+    if (
+      !this.currentRouteId ||
+      !this.currentServiceId ||
+      this.currentDirectionId === undefined
+    ) {
+      return undefined;
+    }
+    return this.timetableDataCache.get(
+      this.timetableDataCacheKey(
+        this.currentRouteId,
+        this.currentServiceId,
+        this.currentDirectionId
+      )
+    );
+  }
+
+  /**
+   * Where a new record for supersequence position `stopIndex` belongs in a
+   * trip's own stop_sequence order: before the trip's first row that sits
+   * further right on the strip.
+   *
+   * `positionOf` returns null for a trip whose pattern was dropped from the
+   * ordering, in which case the row degrades to an append rather than throwing.
+   */
+  private flexInsertIndex(
+    data: TimetableData,
+    trip_id: string,
+    stopIndex: number
+  ): number {
+    const rows = this.gtfsParser
+      .getStopTimesByTripId(trip_id)
+      .sort((a, b) => Number(a.stop_sequence) - Number(b.stop_sequence));
+    const sequence = data.sequence;
+    if (!sequence) {
+      return rows.length;
+    }
+    for (let i = 0; i < rows.length; i++) {
+      const position = sequence.positionOf(trip_id, i);
+      if (position !== null && position > stopIndex) {
+        return i;
+      }
+    }
+    return rows.length;
+  }
+
+  /**
+   * The pickup/drop-off types and booking rules of the first other trip that
+   * already has a record on this timetable row, or null when the row is empty
+   * everywhere else.
+   */
+  private inheritedFlexShape(
+    data: TimetableData,
+    stopIndex: number,
+    exclude_trip_id: string
+  ): { shape: FlexRowShape; from: string } | null {
+    for (const trip of data.trips) {
+      if (trip.trip_id === exclude_trip_id) {
+        continue;
+      }
+      const sibling = trip.editableStopTimes?.get(stopIndex);
+      if (!sibling) {
+        continue;
+      }
+      return {
+        from: trip.trip_id,
+        shape: {
+          pickup_type: sibling.pickup_type ?? '2',
+          drop_off_type: sibling.drop_off_type ?? '2',
+          pickup_booking_rule_id: sibling.pickup_booking_rule_id ?? '',
+          drop_off_booking_rule_id: sibling.drop_off_booking_rule_id ?? '',
+        },
+      };
+    }
+    return null;
   }
 
   /**
