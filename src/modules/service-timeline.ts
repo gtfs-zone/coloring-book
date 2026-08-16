@@ -281,8 +281,8 @@ function hexToRgba(hex: string, alpha: number): string {
  * @param pct horizontal position of the line within the cell, 0-100.
  */
 function todayLineStyle(pct: number): string {
-  const c = 'var(--color-error, #ef4444)';
-  return `background-image:linear-gradient(to right, transparent calc(${pct}% - 1px), ${c} calc(${pct}% - 1px), ${c} calc(${pct}% + 1px), transparent calc(${pct}% + 1px))`;
+  const c = 'color-mix(in srgb, var(--color-base-content) 35%, transparent)';
+  return `background-image:linear-gradient(to right, transparent calc(${pct}% - 0.5px), ${c} calc(${pct}% - 0.5px), ${c} calc(${pct}% + 0.5px), transparent calc(${pct}% + 0.5px))`;
 }
 
 const MONTH_ABBR = [
