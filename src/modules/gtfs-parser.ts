@@ -1187,28 +1187,59 @@ export class GTFSParser {
     return Object.keys(this.gtfsData);
   }
 
+  /**
+   * Bucket the feed's files for the Files modal.
+   *
+   * Optional is the inverse of required rather than an explicit presence list:
+   * the spec uses five presence values, and testing only for Optional and
+   * Conditionally Required dropped Conditionally Forbidden files (networks.txt,
+   * route_networks.txt) into the wrong bucket. `additional` is the non-spec
+   * passthrough files, which are the only files that genuinely have no schema.
+   */
   categorizeFiles(): {
     required: string[];
     optional: string[];
-    other: string[];
+    additional: string[];
   } {
     const allFiles = this.getAllFileNames();
     const requiredFiles = GTFS_FILES.filter(
       (f) => f.presence === GTFSFilePresence.Required
     ).map((f) => f.filename);
-    const optionalFiles = GTFS_FILES.filter(
-      (f) =>
-        f.presence === GTFSFilePresence.Optional ||
-        f.presence === GTFSFilePresence.ConditionallyRequired
-    ).map((f) => f.filename);
 
     return {
       required: allFiles.filter((f) => requiredFiles.includes(f)),
-      optional: allFiles.filter((f) => optionalFiles.includes(f)),
-      other: allFiles.filter(
-        (f) => !requiredFiles.includes(f) && !optionalFiles.includes(f)
+      optional: allFiles.filter(
+        (f) => !requiredFiles.includes(f) && ALL_GTFS_FILES.includes(f)
       ),
+      additional: this.getPassthroughFileNames(),
     };
+  }
+
+  getPassthroughFileNames(): string[] {
+    return Array.from(this.passthroughFiles.keys());
+  }
+
+  getPassthroughContent(fileName: string): string | undefined {
+    return this.passthroughFiles.get(fileName);
+  }
+
+  /**
+   * Write a non-spec file back verbatim.
+   *
+   * These files have no table, no primary key and no schema, so there is
+   * nothing for the patch system to describe: this is the one write path that
+   * deliberately skips it, and edits here are not undoable.
+   */
+  async setPassthroughContent(
+    fileName: string,
+    rawContent: string
+  ): Promise<void> {
+    this.passthroughFiles.set(fileName, rawContent);
+    await this.gtfsDatabase.savePassthroughFiles({ [fileName]: rawContent });
+    console.log(
+      '[GTFSParser] passthrough file edited (not patched):',
+      fileName
+    );
   }
 
   /**

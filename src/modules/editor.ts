@@ -16,6 +16,8 @@ interface GTFSParser {
   getFileContent(fileName: string): string;
   getFileData(fileName: string): Promise<unknown[] | null>;
   updateFileContent(fileName: string, content: string): Promise<void>;
+  getPassthroughContent(fileName: string): string | undefined;
+  setPassthroughContent(fileName: string, rawContent: string): Promise<void>;
   gtfsDatabase: {
     updateRow(
       tableName: string,
@@ -68,6 +70,12 @@ export class Editor {
       return;
     }
 
+    const rawContent = this.gtfsParser.getPassthroughContent(fileName);
+    if (rawContent !== undefined) {
+      this.openRawFile(fileName, rawContent);
+      return;
+    }
+
     const content = this.gtfsParser.getFileContent(fileName);
     if (!content) {
       return;
@@ -88,8 +96,61 @@ export class Editor {
     if (tableView) {
       tableView.classList.remove('hidden');
     }
+    document.getElementById('raw-editor-view')?.classList.add('hidden');
 
     await this.buildTableEditor();
+  }
+
+  /**
+   * Open a non-spec passthrough file as raw text.
+   *
+   * There is no schema to build a grid from, and no table to record a patch
+   * against, so saving writes straight through to the parser's passthrough map.
+   */
+  private openRawFile(fileName: string, rawContent: string): void {
+    this.tableData = null;
+    this.currentFile = fileName;
+
+    const fileNameElement = document.getElementById('current-file-name');
+    if (fileNameElement) {
+      fileNameElement.textContent = fileName;
+    }
+
+    if (this.clusterize) {
+      this.clusterize.destroy();
+      this.clusterize = null;
+    }
+
+    document.getElementById('table-editor-view')?.classList.add('hidden');
+    const rawView = document.getElementById('raw-editor-view');
+    rawView?.classList.remove('hidden');
+
+    const textarea = document.getElementById(
+      'raw-editor'
+    ) as HTMLTextAreaElement | null;
+    const saveButton = document.getElementById('raw-editor-save');
+    const status = document.getElementById('raw-editor-status');
+    if (!textarea || !saveButton) {
+      console.warn('[Editor] raw editor elements missing');
+      return;
+    }
+
+    textarea.value = rawContent;
+    if (status) {
+      status.textContent = '';
+    }
+
+    // Replace the node to drop the previous file's save handler
+    const freshSave = saveButton.cloneNode(true) as HTMLElement;
+    saveButton.replaceWith(freshSave);
+    freshSave.addEventListener('click', async () => {
+      await this.gtfsParser!.setPassthroughContent(fileName, textarea.value);
+      if (status) {
+        status.textContent = `Saved ${fileName}`;
+      }
+    });
+
+    console.log('[Editor] opened passthrough file as raw text:', fileName);
   }
 
   async closeEditor(): Promise<void> {
