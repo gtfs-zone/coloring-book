@@ -176,4 +176,53 @@ export class TimeFormatter {
 
     return `${newHours.toString().padStart(2, '0')}:${newMins.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
   }
+
+  /**
+   * Seconds since noon minus twelve hours, i.e. the GTFS time scale.
+   *
+   * Hours above 23 are legal and must not wrap: '25:10:00' is a real end_time
+   * for a band running past midnight, and it has to compare greater than
+   * '23:50:00'. Returns null rather than 0 on an unparseable or empty value, so
+   * a blank time never compares equal to midnight.
+   *
+   * @param time - Time string in HH:MM:SS or HH:MM format
+   * @returns Total seconds, or null when the value cannot be parsed
+   * @example
+   * timeToSeconds('25:10:00') -> 90600
+   * timeToSeconds('') -> null
+   */
+  static timeToSeconds(time: string | null | undefined): number | null {
+    if (!time) {
+      return null;
+    }
+
+    const match = /^(\d{1,3}):([0-5]\d)(?::([0-5]\d))?$/.exec(time.trim());
+    if (!match) {
+      return null;
+    }
+
+    const hours = parseInt(match[1], 10);
+    const minutes = parseInt(match[2], 10);
+    const seconds = match[3] ? parseInt(match[3], 10) : 0;
+
+    return hours * 3600 + minutes * 60 + seconds;
+  }
+
+  /**
+   * Inverse of timeToSeconds. Hours are not wrapped at 24, so a value past
+   * midnight round-trips as the 24+ form GTFS expects.
+   *
+   * @param seconds - Total seconds since the service day start
+   * @returns Time string in HH:MM:SS format
+   * @example
+   * secondsToTime(90600) -> '25:10:00'
+   */
+  static secondsToTime(seconds: number): string {
+    const whole = Math.max(0, Math.floor(seconds));
+    const hours = Math.floor(whole / 3600);
+    const minutes = Math.floor((whole % 3600) / 60);
+    const secs = whole % 60;
+
+    return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  }
 }
