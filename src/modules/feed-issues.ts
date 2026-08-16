@@ -74,6 +74,9 @@ const CODE_LABELS: Record<string, string> = {
   MISSING_CALENDAR_FILE: 'missing calendar file',
   MISSING_COORDS_INHERITED: 'inheriting coordinates from a parent',
   UNCLEAN_VALUE: 'with hidden whitespace in a value',
+  DUPLICATE_KEY: 'sharing a primary key with another row',
+  FREQUENCY_OVERLAP: 'with overlapping headway periods',
+  FREQUENCY_END_AMBIGUOUS: 'whose end_time lands on a departure',
 };
 
 // Wording worth spelling out per group, keyed by `${file}:${code}:${field}`.
@@ -198,6 +201,14 @@ function buildIssueItem(entity: ValidationEntity, index: RowIndex): IssueItem {
     data['issue-id'] = String(row[page.idField]);
   } else if (entity.file === 'trips.txt' && row) {
     Object.assign(data, timetableNavData(row));
+  } else if (entity.file === 'frequencies.txt' && row) {
+    // A headway period is edited in the timetable band of its trip's
+    // timetable, so it navigates by the trip's route and service. A period
+    // whose trip does not exist stays a plain item: there is nothing to open.
+    const trip = index.get('trips.txt', String(row.trip_id ?? ''));
+    if (trip) {
+      Object.assign(data, timetableNavData(trip));
+    }
   }
 
   return {

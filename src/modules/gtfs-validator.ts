@@ -21,6 +21,12 @@ import {
   validateFlexStopTimeRow,
   validateLocationGroupId,
 } from '../utils/flex-rules.js';
+import {
+  frequencyEndIsAmbiguous,
+  frequencyPeriodKey,
+  frequencyRowProblem,
+} from '../utils/frequency-rules.js';
+import { TimeFormatter } from '../utils/time-formatter.js';
 
 /** The offending row, so a message can be traced back to an editable object. */
 export interface ValidationEntity {
@@ -126,6 +132,7 @@ export class GTFSValidator {
     this.validateStopAreas();
     this.validateFlexLocations();
     this.validateTransfers();
+    this.validateFrequencies();
     this.validateConditionalPresence();
     this.validateRiderCategoryDefaults();
     this.validateForeignKeys();
@@ -1091,6 +1098,117 @@ export class GTFSValidator {
           'CONDITIONAL_PRESENCE',
           GTFS_TABLES.TRANSFERS,
           index + 1
+        );
+      }
+    });
+  }
+
+  /**
+   * Headway periods, judged by the same rules the timetable band enforces on
+   * an edit, so a problem that arrived in the feed shows up on load rather
+   * than when someone happens to click the cell.
+   *
+   * Deliberately not part of validateConditionalPresence, whose checks are all
+   * `(row) => string | null`: an overlap can only be judged against the trip's
+   * other periods.
+   *
+   * A dangling trip_id is left alone here: validateForeignKeys already sweeps
+   * frequencies.txt's foreign key declaration, and a second check would group
+   * the same problem twice in the Issues panel.
+   */
+  validateFrequencies() {
+    const rows = this.gtfsParser.getFileDataSyncTyped(
+      GTFS_TABLES.FREQUENCIES
+    ) as Record<string, unknown>[];
+    if (rows.length === 0) {
+      return;
+    }
+
+    // Duplicate keys are counted over this flat array because the virtual
+    // table's byId index has already collapsed them, last row winning.
+    const keyCounts = new Map<string, number>();
+    for (const row of rows) {
+      const key = frequencyPeriodKey(row);
+      keyCounts.set(key, (keyCounts.get(key) ?? 0) + 1);
+    }
+
+    // Periods per trip, earliest first. Duplicates are left out: two rows on
+    // one key would otherwise report as overlapping each other, which sends
+    // the user looking for the wrong problem.
+    const byTrip = new Map<string, Record<string, unknown>[]>();
+    for (const row of rows) {
+      const trip_id = String(row.trip_id ?? '').trim();
+      if (trip_id === '' || (keyCounts.get(frequencyPeriodKey(row)) ?? 0) > 1) {
+        continue;
+      }
+      byTrip.set(trip_id, [...(byTrip.get(trip_id) ?? []), row]);
+    }
+    // An unparseable start_time sorts last rather than as 0, or a garbage row
+    // would appear to overlap everything and bury the real errors.
+    const startOf = (row: Record<string, unknown>): number =>
+      TimeFormatter.timeToSeconds(String(row.start_time ?? '').trim()) ??
+      Number.MAX_SAFE_INTEGER;
+    for (const group of byTrip.values()) {
+      group.sort((a, b) => startOf(a) - startOf(b));
+    }
+
+    rows.forEach((row, index) => {
+      const line = index + 1;
+      const id = frequencyPeriodKey(row);
+      const at = (field: string): ValidationEntity => ({
+        file: GTFS_TABLES.FREQUENCIES,
+        id,
+        field,
+        value: String(row[field] ?? ''),
+      });
+
+      if ((keyCounts.get(id) ?? 0) > 1) {
+        this.addError(
+          `Row ${line}: trip_id '${String(row.trip_id ?? '')}' has more than one headway period starting at '${String(row.start_time ?? '')}'. Only one of them is reachable in the timetable, so the duplicate has to be removed in the file.`,
+          'DUPLICATE_KEY',
+          GTFS_TABLES.FREQUENCIES,
+          line,
+          at('start_time')
+        );
+      }
+
+      const problem = frequencyRowProblem(row);
+      if (problem) {
+        this.addError(
+          `Row ${line}: ${problem.message}`,
+          'CONDITIONAL_PRESENCE',
+          GTFS_TABLES.FREQUENCIES,
+          line,
+          at(problem.field)
+        );
+        return;
+      }
+
+      // An overlapping pair is reported once, blaming the later-starting
+      // period, so one problem reads as one row in the panel. The siblings are
+      // therefore this trip's earlier periods only.
+      const group = byTrip.get(String(row.trip_id ?? '').trim()) ?? [];
+      const position = group.indexOf(row);
+      if (position > 0) {
+        const overlap = frequencyRowProblem(row, group.slice(0, position));
+        if (overlap?.kind === 'overlap') {
+          this.addError(
+            `Row ${line}: ${overlap.message}`,
+            'FREQUENCY_OVERLAP',
+            GTFS_TABLES.FREQUENCIES,
+            line,
+            at(overlap.field)
+          );
+        }
+      }
+
+      if (frequencyEndIsAmbiguous(row)) {
+        this.addWarning(
+          `Row ${line}: end_time '${String(row.end_time ?? '')}' lands exactly on a departure of this exact_times=1 period, so whether that last trip runs is ambiguous. end_time should fall between the last departure and the one after it.`,
+          'FREQUENCY_END_AMBIGUOUS',
+          GTFS_TABLES.FREQUENCIES,
+          line,
+          at('end_time')
         );
       }
     });

@@ -27,6 +27,21 @@ export function frequencyPeriodKey(row: Record<string, unknown>): string {
 }
 
 /**
+ * One violation, with the field it blames and whether it is a property of the
+ * row alone or of the row against its siblings. The feed validator needs both
+ * to pick an issue code and to make the Issues panel entry clickable; the
+ * timetable's commit gate only needs the message.
+ */
+export interface FrequencyProblem {
+  /** The field the rule blames, for the issue entity. */
+  field: string;
+  /** The violation, phrased as a statement about the row. */
+  message: string;
+  /** 'overlap' only for the sibling check; every other rule is 'row'. */
+  kind: 'row' | 'overlap';
+}
+
+/**
  * Required fields, value formats, ordering, and overlap against the trip's
  * other periods.
  *
@@ -34,47 +49,59 @@ export function frequencyPeriodKey(row: Record<string, unknown>): string {
  * @param siblings - The same trip's other periods, excluding this one
  * @returns The first violation, or null when the row is acceptable
  */
-export function validateFrequencyRow(
+export function frequencyRowProblem(
   row: Record<string, unknown>,
   siblings: Record<string, unknown>[] = []
-): string | null {
+): FrequencyProblem | null {
+  const problem = (
+    field: string,
+    message: string,
+    kind: 'row' | 'overlap' = 'row'
+  ): FrequencyProblem => ({ field, message, kind });
+
   const trip_id = cell(row, 'trip_id');
   if (trip_id === '') {
-    return 'trip_id is required';
+    return problem('trip_id', 'trip_id is required');
   }
 
   const start = cell(row, 'start_time');
   if (start === '') {
-    return 'start_time is required';
+    return problem('start_time', 'start_time is required');
   }
   const end = cell(row, 'end_time');
   if (end === '') {
-    return 'end_time is required';
+    return problem('end_time', 'end_time is required');
   }
 
   const startSecs = TimeFormatter.timeToSeconds(start);
   if (startSecs === null) {
-    return `start_time '${start}' is not a valid time`;
+    return problem('start_time', `start_time '${start}' is not a valid time`);
   }
   const endSecs = TimeFormatter.timeToSeconds(end);
   if (endSecs === null) {
-    return `end_time '${end}' is not a valid time`;
+    return problem('end_time', `end_time '${end}' is not a valid time`);
   }
   if (endSecs <= startSecs) {
-    return 'end_time must be later than start_time';
+    return problem('end_time', 'end_time must be later than start_time');
   }
 
   const headway = cell(row, 'headway_secs');
   if (headway === '') {
-    return 'headway_secs is required';
+    return problem('headway_secs', 'headway_secs is required');
   }
   if (!/^\d+$/.test(headway) || parseInt(headway, 10) <= 0) {
-    return `headway_secs '${headway}' must be a positive whole number of seconds`;
+    return problem(
+      'headway_secs',
+      `headway_secs '${headway}' must be a positive whole number of seconds`
+    );
   }
 
   const exact_times = cell(row, 'exact_times');
   if (exact_times !== '' && exact_times !== '0' && exact_times !== '1') {
-    return `exact_times '${exact_times}' must be 0, 1 or empty`;
+    return problem(
+      'exact_times',
+      `exact_times '${exact_times}' must be 0, 1 or empty`
+    );
   }
 
   // Intervals are half-open: "New headways may start at the exact time the
@@ -89,11 +116,45 @@ export function validateFrequencyRow(
       continue;
     }
     if (startSecs < siblingEnd && siblingStart < endSecs) {
-      return `headway period ${start}-${end} overlaps ${cell(sibling, 'start_time')}-${cell(sibling, 'end_time')} on the same trip`;
+      return problem(
+        'start_time',
+        `headway period ${start}-${end} overlaps ${cell(sibling, 'start_time')}-${cell(sibling, 'end_time')} on the same trip`,
+        'overlap'
+      );
     }
   }
 
   return null;
+}
+
+/** The first violation as a message, or null. The commit gate's form. */
+export function validateFrequencyRow(
+  row: Record<string, unknown>,
+  siblings: Record<string, unknown>[] = []
+): string | null {
+  return frequencyRowProblem(row, siblings)?.message ?? null;
+}
+
+/**
+ * Whether an `exact_times=1` period's end_time lands exactly on a departure.
+ *
+ * The spec puts the last trip's start_time strictly below end_time, so a period
+ * whose span divides evenly by the headway is ambiguous about whether that last
+ * departure runs. Returns false for any row that does not parse: that is the
+ * row check's problem, not this one's.
+ */
+export function frequencyEndIsAmbiguous(row: Record<string, unknown>): boolean {
+  if (cell(row, 'exact_times') !== '1') {
+    return false;
+  }
+  const startSecs = TimeFormatter.timeToSeconds(cell(row, 'start_time'));
+  const endSecs = TimeFormatter.timeToSeconds(cell(row, 'end_time'));
+  const headway = cell(row, 'headway_secs');
+  if (startSecs === null || endSecs === null || !/^\d+$/.test(headway)) {
+    return false;
+  }
+  const secs = parseInt(headway, 10);
+  return secs > 0 && (endSecs - startSecs) % secs === 0;
 }
 
 /**
