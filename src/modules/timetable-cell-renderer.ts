@@ -29,6 +29,7 @@ export class TimetableCellRenderer {
    * @param departure_time - Departure time string or null
    * @param editableStopTime - Optional editable stop time data (supplies stop_sequence)
    * @param isPendingRow - Row is the not-yet-saved add-stop preview
+   * @param isPendingFlex - The pending row references a zone or location group
    * @returns HTML string for the complete time cell
    */
   public renderStackedArrivalDepartureCell(
@@ -38,14 +39,16 @@ export class TimetableCellRenderer {
     arrival_time: string | null,
     departure_time: string | null,
     editableStopTime?: EditableStopTime,
-    isPendingRow = false
+    isPendingRow = false,
+    isPendingFlex = false
   ): string {
-    if (editableStopTime?.isFlex) {
+    if (editableStopTime?.isFlex || isPendingFlex) {
       return this.renderFlexWindowCell(
         trip_id,
         stop_id,
         stopIndex,
-        editableStopTime
+        editableStopTime ?? null,
+        isPendingFlex
       );
     }
 
@@ -99,14 +102,20 @@ export class TimetableCellRenderer {
    * window fields instead of arrival/departure. It must never take the
    * `no-time` (skipped) path: a flex row legitimately has no arrival or
    * departure and is not a skipped stop.
+   *
+   * The pending row (a zone or location group picked from "Add stop or zone"
+   * but not yet written) has no stop_time behind it: it renders the same two
+   * empty window spans with `data-pending="true"`, which is what routes the
+   * first typed value to the insert path instead of an update.
    */
   private renderFlexWindowCell(
     trip_id: string,
     stop_id: string,
     stopIndex: number,
-    editableStopTime: EditableStopTime
+    editableStopTime: EditableStopTime | null,
+    isPendingRow: boolean
   ): string {
-    const stopSequence = editableStopTime.stop_sequence;
+    const stopSequence = editableStopTime?.stop_sequence ?? '';
 
     const renderSpan = (
       timeType: 'window-start' | 'window-end',
@@ -123,7 +132,7 @@ export class TimetableCellRenderer {
           data-stop-index="${stopIndex}"
           data-time-type="${timeType}"
           data-stop-sequence="${escapeHtml(stopSequence)}"
-          data-pending="false"
+          data-pending="${isPendingRow}"
           title="${timeType === 'window-start' ? 'Window start' : 'Window end'}"
         >${display || '--:--:--'}</span>
       `;
@@ -142,8 +151,8 @@ export class TimetableCellRenderer {
            >${label} ${escapeHtml(rule)}</button>`
         : '';
     const badges = [
-      badge('PU', editableStopTime.pickup_booking_rule_id),
-      badge('DO', editableStopTime.drop_off_booking_rule_id),
+      badge('PU', editableStopTime?.pickup_booking_rule_id ?? null),
+      badge('DO', editableStopTime?.drop_off_booking_rule_id ?? null),
     ].filter((html) => html !== '');
     const badgesHtml =
       badges.length > 0
@@ -153,8 +162,8 @@ export class TimetableCellRenderer {
     return `
       <td class="time-cell flex-window-cell p-2 text-center">
         <div class="stacked-time-container space-y-1">
-          ${renderSpan('window-start', editableStopTime.start_pickup_drop_off_window)}
-          ${renderSpan('window-end', editableStopTime.end_pickup_drop_off_window)}
+          ${renderSpan('window-start', editableStopTime?.start_pickup_drop_off_window ?? null)}
+          ${renderSpan('window-end', editableStopTime?.end_pickup_drop_off_window ?? null)}
         </div>
         ${badgesHtml}
       </td>
