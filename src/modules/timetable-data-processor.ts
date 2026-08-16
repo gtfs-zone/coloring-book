@@ -13,6 +13,8 @@ import {
   Trips,
 } from '../types/gtfs-entities.js';
 import { CalendarSchema } from '../types/gtfs.js';
+import type { StopTimeRef } from '../types/gtfs-flex.js';
+import { stopTimeRef } from '../types/gtfs-flex.js';
 import type { GTFSParser } from './gtfs-parser.js';
 import { GTFSRouteSource } from './gtfs-route-source.js';
 import type { RouteSourceTrip } from './route-source.js';
@@ -29,7 +31,10 @@ import { routeGraph, RouteGraph } from './route-graph.js';
  * Contains both current and original time values for change tracking
  */
 export interface EditableStopTime {
-  stop_id: string;
+  /** The row's reference: a stop, or a flex location group / zone. */
+  ref: StopTimeRef;
+  /** Set only when `ref.kind === 'stop'`, for the edit path. */
+  stop_id?: string;
   stop_sequence: string;
   arrival_time: string | null;
   departure_time: string | null;
@@ -212,12 +217,21 @@ export class TimetableDataProcessor {
     const sequence = routeSequence(source, route_id, directionId, service_id);
     const graph = routeGraph(sequence);
 
-    // Get stop details for the canonical stop order
+    // Get row details for the canonical order. Flex rows reference a location
+    // group or an on-demand zone instead of a stop, and have no stops.txt row,
+    // so they get a synthetic one carrying the resolved name. The array stays
+    // parallel to sequence.stops, which is what every renderer indexes by.
     const stops: Stops[] = (await Promise.all(
-      sequence.stops.map(async ({ stop_id }) => {
-        const stop = await this.relationships.getStopByIdAsync(stop_id);
+      sequence.stops.map(async ({ ref }) => {
+        if (ref.kind !== 'stop') {
+          return {
+            stop_id: ref.id,
+            stop_name: source.refName(ref) ?? ref.id,
+          };
+        }
+        const stop = await this.relationships.getStopByIdAsync(ref.id);
         if (!stop) {
-          const error = `Stop ${stop_id} not found in stops.txt but referenced in stop_times.txt`;
+          const error = `Stop ${ref.id} not found in stops.txt but referenced in stop_times.txt`;
           console.error('GTFS Data Integrity Error:', error);
           throw new Error(error);
         }
@@ -302,9 +316,18 @@ export class TimetableDataProcessor {
         const departure_time = st.departure_time;
         const displayTime = departure_time || arrival_time;
 
+        // A row referencing none or several of stop_id/location_group_id/
+        // location_id is a feed error, already warned about by stopTimeRef. It
+        // has no strip position by construction, so skip it rather than
+        // taking down the whole route page.
+        const ref = stopTimeRef(st);
+        if (!ref) {
+          return;
+        }
+
         const position = sequence.positionOf(trip.trip_id, inputPosition);
         if (position === null) {
-          const errorMsg = `CRITICAL ERROR: no strip position for trip ${trip.trip_id} at stop_times index ${inputPosition} (stop_id ${st.stop_id}). Every pattern is included by routeSequence, so this should be unreachable.`;
+          const errorMsg = `CRITICAL ERROR: no strip position for trip ${trip.trip_id} at stop_times index ${inputPosition} (${ref.kind} ${ref.id}). Every pattern is included by routeSequence, so this should be unreachable.`;
           console.error(errorMsg);
           throw new Error(errorMsg);
         }
@@ -323,7 +346,8 @@ export class TimetableDataProcessor {
         // root - that's what keeps station collapse safe to edit.
         if (arrival_time || departure_time) {
           editableStopTimes.set(position, {
-            stop_id: st.stop_id,
+            ref,
+            stop_id: ref.kind === 'stop' ? ref.id : undefined,
             stop_sequence: String(st.stop_sequence),
             arrival_time: arrival_time,
             departure_time: departure_time,

@@ -5,7 +5,9 @@ import type {
   RouteSourceStopTime,
 } from './route-source.js';
 import { GTFS_TABLES } from '../types/gtfs.js';
-import type { Stops } from '../types/gtfs-entities.js';
+import type { LocationGroups, Stops } from '../types/gtfs-entities.js';
+import type { StopTimeRef } from '../types/gtfs-flex.js';
+import { stopTimeRef } from '../types/gtfs-flex.js';
 
 interface StopIndexEntry {
   parent?: string;
@@ -22,6 +24,8 @@ interface StopIndexEntry {
  */
 export class GTFSRouteSource implements RouteSource {
   private stopIndex: Map<string, StopIndexEntry> | null = null;
+  private locationGroupIndex: Map<string, string> | null = null;
+  private zoneIndex: Map<string, string> | null = null;
   private sortedStopTimes = new Map<string, RouteSourceStopTime[]>();
 
   constructor(private readonly gtfsParser: GTFSParser) {}
@@ -49,7 +53,7 @@ export class GTFSRouteSource implements RouteSource {
     const sorted = this.gtfsParser
       .getStopTimesByTripId(trip_id)
       .map((st) => ({
-        stop_id: String(st.stop_id),
+        ref: stopTimeRef(st),
         stop_sequence: Number(st.stop_sequence),
       }))
       .sort((a, b) => a.stop_sequence - b.stop_sequence);
@@ -82,6 +86,24 @@ export class GTFSRouteSource implements RouteSource {
     return this.getStopIndex().get(stop_id)?.name;
   }
 
+  locationGroupName(location_group_id: string): string | undefined {
+    return this.getLocationGroupIndex().get(location_group_id);
+  }
+
+  zoneName(location_id: string): string | undefined {
+    return this.getZoneIndex().get(location_id);
+  }
+
+  refName(ref: StopTimeRef): string | undefined {
+    if (ref.kind === 'stop') {
+      return this.stopName(ref.id);
+    }
+    if (ref.kind === 'location_group') {
+      return this.locationGroupName(ref.id);
+    }
+    return this.zoneName(ref.id);
+  }
+
   private getStopIndex(): Map<string, StopIndexEntry> {
     if (this.stopIndex) {
       return this.stopIndex;
@@ -96,6 +118,53 @@ export class GTFSRouteSource implements RouteSource {
       });
     }
     this.stopIndex = index;
+    return index;
+  }
+
+  private getLocationGroupIndex(): Map<string, string> {
+    if (this.locationGroupIndex) {
+      return this.locationGroupIndex;
+    }
+    const index = new Map<string, string>();
+    for (const group of this.gtfsParser.getFileDataSyncTyped<LocationGroups>(
+      GTFS_TABLES.LOCATION_GROUPS
+    )) {
+      const id = String(group.location_group_id ?? '');
+      if (!id) {
+        continue;
+      }
+      if (group.location_group_name) {
+        index.set(id, String(group.location_group_name));
+      }
+    }
+    this.locationGroupIndex = index;
+    return index;
+  }
+
+  /**
+   * Zone names off locations.geojson, which is stored as a single row holding
+   * the whole FeatureCollection rather than one row per feature.
+   */
+  private getZoneIndex(): Map<string, string> {
+    if (this.zoneIndex) {
+      return this.zoneIndex;
+    }
+    const index = new Map<string, string>();
+    const rows = this.gtfsParser.getFileDataSync(GTFS_TABLES.LOCATIONS_GEOJSON);
+    const collection = rows[0] as
+      | { features?: Array<Record<string, unknown>> }
+      | undefined;
+    for (const feature of collection?.features ?? []) {
+      const id = feature.id !== undefined ? String(feature.id) : '';
+      if (!id) {
+        continue;
+      }
+      const properties = (feature.properties ?? {}) as Record<string, unknown>;
+      if (properties.stop_name) {
+        index.set(id, String(properties.stop_name));
+      }
+    }
+    this.zoneIndex = index;
     return index;
   }
 }

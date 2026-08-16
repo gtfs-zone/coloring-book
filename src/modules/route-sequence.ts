@@ -32,11 +32,16 @@
  */
 
 import type { RouteSource, RouteSourceTrip } from './route-source.js';
+import type { StopTimeRef } from '../types/gtfs-flex.js';
 import { shortestCommonSupersequence } from './scs.js';
 
-/** A stop id together with which visit it is, within a single trip. */
+/**
+ * One stop_time reference together with which visit it is, within a single
+ * trip. The reference is a stop on a scheduled row, or a location group or
+ * on-demand zone on a flex row.
+ */
 export interface StripStop {
-  stop_id: string;
+  ref: StopTimeRef;
   /** 0 for the first visit; >0 only on loop routes. */
   occurrence: number;
 }
@@ -95,9 +100,13 @@ export interface DirectionInfo {
   tripCount: number;
 }
 
-/** `stop_id` plus visit index, so a loop's second visit is its own element. */
+/**
+ * Reference plus visit index, so a loop's second visit is its own element.
+ * The kind prefix keeps a location group from colliding with a stop that
+ * happens to share its id.
+ */
 function elementKey(stop: StripStop): string {
-  return `${stop.stop_id} ${stop.occurrence}`;
+  return `${stop.ref.kind}:${stop.ref.id} ${stop.occurrence}`;
 }
 
 /**
@@ -113,7 +122,12 @@ function elementKey(stop: StripStop): string {
  *
  * `stopTimesForTrip` is already sorted by `stop_sequence` (route-source), so
  * this is a straight walk. `indexOfStop[i]` is the element the trip's i-th
- * stop time lands on — the identity unless a collapse merged something.
+ * stop time lands on — the identity unless a collapse merged something, or -1
+ * when the row references nothing usable.
+ *
+ * Collapsing and station roots apply to stop references only. Two consecutive
+ * stop_times on the same location group or zone mean travel *within* it, which
+ * is a legal flex shape and must stay two rows.
  */
 function tripStops(
   source: RouteSource,
@@ -128,16 +142,29 @@ function tripStops(
   const indexOfStop: number[] = [];
   const seen = new Map<string, number>();
   for (const time of times) {
-    const stop_id = source.stationRoot(time.stop_id);
+    if (!time.ref) {
+      indexOfStop.push(-1);
+      continue;
+    }
+    const ref: StopTimeRef =
+      time.ref.kind === 'stop'
+        ? { kind: 'stop', id: source.stationRoot(time.ref.id) }
+        : time.ref;
     const last = elements[elements.length - 1];
-    if (last && last.stop_id === stop_id) {
+    if (
+      ref.kind === 'stop' &&
+      last &&
+      last.ref.kind === 'stop' &&
+      last.ref.id === ref.id
+    ) {
       indexOfStop.push(elements.length - 1);
       continue;
     }
-    const occurrence = seen.get(stop_id) ?? 0;
-    seen.set(stop_id, occurrence + 1);
+    const seenKey = `${ref.kind}:${ref.id}`;
+    const occurrence = seen.get(seenKey) ?? 0;
+    seen.set(seenKey, occurrence + 1);
     indexOfStop.push(elements.length);
-    elements.push({ stop_id, occurrence });
+    elements.push({ ref, occurrence });
   }
   return { elements, indexOfStop };
 }
@@ -314,10 +341,16 @@ function topoOrder(
     : { order: [], cyclic: true };
 }
 
+/** Inverse of `elementKey`. */
 function parseElement(key: string): StripStop {
   const sep = key.lastIndexOf(' ');
+  const refPart = key.slice(0, sep);
+  const kindEnd = refPart.indexOf(':');
   return {
-    stop_id: key.slice(0, sep),
+    ref: {
+      kind: refPart.slice(0, kindEnd) as StopTimeRef['kind'],
+      id: refPart.slice(kindEnd + 1),
+    },
     occurrence: Number(key.slice(sep + 1)),
   };
 }
@@ -354,7 +387,7 @@ function directionLabel(
     ? tripStops(source, trips[0].trip_id).elements
     : [];
   const terminal = firstTripStops[firstTripStops.length - 1];
-  const terminalName = terminal ? source.stopName(terminal.stop_id) : undefined;
+  const terminalName = terminal ? source.refName(terminal.ref) : undefined;
   if (terminalName) {
     return terminalName;
   }
