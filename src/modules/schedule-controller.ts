@@ -46,6 +46,20 @@ interface TimeCellKey {
   timeType: string;
 }
 
+type FlexWindowField =
+  | 'start_pickup_drop_off_window'
+  | 'end_pickup_drop_off_window';
+
+/**
+ * The `data-time-type` values an on-demand cell uses, and the stop_times field
+ * each one edits. A flex cell reuses the `.time-span` shape (so grid
+ * navigation keeps working) and is told apart only by this mapping.
+ */
+const WINDOW_FIELDS: Record<string, FlexWindowField | undefined> = {
+  'window-start': 'start_pickup_drop_off_window',
+  'window-end': 'end_pickup_drop_off_window',
+};
+
 // Enhanced GTFS interfaces using standard GTFS property names
 
 interface EnhancedTrip {
@@ -367,6 +381,11 @@ export class ScheduleController {
   /** Clear the time on a selected cell, recording a patch like any other edit. */
   private clearTimeCell(span: HTMLElement): void {
     const { tripId, stopId, timeType, stopSequence, pending } = span.dataset;
+    const windowField = WINDOW_FIELDS[timeType ?? ''];
+    if (windowField && tripId) {
+      void this.updateFlexWindow(tripId, stopSequence, windowField, '');
+      return;
+    }
     if (
       !tripId ||
       !stopId ||
@@ -453,10 +472,11 @@ export class ScheduleController {
   ): void {
     const { tripId, stopId, stopIndex, timeType, stopSequence, pending } =
       span.dataset;
+    const windowField = WINDOW_FIELDS[timeType ?? ''];
     if (
       !tripId ||
       !stopId ||
-      (timeType !== 'arrival' && timeType !== 'departure')
+      (!windowField && timeType !== 'arrival' && timeType !== 'departure')
     ) {
       return;
     }
@@ -467,7 +487,7 @@ export class ScheduleController {
     this.editingCell = {
       tripId,
       stopIndex: stopIndex ?? '',
-      timeType,
+      timeType: timeType as string,
     };
     // The edited cell is also the selected one, so closing the editor leaves
     // the roving tabindex where the user actually is.
@@ -479,13 +499,19 @@ export class ScheduleController {
       selectionStart: seed?.caret,
       className: 'time-input-live w-20 text-center font-mono',
       placeholder: '--:--:--',
-      title: 'Enter a time, e.g. 9:30 or 09:30:00',
+      title: windowField
+        ? 'Enter a pickup/drop-off window time, e.g. 9:30 or 09:30:00'
+        : 'Enter a time, e.g. 9:30 or 09:30:00',
       arrowNavigation: true,
       onCommit: (value) => {
+        if (windowField) {
+          void this.updateFlexWindow(tripId, stopSequence, windowField, value);
+          return;
+        }
         void this.updateArrivalDepartureTime(
           tripId,
           stopId,
-          timeType,
+          timeType as 'arrival' | 'departure',
           value,
           stopSequence,
           pending === 'true'
@@ -1048,6 +1074,99 @@ export class ScheduleController {
     } catch (error) {
       console.error('Failed to update arrival/departure time:', error);
       this.showTimeError(trip_id, stop_id, 'Failed to save time change');
+    }
+  }
+
+  /**
+   * Update one end of a stop_time's pickup/drop-off window.
+   *
+   * A flex row is addressed by trip_id + stop_sequence, not stop_id: it has no
+   * stop_id at all when it references a location group or zone. It also never
+   * inserts - a window belongs to an existing on-demand stop_time, and creating
+   * one is the On-Demand modal's job, not the timetable grid's.
+   *
+   * @param trip_id - GTFS trip identifier
+   * @param stopSequence - stop_sequence of the edited row
+   * @param field - Which end of the window to write
+   * @param newTime - New time value or empty string to clear
+   */
+  public async updateFlexWindow(
+    trip_id: string,
+    stopSequence: string | undefined,
+    field: FlexWindowField,
+    newTime: string
+  ): Promise<void> {
+    if (!stopSequence) {
+      console.warn(
+        `[ScheduleController] flex window edit for ${trip_id} has no stop_sequence`
+      );
+      return;
+    }
+
+    const row = this.gtfsParser
+      .getStopTimesByTripId(trip_id)
+      .find((st) => String(st.stop_sequence) === stopSequence);
+    if (!row) {
+      console.warn(
+        `[ScheduleController] no stop_time for ${trip_id} at stop_sequence ${stopSequence}`
+      );
+      return;
+    }
+
+    const rowId = String(
+      row.location_group_id ?? row.location_id ?? row.stop_id ?? ''
+    );
+    const isClear = !newTime.trim();
+    const casted = isClear ? '' : TimeFormatter.castTimeToHHMMSS(newTime);
+    const current = String(row[field] ?? '');
+    if (current === casted) {
+      return;
+    }
+
+    // Same string comparison the arrival/departure constraint uses: GTFS times
+    // are zero-padded HH:MM:SS, so lexical order is chronological order.
+    const other = String(
+      row[
+        field === 'start_pickup_drop_off_window'
+          ? 'end_pickup_drop_off_window'
+          : 'start_pickup_drop_off_window'
+      ] ?? ''
+    );
+    if (casted && other) {
+      const invalid =
+        field === 'start_pickup_drop_off_window'
+          ? casted > other
+          : casted < other;
+      if (invalid) {
+        this.showTimeError(
+          trip_id,
+          rowId,
+          'Window start must be before or equal to window end'
+        );
+        return;
+      }
+    }
+
+    try {
+      const key = generateCompositeKeyFromRecord(
+        'stop_times',
+        row as unknown as Record<string, unknown>
+      );
+      await patchUpdate(
+        this.gtfsParser.gtfsDatabase,
+        this.patchManager,
+        'stop_times',
+        key,
+        { [field]: current },
+        { [field]: casted }
+      );
+      const label = isClear
+        ? `Clear ${field} for ${trip_id}/${rowId}`
+        : `Set ${field} for ${trip_id}/${rowId} to ${casted}`;
+      console.log(`[ScheduleController] ${label}`);
+    } catch (error) {
+      console.error('Failed to update pickup/drop-off window:', error);
+      this.showTimeError(trip_id, rowId, 'Failed to save window change');
     }
   }
 
