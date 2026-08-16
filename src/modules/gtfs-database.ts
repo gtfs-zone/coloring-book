@@ -128,7 +128,7 @@ export interface GTFSDBSchema extends DBSchema {
     value: Shapes;
   };
   frequencies: {
-    key: string; // trip_id (frequencies can have multiple records per trip)
+    key: string; // Composite: trip_id + ":" + start_time
     value: Frequencies;
   };
   transfers: {
