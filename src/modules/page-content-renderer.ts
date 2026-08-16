@@ -65,6 +65,7 @@ import {
   attachServiceTimelineListeners,
   filterServiceDataMap,
   loadServiceData,
+  loadTripCounts,
   renderServiceTimeline,
   type ServiceTimelineSource,
 } from './service-timeline.js';
@@ -457,6 +458,7 @@ export class PageContentRenderer {
     // Every service in the feed, rendered as the shared timeline
     const serviceData = await loadServiceData(this.serviceTimelineSource());
     const serviceCount = serviceData.size;
+    const tripCounts = await loadTripCounts(this.serviceTimelineSource());
 
     const agencyItems = agencies
       .map((agency: unknown) => {
@@ -537,7 +539,7 @@ export class PageContentRenderer {
                 </div>`
               : `<div class="card bg-base-100 shadow-lg">
                   <div class="card-body p-4">
-                    ${renderServiceTimeline(serviceData)}
+                    ${renderServiceTimeline(serviceData, { tripCounts })}
                   </div>
                 </div>`
           }
@@ -718,6 +720,11 @@ export class PageContentRenderer {
       Object.keys(serviceGroups)
     );
 
+    // Trips of this route only, straight off the grouping above.
+    const routeTripCounts = new Map<string, number>(
+      Object.entries(serviceGroups).map(([sid, group]) => [sid, group.length])
+    );
+
     // Render timetables list
     const servicesListHTML = `
       <div class="space-y-4">
@@ -736,7 +743,7 @@ export class PageContentRenderer {
                     No timetables yet. Select a service above to create one.
                   </div>`
                   : `<div class="max-h-96 overflow-y-auto ${newServiceSelectorHTML ? 'mt-4' : ''}">
-                    ${renderServiceTimeline(routeServiceData, { route_id })}
+                    ${renderServiceTimeline(routeServiceData, { route_id, tripCounts: routeTripCounts })}
                   </div>`
             }
           </div>

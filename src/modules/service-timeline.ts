@@ -36,6 +36,8 @@ export interface ServiceTimelineOptions {
   /** Fixed route context: every row carries it, so a click can land on a
    * specific timetable rather than the service page. */
   route_id?: string;
+  /** service_id -> trip count. When present, rows gain a trip count column. */
+  tripCounts?: Map<string, number>;
 }
 
 const PALETTE: string[] = [
@@ -146,6 +148,34 @@ export async function loadServiceData(
   });
 
   return result;
+}
+
+/**
+ * Trip count per service, optionally scoped to a single route. One full scan of
+ * trips.txt, which is the same cost the pages already pay to render.
+ */
+export async function loadTripCounts(
+  db: ServiceTimelineSource,
+  route_id?: string
+): Promise<Map<string, number>> {
+  const trips = await db.getAllRows('trips');
+  return countTripsByService(trips, route_id);
+}
+
+/** Trip count per service over an already-loaded set of trips. */
+export function countTripsByService(
+  trips: Record<string, unknown>[],
+  route_id?: string
+): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const trip of trips) {
+    if (route_id !== undefined && String(trip.route_id) !== route_id) {
+      continue;
+    }
+    const sid = String(trip.service_id);
+    counts.set(sid, (counts.get(sid) ?? 0) + 1);
+  }
+  return counts;
 }
 
 /** Row color for a service no calendar row defines. */
@@ -405,6 +435,16 @@ export function renderServiceTimeline(
 
       const dotCell = `<td class="w-14 min-w-14 px-1 py-1 border-b border-base-300/30 text-xs">${renderTooltipTrigger(getDaysTooltip(sd.calendar), renderWeekdayDots(sd.calendar))}</td>`;
 
+      // A service with no trips is worth seeing, so an absent entry renders 0
+      // rather than a blank.
+      const tripCell = options.tripCounts
+        ? (() => {
+            const n = options.tripCounts!.get(sid) ?? 0;
+            const dim = n === 0 ? ' opacity-40' : '';
+            return `<td class="w-12 min-w-12 px-1 py-1 border-b border-base-300/30 text-right"><span class="font-mono tabular-nums text-base-content/70${dim}">${n}</span></td>`;
+          })()
+        : '';
+
       // Only needed where the row itself goes somewhere else: without a route
       // context the row already opens the service page.
       const editCell = options.route_id
@@ -413,7 +453,7 @@ export function renderServiceTimeline(
         </td>`
         : '';
 
-      return `<tr class="timeline-row cursor-pointer hover:bg-base-300/20" data-service-id="${escapeHtml(sid)}"${routeAttr}>${labelCell}${dotCell}${editCell}${cells}</tr>`;
+      return `<tr class="timeline-row cursor-pointer hover:bg-base-300/20" data-service-id="${escapeHtml(sid)}"${routeAttr}>${labelCell}${dotCell}${tripCell}${editCell}${cells}</tr>`;
     })
     .join('');
 
@@ -429,6 +469,10 @@ export function renderServiceTimeline(
     ? `<th class="w-8 min-w-8 border-b border-base-300"></th>`
     : '';
 
+  const tripHeader = options.tripCounts
+    ? `<th class="w-12 min-w-12 px-1 py-0.5 border-b border-base-300 text-right whitespace-nowrap"><span class="text-base-content/50 text-xs font-medium">Trips</span></th>`
+    : '';
+
   return `
     <div>
       ${hintHtml}
@@ -439,6 +483,7 @@ export function renderServiceTimeline(
             <tr>
               <th class="sticky left-0 z-10 bg-base-200 border-b border-base-300" style="width:${labelColPx}px;min-width:${labelColPx}px"></th>
               <th class="w-14 min-w-14 px-1 py-0.5 border-b border-base-300 text-center whitespace-nowrap"><span class="font-mono tracking-tight text-base-content/50 text-xs">SMTWTFS</span></th>
+              ${tripHeader}
               ${editHeader}
               ${headerHtml}
             </tr>

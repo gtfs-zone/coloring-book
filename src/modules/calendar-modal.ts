@@ -5,6 +5,7 @@ import {
   attachServiceTimelineListeners,
   isServiceActive,
   loadServiceData,
+  loadTripCounts,
   renderServiceTimeline,
   type ServiceData,
   type ServiceDataMap,
@@ -144,9 +145,10 @@ function renderMonthGrid(
 export async function showCalendarModal(
   deps: CalendarModalDeps
 ): Promise<void> {
-  const [data, feedInfoRows] = await Promise.all([
+  const [data, feedInfoRows, tripCounts] = await Promise.all([
     loadServiceData(deps.gtfsDatabase),
     deps.gtfsDatabase.getAllRows('feed_info'),
+    loadTripCounts(deps.gtfsDatabase),
   ]);
 
   const feedStart = feedInfoRows[0]?.feed_start_date;
@@ -169,7 +171,7 @@ export async function showCalendarModal(
     </div>
   `;
 
-  const timelineHtml = renderServiceTimeline(data);
+  const timelineHtml = renderServiceTimeline(data, { tripCounts });
 
   const body = `
     <div>
