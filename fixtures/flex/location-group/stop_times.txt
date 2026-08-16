@@ -1,0 +1,3 @@
+trip_id,arrival_time,departure_time,stop_id,location_group_id,stop_sequence,start_pickup_drop_off_window,end_pickup_drop_off_window,pickup_type,drop_off_type,pickup_booking_rule_id,drop_off_booking_rule_id
+dr3_weekday,,,,lg_downtown,1,07:00:00,19:00:00,2,1,realtime_app,
+dr3_weekday,,,,lg_downtown,2,07:00:00,19:00:00,1,2,,realtime_app

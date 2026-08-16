@@ -138,26 +138,64 @@ export class TimetableCellRenderer {
       `;
     };
 
-    // Booking rules are per stop_time, so the badges live on the cell rather
-    // than the row label. Clicking one opens the On-Demand modal on that rule;
+    const stopSequenceAttr = `data-trip-id="${escapeHtml(trip_id)}" data-stop-sequence="${escapeHtml(stopSequence)}"`;
+
+    // pickup_type / drop_off_type are what make a row a request-a-ride pickup
+    // rather than a no-boarding one, so they are editable in place. Clicking
+    // one opens a small enum menu restricted to the values a window allows;
     // schedule-controller delegates the click.
-    const badge = (label: string, rule: string | null): string =>
-      rule
-        ? `<button
+    const typeBadge = (
+      label: string,
+      field: 'pickup_type' | 'drop_off_type',
+      value: string | null
+    ): string => `<button
+           type="button"
+           class="flex-type-badge badge badge-xs badge-ghost font-mono cursor-pointer"
+           ${stopSequenceAttr}
+           data-field="${field}"
+           data-value="${escapeHtml(value ?? '')}"
+           title="${escapeHtml(`${field} for this row. Click to change.`)}"
+         >${label} ${escapeHtml(value ?? '-')}</button>`;
+
+    // Booking rules are per stop_time, so the badges live on the cell rather
+    // than the row label. Clicking a set rule opens the On-Demand modal on it;
+    // the separate assign button is what changes or clears it.
+    const ruleBadge = (
+      label: string,
+      field: 'pickup_booking_rule_id' | 'drop_off_booking_rule_id',
+      rule: string | null
+    ): string => {
+      const assign = `<button
+             type="button"
+             class="booking-rule-assign badge badge-xs badge-ghost badge-dash cursor-pointer"
+             ${stopSequenceAttr}
+             data-field="${field}"
+             data-value="${escapeHtml(rule ?? '')}"
+             title="${escapeHtml(`Assign the ${label === 'PU' ? 'pickup' : 'drop-off'} booking rule for this row.`)}"
+           >${label} ${rule ? 'rule...' : 'rule +'}</button>`;
+      if (!rule) {
+        return assign;
+      }
+      return `<button
              type="button"
              class="booking-rule-badge badge badge-xs badge-outline font-mono cursor-pointer"
              data-booking-rule-id="${escapeHtml(rule)}"
              title="${escapeHtml(`${label} booking rule ${rule}. Opens the On-Demand editor.`)}"
-           >${label} ${escapeHtml(rule)}</button>`
-        : '';
-    const badges = [
-      badge('PU', editableStopTime?.pickup_booking_rule_id ?? null),
-      badge('DO', editableStopTime?.drop_off_booking_rule_id ?? null),
-    ].filter((html) => html !== '');
-    const badgesHtml =
-      badges.length > 0
-        ? `<div class="flex flex-wrap justify-center gap-1 pt-1">${badges.join('')}</div>`
-        : '';
+           >${label} ${escapeHtml(rule)}</button>${assign}`;
+    };
+
+    // The pending row has no stop_time yet, so there is nothing to address a
+    // type or rule edit to: its badges appear once the first window is typed.
+    const badgesHtml = isPendingRow
+      ? ''
+      : `<div class="flex flex-wrap justify-center gap-1 pt-1">
+          ${typeBadge('PU', 'pickup_type', editableStopTime?.pickup_type ?? null)}
+          ${typeBadge('DO', 'drop_off_type', editableStopTime?.drop_off_type ?? null)}
+        </div>
+        <div class="flex flex-wrap justify-center gap-1 pt-1">
+          ${ruleBadge('PU', 'pickup_booking_rule_id', editableStopTime?.pickup_booking_rule_id ?? null)}
+          ${ruleBadge('DO', 'drop_off_booking_rule_id', editableStopTime?.drop_off_booking_rule_id ?? null)}
+        </div>`;
 
     return `
       <td class="time-cell flex-window-cell p-2 text-center">

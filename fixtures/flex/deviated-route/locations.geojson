@@ -1,0 +1,45 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "id": "dev_zone_south",
+      "properties": {
+        "stop_name": "South deviation corridor",
+        "stop_desc": "Up to 0.75 miles off Route 9 between the transit center and the hospital."
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [-93.6400, 41.5800],
+            [-93.5700, 41.5800],
+            [-93.5700, 41.6150],
+            [-93.6400, 41.6150],
+            [-93.6400, 41.5800]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "dev_zone_north",
+      "properties": {
+        "stop_name": "North deviation corridor",
+        "stop_desc": "Up to 0.75 miles off Route 9 between the hospital and the park and ride."
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [-93.5900, 41.6050],
+            [-93.5200, 41.6050],
+            [-93.5200, 41.6500],
+            [-93.5900, 41.6500],
+            [-93.5900, 41.6050]
+          ]
+        ]
+      }
+    }
+  ]
+}

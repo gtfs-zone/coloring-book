@@ -1,0 +1,4 @@
+location_group_id,stop_id
+lg_downtown,stop_a
+lg_downtown,stop_b
+lg_downtown,stop_c
