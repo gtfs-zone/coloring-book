@@ -1,19 +1,71 @@
 /**
  * Timetable Cell Renderer Module
- * Handles HTML generation for individual time cells
+ * Handles HTML generation for individual stop_time cells
  */
 
 import { TimeFormatter } from '../utils/time-formatter.js';
 import { EditableStopTime } from './timetable-data-processor.js';
 import type { StopTimeRef } from '../types/gtfs-flex.js';
 import { escapeHtml } from '../utils/escape-html.js';
+import { getEnumOptions } from '../types/gtfs-enums.js';
+import {
+  StopTimeFieldMode,
+  stopTimeFieldKind,
+  TIME_FIELDS,
+  WINDOW_FIELDS,
+} from './timetable-fields.js';
+
+/** Everything one cell needs to render its stack of sub-rows. */
+export interface StopTimeCellParams {
+  trip_id: string;
+  stop_id: string;
+  /** Position in the supersequence, the row's real key */
+  stopIndex: number;
+  /** The roster of visible fields, in spec order, for the whole table */
+  fields: readonly string[];
+  mode: StopTimeFieldMode;
+  /** The trip's stop_time at this row, when it has one */
+  editableStopTime?: EditableStopTime;
+  /** Row is the not-yet-saved add-stop preview */
+  isPendingRow: boolean;
+  /** The pending row references a zone or location group */
+  isPendingFlex: boolean;
+  /** What the whole row references, whether or not this trip serves it */
+  rowRef?: StopTimeRef;
+  /**
+   * The trip's first departure, set only on a frequency-based trip. Every time
+   * sub-row then carries its offset from it in the tooltip: in headway service
+   * the stored times are a template and only the offsets carry meaning.
+   */
+  frequencyOrigin: string | null;
+}
+
+/** The offset of `time` from the trip's first departure, as `+MM:SS`. */
+function offsetLabel(time: string, origin: string): string | null {
+  const at = TimeFormatter.timeToSeconds(time);
+  const from = TimeFormatter.timeToSeconds(origin);
+  if (at === null || from === null) {
+    return null;
+  }
+  const delta = at - from;
+  const sign = delta < 0 ? '-' : '+';
+  const abs = Math.abs(delta);
+  const mm = String(Math.floor(abs / 60)).padStart(2, '0');
+  const ss = String(abs % 60).padStart(2, '0');
+  return `${sign}${mm}:${ss} from first departure`;
+}
 
 /**
- * Timetable Cell Renderer - HTML generation for individual time cells
+ * Timetable Cell Renderer - HTML generation for individual stop_time cells
  *
- * Renders a stop/trip time cell as two plain `<span>`s (arrival, departure).
+ * A cell is a vertical stack of labeled sub-rows, one `<span class="time-span">`
+ * per visible stop_times field. The roster is the same for every cell in the
+ * table (see visibleStopTimeFields), which is what keeps the grid rectangular
+ * for keyboard navigation - the one exception is compact mode, where a windowed
+ * row swaps its two time sub-rows for the two window fields, keeping the count.
+ *
  * Editing is handled entirely by ScheduleController's delegated click handler,
- * which swaps a span for a live `<input>` on click - see installTimeCellEditor.
+ * which swaps a span for a live editor on click - see installTimetablePickers.
  *
  * Every span renders with `tabindex="-1"`. ScheduleController promotes exactly
  * one of them to `tabindex="0"` after each render (see applyTimetableSelection),
@@ -21,215 +73,183 @@ import { escapeHtml } from '../utils/escape-html.js';
  */
 export class TimetableCellRenderer {
   /**
-   * Render a stop/trip time cell as arrival and departure spans.
+   * Render one trip's cell at one row of the timetable.
    *
-   * @param trip_id - GTFS trip identifier
-   * @param stop_id - GTFS stop identifier
-   * @param stopIndex - Position in the supersequence, the row's real key
-   * @param arrival_time - Arrival time string or null
-   * @param departure_time - Departure time string or null
-   * @param editableStopTime - Optional editable stop time data (supplies stop_sequence)
-   * @param isPendingRow - Row is the not-yet-saved add-stop preview
-   * @param isPendingFlex - The pending row references a zone or location group
-   * @param rowRef - What the whole row references, whether or not this trip serves it
-   * @returns HTML string for the complete time cell
-   */
-  public renderStackedArrivalDepartureCell(
-    trip_id: string,
-    stop_id: string,
-    stopIndex: number,
-    arrival_time: string | null,
-    departure_time: string | null,
-    editableStopTime?: EditableStopTime,
-    isPendingRow = false,
-    isPendingFlex = false,
-    rowRef?: StopTimeRef
-  ): string {
-    // The row's ref decides the cell shape, not this trip's stop_time: a zone
-    // row is a zone row on every trip, including the trips that do not serve it.
-    // Routing on the saved stop_time instead is what used to render a zone's
-    // unserved cells as arrival/departure spans and let a keystroke write a
-    // stop_time with a zone id in stop_id.
-    const isFlexRow =
-      (rowRef !== undefined && rowRef.kind !== 'stop') ||
-      editableStopTime?.isFlex === true ||
-      isPendingFlex;
-    if (isFlexRow) {
-      return this.renderFlexWindowCell(
-        trip_id,
-        stop_id,
-        stopIndex,
-        editableStopTime ?? null,
-        isPendingRow,
-        rowRef ?? editableStopTime?.ref
-      );
-    }
-
-    const arrivalDisplay = arrival_time
-      ? TimeFormatter.formatTimeWithSeconds(arrival_time)
-      : '';
-    const departureDisplay = departure_time
-      ? TimeFormatter.formatTimeWithSeconds(departure_time)
-      : '';
-
-    const isSkipped = !arrival_time && !departure_time;
-    const cellClass = `time-cell p-2 text-center ${
-      isSkipped ? 'no-time' : 'has-time'
-    }`;
-    const stopSequence = editableStopTime?.stop_sequence ?? '';
-
-    const renderSpan = (
-      timeType: 'arrival' | 'departure',
-      display: string
-    ): string => `
-        <span
-          class="time-span block font-mono text-xs cursor-pointer rounded px-1 hover:bg-base-200 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-primary"
-          role="gridcell"
-          tabindex="-1"
-          data-trip-id="${trip_id}"
-          data-stop-id="${stop_id}"
-          data-stop-index="${stopIndex}"
-          data-time-type="${timeType}"
-          data-stop-sequence="${stopSequence}"
-          data-pending="${isPendingRow}"
-        >${display || '--:--:--'}</span>
-    `;
-
-    return `
-      <td class="${cellClass}">
-        <div class="stacked-time-container space-y-1">
-          ${renderSpan('arrival', arrivalDisplay)}
-          ${renderSpan('departure', departureDisplay)}
-        </div>
-      </td>
-    `;
-  }
-
-  /**
-   * Render an on-demand (GTFS Flex) cell: the pickup/drop-off window in place
-   * of arrival and departure.
-   *
-   * Deliberately keeps the `.time-span` class and the same two-span shape as a
-   * timed cell so grid navigation and the roving tabindex keep working - only
-   * `data-time-type` distinguishes it, which is what routes the editor to the
-   * window fields instead of arrival/departure. It must never take the
-   * `no-time` (skipped) path: a flex row legitimately has no arrival or
-   * departure and is not a skipped stop.
-   *
-   * A cell with no stop_time behind it - either the pending row, or a trip that
-   * simply does not serve this row's zone - renders the same two empty window
-   * spans with an empty `data-stop-sequence` and no badges: there is no record
-   * to address a type or booking-rule edit to. Typing in one creates the
-   * record; that is the only way a zone row gets filled in for a second trip.
+   * The row's ref decides the cell shape, not this trip's stop_time: a zone row
+   * is a zone row on every trip, including the trips that do not serve it.
+   * Routing on the saved stop_time instead is what used to render a zone's
+   * unserved cells as arrival/departure spans and let a keystroke write a
+   * stop_time with a zone id in stop_id.
    *
    * A flex ref's spans carry `data-flex-kind`/`data-flex-id` and deliberately
    * *no* `data-stop-id`. The row's synthetic stop carries the ref id as its
    * `stop_id`, so emitting it here would feed the arrival/departure insert path
    * a zone id as a `stops.txt` foreign key.
    */
-  private renderFlexWindowCell(
-    trip_id: string,
-    stop_id: string,
-    stopIndex: number,
-    editableStopTime: EditableStopTime | null,
-    isPendingRow: boolean,
-    rowRef?: StopTimeRef
-  ): string {
-    const stopSequence = editableStopTime?.stop_sequence ?? '';
-    const hasRecord = editableStopTime !== null;
+  public renderStopTimeCell(params: StopTimeCellParams): string {
+    const {
+      trip_id,
+      stop_id,
+      stopIndex,
+      mode,
+      editableStopTime,
+      isPendingRow,
+      isPendingFlex,
+      rowRef,
+      frequencyOrigin,
+    } = params;
+
+    const record = editableStopTime ?? null;
+    const isFlexRow =
+      (rowRef !== undefined && rowRef.kind !== 'stop') ||
+      record?.isFlex === true ||
+      isPendingFlex;
+    const isWindowed =
+      isFlexRow ||
+      !!record?.start_pickup_drop_off_window ||
+      !!record?.end_pickup_drop_off_window;
+
+    // Compact shows two sub-rows on every cell: the window pair on a windowed
+    // row, arrival/departure otherwise. Used and All show the full roster, so
+    // both pairs are present and no swap is needed.
+    const fields =
+      mode === 'compact'
+        ? isWindowed
+          ? WINDOW_FIELDS
+          : TIME_FIELDS
+        : params.fields;
+
     const isStopRef = rowRef === undefined || rowRef.kind === 'stop';
     const refAttrs = isStopRef
       ? `data-stop-id="${escapeHtml(stop_id)}"`
       : `data-flex-kind="${escapeHtml(rowRef.kind)}" data-flex-id="${escapeHtml(rowRef.id)}"`;
+    const stopSequence = record?.stop_sequence ?? '';
 
-    const renderSpan = (
-      timeType: 'window-start' | 'window-end',
-      raw: string | null
-    ): string => {
-      const display = raw ? TimeFormatter.formatTimeWithSeconds(raw) : '';
-      return `
-        <span
-          class="time-span flex-window block font-mono text-xs text-info cursor-pointer rounded px-1 hover:bg-base-200 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-primary"
-          role="gridcell"
-          tabindex="-1"
-          data-trip-id="${escapeHtml(trip_id)}"
-          ${refAttrs}
-          data-stop-index="${stopIndex}"
-          data-time-type="${timeType}"
-          data-stop-sequence="${escapeHtml(stopSequence)}"
-          data-pending="${isPendingRow}"
-          title="${timeType === 'window-start' ? 'Window start' : 'Window end'}"
-        >${display || '--:--:--'}</span>
-      `;
-    };
+    const spans = fields
+      .map((field) =>
+        this.renderFieldSpan({
+          field,
+          trip_id,
+          stopIndex,
+          refAttrs,
+          stopSequence,
+          record,
+          isPendingRow,
+          isWindowed,
+          frequencyOrigin,
+        })
+      )
+      .join('');
 
-    const stopSequenceAttr = `data-trip-id="${escapeHtml(trip_id)}" data-stop-sequence="${escapeHtml(stopSequence)}"`;
-
-    // pickup_type / drop_off_type are what make a row a request-a-ride pickup
-    // rather than a no-boarding one, so they are editable in place. Clicking
-    // one opens a small enum menu restricted to the values a window allows;
-    // schedule-controller delegates the click.
-    const typeBadge = (
-      label: string,
-      field: 'pickup_type' | 'drop_off_type',
-      value: string | null
-    ): string => `<button
-           type="button"
-           class="flex-type-badge badge badge-xs badge-ghost font-mono cursor-pointer"
-           ${stopSequenceAttr}
-           data-field="${field}"
-           data-value="${escapeHtml(value ?? '')}"
-           title="${escapeHtml(`${field} for this row. Click to change.`)}"
-         >${label} ${escapeHtml(value ?? '-')}</button>`;
-
-    // Booking rules are per stop_time, so the badges live on the cell rather
-    // than the row label. Clicking a set rule opens the On-Demand modal on it;
-    // the separate assign button is what changes or clears it.
-    const ruleBadge = (
-      label: string,
-      field: 'pickup_booking_rule_id' | 'drop_off_booking_rule_id',
-      rule: string | null
-    ): string => {
-      const assign = `<button
-             type="button"
-             class="booking-rule-assign badge badge-xs badge-ghost badge-dash cursor-pointer"
-             ${stopSequenceAttr}
-             data-field="${field}"
-             data-value="${escapeHtml(rule ?? '')}"
-             title="${escapeHtml(`Assign the ${label === 'PU' ? 'pickup' : 'drop-off'} booking rule for this row.`)}"
-           >${label} ${rule ? 'rule...' : 'rule +'}</button>`;
-      if (!rule) {
-        return assign;
-      }
-      return `<button
-             type="button"
-             class="booking-rule-badge badge badge-xs badge-outline font-mono cursor-pointer"
-             data-booking-rule-id="${escapeHtml(rule)}"
-             title="${escapeHtml(`${label} booking rule ${rule}. Opens the On-Demand editor.`)}"
-           >${label} ${escapeHtml(rule)}</button>${assign}`;
-    };
-
-    // No stop_time means nothing to address a type or rule edit to: the badges
-    // appear once the first window is typed and the record exists.
-    const badgesHtml = !hasRecord
-      ? ''
-      : `<div class="flex flex-wrap justify-center gap-1 pt-1">
-          ${typeBadge('PU', 'pickup_type', editableStopTime?.pickup_type ?? null)}
-          ${typeBadge('DO', 'drop_off_type', editableStopTime?.drop_off_type ?? null)}
-        </div>
-        <div class="flex flex-wrap justify-center gap-1 pt-1">
-          ${ruleBadge('PU', 'pickup_booking_rule_id', editableStopTime?.pickup_booking_rule_id ?? null)}
-          ${ruleBadge('DO', 'drop_off_booking_rule_id', editableStopTime?.drop_off_booking_rule_id ?? null)}
-        </div>`;
+    // A flex row legitimately has no arrival or departure and is not a skipped
+    // stop, so it must never take the `no-time` path.
+    const isSkipped =
+      !isWindowed && !record?.arrival_time && !record?.departure_time;
+    const cellClass = [
+      'time-cell align-top p-2 text-center',
+      isWindowed ? 'flex-window-cell' : isSkipped ? 'no-time' : 'has-time',
+    ].join(' ');
 
     return `
-      <td class="time-cell flex-window-cell p-2 text-center">
-        <div class="stacked-time-container space-y-1">
-          ${renderSpan('window-start', editableStopTime?.start_pickup_drop_off_window ?? null)}
-          ${renderSpan('window-end', editableStopTime?.end_pickup_drop_off_window ?? null)}
-        </div>
-        ${badgesHtml}
+      <td class="${cellClass}">
+        <div class="stacked-time-container">${spans}</div>
       </td>
     `;
+  }
+
+  /** One field's sub-row: a display span the click handler swaps for an editor. */
+  private renderFieldSpan(args: {
+    field: string;
+    trip_id: string;
+    stopIndex: number;
+    refAttrs: string;
+    stopSequence: string;
+    record: EditableStopTime | null;
+    isPendingRow: boolean;
+    isWindowed: boolean;
+    frequencyOrigin: string | null;
+  }): string {
+    const {
+      field,
+      trip_id,
+      stopIndex,
+      refAttrs,
+      stopSequence,
+      record,
+      isPendingRow,
+      isWindowed,
+      frequencyOrigin,
+    } = args;
+
+    const kind = stopTimeFieldKind(field);
+    const raw = record
+      ? ((record as unknown as Record<string, unknown>)[field] ?? null)
+      : null;
+    const value = raw === null || raw === undefined ? '' : String(raw);
+
+    // Only a time edit may create a stop_time: every other field is an edit to
+    // an existing record, and there is nothing to address it to without one.
+    const editable = record !== null || kind === 'time';
+
+    const titleParts = [field];
+    if (kind === 'time' && value && frequencyOrigin) {
+      const offset = offsetLabel(value, frequencyOrigin);
+      if (offset) {
+        titleParts.push(offset);
+      }
+    }
+    if (!editable) {
+      titleParts.push('no stop_time on this trip yet');
+    }
+
+    const classes = [
+      'time-span block font-mono text-xs h-6 leading-6 truncate rounded px-1',
+      kind === 'time' && isWindowed ? 'text-info' : '',
+      editable
+        ? 'cursor-pointer hover:bg-base-200 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-primary'
+        : 'opacity-40 cursor-default',
+    ]
+      .filter(Boolean)
+      .join(' ');
+
+    return `
+      <span
+        class="${classes}"
+        role="gridcell"
+        tabindex="-1"
+        data-trip-id="${escapeHtml(trip_id)}"
+        ${refAttrs}
+        data-stop-index="${stopIndex}"
+        data-field="${escapeHtml(field)}"
+        data-field-kind="${kind}"
+        data-stop-sequence="${escapeHtml(stopSequence)}"
+        data-value="${escapeHtml(value)}"
+        data-pending="${isPendingRow}"
+        data-windowed="${isWindowed}"
+        ${editable ? '' : 'data-disabled="true"'}
+        title="${escapeHtml(titleParts.join(' - '))}"
+      >${escapeHtml(this.displayValue(field, kind, value))}</span>
+    `;
+  }
+
+  /**
+   * What a sub-row shows: times formatted with seconds, enums as
+   * `value - Short Label`, everything else raw. Empty renders as `-`, except a
+   * time, which keeps the `--:--:--` placeholder the grid has always used.
+   */
+  private displayValue(field: string, kind: string, value: string): string {
+    if (kind === 'time') {
+      return value ? TimeFormatter.formatTimeWithSeconds(value) : '--:--:--';
+    }
+    if (value === '') {
+      return '-';
+    }
+    if (kind === 'enum') {
+      const option = (getEnumOptions(field) ?? []).find(
+        (opt) => String(opt.value) === value
+      );
+      return option ? `${value} - ${option.label}` : value;
+    }
+    return value;
   }
 }

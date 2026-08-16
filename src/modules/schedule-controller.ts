@@ -47,6 +47,16 @@ import { getZoneFeatures, zoneName } from './zone-store.js';
 import { validateFlexStopTimeRow } from '../utils/flex-rules.js';
 import { GTFS_TABLES } from '../types/gtfs.js';
 import type { LocationGroups } from '../types/gtfs-entities.js';
+import {
+  StopTimeFieldMode,
+  stopTimeFieldKind,
+  TIME_FIELDS,
+  WINDOW_FIELDS,
+} from './timetable-fields.js';
+import {
+  validateFrequencyRow,
+  frequencyPeriodKey,
+} from '../utils/frequency-rules.js';
 
 /**
  * Identifies one time cell across a re-render.
@@ -57,18 +67,19 @@ import type { LocationGroups } from '../types/gtfs-entities.js';
 interface TimeCellKey {
   tripId: string;
   stopIndex: string;
-  timeType: string;
+  /** The stop_times field this sub-row edits. */
+  field: string;
 }
 
-/**
- * The `data-time-type` values an on-demand cell uses, and the stop_times field
- * each one edits. A flex cell reuses the `.time-span` shape (so grid
- * navigation keeps working) and is told apart only by this mapping.
- */
-const WINDOW_FIELDS: Record<string, FlexWindowField | undefined> = {
-  'window-start': 'start_pickup_drop_off_window',
-  'window-end': 'end_pickup_drop_off_window',
-};
+/** localStorage key for the Compact / Used / All switch. */
+const FIELD_MODE_STORAGE_KEY = 'gtfs.timetable.stopTimeFields';
+
+/** Is this sub-row one end of a pickup/drop-off window? */
+function asWindowField(field: string | undefined): FlexWindowField | null {
+  return field !== undefined && WINDOW_FIELDS.includes(field)
+    ? (field as FlexWindowField)
+    : null;
+}
 
 // Enhanced GTFS interfaces using standard GTFS property names
 
@@ -91,6 +102,11 @@ interface EnhancedTrip {
 
 interface PatchManagerInterface {
   recordInsert(
+    table: string,
+    id: string,
+    record: Record<string, unknown>
+  ): Promise<void>;
+  recordDelete(
     table: string,
     id: string,
     record: Record<string, unknown>
@@ -236,6 +252,12 @@ export class ScheduleController {
   private hoveredRef: StopTimeRef | null = null;
 
   /**
+   * Which stop_times sub-rows the cells show. UI state, so it lives here and in
+   * localStorage rather than in the feed or the renderer.
+   */
+  private stopTimeFieldMode: StopTimeFieldMode = 'compact';
+
+  /**
    * Initialize ScheduleController with required dependencies
    *
    * @param gtfsRelationships - GTFS relationships manager for data queries
@@ -268,7 +290,45 @@ export class ScheduleController {
       { capture: true, passive: true }
     );
 
+    this.stopTimeFieldMode = this.loadStopTimeFieldMode();
     this.installTimetablePickers();
+  }
+
+  /** The persisted field mode, falling back loudly on anything unexpected. */
+  private loadStopTimeFieldMode(): StopTimeFieldMode {
+    let stored: string | null = null;
+    try {
+      stored = localStorage.getItem(FIELD_MODE_STORAGE_KEY);
+    } catch (error) {
+      console.warn('[ScheduleController] localStorage unavailable:', error);
+      return 'compact';
+    }
+    if (stored === null) {
+      return 'compact';
+    }
+    if (stored === 'compact' || stored === 'used' || stored === 'all') {
+      return stored;
+    }
+    console.warn(
+      `[ScheduleController] unknown stop_time field mode '${stored}', falling back to compact`
+    );
+    return 'compact';
+  }
+
+  /** Switch the sub-row mode and redraw, keeping scroll and selection. */
+  private setStopTimeFieldMode(mode: StopTimeFieldMode): void {
+    if (mode === this.stopTimeFieldMode) {
+      return;
+    }
+    this.stopTimeFieldMode = mode;
+    try {
+      localStorage.setItem(FIELD_MODE_STORAGE_KEY, mode);
+    } catch (error) {
+      console.warn('[ScheduleController] could not persist field mode:', error);
+    }
+    console.log(`[ScheduleController] stop_time field mode -> ${mode}`);
+    // No patch is recorded for a display switch, so nothing else will redraw.
+    void this.refreshCurrentTimetable();
   }
 
   /**
@@ -317,44 +377,50 @@ export class ScheduleController {
         return;
       }
 
-      // Checked before .time-span: the badges sit in the same cell, and a
-      // badge click is a type edit, not a time edit.
-      const typeBadge = (e.target as Element)?.closest?.('.flex-type-badge');
-      if (typeBadge instanceof HTMLElement) {
-        this.openFlexTypeMenu(typeBadge);
-        return;
-      }
-
-      const ruleAssign = (e.target as Element)?.closest?.(
-        '.booking-rule-assign'
-      );
-      if (ruleAssign instanceof HTMLElement) {
-        void this.openBookingRulePicker(ruleAssign);
-        return;
-      }
-
-      // Checked before .time-span: the badges sit in the same cell, and a
-      // badge click is a navigation, not a time edit.
-      const bookingBadge = (e.target as Element)?.closest?.(
-        '.booking-rule-badge'
-      );
-      if (bookingBadge instanceof HTMLElement) {
-        const booking_rule_id = bookingBadge.dataset.bookingRuleId ?? '';
-        if (booking_rule_id !== '') {
-          this.bookingRuleOpen?.(booking_rule_id);
+      const modeBtn = (e.target as Element)?.closest?.('.stop-time-mode-btn');
+      if (modeBtn instanceof HTMLElement) {
+        const mode = modeBtn.dataset.mode;
+        if (mode === 'compact' || mode === 'used' || mode === 'all') {
+          this.setStopTimeFieldMode(mode);
         }
         return;
       }
 
       const span = (e.target as Element)?.closest?.('.time-span');
       if (span instanceof HTMLElement) {
-        this.openTimeEditor(span);
+        this.openStopTimeEditor(span);
         return;
       }
 
       const propSpan = (e.target as Element)?.closest?.('.trip-prop-span');
       if (propSpan instanceof HTMLElement) {
         this.handleTripPropClick(propSpan);
+        return;
+      }
+
+      // The frequency band. Its spans are deliberately not .time-span, so they
+      // are matched here rather than by the grid's handler above.
+      const freqSpan = (e.target as Element)?.closest?.('.freq-span');
+      if (freqSpan instanceof HTMLElement) {
+        this.openFrequencyEditor(freqSpan);
+        return;
+      }
+
+      const freqAdd = (e.target as Element)?.closest?.('.freq-add');
+      if (freqAdd instanceof HTMLElement) {
+        const trip_id = freqAdd.dataset.tripId;
+        if (trip_id) {
+          void this.addFrequencyPeriod(trip_id);
+        }
+        return;
+      }
+
+      const freqDelete = (e.target as Element)?.closest?.('.freq-delete');
+      if (freqDelete instanceof HTMLElement) {
+        const { tripId, startTime } = freqDelete.dataset;
+        if (tripId && startTime) {
+          void this.deleteFrequencyPeriod(tripId, startTime);
+        }
         return;
       }
 
@@ -412,7 +478,7 @@ export class ScheduleController {
 
     if (e.key === 'Enter' || e.key === 'F2') {
       e.preventDefault();
-      this.openTimeEditor(span);
+      this.openStopTimeEditor(span);
       return;
     }
 
@@ -429,40 +495,46 @@ export class ScheduleController {
     if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
       e.preventDefault();
       e.stopPropagation();
-      this.openTimeEditor(span, { value: e.key, caret: e.key.length });
+      this.openStopTimeEditor(span, { value: e.key, caret: e.key.length });
     }
   }
 
-  /** Clear the time on a selected cell, recording a patch like any other edit. */
+  /** Clear a selected cell's field, recording a patch like any other edit. */
   private clearTimeCell(span: HTMLElement): void {
-    const { tripId, stopId, timeType, stopSequence, pending } = span.dataset;
+    const { tripId, stopId, field, stopSequence, pending, disabled } =
+      span.dataset;
     // The pending row has no stop_time behind it, so there is nothing to clear.
-    if (pending === 'true') {
+    if (pending === 'true' || disabled === 'true' || !tripId || !field) {
       return;
     }
-    const windowField = WINDOW_FIELDS[timeType ?? ''];
-    if (windowField && tripId) {
+
+    const windowField = asWindowField(field);
+    if (windowField) {
       // An unserved flex cell has no stop_sequence and so no record to clear.
       if (stopSequence) {
         void this.updateFlexWindow(tripId, stopSequence, windowField, '');
       }
       return;
     }
-    if (
-      !tripId ||
-      !stopId ||
-      (timeType !== 'arrival' && timeType !== 'departure')
-    ) {
+
+    if (TIME_FIELDS.includes(field)) {
+      if (!stopId) {
+        return;
+      }
+      void this.updateArrivalDepartureTime(
+        tripId,
+        stopId,
+        field === 'arrival_time' ? 'arrival' : 'departure',
+        '',
+        stopSequence,
+        false
+      );
       return;
     }
-    void this.updateArrivalDepartureTime(
-      tripId,
-      stopId,
-      timeType,
-      '',
-      stopSequence,
-      false
-    );
+
+    if (stopSequence) {
+      void this.updateStopTimeField(tripId, stopSequence, field, '');
+    }
   }
 
   /**
@@ -554,6 +626,35 @@ export class ScheduleController {
    * validation failure the restored span still shows the pre-edit value,
    * which is correct since nothing was written.
    */
+  private openStopTimeEditor(
+    span: HTMLElement,
+    seed?: { value: string; caret: number | null }
+  ): void {
+    const { field, disabled } = span.dataset;
+    if (!field || disabled === 'true') {
+      return;
+    }
+
+    switch (stopTimeFieldKind(field)) {
+      case 'time':
+        this.openTimeEditor(span, seed);
+        return;
+      case 'enum':
+        this.openStopTimeEnumMenu(span);
+        return;
+      case 'booking_rule':
+        void this.openBookingRulePicker(span);
+        return;
+      default:
+        this.openStopTimeValueEditor(span, seed);
+    }
+  }
+
+  /**
+   * The editor for a cell's `arrival_time` / `departure_time` sub-row, or for
+   * one end of its pickup/drop-off window. Only these fields can bring a
+   * stop_time into existence; the other nine always edit an existing record.
+   */
   private openTimeEditor(
     span: HTMLElement,
     seed?: { value: string; caret: number | null }
@@ -562,22 +663,19 @@ export class ScheduleController {
       tripId,
       stopId,
       stopIndex,
-      timeType,
+      field,
       stopSequence,
       pending,
       flexKind,
       flexId,
     } = span.dataset;
-    const windowField = WINDOW_FIELDS[timeType ?? ''];
+    const windowField = asWindowField(field);
     // A flex cell carries no stop_id at all - only the window fields and the
     // ref - so stop_id is required for arrival/departure editing only.
-    if (!tripId) {
+    if (!tripId || !field) {
       return;
     }
-    if (
-      !windowField &&
-      (!stopId || (timeType !== 'arrival' && timeType !== 'departure'))
-    ) {
+    if (!windowField && (!stopId || !TIME_FIELDS.includes(field))) {
       return;
     }
 
@@ -587,7 +685,7 @@ export class ScheduleController {
     this.editingCell = {
       tripId,
       stopIndex: stopIndex ?? '',
-      timeType: timeType as string,
+      field,
     };
     // The edited cell is also the selected one, so closing the editor leaves
     // the roving tabindex where the user actually is.
@@ -623,13 +721,83 @@ export class ScheduleController {
         void this.updateArrivalDepartureTime(
           tripId,
           stopId as string,
-          timeType as 'arrival' | 'departure',
+          field === 'arrival_time' ? 'arrival' : 'departure',
           value,
           stopSequence,
           pending === 'true'
         );
       },
       onNavigate: (direction) => this.moveTimeCell(span, direction),
+    });
+  }
+
+  /**
+   * The editor for a text or number sub-row: `stop_headsign`,
+   * `shape_dist_traveled`. Same click-to-edit swap as a time cell, so the grid
+   * has one editing mechanism rather than one per field kind.
+   */
+  private openStopTimeValueEditor(
+    span: HTMLElement,
+    seed?: { value: string; caret: number | null }
+  ): void {
+    const { tripId, stopIndex, field, stopSequence, value } = span.dataset;
+    if (!tripId || !field || !stopSequence) {
+      return;
+    }
+
+    this.editingCell = { tripId, stopIndex: stopIndex ?? '', field };
+    this.selectTimeCell(span, false);
+
+    openInlineEditor(span, {
+      value: value ?? '',
+      initialValue: seed?.value,
+      selectionStart: seed?.caret,
+      inputType: stopTimeFieldKind(field) === 'number' ? 'number' : 'text',
+      className: 'w-full text-center font-mono',
+      title: field,
+      arrowNavigation: true,
+      onCommit: (newValue) => {
+        void this.updateStopTimeField(tripId, stopSequence, field, newValue);
+      },
+      onNavigate: (direction) => this.moveTimeCell(span, direction),
+    });
+  }
+
+  /**
+   * The menu for an enum sub-row: the two types, the two continuous fields,
+   * `timepoint`.
+   *
+   * On a windowed row the pickup/drop-off options are restricted to what a
+   * pickup/drop-off window allows - pickup 1 or 2, drop-off 1, 2 or 3 - so the
+   * documented `(2,1)` / `(1,2)` pattern is reachable from the grid and an
+   * invalid one is not. Empty is not offered there: it is equivalent to 0,
+   * which is forbidden under a window.
+   */
+  private openStopTimeEnumMenu(span: HTMLElement): void {
+    const { tripId, stopSequence, field, value, windowed } = span.dataset;
+    if (!tripId || !stopSequence || !field) {
+      return;
+    }
+
+    const restricted =
+      windowed === 'true' &&
+      (field === 'pickup_type' || field === 'drop_off_type');
+    const allowed = field === 'pickup_type' ? ['1', '2'] : ['1', '2', '3'];
+    const enumOptions = (getEnumOptions(field) ?? [])
+      .filter((opt) => !restricted || allowed.includes(String(opt.value)))
+      .map((opt) => ({
+        value: String(opt.value),
+        label: `${opt.value} - ${opt.label}`,
+      }));
+
+    openInlineMenu(span, {
+      currentValue: value ?? '',
+      options: restricted
+        ? enumOptions
+        : [{ value: '', label: '-' }, ...enumOptions],
+      onPick: (newValue) => {
+        void this.updateStopTimeField(tripId, stopSequence, field, newValue);
+      },
     });
   }
 
@@ -653,10 +821,14 @@ export class ScheduleController {
   /**
    * The cell one step in `direction` from `from`, or null at the grid's edge.
    *
-   * Down runs arrival -> departure of the same stop -> arrival of the next
-   * stop, which is the order a trip is actually entered in. Left and right move
-   * between trips at the same stop and clamp at the row's edge rather than
+   * Down runs the cell's fields in spec order, then the first field of the next
+   * stop row, which is the order a trip is actually entered in. Left and right
+   * move between trips at the same stop and clamp at the row's edge rather than
    * wrapping, so a stray Tab cannot fling the user across a wide timetable.
+   *
+   * Every cell renders the same number of sub-rows, so the whole grid is a
+   * single stride: N comes from `data-fields-per-cell`, stamped on
+   * `#schedule-view` at render time.
    *
    * Shared by editing and selection so the two cannot disagree about what the
    * next cell is.
@@ -666,6 +838,7 @@ export class ScheduleController {
     direction: GridDirection
   ): HTMLElement | null {
     const rows = this.timeCellRows();
+    const perCell = this.fieldsPerCell();
     let rowIndex = -1;
     let cellIndex = -1;
     for (let r = 0; r < rows.length; r++) {
@@ -681,24 +854,32 @@ export class ScheduleController {
       return null;
     }
 
-    // Two spans per trip column: arrival at an even index, departure at odd.
+    // N spans per trip column, in the visible field roster's order.
+    const offset = cellIndex % perCell;
     let target: HTMLElement | undefined;
     if (direction === 'down') {
       target =
-        cellIndex % 2 === 0
+        offset < perCell - 1
           ? rows[rowIndex][cellIndex + 1]
-          : rows[rowIndex + 1]?.[cellIndex - 1];
+          : rows[rowIndex + 1]?.[cellIndex - (perCell - 1)];
     } else if (direction === 'up') {
       target =
-        cellIndex % 2 === 1
+        offset > 0
           ? rows[rowIndex][cellIndex - 1]
-          : rows[rowIndex - 1]?.[cellIndex + 1];
+          : rows[rowIndex - 1]?.[cellIndex + (perCell - 1)];
     } else {
-      const step = direction === 'right' ? 2 : -2;
+      const step = direction === 'right' ? perCell : -perCell;
       target = rows[rowIndex][cellIndex + step];
     }
 
     return target ?? null;
+  }
+
+  /** How many sub-rows each cell renders, from the last render's stamp. */
+  private fieldsPerCell(): number {
+    const view = document.getElementById('schedule-view');
+    const parsed = Number(view?.dataset.fieldsPerCell ?? '2');
+    return Number.isInteger(parsed) && parsed > 0 ? parsed : 2;
   }
 
   /**
@@ -715,16 +896,16 @@ export class ScheduleController {
     }
 
     target.scrollIntoView({ block: 'nearest', inline: 'nearest' });
-    this.openTimeEditor(target);
+    this.openStopTimeEditor(target);
   }
 
   /** The re-render-stable identity of a time cell, from its data attributes. */
   private timeCellKey(span: HTMLElement): TimeCellKey | null {
-    const { tripId, stopIndex, timeType } = span.dataset;
-    if (!tripId || !timeType) {
+    const { tripId, stopIndex, field } = span.dataset;
+    if (!tripId || !field) {
       return null;
     }
-    return { tripId, stopIndex: stopIndex ?? '', timeType };
+    return { tripId, stopIndex: stopIndex ?? '', field };
   }
 
   /** Find a time cell in the rendered timetable by its key. */
@@ -732,7 +913,7 @@ export class ScheduleController {
     const selector =
       `.time-span[data-trip-id="${CSS.escape(key.tripId)}"]` +
       `[data-stop-index="${CSS.escape(key.stopIndex)}"]` +
-      `[data-time-type="${CSS.escape(key.timeType)}"]`;
+      `[data-field="${CSS.escape(key.field)}"]`;
     return (
       document
         .getElementById('schedule-view')
@@ -836,7 +1017,7 @@ export class ScheduleController {
       return;
     }
 
-    this.openTimeEditor(span, {
+    this.openStopTimeEditor(span, {
       value: cell.value,
       caret: cell.caret ?? null,
     });
@@ -960,46 +1141,12 @@ export class ScheduleController {
   }
 
   /**
-   * Open the enum menu for a flex row's `pickup_type` / `drop_off_type`.
+   * Open the searchable booking-rule picker for a booking-rule sub-row.
    *
-   * Restricted to the values a pickup/drop-off window allows - pickup 1 or 2,
-   * drop-off 1, 2 or 3 - so the documented `(2,1)` / `(1,2)` pattern is
-   * reachable from the grid and an invalid one is not. Empty is not offered:
-   * it is equivalent to 0, which is forbidden under a window.
-   */
-  private openFlexTypeMenu(badge: HTMLElement): void {
-    const { tripId, stopSequence, field, value } = badge.dataset;
-    if (!tripId || !stopSequence || !field) {
-      return;
-    }
-
-    const allowed = field === 'pickup_type' ? ['1', '2'] : ['1', '2', '3'];
-    const enumOptions = (getEnumOptions(field) ?? []).filter((opt) =>
-      allowed.includes(String(opt.value))
-    );
-
-    openInlineMenu(badge, {
-      currentValue: value ?? '',
-      options: enumOptions.map((opt) => ({
-        value: String(opt.value),
-        label: `${opt.value} - ${opt.label}`,
-      })),
-      onPick: (newValue) => {
-        void this.updateFlexStopTimeField(
-          tripId,
-          stopSequence,
-          field as 'pickup_type' | 'drop_off_type',
-          newValue
-        );
-      },
-    });
-  }
-
-  /**
-   * Open the searchable booking-rule picker for a flex row.
-   *
-   * Assignment only - clicking the rule badge itself still opens the On-Demand
-   * editor on that rule, which is how a rule is read and edited.
+   * A booking rule behaves like every other field here: clicking it assigns
+   * one. Reading or authoring a rule is a different job, reached from the
+   * picker's `Manage booking rules...` footer button - navigating to a modal is
+   * not an edit, so it must not be what a plain click does.
    */
   private async openBookingRulePicker(badge: HTMLElement): Promise<void> {
     const { tripId, stopSequence, field, value } = badge.dataset;
@@ -1042,15 +1189,16 @@ export class ScheduleController {
       options,
       selectedValue: currentValue,
       searchable: true,
+      footerAction: this.bookingRuleOpen
+        ? {
+            label: 'Manage booking rules...',
+            onClick: () => this.bookingRuleOpen?.(currentValue),
+          }
+        : undefined,
     });
 
     if (picked !== null && picked !== currentValue) {
-      await this.updateFlexStopTimeField(
-        tripId,
-        stopSequence,
-        field as 'pickup_booking_rule_id' | 'drop_off_booking_rule_id',
-        picked
-      );
+      await this.updateStopTimeField(tripId, stopSequence, field, picked);
     }
   }
 
@@ -1472,9 +1620,13 @@ export class ScheduleController {
   }
 
   /**
-   * Write one non-time field of an existing flex stop_time, addressed the same
-   * way `updateFlexWindow` addresses it: trip_id + stop_sequence, since a flex
-   * row has no stop_id.
+   * Write one non-time field of an existing stop_time, addressed the same way
+   * `updateFlexWindow` addresses it: trip_id + stop_sequence, since a flex row
+   * has no stop_id.
+   *
+   * Takes any of the grid's editable fields. There is deliberately no insert
+   * path: only a time edit may bring a stop_time into existence, so a cell with
+   * no record renders its other sub-rows as non-editable and never reaches here.
    *
    * The whole row is run through `validateFlexStopTimeRow` with the change
    * applied, so the grid cannot produce a row the feed validator would reject.
@@ -1484,16 +1636,13 @@ export class ScheduleController {
    * @param field - Which field to write
    * @param value - New value, or an empty string to clear
    */
-  private async updateFlexStopTimeField(
+  private async updateStopTimeField(
     trip_id: string,
     stopSequence: string,
-    field:
-      | 'pickup_type'
-      | 'drop_off_type'
-      | 'pickup_booking_rule_id'
-      | 'drop_off_booking_rule_id',
-    value: string
+    field: string,
+    rawValue: string
   ): Promise<void> {
+    const value = rawValue.trim();
     const row = this.gtfsParser
       .getStopTimesByTripId(trip_id)
       .find((st) => String(st.stop_sequence) === stopSequence);
@@ -1709,6 +1858,229 @@ export class ScheduleController {
     } catch (error) {
       console.error('Failed to delete on-demand stop_time:', error);
       this.showTimeError(trip_id, rowId, 'Failed to remove on-demand row');
+    }
+  }
+
+  // ===== FREQUENCIES BAND =====
+
+  /** The trip's headway periods, straight from the parsed table. */
+  private tripFrequencyRows(trip_id: string): Record<string, unknown>[] {
+    return this.gtfsParser
+      .getFileDataSyncTyped<Record<string, unknown>>(GTFS_TABLES.FREQUENCIES)
+      .filter((row) => String(row.trip_id ?? '') === trip_id);
+  }
+
+  /**
+   * Swap a frequency band span for its editor, the same click-to-edit contract
+   * the trip property rows use.
+   */
+  private openFrequencyEditor(span: HTMLElement): void {
+    const { tripId, startTime, field, fieldKind, value } = span.dataset;
+    if (!tripId || startTime === undefined || !field) {
+      return;
+    }
+
+    if (fieldKind === 'enum') {
+      openInlineMenu(span, {
+        currentValue: value ?? '',
+        options: [
+          { value: '', label: '- (empty, same as 0)' },
+          ...(getEnumOptions('exact_times') ?? []).map((opt) => ({
+            value: String(opt.value),
+            label: `${opt.value} - ${opt.label}`,
+          })),
+        ],
+        onPick: (newValue) => {
+          void this.updateFrequencyField(tripId, startTime, field, newValue);
+        },
+      });
+      return;
+    }
+
+    openInlineEditor(span, {
+      value: value ?? '',
+      inputType: fieldKind === 'number' ? 'number' : 'text',
+      className: 'w-full text-center font-mono',
+      placeholder: fieldKind === 'time' ? '--:--:--' : '',
+      title:
+        fieldKind === 'time'
+          ? 'Enter a time, e.g. 9:30 or 09:30:00'
+          : 'Seconds between departures',
+      onCommit: (newValue) => {
+        void this.updateFrequencyField(tripId, startTime, field, newValue);
+      },
+    });
+  }
+
+  /**
+   * Write one field of one headway period.
+   *
+   * `start_time` is half of the composite primary key, so editing it re-keys
+   * the record: that path is a delete plus an insert recorded as one mixed
+   * batch, deletes first. `patchUpdate` looks like it works there - the virtual
+   * table re-keys `byId` in place, so the forward edit lands - but the patch's
+   * `source.id` is then the stale old key and its inverse silently drops on
+   * undo.
+   */
+  private async updateFrequencyField(
+    trip_id: string,
+    startTime: string,
+    field: string,
+    rawValue: string
+  ): Promise<void> {
+    const rows = this.tripFrequencyRows(trip_id);
+    const row = rows.find((r) => String(r.start_time ?? '') === startTime);
+    if (!row) {
+      console.warn(
+        `[ScheduleController] no frequency for ${trip_id} starting ${startTime}`
+      );
+      return;
+    }
+    const siblings = rows.filter((r) => r !== row);
+
+    const value =
+      field === 'start_time' || field === 'end_time'
+        ? rawValue.trim()
+          ? TimeFormatter.castTimeToHHMMSS(rawValue)
+          : ''
+        : rawValue.trim();
+    const current = String(row[field] ?? '');
+    if (current === value) {
+      return;
+    }
+
+    const after = { ...row, [field]: value };
+    const invalid = validateFrequencyRow(after, siblings);
+    if (invalid) {
+      notify.error(invalid, { duration: 5000 });
+      return;
+    }
+
+    try {
+      const oldKey = frequencyPeriodKey(row);
+      if (field !== 'start_time') {
+        await patchUpdate(
+          this.gtfsParser.gtfsDatabase,
+          this.patchManager,
+          'frequencies',
+          oldKey,
+          { [field]: row[field] ?? null },
+          { [field]: value }
+        );
+      } else {
+        const newKey = frequencyPeriodKey(after);
+        await this.gtfsParser.gtfsDatabase.deleteRow('frequencies', oldKey);
+        await this.gtfsParser.gtfsDatabase.insertRows('frequencies', [after]);
+        this.invalidateCaches();
+        await this.patchManager?.recordBatchMixed(
+          [
+            { op: 'delete', table: 'frequencies', id: oldKey, record: row },
+            { op: 'insert', table: 'frequencies', id: newKey, record: after },
+          ],
+          `Move headway period of ${trip_id} to ${value}`
+        );
+      }
+      console.log(
+        `[ScheduleController] Set ${field} of frequency ${oldKey} to ${value || '(empty)'}`
+      );
+    } catch (error) {
+      console.error(`Failed to update frequency ${field}:`, error);
+      notify.error(`Failed to save ${field}`);
+    }
+  }
+
+  /**
+   * Append a headway period to a trip.
+   *
+   * Defaults to an hour from the trip's first departure, moved to sit after the
+   * trip's last period when that would collide - a new period always has to be
+   * valid on arrival, since there is no half-saved state in this band.
+   */
+  private async addFrequencyPeriod(trip_id: string): Promise<void> {
+    const siblings = this.tripFrequencyRows(trip_id);
+
+    const stopTimes = this.gtfsParser.getStopTimesByTripId(trip_id);
+    const firstDeparture =
+      stopTimes
+        .slice()
+        .sort(
+          (a, b) =>
+            parseInt(String(a.stop_sequence)) -
+            parseInt(String(b.stop_sequence))
+        )
+        .map((st) => st.departure_time || st.arrival_time)
+        .find((time) => !!time) ?? '';
+
+    let startSecs = TimeFormatter.timeToSeconds(firstDeparture) ?? 8 * 3600;
+    const collides = (from: number, to: number): boolean =>
+      siblings.some((sibling) => {
+        const sStart = TimeFormatter.timeToSeconds(
+          String(sibling.start_time ?? '')
+        );
+        const sEnd = TimeFormatter.timeToSeconds(
+          String(sibling.end_time ?? '')
+        );
+        return sStart !== null && sEnd !== null && from < sEnd && sStart < to;
+      });
+
+    if (collides(startSecs, startSecs + 3600)) {
+      const lastEnd = siblings.reduce((max, sibling) => {
+        const end = TimeFormatter.timeToSeconds(String(sibling.end_time ?? ''));
+        return end !== null && end > max ? end : max;
+      }, startSecs);
+      startSecs = lastEnd;
+    }
+
+    const record: Record<string, unknown> = {
+      trip_id,
+      start_time: TimeFormatter.secondsToTime(startSecs),
+      end_time: TimeFormatter.secondsToTime(startSecs + 3600),
+      headway_secs: '600',
+      exact_times: '',
+    };
+
+    const invalid = validateFrequencyRow(record, siblings);
+    if (invalid) {
+      notify.error(invalid, { duration: 5000 });
+      return;
+    }
+
+    try {
+      const key = frequencyPeriodKey(record);
+      await this.gtfsParser.gtfsDatabase.insertRows('frequencies', [record]);
+      this.invalidateCaches();
+      await this.patchManager?.recordInsert('frequencies', key, record);
+      console.log(`[ScheduleController] Added headway period ${key}`);
+    } catch (error) {
+      console.error('Failed to add headway period:', error);
+      notify.error('Failed to add headway period');
+    }
+  }
+
+  /** Remove one headway period. No confirmation: it is one undo away. */
+  private async deleteFrequencyPeriod(
+    trip_id: string,
+    startTime: string
+  ): Promise<void> {
+    const row = this.tripFrequencyRows(trip_id).find(
+      (r) => String(r.start_time ?? '') === startTime
+    );
+    if (!row) {
+      console.warn(
+        `[ScheduleController] no frequency for ${trip_id} starting ${startTime} to delete`
+      );
+      return;
+    }
+
+    try {
+      const key = frequencyPeriodKey(row);
+      await this.gtfsParser.gtfsDatabase.deleteRow('frequencies', key);
+      this.invalidateCaches();
+      await this.patchManager?.recordDelete('frequencies', key, row);
+      console.log(`[ScheduleController] Removed headway period ${key}`);
+    } catch (error) {
+      console.error('Failed to remove headway period:', error);
+      notify.error('Failed to remove headway period');
     }
   }
 
@@ -2043,6 +2415,10 @@ export class ScheduleController {
           stop_name: this.pendingRow.name,
         } as Stops);
       }
+
+      // Stamped per render rather than stored on the cached data: the mode can
+      // change without the underlying timetable data changing at all.
+      timetableData.stopTimeFieldMode = this.stopTimeFieldMode;
 
       return this.renderer.renderTimetableHTML(
         timetableData,

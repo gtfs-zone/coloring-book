@@ -13,6 +13,12 @@ export interface OptionPickerOptions {
   selectedValue?: string;
   searchable?: boolean;
   placeholder?: string;
+  /**
+   * An escape hatch for the authoring case, shown as a button beside Cancel:
+   * "the option I want is not in this list". Clicking it closes the picker
+   * without choosing anything, so the caller's edit is left untouched.
+   */
+  footerAction?: { label: string; onClick: () => void };
 }
 
 export interface MultiOptionPickerOptions {
@@ -266,12 +272,24 @@ export async function showOptionPickerModal(
 ): Promise<string | null> {
   let selected: string | null = null;
   const searchable = opts.searchable !== false;
+  const footer = opts.footerAction;
 
   await showModal({
     title: opts.title,
     body: pickerBody(searchable, opts.placeholder ?? 'Search…'),
-    actions: [{ label: 'Cancel', onClick: () => {} }],
-    escapeAction: 0,
+    actions: [
+      ...(footer
+        ? [
+            {
+              label: footer.label,
+              className: 'btn-ghost mr-auto',
+              onClick: () => footer.onClick(),
+            },
+          ]
+        : []),
+      { label: 'Cancel', onClick: () => {} },
+    ],
+    escapeAction: footer ? 1 : 0,
     onMount: (close) => {
       mountPicker(
         opts.options,
