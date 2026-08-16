@@ -5,6 +5,7 @@
 
 import { TimeFormatter } from '../utils/time-formatter.js';
 import { EditableStopTime } from './timetable-data-processor.js';
+import type { StopTimeRef } from '../types/gtfs-flex.js';
 import { escapeHtml } from '../utils/escape-html.js';
 
 /**
@@ -30,6 +31,7 @@ export class TimetableCellRenderer {
    * @param editableStopTime - Optional editable stop time data (supplies stop_sequence)
    * @param isPendingRow - Row is the not-yet-saved add-stop preview
    * @param isPendingFlex - The pending row references a zone or location group
+   * @param rowRef - What the whole row references, whether or not this trip serves it
    * @returns HTML string for the complete time cell
    */
   public renderStackedArrivalDepartureCell(
@@ -40,15 +42,26 @@ export class TimetableCellRenderer {
     departure_time: string | null,
     editableStopTime?: EditableStopTime,
     isPendingRow = false,
-    isPendingFlex = false
+    isPendingFlex = false,
+    rowRef?: StopTimeRef
   ): string {
-    if (editableStopTime?.isFlex || isPendingFlex) {
+    // The row's ref decides the cell shape, not this trip's stop_time: a zone
+    // row is a zone row on every trip, including the trips that do not serve it.
+    // Routing on the saved stop_time instead is what used to render a zone's
+    // unserved cells as arrival/departure spans and let a keystroke write a
+    // stop_time with a zone id in stop_id.
+    const isFlexRow =
+      (rowRef !== undefined && rowRef.kind !== 'stop') ||
+      editableStopTime?.isFlex === true ||
+      isPendingFlex;
+    if (isFlexRow) {
       return this.renderFlexWindowCell(
         trip_id,
         stop_id,
         stopIndex,
         editableStopTime ?? null,
-        isPendingFlex
+        isPendingRow,
+        rowRef ?? editableStopTime?.ref
       );
     }
 
@@ -103,19 +116,31 @@ export class TimetableCellRenderer {
    * `no-time` (skipped) path: a flex row legitimately has no arrival or
    * departure and is not a skipped stop.
    *
-   * The pending row (a zone or location group picked from "Add stop or zone"
-   * but not yet written) has no stop_time behind it: it renders the same two
-   * empty window spans with `data-pending="true"`, which is what routes the
-   * first typed value to the insert path instead of an update.
+   * A cell with no stop_time behind it - either the pending row, or a trip that
+   * simply does not serve this row's zone - renders the same two empty window
+   * spans with an empty `data-stop-sequence` and no badges: there is no record
+   * to address a type or booking-rule edit to. Typing in one creates the
+   * record; that is the only way a zone row gets filled in for a second trip.
+   *
+   * A flex ref's spans carry `data-flex-kind`/`data-flex-id` and deliberately
+   * *no* `data-stop-id`. The row's synthetic stop carries the ref id as its
+   * `stop_id`, so emitting it here would feed the arrival/departure insert path
+   * a zone id as a `stops.txt` foreign key.
    */
   private renderFlexWindowCell(
     trip_id: string,
     stop_id: string,
     stopIndex: number,
     editableStopTime: EditableStopTime | null,
-    isPendingRow: boolean
+    isPendingRow: boolean,
+    rowRef?: StopTimeRef
   ): string {
     const stopSequence = editableStopTime?.stop_sequence ?? '';
+    const hasRecord = editableStopTime !== null;
+    const isStopRef = rowRef === undefined || rowRef.kind === 'stop';
+    const refAttrs = isStopRef
+      ? `data-stop-id="${escapeHtml(stop_id)}"`
+      : `data-flex-kind="${escapeHtml(rowRef.kind)}" data-flex-id="${escapeHtml(rowRef.id)}"`;
 
     const renderSpan = (
       timeType: 'window-start' | 'window-end',
@@ -128,7 +153,7 @@ export class TimetableCellRenderer {
           role="gridcell"
           tabindex="-1"
           data-trip-id="${escapeHtml(trip_id)}"
-          data-stop-id="${escapeHtml(stop_id)}"
+          ${refAttrs}
           data-stop-index="${stopIndex}"
           data-time-type="${timeType}"
           data-stop-sequence="${escapeHtml(stopSequence)}"
@@ -184,9 +209,9 @@ export class TimetableCellRenderer {
            >${label} ${escapeHtml(rule)}</button>${assign}`;
     };
 
-    // The pending row has no stop_time yet, so there is nothing to address a
-    // type or rule edit to: its badges appear once the first window is typed.
-    const badgesHtml = isPendingRow
+    // No stop_time means nothing to address a type or rule edit to: the badges
+    // appear once the first window is typed and the record exists.
+    const badgesHtml = !hasRecord
       ? ''
       : `<div class="flex flex-wrap justify-center gap-1 pt-1">
           ${typeBadge('PU', 'pickup_type', editableStopTime?.pickup_type ?? null)}

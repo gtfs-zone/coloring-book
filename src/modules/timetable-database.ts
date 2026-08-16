@@ -37,6 +37,20 @@ export interface StopTimeEditPlan {
   afterRows: StopTimes[];
   /** True when the edit creates a stop_time that did not exist. */
   isInsert: boolean;
+  /** Index of the created row in `afterRows`, when the plan inserts one. */
+  insertedIndex?: number;
+}
+
+/**
+ * The fields a new on-demand row copies from a sibling trip's row on the same
+ * timetable row. The window is deliberately not here: a differing window per
+ * trip is the whole point of having several trips.
+ */
+export interface FlexRowShape {
+  pickup_type: string;
+  drop_off_type: string;
+  pickup_booking_rule_id: string;
+  drop_off_booking_rule_id: string;
 }
 
 /**
@@ -153,24 +167,32 @@ export class TimetableDatabase {
    *
    * The sibling of planStopTimeEdit for flex rows. It cannot reuse that method:
    * that one locates a row by stop_id and re-sorts by arrival/departure, and a
-   * flex row has neither. The new row is appended and the whole trip is
-   * renumbered from 0 over its existing order, so an on-demand row always lands
-   * at the end of the trip.
+   * flex row has neither. The whole trip is renumbered from 0 over its existing
+   * order once the row is spliced in.
+   *
+   * `insertIndex` is where the row lands in the trip's own stop_sequence order;
+   * it defaults to the end. Appending unconditionally would scramble the
+   * deviated-route shape, where a deviation zone has to sit between the two
+   * timed stops it deviates from.
    *
    * Both ends of the window are seeded with the typed value: a window is only
    * valid with both set, so the first edit creates a zero-length window that the
    * second edit widens. pickup_type/drop_off_type default to 2 (must phone the
    * agency, both directions), the only pair that is legal for both fields under
-   * a window.
+   * a window, unless `shape` carries the values copied from a sibling trip.
    *
    * @param trip_id - GTFS trip identifier
    * @param ref - The location group or zone the new row references
    * @param window - HH:MM:SS value for both ends of the window
+   * @param insertIndex - Slot in the trip's stop_sequence order; defaults to last
+   * @param shape - Types and booking rules to copy onto the new row
    */
   async planFlexStopTimeInsert(
     trip_id: string,
     ref: StopTimeRef,
-    window: string
+    window: string,
+    insertIndex?: number,
+    shape?: FlexRowShape
   ): Promise<StopTimeEditPlan> {
     if (ref.kind === 'stop') {
       throw new Error(
@@ -196,17 +218,70 @@ export class TimetableDatabase {
       departure_time: null,
       start_pickup_drop_off_window: window,
       end_pickup_drop_off_window: window,
-      pickup_type: 2,
-      drop_off_type: 2,
+      pickup_type: shape ? shape.pickup_type : 2,
+      drop_off_type: shape ? shape.drop_off_type : 2,
+      ...(shape?.pickup_booking_rule_id
+        ? { pickup_booking_rule_id: shape.pickup_booking_rule_id }
+        : {}),
+      ...(shape?.drop_off_booking_rule_id
+        ? { drop_off_booking_rule_id: shape.drop_off_booking_rule_id }
+        : {}),
     } as unknown as StopTimes;
 
-    const edited = [...beforeRows.map((st) => ({ ...st })), newRow];
+    const slot = Math.max(
+      0,
+      Math.min(insertIndex ?? beforeRows.length, beforeRows.length)
+    );
+    const edited = beforeRows.map((st) => ({ ...st }));
+    edited.splice(slot, 0, newRow);
     const afterRows = edited.map((st, index) => ({
       ...st,
       stop_sequence: index,
     })) as unknown as StopTimes[];
 
-    return { beforeRows, afterRows, isInsert: true };
+    return { beforeRows, afterRows, isInsert: true, insertedIndex: slot };
+  }
+
+  /**
+   * Plan the removal of one on-demand stop_time from a trip, without writing.
+   *
+   * Clearing a window end is a delete rather than a field clear: a flex row with
+   * no window fails `validateFlexStopTimeRow`, so "no window" can only mean
+   * "this trip does not serve this zone". The rest of the trip is renumbered
+   * from 0, which moves every later row's primary key - the caller writes the
+   * whole set as one patch for that reason.
+   *
+   * @param trip_id - GTFS trip identifier
+   * @param stopSequence - stop_sequence of the row to remove
+   */
+  async planFlexStopTimeDelete(
+    trip_id: string,
+    stopSequence: string
+  ): Promise<StopTimeEditPlan | null> {
+    const beforeRows = await this.gtfsParser.gtfsDatabase.queryRows(
+      'stop_times',
+      { trip_id }
+    );
+    beforeRows.sort(
+      (a, b) => Number(a.stop_sequence) - Number(b.stop_sequence)
+    );
+
+    const targetIndex = beforeRows.findIndex(
+      (st) => String(st.stop_sequence) === stopSequence
+    );
+    if (targetIndex === -1) {
+      return null;
+    }
+
+    const edited = beforeRows
+      .filter((_, index) => index !== targetIndex)
+      .map((st) => ({ ...st }));
+    const afterRows = edited.map((st, index) => ({
+      ...st,
+      stop_sequence: index,
+    })) as unknown as StopTimes[];
+
+    return { beforeRows, afterRows, isInsert: false };
   }
 
   /**
