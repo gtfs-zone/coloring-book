@@ -398,7 +398,8 @@ export class UIController {
     fileList.innerHTML = '';
 
     // Get categorized files
-    const { required, optional, other } = this.gtfsParser!.categorizeFiles();
+    const { required, optional, additional } =
+      this.gtfsParser!.categorizeFiles();
     // Create DaisyUI menu structure
     const menu = document.createElement('ul');
     menu.className = 'menu w-full';
@@ -431,20 +432,20 @@ export class UIController {
     optionalSection.appendChild(optionalList);
     menu.appendChild(optionalSection);
 
-    // Add other files section (only if populated, since empty feeds have no "other" files)
-    if (other.length > 0) {
-      const otherSection = document.createElement('li');
-      const otherHeader = document.createElement('div');
-      otherHeader.className = 'menu-title';
-      otherHeader.textContent = 'Other Files';
-      otherSection.appendChild(otherHeader);
+    // Non-spec files carried through from the imported ZIP, if any
+    if (additional.length > 0) {
+      const additionalSection = document.createElement('li');
+      const additionalHeader = document.createElement('div');
+      additionalHeader.className = 'menu-title';
+      additionalHeader.textContent = 'Additional Files';
+      additionalSection.appendChild(additionalHeader);
 
-      const otherList = document.createElement('ul');
-      other.forEach((fileName) => {
-        this.addFileItem(otherList, fileName, false);
+      const additionalList = document.createElement('ul');
+      additional.forEach((fileName) => {
+        this.addFileItem(additionalList, fileName, false);
       });
-      otherSection.appendChild(otherList);
-      menu.appendChild(otherSection);
+      additionalSection.appendChild(additionalList);
+      menu.appendChild(additionalSection);
     }
 
     fileList.appendChild(menu);
@@ -460,14 +461,26 @@ export class UIController {
     nameSpan.textContent = fileName;
     link.appendChild(nameSpan);
 
-    // Add record count if available
-    const data = this.gtfsParser!.getFileDataSync(fileName);
-    if (data) {
-      const count = Array.isArray(data) ? data.length : 1;
-      const countSpan = document.createElement('span');
-      countSpan.className = 'badge badge-neutral badge-sm';
-      countSpan.textContent = `${count}`;
-      link.appendChild(countSpan);
+    // Passthrough files have no table, so count lines instead of records
+    const passthrough = this.gtfsParser!.getPassthroughContent(fileName);
+    if (passthrough !== undefined) {
+      const lines = passthrough
+        .split('\n')
+        .filter((l) => l.trim() !== '').length;
+      const lineSpan = document.createElement('span');
+      lineSpan.className = 'badge badge-ghost badge-sm';
+      lineSpan.textContent = `${lines} lines`;
+      link.appendChild(lineSpan);
+    } else {
+      // Add record count if available
+      const data = this.gtfsParser!.getFileDataSync(fileName);
+      if (data) {
+        const count = Array.isArray(data) ? data.length : 1;
+        const countSpan = document.createElement('span');
+        countSpan.className = 'badge badge-neutral badge-sm';
+        countSpan.textContent = `${count}`;
+        link.appendChild(countSpan);
+      }
     }
 
     link.addEventListener('click', async (event) => {
@@ -480,7 +493,12 @@ export class UIController {
   }
 
   async openFile(fileName: string, clickedElement: HTMLElement | null = null) {
-    if (!this.gtfsParser!.getAllFileNames().includes(fileName)) {
+    const isPassthrough =
+      this.gtfsParser!.getPassthroughContent(fileName) !== undefined;
+    if (
+      !isPassthrough &&
+      !this.gtfsParser!.getAllFileNames().includes(fileName)
+    ) {
       return;
     }
 

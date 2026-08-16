@@ -626,6 +626,29 @@
                     <div id="table-editor" class="h-full"></div>
                   </div>
                 </div>
+                <!-- Raw text editor for non-spec passthrough files -->
+                <div id="raw-editor-view" class="h-full hidden flex flex-col">
+                  <div
+                    class="px-4 py-2 text-xs opacity-70 border-b border-base-300"
+                  >
+                    Not part of the GTFS spec. Preserved verbatim on export.
+                    Edits here are saved immediately and cannot be undone.
+                  </div>
+                  <textarea
+                    id="raw-editor"
+                    class="textarea textarea-bordered flex-1 m-4 font-mono text-xs leading-relaxed"
+                    spellcheck="false"
+                  ></textarea>
+                  <div class="flex items-center gap-3 px-4 pb-4">
+                    <button id="raw-editor-save" class="btn btn-primary btn-sm">
+                      Save
+                    </button>
+                    <span
+                      id="raw-editor-status"
+                      class="text-xs opacity-70"
+                    ></span>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
