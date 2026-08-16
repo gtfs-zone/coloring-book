@@ -62,6 +62,22 @@ export function getTripDisplay(
 }
 
 /**
+ * A headway period has no id of its own, only a (trip_id, start_time) key, so
+ * it is named by its trip and the window it covers.
+ */
+export function getFrequencyDisplay(
+  record: Record<string, string>
+): EntityDisplayInfo {
+  const trip = record['trip_id'] ?? '';
+  const start = record['start_time'] ?? '';
+  const end = record['end_time'] ?? '';
+  if (start === '' && end === '') {
+    return { primary: trip };
+  }
+  return { primary: trip, secondary: `${start}-${end}` };
+}
+
+/**
  * Generic dispatcher, resolves the display info for any GTFS table row.
  * Falls back to a best-effort `<table>_id` (or `<table>_name`) field, then
  * an empty primary, for tables without a dedicated helper. Callers that only
@@ -83,6 +99,8 @@ export function getEntityDisplay(
       return getServiceDisplay(record);
     case 'trips':
       return getTripDisplay(record);
+    case 'frequencies':
+      return getFrequencyDisplay(record);
     default: {
       const singular = table.replace(/s$/, '');
       const name = record[`${singular}_name`];
