@@ -12,7 +12,14 @@ import { GTFSParser } from './gtfs-parser.js';
 import { PatchManager } from './patch-manager.js';
 import { hasValidCoords } from '../utils/stop-coords.js';
 import { CONFIG } from '../config.js';
-import { Stops, StopTimes, Routes, Pathways, Agency } from '../types/gtfs.js';
+import {
+  Stops,
+  StopTimes,
+  Routes,
+  Pathways,
+  Agency,
+  GTFS_TABLES,
+} from '../types/gtfs.js';
 import {
   agencyRouteFilter,
   normalizeAgencyId,
@@ -827,6 +834,71 @@ export class MapController {
     console.log(`Highlighted zone: ${location_id}`);
   }
 
+  /**
+   * Highlight a location group by revealing its member stops and fitting to
+   * them. A group has no geometry of its own, so its stops are the highlight.
+   */
+  public highlightLocationGroup(location_group_id: string): void {
+    this.interactionHandler?.setHighlightedStop(null);
+    this.layerManager?.clearHighlights();
+    this.applySpotlight(null);
+    this.applyFocusedObject({ type: 'none' });
+
+    const stop_ids = this.stopIdsForLocationGroup(location_group_id);
+    this.layerManager?.setRouteStops([
+      ...this.withAncestors(new Set(stop_ids)),
+    ]);
+    this.fitToStops(stop_ids);
+
+    console.log(
+      `Highlighted location group: ${location_group_id} (${stop_ids.length} stops)`
+    );
+  }
+
+  /** Member stop ids of a location group, from location_group_stops.txt. */
+  private stopIdsForLocationGroup(location_group_id: string): string[] {
+    const rows =
+      this.gtfsParser?.getFileDataSync(GTFS_TABLES.LOCATION_GROUP_STOPS) ?? [];
+    return rows
+      .filter(
+        (row) => String(row.location_group_id ?? '') === location_group_id
+      )
+      .map((row) => String(row.stop_id ?? ''))
+      .filter((stop_id) => stop_id !== '');
+  }
+
+  /** Fit the viewport to a set of stops. No-op when none have coordinates. */
+  private fitToStops(stop_ids: string[]): void {
+    if (!this.map || !this.gtfsParser || stop_ids.length === 0) {
+      return;
+    }
+    const wanted = new Set(stop_ids);
+    const coordinates: [number, number][] = [];
+    for (const stop of this.gtfsParser.getFileDataSyncTyped<Stops>(
+      'stops.txt'
+    ) || []) {
+      if (wanted.has(stop.stop_id) && hasValidCoords(stop)) {
+        coordinates.push([stop.stop_lon, stop.stop_lat]);
+      }
+    }
+    if (coordinates.length === 0) {
+      return;
+    }
+    const bounds = coordinates.reduce(
+      (acc, coord) => acc.extend(coord),
+      new LngLatBounds(coordinates[0], coordinates[0])
+    );
+    this.map.fitBounds(bounds, {
+      padding: {
+        top: 80,
+        bottom: 80 + this.bottomPadding,
+        left: 80,
+        right: 80,
+      },
+      maxZoom: CONFIG.STOP_FOCUS_ZOOM,
+    });
+  }
+
   /** Fit the viewport to one zone's bounds. No-op if the zone has no geometry. */
   public fitToZone(location_id: string): void {
     if (!this.gtfsParser || !this.map) {
@@ -1210,16 +1282,20 @@ export class MapController {
   }
 
   /**
-   * Handle zone polygon click events.
-   *
-   * Focus and fit only: the zone browse page it should navigate to does not
-   * exist yet, so the page state is left untouched.
+   * Handle zone polygon click events: focus, fit, and open the zone page.
    */
-  private handleZoneClick(location_id: string): void {
+  private async handleZoneClick(location_id: string): Promise<void> {
     console.log('Zone clicked:', location_id);
 
     this.applyFocusedObject({ type: 'zone', id: location_id });
     this.fitToZone(location_id);
+
+    if (this.pageStateManager) {
+      await this.pageStateManager.setPageState({
+        type: 'zone',
+        location_id,
+      });
+    }
 
     this.callbacks.onZoneSelect?.(location_id);
   }

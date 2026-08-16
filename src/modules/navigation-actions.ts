@@ -98,6 +98,32 @@ export async function navigateToPathway(pathway_id: string): Promise<void> {
 }
 
 /**
+ * Navigate to on-demand zone details page
+ * @param location_id - The locations.geojson feature id to display
+ */
+export async function navigateToZone(location_id: string): Promise<void> {
+  const pageState: PageState = {
+    type: 'zone',
+    location_id: location_id,
+  };
+  await getPageStateManager().navigateTo(pageState);
+}
+
+/**
+ * Navigate to location group details page
+ * @param location_group_id - The location group ID to display
+ */
+export async function navigateToLocationGroup(
+  location_group_id: string
+): Promise<void> {
+  const pageState: PageState = {
+    type: 'location_group',
+    location_group_id: location_group_id,
+  };
+  await getPageStateManager().navigateTo(pageState);
+}
+
+/**
  * Get the current page state
  */
 export function getCurrentPageState(): PageState {

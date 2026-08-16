@@ -64,6 +64,8 @@ export class BrowseNavigation {
     highlightTrip: (trip_id: string) => void;
     highlightStop: (stop_id: string) => void;
     highlightPathway: (pathway_id: string) => void;
+    highlightZone: (location_id: string) => void;
+    highlightLocationGroup: (location_group_id: string) => void;
     clearHighlights: () => void;
     highlightRoute: (route_id: string) => void;
     fitToRoutes: (route_ids: string[]) => void;
@@ -208,6 +210,8 @@ export class BrowseNavigation {
       highlightTrip: (trip_id: string) => void;
       highlightStop: (stop_id: string) => void;
       highlightPathway: (pathway_id: string) => void;
+      highlightZone: (location_id: string) => void;
+      highlightLocationGroup: (location_group_id: string) => void;
       clearHighlights: () => void;
       highlightRoute: (route_id: string) => void;
       fitToRoutes: (route_ids: string[]) => void;
@@ -287,6 +291,12 @@ export class BrowseNavigation {
           Promise.resolve(null),
         getRouteAsync: (route_id: string) =>
           this.relationships.getRouteByIdAsync(route_id),
+        getTripsForZone: (location_id: string) =>
+          this.gtfsRelationshipsInstance.getTripsForZone(location_id),
+        getTripsForLocationGroup: (location_group_id: string) =>
+          this.gtfsRelationshipsInstance.getTripsForLocationGroup(
+            location_group_id
+          ),
       },
       // Provide access to the actual database for StopViewController
       gtfsDatabase: {
@@ -340,6 +350,10 @@ export class BrowseNavigation {
           this.mapController.highlightStop(stop_id),
         highlightPathway: (pathway_id: string) =>
           this.mapController.highlightPathway(pathway_id),
+        highlightZone: (location_id: string) =>
+          this.mapController.highlightZone(location_id),
+        highlightLocationGroup: (location_group_id: string) =>
+          this.mapController.highlightLocationGroup(location_group_id),
         clearHighlights: () => this.mapController.clearHighlights(),
         focusOnAgency: (agency_id: string) =>
           this.highlightAgencyOnMap(agency_id),
