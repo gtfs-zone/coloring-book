@@ -183,7 +183,7 @@ export class TimetableRenderer {
       <div class="flex items-center gap-2 border-b border-base-300 px-2 py-1">
         <span class="text-xs opacity-60">stop_times fields</span>
         <div class="join">
-          ${button('compact', 'Compact', 'Arrival and departure only (the pickup/drop-off window on an on-demand row).')}
+          ${button('compact', 'Compact', 'Arrival and departure only (the pickup/drop-off window on an on-demand row), plus a nine-slot flag row for the other fields. The flag slots are mouse-only: switch to Used or All to reach those fields by keyboard.')}
           ${button('used', 'Used', 'Every stop_times field that is used on this route and direction.')}
           ${button('all', 'All', 'Every editable stop_times field, in spec order.')}
         </div>

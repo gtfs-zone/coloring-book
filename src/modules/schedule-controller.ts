@@ -386,6 +386,15 @@ export class ScheduleController {
         return;
       }
 
+      // Compact mode's flag slots. Matched before the grid's spans: a slot is
+      // not a .time-span, but it opens the same three editors on the same
+      // data-* attributes.
+      const flagSlot = (e.target as Element)?.closest?.('.flag-slot');
+      if (flagSlot instanceof HTMLElement) {
+        this.openStopTimeEditor(flagSlot);
+        return;
+      }
+
       const span = (e.target as Element)?.closest?.('.time-span');
       if (span instanceof HTMLElement) {
         this.openStopTimeEditor(span);
@@ -745,7 +754,13 @@ export class ScheduleController {
       return;
     }
 
-    this.editingCell = { tripId, stopIndex: stopIndex ?? '', field };
+    // A flag slot is not in the grid, so there is no cell to restore an editor
+    // onto after a re-render - leaving editingCell null just drops the edit
+    // rather than logging a missing cell.
+    const isGridCell = span.classList.contains('time-span');
+    if (isGridCell) {
+      this.editingCell = { tripId, stopIndex: stopIndex ?? '', field };
+    }
     this.selectTimeCell(span, false);
 
     openInlineEditor(span, {
@@ -753,13 +768,21 @@ export class ScheduleController {
       initialValue: seed?.value,
       selectionStart: seed?.caret,
       inputType: stopTimeFieldKind(field) === 'number' ? 'number' : 'text',
-      className: 'w-full text-center font-mono',
+      // A slot is 12px wide, so an editor sized to it would be unusable; it
+      // overflows its flag row for as long as it is open.
+      className: isGridCell
+        ? 'w-full text-center font-mono'
+        : 'w-24 shrink-0 text-center font-mono',
       title: field,
-      arrowNavigation: true,
+      arrowNavigation: isGridCell,
       onCommit: (newValue) => {
         void this.updateStopTimeField(tripId, stopSequence, field, newValue);
       },
-      onNavigate: (direction) => this.moveTimeCell(span, direction),
+      // Only a grid cell has neighbours; arrowing out of a flag slot's editor
+      // has nowhere to land.
+      onNavigate: isGridCell
+        ? (direction) => this.moveTimeCell(span, direction)
+        : undefined,
     });
   }
 
@@ -953,8 +976,15 @@ export class ScheduleController {
   /**
    * Make `span` the selected cell: it takes the roving tabindex, and every
    * other cell drops back to -1 so the grid stays a single tab stop.
+   *
+   * Only a `.time-span` can be the selection. A compact-mode flag slot opens
+   * the same editors but is not part of the grid, so clicking one must not move
+   * the tab stop onto a button no arrow key can leave.
    */
   private selectTimeCell(span: HTMLElement, focus: boolean): void {
+    if (!span.classList.contains('time-span')) {
+      return;
+    }
     const view = document.getElementById('schedule-view');
     view
       ?.querySelectorAll<HTMLElement>('.time-span[tabindex="0"]')
