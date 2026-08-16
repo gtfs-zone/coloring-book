@@ -13,6 +13,7 @@ import {
   formatGtfsDateWithWeekday,
   parseGtfsDate,
   toGtfsDate as formatGTFS,
+  todayGtfsDate,
 } from '../utils/gtfs-date.js';
 import { renderPencilIcon, renderTriangleIcon } from './modal-utils.js';
 
@@ -272,6 +273,18 @@ function hexToRgba(hex: string, alpha: number): string {
   return `rgba(${r},${g},${b},${alpha})`;
 }
 
+/**
+ * Vertical "now" marker for a week cell. Drawn as a background gradient at
+ * today's position rather than a border, which could only ever land on a cell
+ * boundary. Background-image sits over the cell's shading color.
+ *
+ * @param pct horizontal position of the line within the cell, 0-100.
+ */
+function todayLineStyle(pct: number): string {
+  const c = 'var(--color-error, #ef4444)';
+  return `background-image:linear-gradient(to right, transparent calc(${pct}% - 1px), ${c} calc(${pct}% - 1px), ${c} calc(${pct}% + 1px), transparent calc(${pct}% + 1px))`;
+}
+
 const MONTH_ABBR = [
   'Jan',
   'Feb',
@@ -398,14 +411,43 @@ export function renderServiceTimeline(
     }
   }
 
+  // Week index containing today, or -1 when today falls outside the timeline.
+  const today = todayGtfsDate();
+  const todayWeekIndex = weeks.findIndex((weekStart) => {
+    const weekEnd = formatGTFS(
+      new Date(parseGTFSDate(weekStart).getTime() + 6 * 86400000)
+    );
+    return today >= weekStart && today <= weekEnd;
+  });
+  const todayDayIndex =
+    todayWeekIndex === -1
+      ? -1
+      : Math.round(
+          (parseGTFSDate(today).getTime() -
+            parseGTFSDate(weeks[todayWeekIndex]).getTime()) /
+            86400000
+        );
+
   const maxIdLen = Math.max(0, ...[...data.keys()].map((k) => k.length));
   const labelColPx = Math.min(300, Math.max(80, maxIdLen * 7 + 32));
 
+  // The month header carries the marker too, so the line reads as continuous
+  // from the top of the table.
+  let spanStartWeek = 0;
   const headerHtml = monthSpans
-    .map(
-      ({ label, colspan }) =>
-        `<th colspan="${colspan}" class="px-1 py-0.5 text-center text-base-content/60 font-medium border-b border-base-300 whitespace-nowrap">${label}</th>`
-    )
+    .map(({ label, colspan }) => {
+      const start = spanStartWeek;
+      spanStartWeek += colspan;
+      const inSpan =
+        todayWeekIndex >= start && todayWeekIndex < start + colspan;
+      const style = inSpan
+        ? todayLineStyle(
+            ((todayWeekIndex - start + (todayDayIndex + 0.5) / 7) / colspan) *
+              100
+          )
+        : '';
+      return `<th colspan="${colspan}" class="px-1 py-0.5 text-center text-base-content/60 font-medium border-b border-base-300 whitespace-nowrap" style="${style}">${label}</th>`;
+    })
     .join('');
 
   const routeAttr = options.route_id
@@ -426,7 +468,7 @@ export function renderServiceTimeline(
       }
 
       const cells = weeks
-        .map((weekStart) => {
+        .map((weekStart, weekIndex) => {
           const weekStartTs = parseGTFSDate(weekStart).getTime();
           const weekEndTs = weekStartTs + 6 * 86400000;
           const weekEnd = formatGTFS(new Date(weekEndTs));
@@ -476,10 +518,14 @@ export function renderServiceTimeline(
             : '';
           const triggerClass = isActive ? ' field-tooltip-trigger' : '';
 
-          const bgStyle = isActive
-            ? `background-color:${hexToRgba(sd.color, 0.2)}`
-            : '';
-          return `<td class="w-5 min-w-5 h-7 border-r border-base-300/20 text-center align-middle leading-none${triggerClass}" style="${bgStyle}"${tipAttr}>${ticks.join('')}</td>`;
+          const styles: string[] = [];
+          if (isActive) {
+            styles.push(`background-color:${hexToRgba(sd.color, 0.2)}`);
+          }
+          if (weekIndex === todayWeekIndex) {
+            styles.push(todayLineStyle(((todayDayIndex + 0.5) / 7) * 100));
+          }
+          return `<td class="w-5 min-w-5 h-7 border-r border-base-300/20 text-center align-middle leading-none${triggerClass}" style="${styles.join(';')}"${tipAttr}>${ticks.join('')}</td>`;
         })
         .join('');
 
