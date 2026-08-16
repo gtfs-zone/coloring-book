@@ -891,6 +891,10 @@ export class MapController {
 
     this.interactionHandler?.setHighlightedStop(stop_id);
 
+    // Transfers of this stop only. Cleared by layerManager.clearHighlights(),
+    // which every other highlight* call runs first.
+    this.layerManager?.showTransferEdges(stop_id);
+
     // Get routes that serve this stop and spotlight them (line + their stops)
     const routesAtStop = this.gtfsParser?.getRoutesForStop?.(stop_id) || [];
     const route_ids = routesAtStop.map((route) => route.route_id as string);

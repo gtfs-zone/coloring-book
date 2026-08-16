@@ -45,11 +45,13 @@ import {
 } from './navigation-actions.js';
 import { getZoneFeatures, zoneName } from './zone-store.js';
 import { validateFlexStopTimeRow } from '../utils/flex-rules.js';
+import { renderSpecDescriptionPlain } from '../utils/spec-markup.js';
+import { getGTFSFieldDescription } from '../utils/zod-tooltip-helper.js';
 import { GTFS_TABLES } from '../types/gtfs.js';
 import type { LocationGroups } from '../types/gtfs-entities.js';
 import {
-  StopTimeFieldMode,
   stopTimeFieldKind,
+  STOP_TIME_EDITABLE_FIELDS,
   TIME_FIELDS,
   WINDOW_FIELDS,
 } from './timetable-fields.js';
@@ -72,7 +74,6 @@ interface TimeCellKey {
 }
 
 /** localStorage key for the Compact / Used / All switch. */
-const FIELD_MODE_STORAGE_KEY = 'gtfs.timetable.stopTimeFields';
 
 /** Is this sub-row one end of a pickup/drop-off window? */
 function asWindowField(field: string | undefined): FlexWindowField | null {
@@ -252,10 +253,13 @@ export class ScheduleController {
   private hoveredRef: StopTimeRef | null = null;
 
   /**
-   * Which stop_times sub-rows the cells show. UI state, so it lives here and in
-   * localStorage rather than in the feed or the renderer.
+   * Fields the user has added to the sub-row roster from a cell's `+` button.
+   *
+   * UI-only and deliberately not persisted: they last for this visit to the
+   * timetable, so nothing remembers a preference the feed does not support. A
+   * field that gains a real value stays visible on its own merit afterwards.
    */
-  private stopTimeFieldMode: StopTimeFieldMode = 'compact';
+  private provisionalFields: string[] = [];
 
   /**
    * Initialize ScheduleController with required dependencies
@@ -290,45 +294,7 @@ export class ScheduleController {
       { capture: true, passive: true }
     );
 
-    this.stopTimeFieldMode = this.loadStopTimeFieldMode();
     this.installTimetablePickers();
-  }
-
-  /** The persisted field mode, falling back loudly on anything unexpected. */
-  private loadStopTimeFieldMode(): StopTimeFieldMode {
-    let stored: string | null = null;
-    try {
-      stored = localStorage.getItem(FIELD_MODE_STORAGE_KEY);
-    } catch (error) {
-      console.warn('[ScheduleController] localStorage unavailable:', error);
-      return 'compact';
-    }
-    if (stored === null) {
-      return 'compact';
-    }
-    if (stored === 'compact' || stored === 'used' || stored === 'all') {
-      return stored;
-    }
-    console.warn(
-      `[ScheduleController] unknown stop_time field mode '${stored}', falling back to compact`
-    );
-    return 'compact';
-  }
-
-  /** Switch the sub-row mode and redraw, keeping scroll and selection. */
-  private setStopTimeFieldMode(mode: StopTimeFieldMode): void {
-    if (mode === this.stopTimeFieldMode) {
-      return;
-    }
-    this.stopTimeFieldMode = mode;
-    try {
-      localStorage.setItem(FIELD_MODE_STORAGE_KEY, mode);
-    } catch (error) {
-      console.warn('[ScheduleController] could not persist field mode:', error);
-    }
-    console.log(`[ScheduleController] stop_time field mode -> ${mode}`);
-    // No patch is recorded for a display switch, so nothing else will redraw.
-    void this.refreshCurrentTimetable();
   }
 
   /**
@@ -377,21 +343,20 @@ export class ScheduleController {
         return;
       }
 
-      const modeBtn = (e.target as Element)?.closest?.('.stop-time-mode-btn');
-      if (modeBtn instanceof HTMLElement) {
-        const mode = modeBtn.dataset.mode;
-        if (mode === 'compact' || mode === 'used' || mode === 'all') {
-          this.setStopTimeFieldMode(mode);
-        }
+      const addFieldBtn = (e.target as Element)?.closest?.('.add-field-btn');
+      if (addFieldBtn instanceof HTMLElement) {
+        void this.openAddFieldPicker();
         return;
       }
 
-      // Compact mode's flag slots. Matched before the grid's spans: a slot is
-      // not a .time-span, but it opens the same three editors on the same
-      // data-* attributes.
-      const flagSlot = (e.target as Element)?.closest?.('.flag-slot');
-      if (flagSlot instanceof HTMLElement) {
-        this.openStopTimeEditor(flagSlot);
+      const removeFieldBtn = (e.target as Element)?.closest?.(
+        '.remove-field-btn'
+      );
+      if (removeFieldBtn instanceof HTMLElement) {
+        const field = removeFieldBtn.dataset.field;
+        if (field) {
+          this.removeProvisionalField(field);
+        }
         return;
       }
 
@@ -623,6 +588,66 @@ export class ScheduleController {
    */
   public setBookingRuleHandler(open: (booking_rule_id: string) => void): void {
     this.bookingRuleOpen = open;
+  }
+
+  /** The roster the last render used, stamped on #schedule-view. */
+  private renderedFields(): string[] {
+    const view = document.getElementById('schedule-view');
+    const stamped = view?.dataset.fields ?? '';
+    return stamped === '' ? [] : stamped.split(',');
+  }
+
+  /**
+   * Add a stop_times field to the roster from a cell's `+` button.
+   *
+   * The field you want is discovered while looking at a specific cell, but the
+   * grid has to stay rectangular, so it appears as a sub-row in every cell. It
+   * is UI-only: no patch, no persistence, dropped on leaving the timetable.
+   */
+  private async openAddFieldPicker(): Promise<void> {
+    const shown = new Set(this.renderedFields());
+    const options: OptionPickerItem[] = STOP_TIME_EDITABLE_FIELDS.filter(
+      (field) => !shown.has(field)
+    ).map((field) => ({
+      value: field,
+      primary: field,
+      secondary: renderSpecDescriptionPlain(
+        getGTFSFieldDescription('stop_times.txt', field)
+      ),
+    }));
+
+    if (options.length === 0) {
+      notify.info('Every stop_times field is already shown', {
+        duration: 3000,
+      });
+      return;
+    }
+
+    const picked = await showOptionPickerModal({
+      title: 'Add a stop_times field',
+      options,
+      searchable: true,
+    });
+    if (picked === null || picked === '') {
+      return;
+    }
+
+    console.log(`[ScheduleController] showing stop_times field ${picked}`);
+    this.provisionalFields.push(picked);
+    // A full re-render, not a DOM patch: data-fields-per-cell is stamped at
+    // render time and resolveNeighbour's stride depends on it.
+    await this.refreshCurrentTimetable();
+  }
+
+  /** Drop a field added from the `+` button. Used fields have no ✕. */
+  private removeProvisionalField(field: string): void {
+    const index = this.provisionalFields.indexOf(field);
+    if (index === -1) {
+      return;
+    }
+    this.provisionalFields.splice(index, 1);
+    console.log(`[ScheduleController] hiding stop_times field ${field}`);
+    void this.refreshCurrentTimetable();
   }
 
   /**
@@ -1365,6 +1390,7 @@ export class ScheduleController {
     this.currentServiceId = undefined;
     this.currentDirectionId = undefined;
     this.pendingRow = undefined;
+    this.provisionalFields = [];
     this.resetTimetableScroll();
   }
 
@@ -2428,6 +2454,15 @@ export class ScheduleController {
         `[ScheduleController] renderSchedule route=${route_id} service=${service_id} direction=${direction_id ?? '(default)'}`
       );
 
+      // Leaving a timetable drops the UI-only field roster: it is a choice
+      // about this route and direction, not a persisted preference.
+      if (
+        this.currentRouteId !== route_id ||
+        this.currentServiceId !== service_id
+      ) {
+        this.provisionalFields = [];
+      }
+
       // Store current state for refresh functionality
       this.currentRouteId = route_id;
       this.currentServiceId = service_id;
@@ -2442,6 +2477,9 @@ export class ScheduleController {
       // Use provided direction_id or the busiest direction as default
       const selectedDirection =
         direction_id ?? availableDirections[0]?.id ?? '0';
+      if (this.currentDirectionId !== selectedDirection) {
+        this.provisionalFields = [];
+      }
       this.currentDirectionId = selectedDirection;
 
       const cacheKey = this.timetableDataCacheKey(
@@ -2479,13 +2517,10 @@ export class ScheduleController {
         } as Stops);
       }
 
-      // Stamped per render rather than stored on the cached data: the mode can
-      // change without the underlying timetable data changing at all.
-      timetableData.stopTimeFieldMode = this.stopTimeFieldMode;
-
       return this.renderer.renderTimetableHTML(
         timetableData,
-        this.pendingRow?.ref
+        this.pendingRow?.ref,
+        this.provisionalFields
       );
     } catch (error) {
       console.error('Error rendering schedule:', error);

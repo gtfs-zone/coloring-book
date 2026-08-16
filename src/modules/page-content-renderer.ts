@@ -36,6 +36,10 @@ import {
   renderInlineEntityFields,
 } from '../utils/inline-editable-field.js';
 import { installStopAreasField } from '../utils/stop-areas-field.js';
+import type {
+  EditableTableDeps,
+  EditableTablePatchManager,
+} from './editable-table.js';
 import { renderIssueCard } from '../utils/issue-card.js';
 import { getFeedIssues, refreshFeedIssuesIfStale } from './feed-issues.js';
 import { GTFS_TABLES } from '../types/gtfs.js';
@@ -209,6 +213,9 @@ export interface ContentRendererDependencies {
       }>,
       label?: string
     ) => Promise<void>;
+    // Editing a key field of a composite-key table (the stop page's transfers)
+    // re-keys the row, which the editable table records as delete plus insert.
+    recordBatchMixed: EditableTablePatchManager['recordBatchMixed'];
   };
 }
 
@@ -231,9 +238,11 @@ export class PageContentRenderer {
     const stopViewDependencies: StopViewDependencies = {
       gtfsDatabase: dependencies.gtfsDatabase,
       gtfsRelationships: dependencies.gtfsRelationships || {},
+      editableDeps: this.editableDeps(),
       onStopClick: dependencies.onStopClick,
       onPathwayClick: dependencies.onPathwayClick,
       onDeleteStop: (stop_id) => this.handleDeleteStop(stop_id),
+      onTransfersChanged: () => dependencies.onEntityCreated?.(),
     };
     this.stopViewController = new StopViewController(stopViewDependencies);
 
@@ -327,6 +336,35 @@ export class PageContentRenderer {
       gtfsDatabase: dependencies.gtfsDatabase,
       patchManager: dependencies.patchManager ?? null,
     });
+  }
+
+  /**
+   * The writing handle an embedded editable table needs.
+   *
+   * Null when the page has no patch manager or a read-only database handle: a
+   * table that cannot record its edits must not be rendered at all.
+   */
+  private editableDeps(): EditableTableDeps | undefined {
+    const db = this.dependencies.gtfsDatabase;
+    const patchManager = this.dependencies.patchManager;
+    if (!patchManager || !db.updateRow || !db.deleteRow) {
+      console.warn(
+        '[PageContentRenderer] no editable database handle, embedded tables are skipped'
+      );
+      return undefined;
+    }
+    const updateRow = db.updateRow;
+    const deleteRow = db.deleteRow;
+    return {
+      gtfsDatabase: {
+        getAllRows: (table) =>
+          db.getAllRows(table) as Promise<Record<string, unknown>[]>,
+        insertRows: (table, rows) => db.insertRows(table, rows),
+        updateRow: (table, key, data) => updateRow(table, key, data),
+        deleteRow: (table, key) => deleteRow(table, key),
+      },
+      patchManager,
+    };
   }
 
   /**

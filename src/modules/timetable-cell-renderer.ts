@@ -8,15 +8,7 @@ import { EditableStopTime } from './timetable-data-processor.js';
 import type { StopTimeRef } from '../types/gtfs-flex.js';
 import { escapeHtml } from '../utils/escape-html.js';
 import { getEnumOptions } from '../types/gtfs-enums.js';
-import {
-  FlagSlot,
-  StopTimeFieldMode,
-  stopTimeFieldKind,
-  stopTimeFlagSlots,
-  TIME_FIELDS,
-  WINDOW_FIELDS,
-} from './timetable-fields.js';
-import { renderFlagGlyph } from './flag-icons.js';
+import { stopTimeFieldKind } from './timetable-fields.js';
 import { FieldPresence, stopTimeFieldPresence } from '../utils/flex-rules.js';
 import { formatIssueValue, isDanglingReference } from './feed-issues.js';
 
@@ -28,7 +20,6 @@ export interface StopTimeCellParams {
   stopIndex: number;
   /** The roster of visible fields, in spec order, for the whole table */
   fields: readonly string[];
-  mode: StopTimeFieldMode;
   /** The trip's stop_time at this row, when it has one */
   editableStopTime?: EditableStopTime;
   /** Row is the not-yet-saved add-stop preview */
@@ -91,8 +82,8 @@ function offsetLabel(time: string, origin: string): string | null {
  * A cell is a vertical stack of labeled sub-rows, one `<span class="time-span">`
  * per visible stop_times field. The roster is the same for every cell in the
  * table (see visibleStopTimeFields), which is what keeps the grid rectangular
- * for keyboard navigation - the one exception is compact mode, where a windowed
- * row swaps its two time sub-rows for the two window fields, keeping the count.
+ * for keyboard navigation: a windowed row and a scheduled row share a column,
+ * so both pairs of time fields are in the roster whenever either is used.
  *
  * Editing is handled entirely by ScheduleController's delegated click handler,
  * which swaps a span for a live editor on click - see installTimetablePickers.
@@ -121,7 +112,6 @@ export class TimetableCellRenderer {
       trip_id,
       stop_id,
       stopIndex,
-      mode,
       editableStopTime,
       isPendingRow,
       isPendingFlex,
@@ -150,23 +140,13 @@ export class TimetableCellRenderer {
       !!record?.start_pickup_drop_off_window ||
       !!record?.end_pickup_drop_off_window;
 
-    // Compact shows two sub-rows on every cell: the window pair on a windowed
-    // row, arrival/departure otherwise. Used and All show the full roster, so
-    // both pairs are present and no swap is needed.
-    const fields =
-      mode === 'compact'
-        ? isWindowed
-          ? WINDOW_FIELDS
-          : TIME_FIELDS
-        : params.fields;
-
     const isStopRef = rowRef === undefined || rowRef.kind === 'stop';
     const refAttrs = isStopRef
       ? `data-stop-id="${escapeHtml(stop_id)}"`
       : `data-flex-kind="${escapeHtml(rowRef.kind)}" data-flex-id="${escapeHtml(rowRef.id)}"`;
     const stopSequence = record?.stop_sequence ?? '';
 
-    const spans = fields
+    const spans = params.fields
       .map((field) =>
         this.renderFieldSpan({
           field,
@@ -188,156 +168,27 @@ export class TimetableCellRenderer {
     const isSkipped =
       !isWindowed && !record?.arrival_time && !record?.departure_time;
     const cellClass = [
-      'time-cell align-top p-2 text-center',
+      'time-cell group align-top p-2 text-center',
       isWindowed ? 'flex-window-cell' : isSkipped ? 'no-time' : 'has-time',
     ].join(' ');
 
-    // Compact mode is the default, so it has to answer "is there more here?"
-    // without expanding: nine fixed slots, one per non-time field.
-    const flagRow =
-      mode === 'compact'
-        ? this.renderFlagRow({
-            trip_id,
-            stopIndex,
-            refAttrs,
-            stopSequence,
-            record,
-            isWindowed,
-            presence,
-          })
-        : '';
+    // The roster is table-wide, so a field the user wants to edit here is added
+    // to every cell. Hidden until the cell is hovered or focused, or the grid
+    // would be littered with plus signs.
+    const addField = `
+      <button
+        type="button"
+        class="add-field-btn btn btn-ghost btn-xs h-4 min-h-0 w-full opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+        data-trip-id="${escapeHtml(trip_id)}"
+        data-stop-index="${stopIndex}"
+        title="Add a stop_times field as a sub-row of every cell"
+      >+</button>
+    `;
 
     return `
       <td class="${cellClass}">
-        <div class="stacked-time-container">${spans}${flagRow}</div>
+        <div class="stacked-time-container">${spans}${addField}</div>
       </td>
-    `;
-  }
-
-  /**
-   * The compact cell's flag row: nine slots in four clusters, in a fixed order
-   * so a column of cells reads vertically slot by slot.
-   *
-   * The slots are `tabindex="-1"` buttons and carry no `.time-span` class, so
-   * they stay out of `timeCellRows` and out of the roving-tabindex grid: they
-   * are mouse-only by design, and a keyboard user switches to Used or All mode
-   * where every one of these fields is a real grid cell.
-   */
-  private renderFlagRow(args: {
-    trip_id: string;
-    stopIndex: number;
-    refAttrs: string;
-    stopSequence: string;
-    record: EditableStopTime | null;
-    isWindowed: boolean;
-    presence: Map<string, FieldPresence>;
-  }): string {
-    const {
-      trip_id,
-      stopIndex,
-      refAttrs,
-      stopSequence,
-      record,
-      isWindowed,
-      presence,
-    } = args;
-
-    const slots = stopTimeFlagSlots(
-      record ? presenceRow(record) : null,
-      presence
-    );
-    const cells = slots
-      .map((slot) => {
-        const html = this.renderFlagSlot({
-          slot,
-          trip_id,
-          stopIndex,
-          refAttrs,
-          stopSequence,
-          hasRecord: record !== null,
-          isWindowed,
-          presence: presence.get(slot.field),
-        });
-        return slot.endsCluster
-          ? `${html}<span class="inline-block w-px h-3 bg-base-300 mx-0.5"></span>`
-          : html;
-      })
-      .join('');
-
-    return `<div class="flag-row flex items-center justify-center gap-px h-4">${cells}</div>`;
-  }
-
-  /** One flag slot: a glyph the click handler opens this field's editor on. */
-  private renderFlagSlot(args: {
-    slot: FlagSlot;
-    trip_id: string;
-    stopIndex: number;
-    refAttrs: string;
-    stopSequence: string;
-    hasRecord: boolean;
-    isWindowed: boolean;
-    presence?: FieldPresence;
-  }): string {
-    const {
-      slot,
-      trip_id,
-      stopIndex,
-      refAttrs,
-      stopSequence,
-      hasRecord,
-      isWindowed,
-      presence,
-    } = args;
-
-    // Same rule as the sub-rows: only a time edit may create a stop_time, and a
-    // field the spec forbids here is inert unless it already holds a value.
-    const forbiddenEmpty = presence?.state === 'forbidden' && slot.value === '';
-    const editable = hasRecord && !forbiddenEmpty;
-
-    const dangling =
-      stopTimeFieldKind(slot.field) === 'booking_rule' &&
-      isDanglingReference('stop_times.txt', slot.field, slot.value);
-
-    const titleParts = [slot.tooltip];
-    if (dangling) {
-      titleParts.push(
-        `No record with ${slot.field} ${formatIssueValue(slot.value)} exists`
-      );
-    }
-    if (!hasRecord) {
-      titleParts.push('no stop_time on this trip yet');
-    }
-
-    const classes = [
-      'flag-slot inline-flex items-center justify-center w-3 h-3 shrink-0 rounded-sm',
-      slot.tone === 'error' || dangling
-        ? 'text-error'
-        : slot.tone === 'muted'
-          ? 'opacity-30'
-          : 'text-base-content',
-      editable
-        ? 'cursor-pointer hover:bg-base-200'
-        : 'opacity-30 cursor-default pointer-events-none',
-    ]
-      .filter(Boolean)
-      .join(' ');
-
-    return `
-      <button
-        type="button"
-        class="${classes}"
-        tabindex="-1"
-        data-trip-id="${escapeHtml(trip_id)}"
-        ${refAttrs}
-        data-stop-index="${stopIndex}"
-        data-field="${escapeHtml(slot.field)}"
-        data-field-kind="${stopTimeFieldKind(slot.field)}"
-        data-stop-sequence="${escapeHtml(stopSequence)}"
-        data-value="${escapeHtml(slot.value)}"
-        data-windowed="${isWindowed}"
-        ${editable ? '' : 'data-disabled="true"'}
-        title="${escapeHtml(titleParts.join(' - '))}"
-      >${renderFlagGlyph(slot.glyph)}</button>
     `;
   }
 
