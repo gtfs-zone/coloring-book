@@ -24,6 +24,14 @@ import {
   PathwayViewDependencies,
 } from './pathway-view-controller.js';
 import {
+  ZoneViewController,
+  ZoneViewDependencies,
+} from './zone-view-controller.js';
+import {
+  LocationGroupViewController,
+  LocationGroupViewDependencies,
+} from './location-group-view-controller.js';
+import {
   installInlineEditableFields,
   renderInlineEntityFields,
 } from '../utils/inline-editable-field.js';
@@ -84,6 +92,11 @@ export interface ContentRendererDependencies {
     getStopAsync: (stop_id: string) => Promise<unknown>;
     getAgencyAsync: (agency_id: string) => Promise<unknown>;
     getRouteAsync: (route_id: string) => Promise<unknown>;
+    // Flex lookups: synchronous, they read the parser's in-memory tables.
+    getTripsForZone?: (location_id: string) => Array<Record<string, unknown>>;
+    getTripsForLocationGroup?: (
+      location_group_id: string
+    ) => Array<Record<string, unknown>>;
   };
 
   // GTFS database access for stop controller
@@ -130,6 +143,8 @@ export interface ContentRendererDependencies {
     highlightRoute: (route_id: string) => void;
     highlightStop: (stop_id: string) => void;
     highlightPathway: (pathway_id: string) => void;
+    highlightZone: (location_id: string) => void;
+    highlightLocationGroup: (location_group_id: string) => void;
     clearHighlights: () => void;
     focusOnAgency: (agency_id: string) => void;
     refreshStops: () => void;
@@ -199,6 +214,8 @@ export class PageContentRenderer {
   private agencyViewController: AgencyViewController;
   private serviceViewController: ServiceViewController;
   private pathwayViewController: PathwayViewController;
+  private zoneViewController: ZoneViewController;
+  private locationGroupViewController: LocationGroupViewController;
 
   constructor(dependencies: ContentRendererDependencies) {
     this.dependencies = dependencies;
@@ -221,6 +238,32 @@ export class PageContentRenderer {
     };
     this.pathwayViewController = new PathwayViewController(
       pathwayViewDependencies
+    );
+
+    // Initialize ZoneViewController (on-demand zones, locations.geojson)
+    const zoneViewDependencies: ZoneViewDependencies = {
+      gtfsParser: dependencies.gtfsParser,
+      patchManager: dependencies.patchManager ?? null,
+      getTripsForZone: dependencies.relationships.getTripsForZone,
+      getRouteAsync: dependencies.relationships.getRouteAsync,
+      onRouteClick: dependencies.onRouteClick,
+      onGeometryChanged: () => dependencies.onEntityCreated?.(),
+    };
+    this.zoneViewController = new ZoneViewController(zoneViewDependencies);
+
+    // Initialize LocationGroupViewController
+    const locationGroupViewDependencies: LocationGroupViewDependencies = {
+      gtfsDatabase: dependencies.gtfsDatabase,
+      patchManager: dependencies.patchManager ?? null,
+      getTripsForLocationGroup:
+        dependencies.relationships.getTripsForLocationGroup,
+      getRouteAsync: dependencies.relationships.getRouteAsync,
+      onStopClick: dependencies.onStopClick,
+      onRouteClick: dependencies.onRouteClick,
+      onMembersChanged: () => dependencies.onEntityCreated?.(),
+    };
+    this.locationGroupViewController = new LocationGroupViewController(
+      locationGroupViewDependencies
     );
 
     // Initialize AgencyViewController with current dependencies
@@ -307,6 +350,12 @@ export class PageContentRenderer {
       case 'pathway':
         map.highlightPathway(pageState.pathway_id);
         break;
+      case 'zone':
+        map.highlightZone(pageState.location_id);
+        break;
+      case 'location_group':
+        map.highlightLocationGroup(pageState.location_group_id);
+        break;
       default:
         // home and service: no single object to focus, frame the whole feed
         map.focusFeed();
@@ -343,6 +392,10 @@ export class PageContentRenderer {
           return await this.renderService(pageState.service_id);
         case 'pathway':
           return await this.renderPathway(pageState.pathway_id);
+        case 'zone':
+          return await this.renderZone(pageState.location_id);
+        case 'location_group':
+          return await this.renderLocationGroup(pageState.location_group_id);
         default:
           // TypeScript should prevent this, but fallback to home
           return await this.renderHome();
@@ -1086,6 +1139,10 @@ export class PageContentRenderer {
     // Add PathwayViewController event listeners
     this.pathwayViewController.addEventListeners(container);
 
+    // Add zone and location group event listeners
+    this.zoneViewController.addEventListeners(container);
+    this.locationGroupViewController.addEventListeners(container);
+
     // Add AgencyViewController event listeners
     // It will only attach to agency fields (data-table="agency.txt")
     this.agencyViewController.addEventListeners(container);
@@ -1686,6 +1743,18 @@ export class PageContentRenderer {
 
   private async renderPathway(pathway_id: string): Promise<string> {
     return this.pathwayViewController.renderPathwayView(pathway_id);
+  }
+
+  private async renderZone(location_id: string): Promise<string> {
+    return this.zoneViewController.renderZoneView(location_id);
+  }
+
+  private async renderLocationGroup(
+    location_group_id: string
+  ): Promise<string> {
+    return this.locationGroupViewController.renderLocationGroupView(
+      location_group_id
+    );
   }
 
   private async handleDeletePathway(pathway_id: string): Promise<void> {
