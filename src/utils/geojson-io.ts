@@ -6,10 +6,13 @@
  * the user pastes the edited URL (or raw GeoJSON) back in.
  *
  * The URL payload is base64url(gzip(JSON text)) with the padding stripped,
- * prefixed with `gz:`.
+ * prefixed with `gz:`. geojson.io also still emits an uncompressed
+ * `data:application/json,<percent-encoded>` form for small collections, so both
+ * are decoded on the way back in.
  */
 
 const GZ_PREFIX = 'gz:';
+const JSON_PREFIX = 'data:application/json,';
 
 async function readAll(
   stream: ReadableStream<Uint8Array>
@@ -84,6 +87,42 @@ function extractDataParam(url: URL): string | null {
 }
 
 /**
+ * True when this text is an http(s) URL carrying an inline `data` payload, i.e.
+ * it can be decoded here and must not be fetched. Callers use this to route a
+ * paste between "decode locally" and "parse as JSON" / "fetch it".
+ */
+export function isEncodedGeojsonIoUrl(text: string): boolean {
+  const trimmed = text.trim();
+  if (!/^https?:\/\//i.test(trimmed)) {
+    return false;
+  }
+  try {
+    return extractDataParam(new URL(trimmed)) !== null;
+  } catch {
+    return false;
+  }
+}
+
+/** Decode a `data` parameter value into its JSON text. */
+async function decodeDataParam(data: string): Promise<string> {
+  if (data.startsWith(GZ_PREFIX)) {
+    try {
+      return await gunzip(fromBase64Url(data.slice(GZ_PREFIX.length)));
+    } catch (error) {
+      throw new Error(
+        `Could not decompress the geojson.io payload: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
+  }
+  if (data.startsWith(JSON_PREFIX)) {
+    return decodeURIComponent(data.slice(JSON_PREFIX.length));
+  }
+  throw new Error(
+    `Unsupported geojson.io payload encoding: expected a "${GZ_PREFIX}" or "${JSON_PREFIX}" prefix.`
+  );
+}
+
+/**
  * Accept either a geojson.io URL or raw pasted GeoJSON and return the
  * FeatureCollection it carries. Throws with a message naming the failure mode:
  * silently falling back to "no features" would look like a successful edit that
@@ -111,18 +150,7 @@ export async function parseGeojsonIoInput(
         'This geojson.io URL carries no `data` parameter. Draw something first, or paste the GeoJSON itself.'
       );
     }
-    if (!data.startsWith(GZ_PREFIX)) {
-      throw new Error(
-        `Unsupported geojson.io payload encoding: expected a "${GZ_PREFIX}" prefix.`
-      );
-    }
-    try {
-      json = await gunzip(fromBase64Url(data.slice(GZ_PREFIX.length)));
-    } catch (error) {
-      throw new Error(
-        `Could not decompress the geojson.io payload: ${error instanceof Error ? error.message : String(error)}`
-      );
-    }
+    json = await decodeDataParam(data);
   } else {
     json = trimmed;
   }
