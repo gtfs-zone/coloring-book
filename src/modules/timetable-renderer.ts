@@ -982,13 +982,19 @@ export class TimetableRenderer {
             // Use stopIndex as the key for all time lookups
             // stopIndex = position in the supersequence (same as position in data.stops array)
             // This handles duplicate stops correctly (e.g., circular routes)
+            const editableStopTime = trip.editableStopTimes?.get(stopIndex);
+            const stopSequence = editableStopTime?.stop_sequence ?? '';
             return this.cellRenderer.renderStopTimeCell({
               trip_id: trip.trip_id,
               stop_id: stop.stop_id,
               stopIndex,
               fields: ctx.fields,
               mode: ctx.mode,
-              editableStopTime: trip.editableStopTimes?.get(stopIndex),
+              editableStopTime,
+              isFirstStop:
+                stopSequence !== '' && stopSequence === trip.firstStopSequence,
+              isLastStop:
+                stopSequence !== '' && stopSequence === trip.lastStopSequence,
               isPendingRow: isPendingStop,
               isPendingFlex,
               rowRef,

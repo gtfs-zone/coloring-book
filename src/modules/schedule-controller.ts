@@ -854,25 +854,54 @@ export class ScheduleController {
       return null;
     }
 
+    // A field the spec forbids on this row renders as an inert span that is
+    // still in the DOM, so the grid stays rectangular. Keep stepping past those
+    // rather than filtering them out: the stride arithmetic below assumes every
+    // cell has the same span count, which a filtered row would break.
+    let position: { rowIndex: number; cellIndex: number } | null = {
+      rowIndex,
+      cellIndex,
+    };
+    for (;;) {
+      position = this.stepNeighbour(rows, perCell, position, direction);
+      if (!position) {
+        return null;
+      }
+      const target = rows[position.rowIndex][position.cellIndex];
+      if (target.dataset.disabled !== 'true') {
+        return target;
+      }
+    }
+  }
+
+  /** One step in `direction`, ignoring whether the cell it lands on is enabled. */
+  private stepNeighbour(
+    rows: HTMLElement[][],
+    perCell: number,
+    from: { rowIndex: number; cellIndex: number },
+    direction: GridDirection
+  ): { rowIndex: number; cellIndex: number } | null {
+    const { rowIndex, cellIndex } = from;
     // N spans per trip column, in the visible field roster's order.
     const offset = cellIndex % perCell;
-    let target: HTMLElement | undefined;
+
+    let next: { rowIndex: number; cellIndex: number };
     if (direction === 'down') {
-      target =
+      next =
         offset < perCell - 1
-          ? rows[rowIndex][cellIndex + 1]
-          : rows[rowIndex + 1]?.[cellIndex - (perCell - 1)];
+          ? { rowIndex, cellIndex: cellIndex + 1 }
+          : { rowIndex: rowIndex + 1, cellIndex: cellIndex - (perCell - 1) };
     } else if (direction === 'up') {
-      target =
+      next =
         offset > 0
-          ? rows[rowIndex][cellIndex - 1]
-          : rows[rowIndex - 1]?.[cellIndex + (perCell - 1)];
+          ? { rowIndex, cellIndex: cellIndex - 1 }
+          : { rowIndex: rowIndex - 1, cellIndex: cellIndex + (perCell - 1) };
     } else {
       const step = direction === 'right' ? perCell : -perCell;
-      target = rows[rowIndex][cellIndex + step];
+      next = { rowIndex, cellIndex: cellIndex + step };
     }
 
-    return target ?? null;
+    return rows[next.rowIndex]?.[next.cellIndex] ? next : null;
   }
 
   /** How many sub-rows each cell renders, from the last render's stamp. */
@@ -957,16 +986,20 @@ export class ScheduleController {
     const wasFocused = this.selectionHadFocus;
     this.selectionHadFocus = false;
 
-    const target = this.selectedCell
+    // A forbidden-and-empty cell is inert, so it must never hold the roving
+    // tabindex - the grid would then open on a cell no key can leave.
+    const entry = () =>
+      view.querySelector<HTMLElement>('.time-span:not([data-disabled="true"])');
+
+    const selected = this.selectedCell
       ? this.findTimeCell(this.selectedCell)
-      : view.querySelector<HTMLElement>('.time-span');
+      : null;
+    const target =
+      selected && selected.dataset.disabled !== 'true' ? selected : entry();
     if (!target) {
       // The selected trip or stop was deleted by the edit that caused this
-      // render. Fall back to the grid's entry point rather than losing it.
+      // render, or a mode switch left the field it named unrenderable.
       this.selectedCell = null;
-      view
-        .querySelector<HTMLElement>('.time-span')
-        ?.setAttribute('tabindex', '0');
       return;
     }
 
