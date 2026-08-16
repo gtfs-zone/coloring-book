@@ -226,6 +226,7 @@ export class ScheduleController {
   // Map wiring for the stop column, injected by index.ts
   private stopFocus: ((stop_id: string) => void) | null = null;
   private stopHover: ((stop_id: string | null) => void) | null = null;
+  private bookingRuleOpen: ((booking_rule_id: string) => void) | null = null;
   private hoveredStopId: string | null = null;
 
   /**
@@ -307,6 +308,19 @@ export class ScheduleController {
       const addStopBtn = (e.target as Element)?.closest?.('.add-stop-btn');
       if (addStopBtn instanceof HTMLElement) {
         void this.openAddStopPicker();
+        return;
+      }
+
+      // Checked before .time-span: the badges sit in the same cell, and a
+      // badge click is a navigation, not a time edit.
+      const bookingBadge = (e.target as Element)?.closest?.(
+        '.booking-rule-badge'
+      );
+      if (bookingBadge instanceof HTMLElement) {
+        const booking_rule_id = bookingBadge.dataset.bookingRuleId ?? '';
+        if (booking_rule_id !== '') {
+          this.bookingRuleOpen?.(booking_rule_id);
+        }
         return;
       }
 
@@ -473,6 +487,15 @@ export class ScheduleController {
   }): void {
     this.stopFocus = handlers.onStopFocus;
     this.stopHover = handlers.onStopHover;
+  }
+
+  /**
+   * Wire a flex cell's booking-rule badge to the On-Demand modal. Injected for
+   * the same reason as the stop handlers: the modal needs the database and the
+   * patch manager, which the timetable does not carry.
+   */
+  public setBookingRuleHandler(open: (booking_rule_id: string) => void): void {
+    this.bookingRuleOpen = open;
   }
 
   /**

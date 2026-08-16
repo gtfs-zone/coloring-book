@@ -16,6 +16,11 @@ import {
   validateTimeframeRow,
   validateTransferRow,
 } from '../utils/fares-rules.js';
+import {
+  validateBookingRuleRow,
+  validateFlexStopTimeRow,
+  validateLocationGroupId,
+} from '../utils/flex-rules.js';
 
 /** The offending row, so a message can be traced back to an editable object. */
 export interface ValidationEntity {
@@ -119,6 +124,7 @@ export class GTFSValidator {
     this.validateShapes();
     this.validateNetworks();
     this.validateStopAreas();
+    this.validateFlexLocations();
     this.validateTransfers();
     this.validateConditionalPresence();
     this.validateRiderCategoryDefaults();
@@ -543,14 +549,8 @@ export class GTFSValidator {
         );
       }
 
-      if (!stopTime.stop_id || String(stopTime.stop_id).trim() === '') {
-        this.addError(
-          `Row ${rowNum}: stop_id is required`,
-          'MISSING_REQUIRED_FIELD',
-          GTFS_TABLES.STOP_TIMES,
-          rowNum
-        );
-      }
+      // stop_id is only required when the row names neither a location group
+      // nor a zone; validateConditionalPresence carries that rule.
 
       if (
         stopTime.stop_sequence === null ||
@@ -866,8 +866,90 @@ export class GTFSValidator {
   }
 
   /**
-   * The row-level conditional-presence rules the fares editor enforces on every
-   * edit, applied to whatever the feed arrived with.
+   * The two flex reference rules the generic sweeps cannot express.
+   *
+   * `location_group_id` shares one ID namespace with `stops.stop_id` and
+   * locations.geojson `id`, which no per-file uniqueness check would catch. And
+   * `stop_times.location_id` points into locations.geojson, which is one row
+   * holding a FeatureCollection rather than a table with an `id` column, so
+   * validateForeignKeys skips it and the ids are collected from the features
+   * here instead.
+   */
+  validateFlexLocations() {
+    const zoneIds = new Set<string>();
+    const collection = this.gtfsParser.getFileDataSync(
+      GTFS_TABLES.LOCATIONS_GEOJSON
+    )[0] as unknown as Partial<GeoJSON.FeatureCollection> | undefined;
+    for (const feature of collection?.features ?? []) {
+      const id = String(feature.id ?? '').trim();
+      if (id !== '') {
+        zoneIds.add(id);
+      }
+    }
+
+    const locationGroups = this.gtfsParser.getFileDataSyncTyped(
+      GTFS_TABLES.LOCATION_GROUPS
+    );
+    if (locationGroups.length > 0) {
+      const owners = new Map<string, string>();
+      for (const stop of this.gtfsParser.getFileDataSyncTyped(
+        GTFS_TABLES.STOPS
+      )) {
+        const id = String(stop.stop_id ?? '').trim();
+        if (id !== '') {
+          owners.set(id, 'a stops.txt stop_id');
+        }
+      }
+      for (const id of zoneIds) {
+        owners.set(id, 'a locations.geojson id');
+      }
+
+      locationGroups.forEach((row, index: number) => {
+        const id = String(row.location_group_id ?? '').trim();
+        const problem = validateLocationGroupId(id, owners);
+        if (problem) {
+          this.addError(
+            `Row ${index + 1}: ${problem}`,
+            'DUPLICATE_ID',
+            GTFS_TABLES.LOCATION_GROUPS,
+            index + 1,
+            {
+              file: GTFS_TABLES.LOCATION_GROUPS,
+              id: this.rowId('location_groups', row),
+              field: 'location_group_id',
+              value: id,
+            }
+          );
+        }
+      });
+    }
+
+    const stopTimes = this.gtfsParser.getFileDataSyncTyped(
+      GTFS_TABLES.STOP_TIMES
+    );
+    stopTimes.forEach((row, index: number) => {
+      const location_id = String(row.location_id ?? '').trim();
+      if (location_id === '' || zoneIds.has(location_id)) {
+        return;
+      }
+      this.addError(
+        `Row ${index + 1}: location_id '${location_id}' not found in locations.geojson`,
+        'INVALID_REFERENCE',
+        GTFS_TABLES.STOP_TIMES,
+        index + 1,
+        {
+          file: GTFS_TABLES.STOP_TIMES,
+          id: this.rowId('stop_times', row),
+          field: 'location_id',
+          value: location_id,
+        }
+      );
+    });
+  }
+
+  /**
+   * The row-level conditional-presence rules the fares and on-demand editors
+   * enforce on every edit, applied to whatever the feed arrived with.
    */
   validateConditionalPresence() {
     const checks: [string, (row: Record<string, unknown>) => string | null][] =
@@ -875,6 +957,8 @@ export class GTFSValidator {
         [GTFS_TABLES.TIMEFRAMES, validateTimeframeRow],
         [GTFS_TABLES.FARE_LEG_JOIN_RULES, validateFareLegJoinRuleRow],
         [GTFS_TABLES.FARE_TRANSFER_RULES, validateFareTransferRuleRow],
+        [GTFS_TABLES.STOP_TIMES, validateFlexStopTimeRow],
+        [GTFS_TABLES.BOOKING_RULES, validateBookingRuleRow],
       ];
 
     for (const [table, check] of checks) {
