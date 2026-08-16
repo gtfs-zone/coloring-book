@@ -393,25 +393,25 @@ surface, with geojson.io and a URL import as the two side doors. Per the
 decision above, the textarea holds **this zone's feature only** and every write
 merges, so other zones are never touched.
 
-- [ ] In `src/modules/zone-geometry-editor.ts`, replace the paste box with a
+- [x] In `src/modules/zone-geometry-editor.ts`, replace the paste box with a
       tall scrollable `<textarea>` (`rows="14"`, `font-mono text-xs`,
       `resize-y`) pre-filled with
       `JSON.stringify(feature, null, 2)` for this zone. Treat it like the app's
       other inputs: `textarea textarea-bordered w-full`, an inline error line
       under it, and a disabled Save until the content differs from what was
       loaded.
-- [ ] Keep the summary `<dl>` (type / vertices / bounds) above the textarea —
+- [x] Keep the summary `<dl>` (type / vertices / bounds) above the textarea —
       it is the fast read that the raw JSON is not.
-- [ ] Save parses the textarea with `JSON.parse`, accepts either a bare Feature
+- [x] Save parses the textarea with `JSON.parse`, accepts either a bare Feature
       or a single-feature FeatureCollection, forces `id` back to the zone's
       `location_id`, and writes through
       `mergeZoneFeatures(current, [edited], false)` + `writeZoneFeatures`,
       exactly as the current Apply button does. Report a parse failure inline
       with the character offset from the `SyntaxError`, and do not clear the
       textarea on failure.
-- [ ] Keep the "Edit in geojson.io" anchor (`encodeGeojsonIoUrl` on a
+- [x] Keep the "Edit in geojson.io" anchor (`encodeGeojsonIoUrl` on a
       single-feature collection, `target="_blank" rel="noopener"`).
-- [ ] Add an "Import from URL" button next to it that prompts for a URL, fetches
+- [x] Add an "Import from URL" button next to it that prompts for a URL, fetches
       it through `withCorsProxy(url, useCors)` from
       `src/modules/feed-selection.ts`, parses the body with
       `parseGeojsonIoInput` (it already accepts raw GeoJSON *and* a geojson.io
@@ -420,19 +420,38 @@ merges, so other zones are never touched.
       The user then reviews and presses Save. Fetch failures surface through the
       same inline error line, using the CORS-hint wording
       `feed-selection.ts:33` already produces.
-- [ ] When the fetched collection has several features, pick the one whose `id`
+- [x] When the fetched collection has several features, pick the one whose `id`
       matches `location_id`; if none matches and there is exactly one feature,
       take it (the existing "geojson.io drops the feature id" reasoning at
       `zone-geometry-editor.ts:122-131`); otherwise error with the list of ids
       found.
-- [ ] Rework `attachZoneGeometryHandlers` for the new controls, keeping its
+- [x] Rework `attachZoneGeometryHandlers` for the new controls, keeping its
       shape (`container` + deps, called from
       `zone-view-controller.addEventListeners`). It must stay idempotent per
       render — the page re-renders wholesale via `onGeometryChanged`.
-- [ ] After a successful save, `onGeometryChanged` already re-renders the page;
+- [x] After a successful save, `onGeometryChanged` already re-renders the page;
       confirm the map layer refreshes too (`updateZonesLayer`) and that the
       focused/hovered feature state from Phase 1 survives the source
       `setData`.
+
+**Findings:** the "prompt for a URL" step is a `showModal` from
+`modal-utils.ts` with a URL input and a "Use CORS proxy" checkbox, not a native
+`prompt()`: the proxy is a per-source choice everywhere else in the app and a
+bare prompt has nowhere to put it. The helper in `feed-selection.ts` is
+`maybeProxy(url, useCors)`, not `withCorsProxy` as the plan named it, and its
+error wording comes from `describeNetworkError` / `describeHttpError`. Save is
+gated on `textarea.value !== textarea.defaultValue`, which needs no extra state:
+`defaultValue` is the JSON that was rendered into the element, and a URL import
+sets `value` so the button enables itself. The map layer did **not** refresh
+after a geometry save: `onGeometryChanged` only reached
+`browse-navigation.render()`. Fixed by adding `MapController.refreshZones()`
+(a `layerManager.updateZonesLayer()` wrapper) and calling it from the
+`onGeometryChanged` wiring in `page-content-renderer.ts`, which required
+threading `refreshZones` through the two `mapController` structural types in
+`browse-navigation.ts`. `updateZonesLayer` uses `source.setData` on the existing
+source, so the Phase 1 focused/hovered feature state survives the refresh -
+only a `setStyle` (which re-adds the source) resets it, and that path already
+nulls the ids.
 
 **Gotchas:** `locations.geojson` is stored as one IDB row holding the whole
 FeatureCollection, and it has no virtual table — writes reach memory only via

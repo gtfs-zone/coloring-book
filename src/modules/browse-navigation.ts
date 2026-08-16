@@ -75,6 +75,7 @@ export class BrowseNavigation {
     setRouteSelectCallback: (callback: (route_id: string) => void) => void;
     setStopSelectCallback: (callback: (stop_id: string) => void) => void;
     refreshStops: () => void;
+    refreshZones: () => void;
     focusFeed: () => void;
     highlightAgencyRoutes: (agency_id: string) => void;
   };
@@ -221,6 +222,7 @@ export class BrowseNavigation {
       setRouteSelectCallback: (callback: (route_id: string) => void) => void;
       setStopSelectCallback: (callback: (stop_id: string) => void) => void;
       refreshStops: () => void;
+      refreshZones: () => void;
       focusFeed: () => void;
       highlightAgencyRoutes: (agency_id: string) => void;
     },
@@ -358,6 +360,7 @@ export class BrowseNavigation {
         focusOnAgency: (agency_id: string) =>
           this.highlightAgencyOnMap(agency_id),
         refreshStops: () => this.mapController.refreshStops(),
+        refreshZones: () => this.mapController.refreshZones(),
         focusFeed: () => this.mapController.focusFeed(),
       },
       onAgencyClick: (agency_id: string) => navigateToAgency(agency_id),
