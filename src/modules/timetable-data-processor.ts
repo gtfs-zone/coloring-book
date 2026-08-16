@@ -12,7 +12,8 @@ import {
   StopTimes,
   Trips,
 } from '../types/gtfs-entities.js';
-import { CalendarSchema } from '../types/gtfs.js';
+import { CalendarSchema, GTFS_TABLES } from '../types/gtfs.js';
+import { TimeFormatter } from '../utils/time-formatter.js';
 import type { StopTimeRef } from '../types/gtfs-flex.js';
 import { stopTimeRef } from '../types/gtfs-flex.js';
 import type { GTFSParser } from './gtfs-parser.js';
@@ -63,6 +64,23 @@ export interface EditableStopTime {
   /** Editable from the flex cell, restricted to what the window rules allow. */
   pickup_type: string | null;
   drop_off_type: string | null;
+  stop_headsign: string | null;
+  continuous_pickup: string | null;
+  continuous_drop_off: string | null;
+  shape_dist_traveled: string | null;
+  timepoint: string | null;
+}
+
+/**
+ * One headway period of a trip, in the raw string form the file carries.
+ * Parsing belongs to the validator and the display layer, not here.
+ */
+export interface TripFrequency {
+  trip_id: string;
+  start_time: string;
+  end_time: string | null;
+  headway_secs: string | null;
+  exact_times: string | null;
 }
 
 /**
@@ -80,6 +98,10 @@ export interface AlignedTrip extends Trips {
   arrival_times?: Map<number, string>; // supersequence position -> arrival time
   departure_times?: Map<number, string>; // supersequence position -> departure time
   editableStopTimes?: Map<number, EditableStopTime>; // supersequence position -> editable stop time
+  /** The trip's headway periods, sorted by start_time. Empty when it has none. */
+  frequencies: TripFrequency[];
+  /** First departure (or arrival) of the trip, '' when it has no stop_times. */
+  firstDepartureTime: string;
 }
 
 /**
@@ -325,9 +347,11 @@ export class TimetableDataProcessor {
       return a.firstDepartureTime.localeCompare(b.firstDepartureTime);
     });
 
+    const frequenciesByTrip = this.loadFrequenciesByTrip();
+
     const alignedTrips: AlignedTrip[] = [];
 
-    for (const { trip, stopTimes } of tripsWithStopTimes) {
+    for (const { trip, stopTimes, firstDepartureTime } of tripsWithStopTimes) {
       const stopTimeMap = new Map<number, string>();
       const arrival_timeMap = new Map<number, string>();
       const departure_timeMap = new Map<number, string>();
@@ -387,6 +411,11 @@ export class TimetableDataProcessor {
             drop_off_booking_rule_id: emptyToNull(st.drop_off_booking_rule_id),
             pickup_type: emptyToNull(st.pickup_type),
             drop_off_type: emptyToNull(st.drop_off_type),
+            stop_headsign: emptyToNull(st.stop_headsign),
+            continuous_pickup: emptyToNull(st.continuous_pickup),
+            continuous_drop_off: emptyToNull(st.continuous_drop_off),
+            shape_dist_traveled: emptyToNull(st.shape_dist_traveled),
+            timepoint: emptyToNull(st.timepoint),
           });
         }
       });
@@ -404,10 +433,64 @@ export class TimetableDataProcessor {
         arrival_times: arrival_timeMap,
         departure_times: departure_timeMap,
         editableStopTimes,
+        frequencies: frequenciesByTrip.get(trip.trip_id) ?? [],
+        firstDepartureTime,
       });
     }
 
     return alignedTrips;
+  }
+
+  /**
+   * One scan of frequencies.txt for the whole timetable, grouped by trip_id and
+   * sorted by start_time. Unparseable start times sort last so a garbage row
+   * does not appear to precede every real period.
+   *
+   * Rows whose trip_id matches no trip are kept in the map and simply never
+   * looked up: surfacing that is the validator's job, not this one's.
+   */
+  private loadFrequenciesByTrip(): Map<string, TripFrequency[]> {
+    const byTrip = new Map<string, TripFrequency[]>();
+
+    const rows = this.gtfsParser.getFileDataSyncTyped(
+      GTFS_TABLES.FREQUENCIES
+    ) as Record<string, unknown>[];
+
+    for (const row of rows) {
+      const trip_id = String(row.trip_id ?? '').trim();
+      if (!trip_id) {
+        continue;
+      }
+      const period: TripFrequency = {
+        trip_id,
+        start_time: String(row.start_time ?? '').trim(),
+        end_time: emptyToNull(row.end_time),
+        headway_secs: emptyToNull(row.headway_secs),
+        exact_times: emptyToNull(row.exact_times),
+      };
+      const existing = byTrip.get(trip_id);
+      if (existing) {
+        existing.push(period);
+      } else {
+        byTrip.set(trip_id, [period]);
+      }
+    }
+
+    for (const periods of byTrip.values()) {
+      periods.sort((a, b) => {
+        const aSecs = TimeFormatter.timeToSeconds(a.start_time);
+        const bSecs = TimeFormatter.timeToSeconds(b.start_time);
+        if (aSecs === null) {
+          return bSecs === null ? 0 : 1;
+        }
+        if (bSecs === null) {
+          return -1;
+        }
+        return aSecs - bSecs;
+      });
+    }
+
+    return byTrip;
   }
 
   /**
