@@ -1,0 +1,6 @@
+trip_id,arrival_time,departure_time,stop_id,location_id,stop_sequence,start_pickup_drop_off_window,end_pickup_drop_off_window,pickup_type,drop_off_type,shape_dist_traveled,pickup_booking_rule_id,drop_off_booking_rule_id
+dev9_am,08:00:00,08:00:00,dev_1,,1,,,0,0,0,,
+dev9_am,,,,dev_zone_south,2,08:00:00,08:20:00,1,3,,deviation_30,deviation_30
+dev9_am,08:20:00,08:20:00,dev_2,,3,,,0,0,4500,,
+dev9_am,,,,dev_zone_north,4,08:20:00,08:40:00,1,3,,deviation_30,deviation_30
+dev9_am,08:40:00,08:40:00,dev_3,,5,,,0,0,9000,,

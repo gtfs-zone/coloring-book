@@ -1,0 +1,25 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "id": "area_713",
+      "properties": {
+        "stop_name": "Polk County service area",
+        "stop_desc": "Anywhere inside the county line."
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [-93.85, 41.45],
+            [-93.4, 41.45],
+            [-93.4, 41.75],
+            [-93.85, 41.75],
+            [-93.85, 41.45]
+          ]
+        ]
+      }
+    }
+  ]
+}
