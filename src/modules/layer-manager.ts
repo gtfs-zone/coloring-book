@@ -59,6 +59,10 @@ const ZONE_OUTLINE_LAYER = 'zones-outline';
 const ZONE_FILL_OPACITY = 0.12;
 const ZONE_FILL_OPACITY_FOCUSED = 0.3;
 const ZONE_FILL_OPACITY_HOVERED = 0.2;
+const ZONE_OUTLINE_OPACITY = 0.8;
+// Applied to zones outside the route spotlight, mirroring SPOTLIGHT_STOP_DIM.
+const ZONE_FILL_OPACITY_DIMMED = 0.03;
+const ZONE_OUTLINE_OPACITY_DIMMED = 0.2;
 
 /** Perpendicular spacing between parallel pathways sharing an endpoint pair. */
 const PATHWAY_PARALLEL_OFFSET_M = 2;
@@ -126,6 +130,8 @@ export class LayerManager {
   private hoveredZoneId: string | null = null;
   // Stops of the currently spotlighted route (onRoute feature-state holders)
   private routeStopIds: string[] = [];
+  // Zones of the currently spotlighted route (onRoute feature-state holders)
+  private routeZoneIds: string[] = [];
 
   private _resolverDirty = true;
   private _cachedResolver:
@@ -297,6 +303,7 @@ export class LayerManager {
       // A fresh source means setStyle wiped the old one and its feature state.
       this.focusedZoneId = null;
       this.hoveredZoneId = null;
+      this.routeZoneIds = [];
     }
 
     this.addZoneLayers();
@@ -329,16 +336,7 @@ export class LayerManager {
         source: ZONE_SOURCE,
         paint: {
           'fill-color': accent,
-          // Focused wins over hovered: hovering must never disturb the
-          // selection, same rule as the stop layers.
-          'fill-opacity': [
-            'case',
-            ['boolean', ['feature-state', 'focused'], false],
-            ZONE_FILL_OPACITY_FOCUSED,
-            ['boolean', ['feature-state', 'hovered'], false],
-            ZONE_FILL_OPACITY_HOVERED,
-            ZONE_FILL_OPACITY,
-          ] as unknown as ExpressionSpecification,
+          'fill-opacity': this.zoneFillOpacity(this.routeZoneIds.length > 0),
         },
       },
       before
@@ -359,7 +357,7 @@ export class LayerManager {
             2.5,
             1.5,
           ] as unknown as ExpressionSpecification,
-          'line-opacity': 0.8,
+          'line-opacity': this.zoneOutlineOpacity(this.routeZoneIds.length > 0),
           'line-dasharray': [4, 2],
         },
         layout: {
@@ -369,6 +367,85 @@ export class LayerManager {
       },
       before
     );
+  }
+
+  /**
+   * Zone fill opacity. Focused wins over hovered: hovering must never disturb
+   * the selection, same rule as the stop layers. When a route spotlight is
+   * active, zones outside it are dimmed instead of getting the base value.
+   */
+  private zoneFillOpacity(dimmed: boolean): ExpressionSpecification {
+    const base = [
+      'case',
+      ['boolean', ['feature-state', 'focused'], false],
+      ZONE_FILL_OPACITY_FOCUSED,
+      ['boolean', ['feature-state', 'hovered'], false],
+      ZONE_FILL_OPACITY_HOVERED,
+      ZONE_FILL_OPACITY,
+    ];
+    if (!dimmed) {
+      return base as unknown as ExpressionSpecification;
+    }
+    return [
+      'case',
+      ['boolean', ['feature-state', 'onRoute'], false],
+      base,
+      ZONE_FILL_OPACITY_DIMMED,
+    ] as unknown as ExpressionSpecification;
+  }
+
+  /** The outline counterpart of zoneFillOpacity. */
+  private zoneOutlineOpacity(dimmed: boolean): ExpressionSpecification {
+    if (!dimmed) {
+      return ZONE_OUTLINE_OPACITY as unknown as ExpressionSpecification;
+    }
+    return [
+      'case',
+      ['boolean', ['feature-state', 'onRoute'], false],
+      ZONE_OUTLINE_OPACITY,
+      ZONE_OUTLINE_OPACITY_DIMMED,
+    ] as unknown as ExpressionSpecification;
+  }
+
+  /**
+   * The zone half of the route spotlight: marks the zones a route touches with
+   * the onRoute feature-state and dims every other polygon. Pass an empty array
+   * to clear. Owned by MapController.applySpotlight, same as setRouteStops.
+   */
+  public setRouteZones(location_ids: string[]): void {
+    console.log(`[LayerManager] Spotlighting ${location_ids.length} zones`);
+
+    if (this.map.getSource(ZONE_SOURCE)) {
+      for (const id of this.routeZoneIds) {
+        this.map.setFeatureState(
+          { source: ZONE_SOURCE, id },
+          { onRoute: false }
+        );
+      }
+      for (const id of location_ids) {
+        this.map.setFeatureState(
+          { source: ZONE_SOURCE, id },
+          { onRoute: true }
+        );
+      }
+    }
+    this.routeZoneIds = this.map.getSource(ZONE_SOURCE) ? location_ids : [];
+
+    const dimmed = this.routeZoneIds.length > 0;
+    if (this.map.getLayer(ZONE_FILL_LAYER)) {
+      this.map.setPaintProperty(
+        ZONE_FILL_LAYER,
+        'fill-opacity',
+        this.zoneFillOpacity(dimmed)
+      );
+    }
+    if (this.map.getLayer(ZONE_OUTLINE_LAYER)) {
+      this.map.setPaintProperty(
+        ZONE_OUTLINE_LAYER,
+        'line-opacity',
+        this.zoneOutlineOpacity(dimmed)
+      );
+    }
   }
 
   /**
@@ -1106,6 +1183,9 @@ export class LayerManager {
     this.setHoveredZone(null);
     if (this.routeStopIds.length > 0) {
       this.setRouteStops([]);
+    }
+    if (this.routeZoneIds.length > 0) {
+      this.setRouteZones([]);
     }
     const highlightLayers = ['trip-highlight', 'stops-highlight'];
 

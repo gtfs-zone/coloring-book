@@ -1406,7 +1406,11 @@ export class GTFSParser {
     const stop_ids = new Set<string>();
     for (const trip_id of tripIds) {
       for (const st of this.getStopTimesByTripId(trip_id)) {
-        stop_ids.add(st.stop_id);
+        // Flex stop_times reference a zone or location group instead of a
+        // stop, so stop_id is absent. Skip them rather than adding undefined.
+        if (st.stop_id) {
+          stop_ids.add(st.stop_id);
+        }
       }
     }
     return [...stop_ids];

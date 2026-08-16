@@ -12,14 +12,7 @@ import { GTFSParser } from './gtfs-parser.js';
 import { PatchManager } from './patch-manager.js';
 import { hasValidCoords } from '../utils/stop-coords.js';
 import { CONFIG } from '../config.js';
-import {
-  Stops,
-  StopTimes,
-  Routes,
-  Pathways,
-  Agency,
-  GTFS_TABLES,
-} from '../types/gtfs.js';
+import { Stops, Routes, Pathways, Agency, GTFS_TABLES } from '../types/gtfs.js';
 import {
   agencyRouteFilter,
   normalizeAgencyId,
@@ -27,7 +20,8 @@ import {
 import { BasemapControl } from './basemap-control.js';
 import { notify } from './notification-system.js';
 import type { PatchRecord, SingleGTFSPatch } from '../types/patch.js';
-import { getZoneFeature, zoneBounds } from './zone-store.js';
+import { getZoneFeature, getZoneFeatures, zoneBounds } from './zone-store.js';
+import { stopTimeRef } from '../types/gtfs-flex.js';
 
 // Map interaction modes
 export enum MapMode {
@@ -465,29 +459,125 @@ export class MapController {
   }
 
   /**
-   * Fit map to show all GTFS data
+   * The one geometry collector every fit goes through. Extends over stop
+   * coordinates, zone bounding boxes, the member stops of a location group and
+   * (when include_shapes) the route lines themselves. Returns null when nothing
+   * contributed a coordinate, so callers can leave the viewport alone.
+   *
+   * A flex feed can legally have an empty stops.txt, so nothing here may assume
+   * stops are the only source of geometry.
    */
-  private fitMapToData(): void {
-    const stops = this.gtfsParser!.getFileDataSyncTyped<Stops>('stops.txt');
-    if (!stops || stops.length === 0) {
-      return;
+  private boundsFor(input: {
+    stop_ids?: Iterable<string>;
+    zone_ids?: Iterable<string>;
+    location_group_ids?: Iterable<string>;
+    route_ids?: Iterable<string>;
+    include_shapes?: boolean;
+  }): LngLatBounds | null {
+    if (!this.gtfsParser) {
+      return null;
+    }
+    const coordinates: [number, number][] = [];
+
+    const stop_ids = new Set(input.stop_ids ?? []);
+    for (const location_group_id of input.location_group_ids ?? []) {
+      for (const stop_id of this.stopIdsForLocationGroup(location_group_id)) {
+        stop_ids.add(stop_id);
+      }
+    }
+    if (stop_ids.size > 0) {
+      for (const stop of this.gtfsParser.getFileDataSyncTyped<Stops>(
+        'stops.txt'
+      ) || []) {
+        if (stop_ids.has(stop.stop_id) && hasValidCoords(stop)) {
+          coordinates.push([stop.stop_lon, stop.stop_lat]);
+        }
+      }
     }
 
-    const validStops = stops.filter(hasValidCoords);
-
-    if (validStops.length === 0) {
-      return;
+    for (const location_id of input.zone_ids ?? []) {
+      const feature = getZoneFeature(this.gtfsParser, location_id);
+      const bbox = feature ? zoneBounds(feature) : null;
+      if (!bbox) {
+        continue;
+      }
+      // zoneBounds is [west, south, east, north]: both corners, not the raw array
+      coordinates.push([bbox[0], bbox[1]], [bbox[2], bbox[3]]);
     }
 
-    const coordinates = validStops.map(
-      (stop) =>
-        [Number(stop.stop_lon), Number(stop.stop_lat)] as [number, number]
-    );
+    if (input.include_shapes) {
+      const wanted = new Set(input.route_ids ?? []);
+      for (const feature of this.routeRenderer?.getRouteFeatures() ?? []) {
+        if (!wanted.has(feature.properties.route_id)) {
+          continue;
+        }
+        for (const [lng, lat] of feature.geometry.coordinates) {
+          coordinates.push([lng, lat]);
+        }
+      }
+    }
 
-    const bounds = coordinates.reduce(
+    if (coordinates.length === 0) {
+      return null;
+    }
+    return coordinates.reduce(
       (bounds, coord) => bounds.extend(coord),
       new LngLatBounds(coordinates[0], coordinates[0])
     );
+  }
+
+  /**
+   * Every reference a route's trips make, split by kind. The flex-aware
+   * counterpart of getStopIdsForRoute, which only knows about stop_id. Walks
+   * the same indexed data that method does, so it is no more expensive.
+   */
+  private refsForRoute(route_id: string): {
+    stop_ids: string[];
+    zone_ids: string[];
+    location_group_ids: string[];
+  } {
+    const stop_ids = new Set<string>();
+    const zone_ids = new Set<string>();
+    const location_group_ids = new Set<string>();
+
+    for (const trip of this.gtfsParser?.getTripsByRouteId(route_id) ?? []) {
+      for (const st of this.gtfsParser?.getStopTimesByTripId(
+        String(trip.trip_id)
+      ) ?? []) {
+        const ref = stopTimeRef(st);
+        if (!ref) {
+          continue;
+        }
+        if (ref.kind === 'stop') {
+          stop_ids.add(ref.id);
+        } else if (ref.kind === 'location') {
+          zone_ids.add(ref.id);
+        } else {
+          location_group_ids.add(ref.id);
+        }
+      }
+    }
+
+    return {
+      stop_ids: [...stop_ids],
+      zone_ids: [...zone_ids],
+      location_group_ids: [...location_group_ids],
+    };
+  }
+
+  /** Fit map to show all GTFS data: every stop and every on-demand zone. */
+  private fitMapToData(): void {
+    const stops =
+      this.gtfsParser!.getFileDataSyncTyped<Stops>('stops.txt') || [];
+    const zones = getZoneFeatures(this.gtfsParser!);
+
+    const bounds = this.boundsFor({
+      stop_ids: stops.map((stop) => stop.stop_id),
+      zone_ids: zones.map((feature) => String(feature.id)),
+    });
+    if (!bounds) {
+      return;
+    }
 
     this.map!.fitBounds(bounds, {
       padding: {
@@ -707,10 +797,10 @@ export class MapController {
 
   /**
    * Sole owner of the route spotlight: dims non-matching route lines and
-   * reveals the given routes' stops (visible/clickable at any zoom). Pass
-   * null to clear. Callers must not call routeRenderer.highlightRoute(s) or
-   * layerManager.setRouteStops directly, go through this method so the two
-   * halves never get applied separately.
+   * reveals the given routes' stops (visible/clickable at any zoom) and zones.
+   * Pass null to clear. Callers must not call routeRenderer.highlightRoute(s),
+   * layerManager.setRouteStops or layerManager.setRouteZones directly, go
+   * through this method so the halves never get applied separately.
    */
   private applySpotlight(route_ids: string[] | null): void {
     this.spotlightRouteIds =
@@ -719,16 +809,29 @@ export class MapController {
     if (this.spotlightRouteIds) {
       this.routeRenderer?.highlightRoutes(this.spotlightRouteIds);
       const stop_ids = new Set<string>();
+      const zone_ids = new Set<string>();
       for (const route_id of this.spotlightRouteIds) {
-        for (const stop_id of this.gtfsParser?.getStopIdsForRoute(route_id) ??
-          []) {
+        const refs = this.refsForRoute(route_id);
+        for (const stop_id of refs.stop_ids) {
           stop_ids.add(stop_id);
+        }
+        for (const location_group_id of refs.location_group_ids) {
+          for (const stop_id of this.stopIdsForLocationGroup(
+            location_group_id
+          )) {
+            stop_ids.add(stop_id);
+          }
+        }
+        for (const location_id of refs.zone_ids) {
+          zone_ids.add(location_id);
         }
       }
       this.layerManager?.setRouteStops([...this.withAncestors(stop_ids)]);
+      this.layerManager?.setRouteZones([...zone_ids]);
     } else {
       this.routeRenderer?.clearHighlight();
       this.layerManager?.setRouteStops([]);
+      this.layerManager?.setRouteZones([]);
     }
   }
 
@@ -888,25 +991,13 @@ export class MapController {
 
   /** Fit the viewport to a set of stops. No-op when none have coordinates. */
   private fitToStops(stop_ids: string[]): void {
-    if (!this.map || !this.gtfsParser || stop_ids.length === 0) {
+    if (!this.map || stop_ids.length === 0) {
       return;
     }
-    const wanted = new Set(stop_ids);
-    const coordinates: [number, number][] = [];
-    for (const stop of this.gtfsParser.getFileDataSyncTyped<Stops>(
-      'stops.txt'
-    ) || []) {
-      if (wanted.has(stop.stop_id) && hasValidCoords(stop)) {
-        coordinates.push([stop.stop_lon, stop.stop_lat]);
-      }
-    }
-    if (coordinates.length === 0) {
+    const bounds = this.boundsFor({ stop_ids });
+    if (!bounds) {
       return;
     }
-    const bounds = coordinates.reduce(
-      (acc, coord) => acc.extend(coord),
-      new LngLatBounds(coordinates[0], coordinates[0])
-    );
     this.map.fitBounds(bounds, {
       padding: {
         top: 80,
@@ -920,17 +1011,15 @@ export class MapController {
 
   /** Fit the viewport to one zone's bounds. No-op if the zone has no geometry. */
   public fitToZone(location_id: string): void {
-    if (!this.gtfsParser || !this.map) {
+    if (!this.map) {
       return;
     }
-    const feature = getZoneFeature(this.gtfsParser, location_id);
-    const bounds = feature ? zoneBounds(feature) : null;
+    const bounds = this.boundsFor({ zone_ids: [location_id] });
     if (!bounds) {
       console.warn(`[MapController] No bounds for zone ${location_id}`);
       return;
     }
-    const [west, south, east, north] = bounds;
-    this.map.fitBounds(new LngLatBounds([west, south], [east, north]), {
+    this.map.fitBounds(bounds, {
       padding: {
         top: 80,
         bottom: 80 + this.bottomPadding,
@@ -961,52 +1050,45 @@ export class MapController {
   }
 
   /**
-   * Fit map to show specific trip
+   * Fit map to show specific trip: its stops, its on-demand zones and the
+   * member stops of any location group it serves.
+   *
+   * The trip's shape is deliberately left out: route features are keyed by
+   * route_id, not shape_id, so resolving this trip's own shape would mean a
+   * second lookup for geometry the stops and zones already cover.
    */
   private fitMapToTrip(trip_id: string): void {
-    const stopTimes =
-      this.gtfsParser!.getFileDataSyncTyped<StopTimes>('stop_times.txt') || [];
-    const stops =
-      this.gtfsParser!.getFileDataSyncTyped<Stops>('stops.txt') || [];
+    const stop_ids = new Set<string>();
+    const zone_ids = new Set<string>();
+    const location_group_ids = new Set<string>();
 
-    const tripStopTimes = stopTimes
-      .filter((st) => st.trip_id === trip_id)
-      .sort((a, b) => a.stop_sequence - b.stop_sequence);
-
-    const coordinates: [number, number][] = [];
-    const stopsLookup: { [key: string]: { lat: number; lon: number } } = {};
-
-    stops.forEach((stop) => {
-      if (hasValidCoords(stop)) {
-        stopsLookup[stop.stop_id] = {
-          lat: stop.stop_lat,
-          lon: stop.stop_lon,
-        };
+    for (const st of this.gtfsParser?.getStopTimesByTripId(trip_id) ?? []) {
+      const ref = stopTimeRef(st);
+      if (!ref) {
+        continue;
       }
-    });
-
-    tripStopTimes.forEach((st) => {
-      const stopCoords = stopsLookup[st.stop_id];
-      if (stopCoords) {
-        coordinates.push([stopCoords.lon, stopCoords.lat]);
+      if (ref.kind === 'stop') {
+        stop_ids.add(ref.id);
+      } else if (ref.kind === 'location') {
+        zone_ids.add(ref.id);
+      } else {
+        location_group_ids.add(ref.id);
       }
-    });
-
-    if (coordinates.length > 0) {
-      const bounds = coordinates.reduce(
-        (bounds, coord) => bounds.extend(coord),
-        new LngLatBounds(coordinates[0], coordinates[0])
-      );
-
-      this.map!.fitBounds(bounds, {
-        padding: {
-          top: 50,
-          bottom: 50 + this.bottomPadding,
-          left: 50,
-          right: 50,
-        },
-      });
     }
+
+    const bounds = this.boundsFor({ stop_ids, zone_ids, location_group_ids });
+    if (!bounds) {
+      return;
+    }
+
+    this.map!.fitBounds(bounds, {
+      padding: {
+        top: 50,
+        bottom: 50 + this.bottomPadding,
+        left: 50,
+        right: 50,
+      },
+    });
   }
 
   /**
@@ -1054,77 +1136,60 @@ export class MapController {
    * Smoothly fly to show a specific route
    */
   private flyToRoute(route_id: string): void {
-    const stops =
-      this.gtfsParser!.getFileDataSyncTyped<Stops>('stops.txt') || [];
-
-    // Find all stops for this route
-    const routeStops = new Set(this.gtfsParser!.getStopIdsForRoute(route_id));
-
-    // Get coordinates for all stops
-    const coordinates: [number, number][] = [];
-    stops.forEach((stop) => {
-      if (routeStops.has(stop.stop_id) && hasValidCoords(stop)) {
-        coordinates.push([stop.stop_lon, stop.stop_lat]);
-      }
+    const bounds = this.boundsFor({
+      ...this.refsForRoute(route_id),
+      route_ids: [route_id],
+      include_shapes: true,
     });
-
-    if (coordinates.length > 0) {
-      const bounds = coordinates.reduce(
-        (bounds, coord) => bounds.extend(coord),
-        new LngLatBounds(coordinates[0], coordinates[0])
-      );
-
-      this.map!.fitBounds(bounds, {
-        padding: {
-          top: 80,
-          bottom: 80 + this.bottomPadding,
-          left: 80,
-          right: 80,
-        },
-        duration: 2000,
-        essential: true,
-      });
+    if (!bounds) {
+      return;
     }
+
+    this.map!.fitBounds(bounds, {
+      padding: {
+        top: 80,
+        bottom: 80 + this.bottomPadding,
+        left: 80,
+        right: 80,
+      },
+      duration: 2000,
+      essential: true,
+    });
   }
 
   /**
    * Fit map to show specific routes
    */
   public fitToRoutes(route_ids: string[]): void {
-    const stops =
-      this.gtfsParser!.getFileDataSyncTyped<Stops>('stops.txt') || [];
-
-    // Find all stops for these routes
-    const allStops = new Set<string>();
-    route_ids.forEach((route_id) => {
-      for (const stop_id of this.gtfsParser!.getStopIdsForRoute(route_id)) {
-        allStops.add(stop_id);
-      }
-    });
-
-    // Get coordinates for all stops
-    const coordinates: [number, number][] = [];
-    stops.forEach((stop) => {
-      if (allStops.has(stop.stop_id) && hasValidCoords(stop)) {
-        coordinates.push([stop.stop_lon, stop.stop_lat]);
-      }
-    });
-
-    if (coordinates.length > 0) {
-      const bounds = coordinates.reduce(
-        (bounds, coord) => bounds.extend(coord),
-        new LngLatBounds(coordinates[0], coordinates[0])
-      );
-
-      this.map!.fitBounds(bounds, {
-        padding: {
-          top: 50,
-          bottom: 50 + this.bottomPadding,
-          left: 50,
-          right: 50,
-        },
-      });
+    const stop_ids = new Set<string>();
+    const zone_ids = new Set<string>();
+    const location_group_ids = new Set<string>();
+    for (const route_id of route_ids) {
+      const refs = this.refsForRoute(route_id);
+      refs.stop_ids.forEach((id) => stop_ids.add(id));
+      refs.zone_ids.forEach((id) => zone_ids.add(id));
+      refs.location_group_ids.forEach((id) => location_group_ids.add(id));
     }
+
+    const bounds = this.boundsFor({
+      stop_ids,
+      zone_ids,
+      location_group_ids,
+      route_ids,
+      include_shapes: true,
+    });
+    if (!bounds) {
+      return;
+    }
+
+    this.map!.fitBounds(bounds, {
+      padding: {
+        top: 50,
+        bottom: 50 + this.bottomPadding,
+        left: 50,
+        right: 50,
+      },
+    });
   }
 
   /**

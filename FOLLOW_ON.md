@@ -219,7 +219,7 @@ map never moves off its default view. A route whose trips only reference zones
 has no stops either, so selecting it fits nothing. This phase introduces one
 collector and points all four call sites at it.
 
-- [ ] Add a private `boundsFor(input: { stop_ids?, zone_ids?, location_group_ids?,
+- [x] Add a private `boundsFor(input: { stop_ids?, zone_ids?, location_group_ids?,
       route_ids?, include_shapes?: boolean }): LngLatBounds | null` to
       `src/modules/map-controller.ts`. It extends over: each stop's
       `[lon, lat]` filtered through the existing `hasValidCoords`; each zone's
@@ -228,41 +228,58 @@ collector and points all four call sites at it.
       `stopIdsForLocationGroup`; and, when `include_shapes`, every coordinate of
       the matching features from `routeRenderer.getRouteFeatures()` filtered by
       `route_id`. Returns null when nothing contributed a coordinate.
-- [ ] Add a private `refsForRoute(route_id)` returning
+- [x] Add a private `refsForRoute(route_id)` returning
       `{ stop_ids, zone_ids, location_group_ids }`, built by walking the route's
       trips (`getTripsByRouteId`) and their stop_times
       (`getStopTimesByTripId`) through `stopTimeRef()`. This is the flex-aware
       counterpart to `getStopIdsForRoute`.
-- [ ] Fix `src/modules/gtfs-parser.ts:1400-1413` `getStopIdsForRoute` to skip
+- [x] Fix `src/modules/gtfs-parser.ts:1400-1413` `getStopIdsForRoute` to skip
       stop_times with no `stop_id` rather than adding `undefined` to the set.
       This is a live bug independent of the rest of the phase: the `undefined`
       currently flows into `applySpotlight` -> `withAncestors` ->
       `setRouteStops`.
-- [ ] Rewrite `fitMapToData` (`:469`) to use `boundsFor({ stop_ids: all,
+- [x] Rewrite `fitMapToData` (`:469`) to use `boundsFor({ stop_ids: all,
       zone_ids: all })` so a whole-feed fit covers every zone, and so a feed
       with no stops still fits. Keep the existing 50px + `bottomPadding`
       padding.
-- [ ] Rewrite `flyToRoute` (`:1035`) and `fitToRoutes` (`:1074`) on top of
+- [x] Rewrite `flyToRoute` (`:1035`) and `fitToRoutes` (`:1074`) on top of
       `refsForRoute` + `boundsFor({ ..., route_ids, include_shapes: true })`.
       Keep their differing padding/duration — `flyToRoute` animates at 2000ms,
       `fitToRoutes` does not.
-- [ ] Rewrite `fitMapToTrip` (`:947`) to collect that one trip's refs through
+- [x] Rewrite `fitMapToTrip` (`:947`) to collect that one trip's refs through
       `stopTimeRef()` and fit over stops + zones + group members. A trip's shape
       is a single `shape_id`; include it only if it is cheap to resolve from the
       already-built route features, otherwise leave shapes out of the trip fit
       and say so in a comment.
-- [ ] Extend `applySpotlight` (`:715`) to reveal the zones a route touches:
+- [x] Extend `applySpotlight` (`:715`) to reveal the zones a route touches:
       pass the route's `zone_ids` to a new
       `layerManager.setRouteZones(location_ids)` that dims non-matching zone
       polygons the way `setRouteStops` dims stops, and clears on `null`. Follow
       the existing rule in that method's doc comment — it is the sole owner of
       the spotlight, so the zone half goes here, not in the callers.
-- [ ] Verify `highlightZone` (`:825`) and `highlightLocationGroup` (`:842`)
+- [x] Verify `highlightZone` (`:825`) and `highlightLocationGroup` (`:842`)
       still fit correctly once `fitToStops`/`fitToZone` are expressed through
       `boundsFor`, keeping their `maxZoom: CONFIG.STOP_FOCUS_ZOOM` clamp. A
       county-sized zone must not be clamped to stop-level zoom — check whether
       `maxZoom` should be dropped for zone fits, since it only exists to stop a
       single-point fit zooming to the street.
+
+**Findings:** `refsForRoute` needs no cache. `applySpotlight` already called
+`getStopIdsForRoute`, which walks exactly the same indexed data
+(`getTripsByRouteId` + `getStopTimesByTripId`), so `refsForRoute` *replaces*
+that call at equal cost rather than adding a second walk;
+`getStopIdsForRoute` itself stays for its other callers, with the `undefined`
+bug fixed. `fitMapToTrip` leaves shapes out and says so in a comment: route
+features are keyed by `route_id`, not `shape_id`, so resolving one trip's own
+shape would be a second lookup for geometry its stops and zones already cover.
+The zone half of the spotlight mirrors `setRouteStops` exactly: an `onRoute`
+feature-state plus a paint-property swap, with the fill/outline opacity
+expressions factored into `zoneFillOpacity(dimmed)` / `zoneOutlineOpacity(dimmed)`
+so `addZoneLayers` and `setRouteZones` cannot drift apart;
+`routeZoneIds` resets in `updateZonesLayer` when the source is re-added, and
+`clearHighlights` clears it. `maxZoom: CONFIG.STOP_FOCUS_ZOOM` stays on the zone
+and stop fits: it clamps zoom-*in* only, so a county-sized zone never reaches
+it, and it still protects a degenerate zero-area polygon.
 
 **Gotchas:** `getStopIdsForRoute` is on the hot path (it is called per route in
 `applySpotlight`) and is indexed for that reason — `refsForRoute` walks the
