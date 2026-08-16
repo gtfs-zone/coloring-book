@@ -45,6 +45,7 @@ export class NavbarCounts {
       'fares-count-badge',
       gtfsParser.getFileDataSync(GTFS_TABLES.FARE_PRODUCTS).length
     );
+    setBadge('feed-data-count-badge', this.countFeedDataRows());
     setBadge('on-demand-count-badge', this.countOnDemandObjects());
     setBadge('history-count-badge', patchManager.changeCount);
 
@@ -56,6 +57,16 @@ export class NavbarCounts {
     document
       .getElementById('on-demand-indicator')
       ?.classList.toggle('md:inline-flex', this.hasOnDemandService());
+  }
+
+  /** Transfers, attributions and translations together. */
+  private countFeedDataRows(): number {
+    const { gtfsParser } = this.deps;
+    return (
+      gtfsParser.getFileDataSync(GTFS_TABLES.TRANSFERS).length +
+      gtfsParser.getFileDataSync(GTFS_TABLES.ATTRIBUTIONS).length +
+      gtfsParser.getFileDataSync(GTFS_TABLES.TRANSLATIONS).length
+    );
   }
 
   /** Booking rules, location groups and zones together. */

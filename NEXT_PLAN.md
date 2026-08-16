@@ -190,22 +190,22 @@ This alone closes all three "no UI" gaps; phases 3 and 4 are refinements on top.
 Sequenced before the stop-page and home-page integrations because those want a
 "Manage all transfers" / "Manage all attributions" escape hatch to link to.
 
-- [ ] Create `src/modules/feed-data-modal.ts` exporting
+- [x] Create `src/modules/feed-data-modal.ts` exporting
       `showFeedDataModal(deps: EditableTableDeps): Promise<void>`. Copy the
       structure of `showFaresModal` (`src/modules/fares-modal.ts:560`): a
       module-level `FEED_DATA_ENTRIES` array, `INSTANCE_ID`, `readCounts`,
       `refresh`, sidebar click handling, `installEditableTableHandlers` before
       `showModal` and `uninstallEditableTableHandlers` after.
-- [ ] Entry 1, `transfers.txt`. Set `validateRow` to the existing
+- [x] Entry 1, `transfers.txt`. Set `validateRow` to the existing
       `validateTransferRow` from `src/utils/fares-rules.ts`, so the modal and
       the validator share one copy of the rules. Column overrides:
       `widthClass` on `from_stop_id` / `to_stop_id`; the FK pickers for stops,
       routes, and trips come from the spec's `foreignKey` with no override.
-- [ ] Entry 2, `attributions.txt`. `validateRow` enforcing "at most one of
+- [x] Entry 2, `attributions.txt`. `validateRow` enforcing "at most one of
       `agency_id` / `route_id` / `trip_id` is set" and "at least one of
       `is_producer` / `is_operator` / `is_authority` is 1". `widthClass` on
       `organization_name`.
-- [ ] Entry 3, `translations.txt`. Column overrides: `table_name` gets
+- [x] Entry 3, `translations.txt`. Column overrides: `table_name` gets
       `options` listing the spec's allowed enum values; `field_name` gets
       `suggestions` computed from the spec fields of the row's current
       `table_name` filtered to `Text` / `URL` / `Email` / `Phone number` types;
@@ -213,14 +213,54 @@ Sequenced before the stop-page and home-page integrations because those want a
       `validateRow` enforcing the mutual exclusion of `field_value` against
       `record_id` / `record_sub_id`, the `feed_info` forbiddance, and the
       `stop_times` + `record_id` requires `record_sub_id` rule.
-- [ ] Add a `<button id="feed-data-btn">` to the navbar in
+- [x] Add a `<button id="feed-data-btn">` to the navbar in
       `src/index.html`, next to `fares-btn` (`:116`) and `on-demand-btn`
       (`:143`), following their markup and tooltip pattern.
-- [ ] Wire it in `src/index.ts` alongside the `fares-btn` handler (`:341`),
+- [x] Wire it in `src/index.ts` alongside the `fares-btn` handler (`:341`),
       passing `{ gtfsDatabase, patchManager }`.
-- [ ] Give each entry a `note` line and a link to the relevant
+- [x] Give each entry a `note` line and a link to the relevant
       `gtfs.org/documentation/schedule/reference/#...` anchor, as the fares
       modal does.
+
+**Discoveries**
+
+- `on-demand-modal.ts` is a later and slightly better copy of the fares modal
+  shape than `fares-modal.ts` itself, so the new modal follows it: it carries a
+  `FeedDataModalTarget = { table?, rowKey? }` second argument that opens the
+  modal on a given pane and scrolls a row into view. Phases 3 and 4 use that for
+  their "Manage all transfers" / "Manage attributions" links, so it was cheaper
+  to add now than to retrofit.
+- The sidebar has no `menu-title` groups. Fares and On-Demand group their eight
+  and four entries; three unrelated entries have no grouping worth writing.
+- `table_name` needed no `options` override: it has `enumValues` in the spec, so
+  `specFieldKind` already returns `enum` and the table renders the enum menu.
+- `record_id` got no `suggestions`. Its target table varies per row, so the only
+  row-independent set is the union of every id in the feed, which is long and
+  mostly wrong. `field_name` did get the union fallback the gotcha recommends,
+  computed from the `table_name` enum's own list of files.
+- **Deviation:** `validateAttributionRow` enforces only the
+  agency/route/trip mutual exclusion, not "at least one role is 1". The
+  reference words the roles as *should*, and `validateRow` also runs on every
+  update (`editable-table.ts:989`), so enforcing it would refuse every edit to
+  an imported row that carries no role flag. It is stated in the entry's note
+  instead; a feed-wide report belongs in the validator.
+- A navbar count badge was added alongside the button
+  (`feed-data-count-badge`, wired in `navbar-counts.ts`) because the markup
+  pattern the plan says to follow is the `indicator` wrapper, which exists to
+  hold one.
+
+**Gotchas found**
+
+- `attributions` keys on `all_fields` (`gtfs-primary-keys.ts:178`) precisely
+  because `attribution_id` is optional in real feeds, so the plan's worry about
+  identical keys does not arise and no `config.primaryKey` was needed. Every
+  field is a key field, so every edit re-keys the row, which
+  `editable-table.ts` already handles as delete plus insert (`timeframes` and
+  `stop_areas` in the fares modal are the same shape).
+- An insert only fires once every `Required` field of the pending row is filled
+  (`editable-table.ts:1335`), and `validateRow` runs after that. For
+  `translations` this means the four required fields must be typed before the
+  "either record_id or field_value" error can appear.
 
 **Gotchas**
 

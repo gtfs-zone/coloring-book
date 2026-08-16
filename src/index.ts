@@ -35,6 +35,7 @@ import { TabLockController } from './modules/tab-lock';
 import { humanLabel } from './utils/patch-label';
 import { showAboutModal } from './modules/about-modal';
 import { showFaresModal } from './modules/fares-modal';
+import { showFeedDataModal } from './modules/feed-data-modal';
 import { showOnDemandModal } from './modules/on-demand-modal';
 import {
   showCalendarModal,
@@ -347,6 +348,18 @@ export class GTFSEditor {
           patchManager: this.patchManager,
         });
       });
+
+      // Wire feed data button to open the Feed Data modal
+      document
+        .getElementById('feed-data-btn')
+        ?.addEventListener('click', () => {
+          void showFeedDataModal({
+            gtfsDatabase: this.gtfsParser.gtfsDatabase as Parameters<
+              typeof showFeedDataModal
+            >[0]['gtfsDatabase'],
+            patchManager: this.patchManager,
+          });
+        });
 
       // Wire on-demand button to open the On-Demand (GTFS Flex) modal
       document
