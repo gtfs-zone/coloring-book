@@ -26,7 +26,9 @@ export type PageState =
     }
   | { type: 'stop'; stop_id: string }
   | { type: 'service'; service_id: string }
-  | { type: 'pathway'; pathway_id: string };
+  | { type: 'pathway'; pathway_id: string }
+  | { type: 'zone'; location_id: string }
+  | { type: 'location_group'; location_group_id: string };
 
 /**
  * Represents a single item in the breadcrumb trail.
@@ -111,6 +113,25 @@ export function isPageState(value: unknown): value is PageState {
       return (
         Object.keys(state).length === 2 &&
         typeof pathwayState.pathway_id === 'string'
+      );
+    }
+
+    case 'zone': {
+      const zoneState = state as { type: string; location_id?: string };
+      return (
+        Object.keys(state).length === 2 &&
+        typeof zoneState.location_id === 'string'
+      );
+    }
+
+    case 'location_group': {
+      const groupState = state as {
+        type: string;
+        location_group_id?: string;
+      };
+      return (
+        Object.keys(state).length === 2 &&
+        typeof groupState.location_group_id === 'string'
       );
     }
 

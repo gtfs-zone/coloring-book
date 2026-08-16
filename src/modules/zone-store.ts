@@ -8,7 +8,6 @@
  */
 
 import type { GTFSParser } from './gtfs-parser.js';
-import type { PatchManager } from './patch-manager.js';
 import { GTFS_TABLES } from '../types/gtfs.js';
 import { patchUpdate } from '../utils/patch-utils.js';
 import type { GTFSDatabaseRecord } from './gtfs-database.js';
@@ -16,6 +15,25 @@ import type { GTFSDatabaseRecord } from './gtfs-database.js';
 /** Object store and row key for locations.geojson. */
 export const LOCATIONS_TABLE = 'locations';
 export const LOCATIONS_ROW_KEY = 'locations';
+
+/**
+ * The slice of PatchManager a zone write needs. Structural rather than the
+ * class itself, so the view layer can pass the narrowed patch-manager handle it
+ * already holds.
+ */
+export interface ZonePatchRecorder {
+  recordInsert: (
+    table: string,
+    id: string,
+    record: Record<string, unknown>
+  ) => Promise<void>;
+  recordUpdate: (
+    table: string,
+    id: string,
+    before: Record<string, unknown>,
+    after: Record<string, unknown>
+  ) => Promise<void>;
+}
 
 export type ZoneFeature = GeoJSON.Feature<
   GeoJSON.Polygon | GeoJSON.MultiPolygon
@@ -191,7 +209,7 @@ export function mergeZoneFeatures(
  */
 export async function writeZoneFeatures(
   parser: GTFSParser,
-  patchManager: PatchManager | null,
+  patchManager: ZonePatchRecorder | null,
   features: ZoneFeature[]
 ): Promise<void> {
   const collection = getZoneCollection(parser);

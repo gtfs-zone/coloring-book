@@ -16,6 +16,7 @@ import {
 import { GTFSParser } from './gtfs-parser.js';
 import { GTFSRelationships } from './gtfs-relationships.js';
 import { UIController } from './ui.js';
+import { getZoneFeature } from './zone-store.js';
 
 let globalBreadcrumbLookup: GTFSBreadcrumbLookup | null = null;
 
@@ -57,6 +58,16 @@ export function initializePageStateWithGTFS(
         );
       case 'timetable':
         return (await relationships.getRouteByIdAsync(state.route_id)) !== null;
+      case 'zone':
+        return getZoneFeature(gtfsParser, state.location_id) !== null;
+      case 'location_group':
+        return (
+          (
+            await gtfsParser.getDatabase().queryRows('location_groups', {
+              location_group_id: state.location_group_id,
+            })
+          ).length > 0
+        );
       default:
         return true;
     }

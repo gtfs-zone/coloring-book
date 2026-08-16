@@ -36,6 +36,8 @@ export interface BreadcrumbLookup {
   getPathwayAncestors: (
     pathway_id: string
   ) => Promise<Array<{ stop_id: string; label: string }>>;
+  getZoneName: (location_id: string) => Promise<string>;
+  getLocationGroupName: (location_group_id: string) => Promise<string>;
 }
 
 /**
@@ -414,6 +416,45 @@ export class PageStateManager {
           break;
         }
 
+        case 'zone': {
+          // A zone has no parent object: it is a standalone polygon.
+          const zoneName = this.breadcrumbLookup
+            ? await this.breadcrumbLookup.getZoneName(pageState.location_id)
+            : pageState.location_id;
+
+          breadcrumbs.push({
+            label: 'Home',
+            pageState: { type: 'home' },
+          });
+          breadcrumbs.push({
+            label: zoneName,
+            pageState: { type: 'zone', location_id: pageState.location_id },
+          });
+          break;
+        }
+
+        case 'location_group': {
+          // No stop parent: a group has many member stops, none of them owning it.
+          const groupName = this.breadcrumbLookup
+            ? await this.breadcrumbLookup.getLocationGroupName(
+                pageState.location_group_id
+              )
+            : pageState.location_group_id;
+
+          breadcrumbs.push({
+            label: 'Home',
+            pageState: { type: 'home' },
+          });
+          breadcrumbs.push({
+            label: groupName,
+            pageState: {
+              type: 'location_group',
+              location_group_id: pageState.location_group_id,
+            },
+          });
+          break;
+        }
+
         default:
           // Unknown page state - return just Home
           breadcrumbs.push({
@@ -504,6 +545,14 @@ export class PageStateManager {
         params.set('pathway', pageState.pathway_id);
         return params.toString();
 
+      case 'zone':
+        params.set('zone', pageState.location_id);
+        return params.toString();
+
+      case 'location_group':
+        params.set('location_group', pageState.location_group_id);
+        return params.toString();
+
       default:
         return '';
     }
@@ -524,6 +573,17 @@ export class PageStateManager {
 
     if (params.has('pathway')) {
       return { type: 'pathway', pathway_id: params.get('pathway')! };
+    }
+
+    if (params.has('zone')) {
+      return { type: 'zone', location_id: params.get('zone')! };
+    }
+
+    if (params.has('location_group')) {
+      return {
+        type: 'location_group',
+        location_group_id: params.get('location_group')!,
+      };
     }
 
     if (params.has('service') && !params.has('route')) {

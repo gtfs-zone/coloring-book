@@ -13,6 +13,7 @@ import {
   getStopDisplay,
 } from '../utils/entity-display.js';
 import type { GTFSParser } from './gtfs-parser.js';
+import { getZoneFeatures, zoneName } from './zone-store.js';
 import {
   neutralMarker,
   routeMarker,
@@ -30,11 +31,12 @@ type Row = Record<string, string>;
 export async function buildSearchEntries(
   parser: GTFSParser
 ): Promise<SearchEntry<PageState>[]> {
-  const [stops, routes, agencies] = (await Promise.all([
+  const [stops, routes, agencies, locationGroups] = (await Promise.all([
     parser.getFileData(GTFS_TABLES.STOPS),
     parser.getFileData(GTFS_TABLES.ROUTES),
     parser.getFileData(GTFS_TABLES.AGENCY),
-  ])) as [Row[] | null, Row[] | null, Row[] | null];
+    parser.getFileData(GTFS_TABLES.LOCATION_GROUPS),
+  ])) as [Row[] | null, Row[] | null, Row[] | null, Row[] | null];
 
   const entries: SearchEntry<PageState>[] = [];
 
@@ -95,6 +97,37 @@ export async function buildSearchEntries(
       secondary: agency_id,
       haystack: haystack(agency['agency_name'], agency_id),
       priority: 2,
+    });
+  }
+
+  // Flex objects rank below stops and routes: most feeds have none, and where
+  // they exist they are far fewer than the scheduled objects above.
+  for (const feature of getZoneFeatures(parser)) {
+    const location_id = String(feature.id);
+    const name = zoneName(feature);
+    entries.push({
+      payload: { type: 'zone', location_id },
+      icon: neutralMarker(),
+      primary: name || location_id,
+      secondary: location_id,
+      haystack: haystack(name, location_id, 'zone on-demand'),
+      priority: 3,
+    });
+  }
+
+  for (const group of locationGroups ?? []) {
+    const location_group_id = group['location_group_id'];
+    if (!location_group_id) {
+      continue;
+    }
+    const name = group['location_group_name'];
+    entries.push({
+      payload: { type: 'location_group', location_group_id },
+      icon: neutralMarker(),
+      primary: name || location_group_id,
+      secondary: location_group_id,
+      haystack: haystack(name, location_group_id, 'location group'),
+      priority: 3,
     });
   }
 

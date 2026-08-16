@@ -178,6 +178,51 @@ export class GTFSBreadcrumbLookup implements BreadcrumbLookup {
   }
 
   /**
+   * Name of an on-demand zone, read out of the single locations.geojson row.
+   * Falls back to the location_id, which is what the feature id holds.
+   */
+  async getZoneName(location_id: string): Promise<string> {
+    try {
+      const row = (await this.database.getRow('locations', 'locations')) as
+        | Partial<GeoJSON.FeatureCollection>
+        | undefined;
+      const feature = row?.features?.find(
+        (f) => String(f.id ?? '') === location_id
+      );
+      const name = (feature?.properties as Record<string, unknown> | null)
+        ?.stop_name;
+      if (name) {
+        return String(name);
+      }
+    } catch (error) {
+      console.warn(
+        `[GTFSBreadcrumbLookup] Failed to look up zone ${location_id}:`,
+        error
+      );
+    }
+    return location_id;
+  }
+
+  /** Name of a location group, falling back to its id. */
+  async getLocationGroupName(location_group_id: string): Promise<string> {
+    try {
+      const rows = await this.database.queryRows('location_groups', {
+        location_group_id,
+      });
+      const name = rows[0]?.location_group_name as string | undefined;
+      if (name) {
+        return name;
+      }
+    } catch (error) {
+      console.warn(
+        `[GTFSBreadcrumbLookup] Failed to look up location group ${location_group_id}:`,
+        error
+      );
+    }
+    return location_group_id;
+  }
+
+  /**
    * No-op cache clearing method for compatibility
    */
   clearCache(): void {

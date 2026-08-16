@@ -33,6 +33,10 @@ import {
   OptionPickerItem,
 } from './option-picker-modal.js';
 import { getEnumOptions } from '../types/gtfs-enums.js';
+import {
+  navigateToLocationGroup,
+  navigateToZone,
+} from './navigation-actions.js';
 
 /**
  * Identifies one time cell across a re-render.
@@ -282,6 +286,21 @@ export class ScheduleController {
       const stopLabel = (e.target as Element)?.closest?.('.stop-label-span');
       if (stopLabel instanceof HTMLElement) {
         void this.openStopPicker(stopLabel);
+        return;
+      }
+
+      // Flex row labels open the zone or location group's browse page. There is
+      // no picker: repointing a flex row at another zone is not a stop swap.
+      const flexLabel = (e.target as Element)?.closest?.('.flex-label-span');
+      if (flexLabel instanceof HTMLElement) {
+        const id = flexLabel.dataset.flexId ?? '';
+        if (id !== '') {
+          if (flexLabel.dataset.flexKind === 'location_group') {
+            void navigateToLocationGroup(id);
+          } else {
+            void navigateToZone(id);
+          }
+        }
         return;
       }
 

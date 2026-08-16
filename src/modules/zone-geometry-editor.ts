@@ -7,7 +7,6 @@
  */
 
 import type { GTFSParser } from './gtfs-parser.js';
-import type { PatchManager } from './patch-manager.js';
 import {
   encodeGeojsonIoUrl,
   parseGeojsonIoInput,
@@ -19,13 +18,14 @@ import {
   writeZoneFeatures,
   zoneBounds,
   zoneVertexCount,
+  type ZonePatchRecorder,
 } from './zone-store.js';
 import { notify } from './notification-system.js';
 import { escapeHtml } from '../utils/escape-html.js';
 
 export interface ZoneGeometryDependencies {
   gtfsParser: GTFSParser;
-  patchManager: PatchManager | null;
+  patchManager: ZonePatchRecorder | null;
   /** Called after a successful write, so the page can re-render. */
   onGeometryChanged?: (location_id: string) => void;
 }

@@ -555,7 +555,8 @@ export class TimetableRenderer {
    * a zone has no parent_station concept. The name comes pre-resolved on the
    * synthetic row built by TimetableDataProcessor. There is no `data-stop-id`
    * here, so clicking the label does not open the stop picker: repointing a
-   * flex row at a different zone is not a stop swap.
+   * flex row at a different zone is not a stop swap. It opens the zone or
+   * location group's own browse page instead.
    */
   private renderFlexNameBlock(
     stop: Stops,
@@ -564,9 +565,18 @@ export class TimetableRenderer {
     title: string
   ): string {
     const kindLabel = ref.kind === 'location_group' ? 'Group' : 'Zone';
+    const openLabel =
+      ref.kind === 'location_group'
+        ? 'Open this location group'
+        : 'Open this zone';
     return `
       <div class="flex flex-col justify-center min-w-0 flex-1" title="${title}">
-        <span class="min-w-0 truncate px-1 flex items-center gap-1">
+        <span
+          class="flex-label-span min-w-0 truncate cursor-pointer rounded px-1 hover:bg-base-200 flex items-center gap-1"
+          data-flex-kind="${escapeHtml(ref.kind)}"
+          data-flex-id="${escapeHtml(ref.id)}"
+          title="${openLabel}"
+        >
           <span class="badge badge-xs badge-info badge-outline shrink-0">${kindLabel}</span>
           <span class="truncate">${escapeHtml(String(stop.stop_name ?? ref.id))}</span>
           ${revisitHtml}
