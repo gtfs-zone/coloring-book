@@ -397,10 +397,16 @@ async function commit(
     return;
   }
 
-  const beforeRaw = coerceFieldValue(spec, span.dataset.value ?? '');
+  // Numeric fields are stored as numbers, so their before value is coerced to
+  // match. Everything else keeps the raw stored string: coercing it trims, and
+  // an edit that only strips whitespace would then look like no change at all.
+  const beforeRaw = span.dataset.value ?? '';
+  const beforeCoerced = coerceFieldValue(spec, beforeRaw);
   const before =
-    'error' in beforeRaw ? (span.dataset.value ?? '') : beforeRaw.value;
-  if (before === coerced.value) {
+    'error' in beforeCoerced || typeof beforeCoerced.value !== 'number'
+      ? beforeRaw
+      : beforeCoerced.value;
+  if (String(before) === String(coerced.value)) {
     clearError(span);
     return;
   }
@@ -410,11 +416,9 @@ async function commit(
 
   // The old value was the broken one, so the row is no longer dangling on this
   // field. Drop the red now rather than waiting for the next validation pass.
-  if (String(before) !== String(coerced.value)) {
-    markReferenceResolved(table, field, String(before));
-    span.classList.remove('text-error', 'border-error');
-    span.removeAttribute('title');
-  }
+  markReferenceResolved(table, field, String(before));
+  span.classList.remove('text-error', 'border-error');
+  span.removeAttribute('title');
 
   const store = specStoreName(table);
   console.log(`[InlineField] update ${store} ${recordId}.${field}`);
