@@ -178,7 +178,7 @@ async function renderContent(stop: Record<string, unknown>): Promise<string> {
     type="button"
     class="${ADD_CLASS} btn btn-xs btn-ghost"
     data-stop-id="${escapeHtml(stop_id)}"
-  >+ Add area</button>`;
+  >+ Add area...</button>`;
 
   let note = '';
   if (inheritedFrom) {

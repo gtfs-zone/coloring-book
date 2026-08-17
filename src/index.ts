@@ -28,7 +28,6 @@ import {
 import { PageStateManager } from './modules/page-state-manager';
 import { navigateToTimetable } from './modules/navigation-actions';
 import type { PageState } from './types/page-state';
-import { GTFS_TABLES } from './types/gtfs';
 import { PatchManager } from './modules/patch-manager';
 import { HistoryController } from './modules/history-controller';
 import { TabLockController } from './modules/tab-lock';
@@ -85,6 +84,8 @@ export class GTFSEditor {
   public themeController: ThemeController;
   public pageStateManager: PageStateManager;
   public patchManager: PatchManager;
+  /** Built in init(), so the shape picker's footer reaches it lazily. */
+  private shapesManager: ShapesManager | null = null;
   public historyController: HistoryController;
   public navbarCounts: NavbarCounts;
   public tabLock: TabLockController;
@@ -180,12 +181,16 @@ export class GTFSEditor {
       },
     });
 
-    // Timetable booking-rule badge -> the On-Demand modal, opened on that rule.
-    this.scheduleController.setBookingRuleHandler((booking_rule_id) => {
-      void showOnDemandModal(this.onDemandModalDeps(), {
-        table: GTFS_TABLES.BOOKING_RULES,
-        rowKey: booking_rule_id,
-      });
+    // A timetable picker's footer button -> the modal that authors what the
+    // picker lists. Both are reached lazily, since the shapes manager is not
+    // built until init().
+    this.scheduleController.setManagerHandlers({
+      openOnDemand: (target) => {
+        void showOnDemandModal(this.onDemandModalDeps(), target);
+      },
+      openShapes: () => {
+        void this.shapesManager?.open();
+      },
     });
 
     this.init().catch((error) => {
@@ -336,6 +341,7 @@ export class GTFSEditor {
         this.gtfsParser,
         this.patchManager
       );
+      this.shapesManager = shapesManager;
       const shapesBtn = document.getElementById('shapes-btn');
       if (shapesBtn) {
         // Same icon as the "open in brouter" affordance, at navbar icon size.

@@ -45,6 +45,11 @@ export interface PickerTriggerOptions {
   className?: string;
   /** Pre-built attribute string: the caller's `data-*`, role, tabindex, title. */
   attrs?: string;
+  /**
+   * Clip a long value to one line. Off for a multi-line value - a list cell
+   * shows every value it has, and clipping would hide some with no sign of it.
+   */
+  truncate?: boolean;
 }
 
 /** Layout every trigger shares, whatever box it sits in. */
@@ -70,8 +75,16 @@ export function renderPickerTrigger(opts: PickerTriggerOptions): string {
     .filter(Boolean)
     .join(' ');
 
+  const valueClasses = [
+    PICKER_TRIGGER_VALUE_CLASS,
+    'min-w-0 flex-1 text-left',
+    opts.truncate === false ? '' : 'truncate',
+  ]
+    .filter(Boolean)
+    .join(' ');
+
   return `<span class="${classes}" ${opts.attrs ?? ''}
-    ><span class="${PICKER_TRIGGER_VALUE_CLASS} min-w-0 flex-1 truncate text-left">${opts.content}</span
+    ><span class="${valueClasses}">${opts.content}</span
     ><span class="shrink-0 opacity-50" aria-hidden="true">${renderChevronIcon('h-3 w-3')}</span
   ></span>`;
 }

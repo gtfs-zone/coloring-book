@@ -56,6 +56,10 @@ import { showModal, renderTrashIcon } from './modal-utils.js';
 import { showFeedDataModal } from './feed-data-modal.js';
 import { specStoreName } from '../utils/spec-field-edit.js';
 import { showOptionPickerModal } from './option-picker-modal.js';
+import {
+  renderPickerTrigger,
+  setPickerTriggerContent,
+} from '../utils/picker-trigger.js';
 import { notify } from './notification-system.js';
 import { escapeHtml } from '../utils/escape-html.js';
 import {
@@ -986,13 +990,16 @@ export class PageContentRenderer {
     return `
       <fieldset class="fieldset">
         <legend class="fieldset-legend">Network</legend>
-        <span
-          class="${ROUTE_NETWORK_FIELD} block w-full cursor-pointer truncate rounded-field border border-base-300 px-3 py-1.5 text-sm hover:bg-base-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
-          tabindex="0"
-          role="button"
-          data-route-id="${escapeHtml(route_id)}"
-          data-network-id="${escapeHtml(network_id)}"
-        >${label ? escapeHtml(label) : '<span class="opacity-40">Not in a network</span>'}</span>
+        ${renderPickerTrigger({
+          content: label
+            ? escapeHtml(label)
+            : '<span class="opacity-40">Not in a network</span>',
+          // Brings its own bordered field box, so only the layout and the
+          // chevron come from the shared trigger.
+          variant: 'bare',
+          className: `${ROUTE_NETWORK_FIELD} w-full cursor-pointer rounded-field border border-base-300 px-3 py-1.5 text-sm hover:bg-base-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary`,
+          attrs: `tabindex="0" role="button" data-route-id="${escapeHtml(route_id)}" data-network-id="${escapeHtml(network_id)}"`,
+        })}
       </fieldset>
     `;
   }
@@ -1084,10 +1091,12 @@ export class PageContentRenderer {
     }
 
     span.dataset.networkId = network_id;
-    span.innerHTML =
+    setPickerTriggerContent(
+      span,
       network_id === ''
         ? '<span class="opacity-40">Not in a network</span>'
-        : escapeHtml(await this.networkLabel(network_id));
+        : escapeHtml(await this.networkLabel(network_id))
+    );
   }
 
   /** Ask for a new network's id and name, and write it. Returns its id. */

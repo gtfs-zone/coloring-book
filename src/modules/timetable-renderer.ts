@@ -94,6 +94,27 @@ function buildBrouterUrl(
 const TRIP_COLUMN_REM = 11;
 const LABEL_COLUMN_REM = 10;
 
+/** The frequencies.txt fields a headway period row stacks, in spec order. */
+const FREQUENCY_FIELDS = [
+  'start_time',
+  'end_time',
+  'headway_secs',
+  'exact_times',
+] as const;
+
+type FrequencyField = (typeof FREQUENCY_FIELDS)[number];
+
+/** How a period field is edited: picked up by the inline editor swap. */
+function frequencyFieldKind(field: FrequencyField): 'time' | 'number' | 'enum' {
+  if (field === 'exact_times') {
+    return 'enum';
+  }
+  if (field === 'headway_secs') {
+    return 'number';
+  }
+  return 'time';
+}
+
 /**
  * The one decision the whole render shares: which stop_times sub-rows every
  * cell shows. Computed once in renderTimetableHTML and threaded down rather
@@ -361,14 +382,16 @@ export class TimetableRenderer {
   }
 
   /**
-   * The frequencies.txt band: two rows per headway period, sharing the trip
+   * The frequencies.txt band: one row per headway period, sharing the trip
    * columns and the frozen label column with the trip property rows above.
    *
-   * A headway period is four fields on one trip, so it is edited exactly like a
-   * trip property: a click-to-edit span per field, no modal. The band's height
-   * is set by whichever displayed trip has the most periods; trips with fewer
-   * show `-` in the slots they do not have, because a period is created by the
-   * `+` row and never by typing into a blank slot.
+   * A period row has the same shape as a stop-time cell: four labeled sub-rows
+   * stacked in spec order, with the field names in the frozen column beside the
+   * group name. A headway period is four fields on one trip, so it is edited
+   * exactly like a trip property: a click-to-edit span per field, no modal. The
+   * band's height is set by whichever displayed trip has the most periods; trips
+   * with fewer show `-` in the slots they do not have, because a period is
+   * created by the `+` row and never by typing into a blank slot.
    *
    * The spans are `.freq-span`, deliberately *not* `.time-span`: timeCellRows
    * selects rows containing `.time-span`, and pulling these rows into the
@@ -425,37 +448,36 @@ export class TimetableRenderer {
       `;
     }
 
+    // A cell with no period at this index still fills the four sub-rows plus the
+    // delete button's line, so every cell in the row is the same height.
+    const emptyPeriodCell = `
+      <td class="text-center p-2">
+        ${FREQUENCY_FIELDS.map(() => '<span class="block h-6 leading-6 opacity-40">-</span>').join('')}
+        <span class="block h-4"></span>
+      </td>
+    `;
+
     let rows = '';
     for (let i = 0; i < bandSize; i++) {
-      const windowCells = trips
+      const cells = trips
         .map((trip) => {
           const period = trip.frequencies[i];
           if (!period) {
-            return `<td class="text-center p-2"><span class="block h-6 leading-6 opacity-40">-</span><span class="block h-6"></span></td>`;
+            return emptyPeriodCell;
           }
           return `
-            <td class="text-center p-2">
-              ${this.renderFrequencySpan(period, 'start_time', 'time')}
-              ${this.renderFrequencySpan(period, 'end_time', 'time')}
-            </td>
-          `;
-        })
-        .join('');
-
-      const headwayCells = trips
-        .map((trip) => {
-          const period = trip.frequencies[i];
-          if (!period) {
-            return `<td class="text-center p-2"><span class="block h-6 leading-6 opacity-40">-</span><span class="block h-6"></span></td>`;
-          }
-          return `
-            <td class="text-center p-2">
-              ${this.renderFrequencySpan(period, 'headway_secs', 'number')}
-              <div class="flex items-center gap-1">
-                ${this.renderFrequencySpan(period, 'exact_times', 'enum', 'flex-1 min-w-0')}
+            <td class="text-center p-2 group">
+              ${FREQUENCY_FIELDS.map((field) =>
+                this.renderFrequencySpan(
+                  period,
+                  field,
+                  frequencyFieldKind(field)
+                )
+              ).join('')}
+              <div class="flex justify-end">
                 <button
                   type="button"
-                  class="freq-delete field-tooltip-trigger btn btn-ghost btn-xs px-1 text-error"
+                  class="freq-delete field-tooltip-trigger btn btn-ghost btn-xs h-4 min-h-0 px-1 text-error opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
                   data-trip-id="${escapeHtml(period.trip_id)}"
                   data-start-time="${escapeHtml(period.start_time)}"
                   ${tooltipContentAttr(this.frequencyDeleteTip(period))}
@@ -468,13 +490,8 @@ export class TimetableRenderer {
 
       rows += `
         <tr class="frequency-row" data-freq-index="${i}">
-          ${labelCell(`frequency ${i + 1}`)}
-          ${windowCells}
-          ${spacerCell}
-        </tr>
-        <tr class="frequency-row" data-freq-index="${i}">
-          ${labelCell('headway', true)}
-          ${headwayCells}
+          ${this.renderFrequencyLabelCell(i)}
+          ${cells}
           ${spacerCell}
         </tr>
       `;
@@ -489,6 +506,32 @@ export class TimetableRenderer {
     `;
 
     return rows + addRow;
+  }
+
+  /**
+   * A period row's frozen cell: the group name on the left, the four field
+   * names on the right, mirroring renderStopLabelCell's split.
+   *
+   * The ✕ stays in the trip cells rather than joining the group name here: one
+   * row is period `i` of *every* trip, so there is no single record the label
+   * column could delete.
+   */
+  private renderFrequencyLabelCell(index: number): string {
+    const labels = FREQUENCY_FIELDS.map(
+      (field) =>
+        `<div class="h-6 leading-6 truncate">${renderSpecFieldLabelContent('frequencies.txt', field, field)}</div>`
+    ).join('');
+    return `
+      <th class="stop-name py-0 px-2 font-medium border-r border-base-300 bg-base-100" style="${this.labelColumnStyle()}">
+        <div class="flex items-start gap-2 min-w-0">
+          <div class="min-w-0 flex-1 self-center stop-name-text truncate">frequency ${index + 1}</div>
+          <div
+            class="shrink-0 py-2 text-right font-mono text-xs opacity-60"
+            style="width:${LABEL_COLUMN_REM}rem"
+          >${labels}</div>
+        </div>
+      </th>
+    `;
   }
 
   /**
