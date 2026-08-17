@@ -46,6 +46,8 @@ import {
 import { getZoneFeatures, zoneName } from './zone-store.js';
 import { validateFlexStopTimeRow } from '../utils/flex-rules.js';
 import { renderSpecDescriptionPlain } from '../utils/spec-markup.js';
+import { escapeHtml } from '../utils/escape-html.js';
+import { setPickerTriggerContent } from '../utils/picker-trigger.js';
 import { getGTFSFieldDescription } from '../utils/zod-tooltip-helper.js';
 import { GTFS_TABLES } from '../types/gtfs.js';
 import type { LocationGroups } from '../types/gtfs-entities.js';
@@ -1323,7 +1325,7 @@ export class ScheduleController {
     });
 
     if (picked !== null && picked !== currentValue) {
-      span.textContent = picked || '-';
+      setPickerTriggerContent(span, escapeHtml(picked) || '-');
       span.dataset.value = picked;
       // The old value was the broken one, so drop the red without waiting for
       // the next validation pass.

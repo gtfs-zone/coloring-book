@@ -46,6 +46,13 @@ import {
   validateFieldValue,
   type SpecFieldKind,
 } from '../utils/spec-field-edit.js';
+import {
+  addExtensionColumn,
+  extensionFieldSpec,
+  extensionFields,
+  validateExtensionColumnName,
+  EXTENSION_FIELD_DESCRIPTION,
+} from '../utils/extension-fields.js';
 import { GTFSSchemas, GTFS_FIELD_SPECS } from '../types/gtfs.js';
 import type { GTFSFieldSpec } from '../gtfs-spec/types.js';
 import type { z } from 'zod';
@@ -228,8 +235,23 @@ function fieldSpecs(tableName: string): Record<string, GTFSFieldSpec> {
   return specs;
 }
 
+/**
+ * The columns to render: the spec's fields, then any non-spec columns the rows
+ * actually carry. An explicit `fields` list is taken as given.
+ */
 function columnFields(config: EditableTableConfig): string[] {
-  return config.fields ?? Object.keys(fieldSpecs(config.tableName));
+  if (config.fields) {
+    return config.fields;
+  }
+  return [
+    ...Object.keys(fieldSpecs(config.tableName)),
+    ...extensionFields(config.tableName, config.rows),
+  ];
+}
+
+/** A field's spec, or the synthetic text spec an extension column gets. */
+function specFor(tableName: string, field: string): GTFSFieldSpec {
+  return fieldSpecs(tableName)[field] ?? extensionFieldSpec(field);
 }
 
 function rowKey(
@@ -596,6 +618,20 @@ export async function renderEditableTable(
       const override = config.columnOverrides?.[field];
       const fieldConfig = configsByField.get(field);
       const widthClass = override?.widthClass ?? '';
+      // A non-spec column reads as a spec one otherwise, which would be a lie
+      // about what the reference says this table holds.
+      if (!specs[field]) {
+        return `<th class="align-bottom ${widthClass}">${renderFieldLabelContent(
+          {
+            field,
+            label: override?.label ?? field,
+            type: 'text',
+            tableName: config.tableName,
+            isExtension: true,
+            tooltip: EXTENSION_FIELD_DESCRIPTION,
+          }
+        )}</th>`;
+      }
       if (!fieldConfig) {
         return `<th class="${widthClass}">${escapeHtml(override?.label ?? field)}</th>`;
       }
@@ -630,12 +666,7 @@ export async function renderEditableTable(
       const row = group.rows[0];
       const cells = fields
         .map((field) => {
-          const spec = specs[field];
-          if (!spec) {
-            throw new Error(
-              `[EditableTable] ${config.tableName} has no field ${field}`
-            );
-          }
+          const spec = specFor(config.tableName, field);
           if (config.columnOverrides?.[field]?.list) {
             return renderListCell(
               config,
@@ -678,17 +709,23 @@ export async function renderEditableTable(
             data-et="${escapeHtml(config.instanceId)}"
             data-key=""
             data-field="${escapeHtml(field)}"
-            data-kind="${specFieldKind(specs[field])}"
+            data-kind="${specFieldKind(specFor(config.tableName, field))}"
             data-value=""
           >+</span>
         </td>`
     )
     .join('');
 
+  // A host that pins its columns has decided what the table shows, so a new
+  // column would be created and then not rendered.
+  const addFieldHtml = config.fields
+    ? ''
+    : `<button class="editable-table-add-field btn btn-xs btn-ghost font-normal whitespace-nowrap" data-et="${escapeHtml(config.instanceId)}" title="Add a non-spec column to ${escapeHtml(config.tableName)}">+ Field</button>`;
+
   return `
     <div class="overflow-x-auto">
       <table class="table table-xs table-pin-rows">
-        <thead><tr>${headerHtml}${joinHeaderHtml}<th></th></tr></thead>
+        <thead><tr>${headerHtml}${joinHeaderHtml}<th class="align-bottom text-right">${addFieldHtml}</th></tr></thead>
         <tbody>${emptyHtml}${bodyHtml}<tr class="editable-table-new-row">${newRowCells}${joinColumns.map(() => '<td></td>').join('')}<td></td></tr></tbody>
       </table>
     </div>
@@ -725,6 +762,13 @@ export function installEditableTableHandlers(
     );
     if (deleteBtn instanceof HTMLElement) {
       void deleteRow(deleteBtn);
+      return;
+    }
+    const addFieldBtn = (e.target as Element)?.closest?.(
+      '.editable-table-add-field'
+    );
+    if (addFieldBtn instanceof HTMLElement) {
+      void addFieldColumn(addFieldBtn);
     }
   });
 
@@ -747,6 +791,78 @@ export function uninstallEditableTableHandlers(instanceId: string): void {
   instances.delete(instanceId);
 }
 
+// ─── Extension columns ────────────────────────────────────────────────────────
+
+/**
+ * Prompt for a non-spec column name and add it to the table.
+ *
+ * The column is only remembered, not written onto any row: see
+ * `addExtensionColumn`. That is why the dialog says an empty column will not
+ * reach the exported file.
+ */
+async function addFieldColumn(button: HTMLElement): Promise<void> {
+  const { et } = button.dataset;
+  if (!et) {
+    return;
+  }
+  const state = instances.get(et);
+  if (!state) {
+    console.warn(`[EditableTable] no registered instance ${et}`);
+    return;
+  }
+  const { config } = state;
+  const inputId = `add-field-${config.instanceId}`;
+
+  await showModal({
+    title: `Add a field to ${config.tableName}`,
+    body: `
+      <p class="text-sm opacity-70 mb-3">
+        A field that is not part of the GTFS specification. It is preserved
+        as-is on export, and validation ignores it.
+      </p>
+      <input id="${escapeHtml(inputId)}" type="text" class="input input-bordered w-full" placeholder="my_field" autocomplete="off" />
+      <p id="${escapeHtml(inputId)}-error" class="text-error text-sm mt-2 hidden"></p>
+      <p class="text-sm opacity-70 mt-3">
+        The exported file lists the columns the rows actually carry, so a field
+        left empty on every row will not appear in it.
+      </p>
+    `,
+    enterAction: 0,
+    escapeAction: 1,
+    actions: [
+      {
+        label: 'Add field',
+        className: 'btn-primary',
+        onClick: async () => {
+          const input = document.getElementById(inputId) as HTMLInputElement;
+          const errorEl = document.getElementById(`${inputId}-error`);
+          const name = input?.value ?? '';
+          const error = validateExtensionColumnName(
+            config.tableName,
+            config.rows,
+            name
+          );
+          if (error) {
+            if (errorEl) {
+              errorEl.textContent = error;
+              errorEl.classList.remove('hidden');
+            }
+            return true;
+          }
+          await addExtensionColumn(config.tableName, name);
+          notify.success(`Added ${name.trim()} to ${config.tableName}`);
+          config.onRowsChanged?.();
+          return;
+        },
+      },
+      { label: 'Cancel', className: 'btn-ghost', onClick: () => {} },
+    ],
+    onMount: () => {
+      document.getElementById(inputId)?.focus();
+    },
+  });
+}
+
 function resolve(
   span: HTMLElement
 ): { state: EditableTableInstance; spec: GTFSFieldSpec; field: string } | null {
@@ -759,11 +875,7 @@ function resolve(
     console.warn(`[EditableTable] no registered instance ${et}`);
     return null;
   }
-  const spec = fieldSpecs(state.config.tableName)[field];
-  if (!spec) {
-    return null;
-  }
-  return { state, spec, field };
+  return { state, spec: specFor(state.config.tableName, field), field };
 }
 
 /** The values a list or join cell carries, as written by its renderer. */
@@ -1329,10 +1441,10 @@ async function commitNewRow(
     return;
   }
 
-  const specs = fieldSpecs(config.tableName);
   const fields = columnFields(config);
   const missing = fields.filter(
-    (f) => specs[f].presence === 'Required' && !state.pending[f]
+    (f) =>
+      specFor(config.tableName, f).presence === 'Required' && !state.pending[f]
   );
 
   const row = span.closest('tr');
@@ -1353,7 +1465,10 @@ async function commitNewRow(
     if (pendingValue === undefined) {
       continue;
     }
-    const coerced = coerceFieldValue(specs[f], pendingValue);
+    const coerced = coerceFieldValue(
+      specFor(config.tableName, f),
+      pendingValue
+    );
     record[f] = 'error' in coerced ? pendingValue : coerced.value;
   }
 
