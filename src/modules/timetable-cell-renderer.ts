@@ -11,6 +11,7 @@ import { getEnumOptions } from '../types/gtfs-enums.js';
 import { stopTimeFieldKind } from './timetable-fields.js';
 import { FieldPresence, stopTimeFieldPresence } from '../utils/flex-rules.js';
 import { formatIssueValue, isDanglingReference } from './feed-issues.js';
+import { tooltipContentAttr } from '../utils/field-component.js';
 
 /** Everything one cell needs to render its stack of sub-rows. */
 export interface StopTimeCellParams {
@@ -175,13 +176,16 @@ export class TimetableCellRenderer {
     // The roster is table-wide, so a field the user wants to edit here is added
     // to every cell. Hidden until the cell is hovered or focused, or the grid
     // would be littered with plus signs.
+    const addFieldTip =
+      '<div>Show another <code>stop_times.txt</code> field</div>' +
+      '<div class="opacity-70">Picks a field to add as a sub-row of every cell in this table. It is not written to the feed until a value is typed, and it is dropped on leaving the timetable.</div>';
     const addField = `
       <button
         type="button"
-        class="add-field-btn btn btn-ghost btn-xs h-4 min-h-0 w-full opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+        class="add-field-btn field-tooltip-trigger btn btn-ghost btn-xs h-4 min-h-0 w-full opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
         data-trip-id="${escapeHtml(trip_id)}"
         data-stop-index="${stopIndex}"
-        title="Add a stop_times field as a sub-row of every cell"
+        ${tooltipContentAttr(addFieldTip)}
       >+</button>
     `;
 
