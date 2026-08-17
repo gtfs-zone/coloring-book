@@ -33,6 +33,7 @@ import { PatchManager } from './modules/patch-manager';
 import { HistoryController } from './modules/history-controller';
 import { TabLockController } from './modules/tab-lock';
 import { humanLabel } from './utils/patch-label';
+import { loadExtensionColumns } from './utils/extension-fields';
 import { showAboutModal } from './modules/about-modal';
 import { showFaresModal } from './modules/fares-modal';
 import { showFeedDataModal } from './modules/feed-data-modal';
@@ -219,6 +220,11 @@ export class GTFSEditor {
       if (CONFIG.DEBUG_BOOT) {
         console.timeEnd('[boot] gtfs-parser.initialize');
       }
+
+      // Non-spec columns are derived from row data, except the ones the user
+      // created and has not filled in, which come from the meta store. Read
+      // them now: every consumer of that list is synchronous.
+      await loadExtensionColumns(this.gtfsParser.gtfsDatabase);
       feedProgressIndicator.updateProgress('boot', 60, 'Restoring patches...');
 
       const exportBtn = document.getElementById(

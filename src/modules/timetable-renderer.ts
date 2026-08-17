@@ -31,6 +31,7 @@ import { getEnumOptions } from '../types/gtfs-enums.js';
 import { TripsSchema, GTFS_TABLES } from '../types/gtfs.js';
 import { getStopDisplay, renderCardLabel } from '../utils/entity-display.js';
 import { escapeHtml } from '../utils/escape-html.js';
+import { renderPickerTrigger } from '../utils/picker-trigger.js';
 import { formatIssueValue, isDanglingReference } from './feed-issues.js';
 import { renderTrashIcon, renderRouteWaypointsIcon } from './modal-utils.js';
 import { routeColor } from '../utils/route-colors.js';
@@ -602,16 +603,29 @@ export class TimetableRenderer {
       ? ` title="${escapeHtml(`No record with ${config.field} ${formatIssueValue(value)} exists`)}"`
       : '';
 
-    return `
-      <td class="text-center p-2">
-        <span${danglingAttrs}
-          class="trip-prop-span inline-block max-w-full truncate cursor-pointer rounded px-1 hover:bg-base-200${dangling ? ' text-error font-semibold' : ''}"
+    const attrs = `${danglingAttrs}
           data-trip-id="${trip_id}"
           data-field="${config.field}"
           data-table="trips.txt"
           data-field-kind="${fieldKind}"
-          data-value="${escapeHtml(value)}"
-        >${escapeHtml(display) || '-'}</span>
+          data-value="${escapeHtml(value)}"`;
+    const content = escapeHtml(display) || '-';
+    const errorClass = dangling ? ' text-error font-semibold' : '';
+
+    // shape_id is the one trip property picked from a modal, so it is the one
+    // that wears the chevron; the rest open an inline input or menu.
+    const span =
+      fieldKind === 'shape'
+        ? renderPickerTrigger({
+            content,
+            className: `trip-prop-span${errorClass}`,
+            attrs,
+          })
+        : `<span class="trip-prop-span inline-block max-w-full truncate cursor-pointer rounded px-1 hover:bg-base-200${errorClass}" ${attrs}>${content}</span>`;
+
+    return `
+      <td class="text-center p-2">
+        ${span}
       </td>
     `;
   }
@@ -879,11 +893,11 @@ export class TimetableRenderer {
     );
     return `
       <div class="flex flex-col justify-center min-w-0 flex-1" title="${title}">
-        <span
-          class="stop-label-span min-w-0 truncate cursor-pointer rounded px-1 hover:bg-base-200"
-          data-stop-id="${escapeHtml(stop.stop_id)}"
-          title="Change stop"
-        >${label}${revisitHtml}</span>
+        ${renderPickerTrigger({
+          content: `${label}${revisitHtml}`,
+          className: 'stop-label-span',
+          attrs: `data-stop-id="${escapeHtml(stop.stop_id)}" title="Change stop"`,
+        })}
         <span class="stop-id-line text-xs opacity-50 font-mono truncate px-1">${escapeHtml(stop.stop_id)}</span>
       </div>
     `;

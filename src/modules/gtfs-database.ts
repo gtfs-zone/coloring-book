@@ -182,14 +182,18 @@ export interface GTFSDBSchema extends DBSchema {
     key: number; // last patch version included in this snapshot
     value: SnapshotRecord;
   };
-  // Version pointer store: supports 'versions', 'blobVersion' and
-  // 'networksMode' keys
+  // Version pointer store: supports 'versions', 'blobVersion',
+  // 'networksMode' and 'extensionColumns' keys
   meta: {
     key: string;
     value:
       | { key: 'versions'; currentVersion: number; headVersion: number }
       | { key: 'blobVersion'; version: number }
-      | { key: 'networksMode'; mode: NetworksMode };
+      | { key: 'networksMode'; mode: NetworksMode }
+      | {
+          key: 'extensionColumns';
+          columns: Record<string, string[]>;
+        };
   };
   // Raw JSON blobs for all GTFS tables: avoids per-row IDB overhead
   file_blobs: {
@@ -1844,6 +1848,28 @@ export class GTFSDatabase {
       throw new Error('Database not initialized');
     }
     await this.db.put('meta', { key: 'networksMode', mode });
+  }
+
+  /**
+   * Non-spec column names the user created, per table.
+   *
+   * Only columns with no values in any row need remembering: every other
+   * extension column is derived from the row data itself. See
+   * `src/utils/extension-fields.ts`.
+   */
+  async getExtensionColumns(): Promise<Record<string, string[]>> {
+    if (!this.db) {
+      return {};
+    }
+    const entry = await this.db.get('meta', 'extensionColumns');
+    return entry?.key === 'extensionColumns' ? entry.columns : {};
+  }
+
+  async setExtensionColumns(columns: Record<string, string[]>): Promise<void> {
+    if (!this.db) {
+      throw new Error('Database not initialized');
+    }
+    await this.db.put('meta', { key: 'extensionColumns', columns });
   }
 
   /**

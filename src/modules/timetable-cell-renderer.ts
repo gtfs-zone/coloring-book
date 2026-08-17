@@ -12,6 +12,7 @@ import { stopTimeFieldKind } from './timetable-fields.js';
 import { FieldPresence, stopTimeFieldPresence } from '../utils/flex-rules.js';
 import { formatIssueValue, isDanglingReference } from './feed-issues.js';
 import { tooltipContentAttr } from '../utils/field-component.js';
+import { renderPickerTrigger } from '../utils/picker-trigger.js';
 
 /** Everything one cell needs to render its stack of sub-rows. */
 export interface StopTimeCellParams {
@@ -260,8 +261,13 @@ export class TimetableCellRenderer {
       titleParts.push('no stop_time on this trip yet');
     }
 
+    // A booking rule is picked from a modal, so its sub-row wears the shared
+    // trigger shape. Only when it is editable: a chevron on an inert cell
+    // promises a picker that will not open.
+    const isPicker = kind === 'booking_rule' && editable;
+
     const classes = [
-      'time-span block font-mono text-xs h-6 leading-6 truncate rounded px-1',
+      `time-span font-mono text-xs h-6 leading-6 rounded px-1 ${isPicker ? 'w-full' : 'block truncate'}`,
       kind === 'time' && isWindowed ? 'text-info' : '',
       // A forbidden value and a dangling reference read the same way: an error
       // that is still editable, exactly as renderPropertyCell shows one.
@@ -278,9 +284,7 @@ export class TimetableCellRenderer {
       .filter(Boolean)
       .join(' ');
 
-    return `
-      <span
-        class="${classes}"
+    const attrs = `
         role="gridcell"
         tabindex="-1"
         data-trip-id="${escapeHtml(trip_id)}"
@@ -293,9 +297,19 @@ export class TimetableCellRenderer {
         data-pending="${isPendingRow}"
         data-windowed="${isWindowed}"
         ${editable ? '' : 'data-disabled="true"'}
-        title="${escapeHtml(titleParts.join(' - '))}"
-      >${escapeHtml(this.displayValue(field, kind, value))}</span>
-    `;
+        title="${escapeHtml(titleParts.join(' - '))}"`;
+    const display = escapeHtml(this.displayValue(field, kind, value));
+
+    if (isPicker) {
+      return renderPickerTrigger({
+        content: display,
+        variant: 'bare',
+        className: classes,
+        attrs,
+      });
+    }
+
+    return `<span class="${classes}" ${attrs}>${display}</span>`;
   }
 
   /**
