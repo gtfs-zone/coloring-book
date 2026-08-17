@@ -378,20 +378,38 @@ Small, and last of the three-file features because it is the least load-bearing.
 Attributions are feed metadata, so they belong next to Feed Information rather
 than behind a modal only.
 
-- [ ] In `src/modules/page-content-renderer.ts`, add
+- [x] In `src/modules/page-content-renderer.ts`, add
       `renderAttributionsSection()` after `renderFeedInfoProperties`
       (`:579`), reading all `attributions` rows.
-- [ ] Render each row as a compact card: `organization_name`, the roles as
+- [x] Render each row as a compact card: `organization_name`, the roles as
       badges, the scope (dataset-wide, or the agency / route / trip it names,
       labelled via the `entity-display` helpers), and the URL / email / phone as
       links.
-- [ ] Add a `Manage attributions` button opening the Feed Data modal on the
+- [x] Add a `Manage attributions` button opening the Feed Data modal on the
       attributions entry. Do not duplicate the editing UI here.
-- [ ] Slot the section into `renderHome`'s template, between
+- [x] Slot the section into `renderHome`'s template, between
       `renderFeedInfoProperties` and the `renderIssueCard('Feed issues', ...)`
       call (`src/modules/page-content-renderer.ts:480`).
-- [ ] Render nothing at all when there are no attributions. An empty card on
+- [x] Render nothing at all when there are no attributions. An empty card on
       every feed's home page is noise.
+
+**Discoveries**
+
+- The section is read-only markup, so it needed none of phase 3's
+  `editableDeps` plumbing on the render path. `editableDeps()` is only called
+  from the `Manage attributions` click handler, and the button does nothing when
+  there is no writing handle.
+- After the modal closes, the cards are stale, so the handler calls
+  `onEntityCreated?.()`, which is `browse-navigation.ts:312` re-rendering the
+  current page. Same refresh hook the stop page's transfers section uses.
+- Scope resolution is one `queryRows` per attribution that names an entity, not
+  a bulk `getAllRows`: attributions are a handful of rows, and `getAllRows`
+  on `trips` would be a large read for one label.
+- A scope naming a missing agency / route / trip renders as the raw id with a
+  `(no such agency)` marker rather than falling back to "whole dataset", which
+  would hide the broken reference.
+- Role badges show only the roles set to `1`. A row with no role set gets no
+  badges, matching the modal's decision not to enforce the recommendation.
 
 **Gotchas**
 
