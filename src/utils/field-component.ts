@@ -183,6 +183,18 @@ export function buildFieldTooltipContent(config: FieldConfig): string {
 }
 
 /**
+ * The `data-tooltip-content` attribute for a portal tooltip trigger.
+ *
+ * For icon-only affordances (a `+`, a `✕`, a trash glyph), which have no text
+ * to read the action off. The element also needs the `field-tooltip-trigger`
+ * class, which callers add to their own class list. Text spans keep their
+ * plain `title` instead: they already say what they are.
+ */
+export function tooltipContentAttr(content: string): string {
+  return `data-tooltip-content="${escapeAttr(content)}"`;
+}
+
+/**
  * Render the shared label content pattern: label text (linked to spec) + presence mark,
  * wrapped in a tooltip trigger showing structured field info on hover.
  * Used by both form field labels and timetable trip property rows.
