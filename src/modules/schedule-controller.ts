@@ -75,7 +75,16 @@ interface TimeCellKey {
   field: string;
 }
 
-/** localStorage key for the Compact / Used / All switch. */
+/**
+ * Which pane of the On-Demand modal to open on, and which row to highlight.
+ *
+ * Structural on purpose: the timetable does not import the modal, it is handed
+ * an opener by index.ts.
+ */
+export interface OnDemandTarget {
+  table?: string;
+  rowKey?: string;
+}
 
 /** Is this sub-row one end of a pickup/drop-off window? */
 function asWindowField(field: string | undefined): FlexWindowField | null {
@@ -251,7 +260,8 @@ export class ScheduleController {
   // Map wiring for the stop column, injected by index.ts
   private stopFocus: ((stop_id: string) => void) | null = null;
   private refHover: ((ref: StopTimeRef | null) => void) | null = null;
-  private bookingRuleOpen: ((booking_rule_id: string) => void) | null = null;
+  private onDemandOpen: ((target: OnDemandTarget) => void) | null = null;
+  private shapesOpen: (() => void) | null = null;
   private hoveredRef: StopTimeRef | null = null;
 
   /**
@@ -584,12 +594,20 @@ export class ScheduleController {
   }
 
   /**
-   * Wire a flex cell's booking-rule badge to the On-Demand modal. Injected for
-   * the same reason as the stop handlers: the modal needs the database and the
+   * Wire the timetable's pickers to the two modals that author what they list:
+   * On-Demand (booking rules, location groups, zones) and Shapes. Injected for
+   * the same reason as the stop handlers: both modals need the database and the
    * patch manager, which the timetable does not carry.
+   *
+   * They are reached from a picker's footer button, never from a value span:
+   * assigning a rule or a shape is an edit, opening its editor is navigation.
    */
-  public setBookingRuleHandler(open: (booking_rule_id: string) => void): void {
-    this.bookingRuleOpen = open;
+  public setManagerHandlers(handlers: {
+    openOnDemand: (target: OnDemandTarget) => void;
+    openShapes: () => void;
+  }): void {
+    this.onDemandOpen = handlers.openOnDemand;
+    this.shapesOpen = handlers.openShapes;
   }
 
   /** The roster the last render used, stamped on #schedule-view. */
@@ -1152,6 +1170,16 @@ export class ScheduleController {
       title: 'Add stop or zone',
       options,
       searchable: true,
+      // Two of the three kinds this lists are authored in the On-Demand modal.
+      // Stops have no list page to send anyone to, so the label names what the
+      // button actually opens.
+      footerAction: this.onDemandOpen
+        ? {
+            label: 'Manage zones and location groups...',
+            onClick: () =>
+              this.onDemandOpen?.({ table: GTFS_TABLES.LOCATION_GROUPS }),
+          }
+        : undefined,
     });
 
     if (picked) {
@@ -1279,10 +1307,14 @@ export class ScheduleController {
       options,
       selectedValue: currentValue,
       searchable: true,
-      footerAction: this.bookingRuleOpen
+      footerAction: this.onDemandOpen
         ? {
             label: 'Manage booking rules...',
-            onClick: () => this.bookingRuleOpen?.(currentValue),
+            onClick: () =>
+              this.onDemandOpen?.({
+                table: GTFS_TABLES.BOOKING_RULES,
+                rowKey: currentValue,
+              }),
           }
         : undefined,
     });
@@ -1322,6 +1354,12 @@ export class ScheduleController {
       options,
       selectedValue: currentValue,
       searchable: true,
+      footerAction: this.shapesOpen
+        ? {
+            label: 'Manage shapes...',
+            onClick: () => this.shapesOpen?.(),
+          }
+        : undefined,
     });
 
     if (picked !== null && picked !== currentValue) {

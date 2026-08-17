@@ -108,7 +108,7 @@ export class LocationGroupViewController {
             <div class="card-body p-4 space-y-2">
               <div class="flex items-center justify-between">
                 <h3 class="font-semibold">Member stops</h3>
-                <button class="btn btn-xs btn-ghost ${MEMBER_ADD}" data-location-group-id="${escapeHtml(location_group_id)}">+ Add stop</button>
+                <button class="btn btn-xs btn-ghost ${MEMBER_ADD}" data-location-group-id="${escapeHtml(location_group_id)}">+ Add stop...</button>
               </div>
               ${membersHtml}
             </div>

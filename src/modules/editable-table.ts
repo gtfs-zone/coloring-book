@@ -25,6 +25,10 @@ import {
 import { notify } from './notification-system.js';
 import { formatIssueValue } from './feed-issues.js';
 import { escapeHtml } from '../utils/escape-html.js';
+import {
+  renderPickerTrigger,
+  setPickerTriggerContent,
+} from '../utils/picker-trigger.js';
 import { openInlineEditor, openInlineMenu } from '../utils/inline-edit.js';
 import {
   generateCompositeKeyFromRecord,
@@ -525,16 +529,19 @@ function renderListCell(
     labels.push(text);
   }
   return `<td class="align-middle p-1">
-    <span
-      class="editable-cell inline-block min-w-8 max-w-full cursor-pointer whitespace-pre-line rounded px-1 hover:bg-base-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
+    ${renderPickerTrigger({
+      content: `<span class="whitespace-pre-line">${renderListValues(labels)}</span>`,
+      className: 'editable-cell min-w-8 items-start',
+      truncate: false,
+      attrs: `
       tabindex="0"
       data-et="${escapeHtml(config.instanceId)}"
       data-key="${escapeHtml(group.key)}"
       data-field="${escapeHtml(field)}"
       data-kind="${specFieldKind(spec)}"
       data-list="1"
-      data-values="${escapeHtml(JSON.stringify(listValues(group, field)))}"
-    >${renderListValues(labels)}</span>
+      data-values="${escapeHtml(JSON.stringify(listValues(group, field)))}"`,
+    })}
   </td>`;
 }
 
@@ -548,14 +555,17 @@ function renderJoinCell(
 ): string {
   const members = column.values(row);
   return `<td class="align-middle p-1">
-    <span
-      class="editable-cell inline-block min-w-8 max-w-full cursor-pointer whitespace-pre-line rounded px-1 hover:bg-base-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
+    ${renderPickerTrigger({
+      content: `<span class="whitespace-pre-line">${renderListValues(members.map((m) => m.label))}</span>`,
+      className: 'editable-cell min-w-8 items-start',
+      truncate: false,
+      attrs: `
       tabindex="0"
       data-et="${escapeHtml(config.instanceId)}"
       data-key="${escapeHtml(key)}"
       data-join="${index}"
-      data-values="${escapeHtml(JSON.stringify(members.map((m) => m.value)))}"
-    >${renderListValues(members.map((m) => m.label))}</span>
+      data-values="${escapeHtml(JSON.stringify(members.map((m) => m.value)))}"`,
+    })}
   </td>`;
 }
 
@@ -577,16 +587,28 @@ function renderCell(
     return `<td class="align-middle ${override.widthClass ?? ''}">${escapeHtml(text) || '-'}</td>`;
   }
 
-  return `<td class="align-middle p-1">
-    <span
-      class="editable-cell inline-block min-w-8 max-w-full truncate cursor-pointer rounded px-1 hover:bg-base-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${override?.widthClass ?? ''}"
+  const attrs = `
       tabindex="0"
       data-et="${escapeHtml(config.instanceId)}"
       data-key="${escapeHtml(key)}"
       data-field="${escapeHtml(field)}"
       data-kind="${kind}"
-      data-value="${escapeHtml(raw)}"
-    >${escapeHtml(text) || '-'}</span>
+      data-value="${escapeHtml(raw)}"`;
+  const content = escapeHtml(text) || '-';
+
+  // A foreign ID opens the searchable modal; an enum drops an inline menu and
+  // everything else swaps for an input, so only this one wears the chevron.
+  const span =
+    kind === 'foreign'
+      ? renderPickerTrigger({
+          content,
+          className: `editable-cell min-w-8 ${override?.widthClass ?? ''}`,
+          attrs,
+        })
+      : `<span class="editable-cell inline-block min-w-8 max-w-full truncate cursor-pointer rounded px-1 hover:bg-base-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${override?.widthClass ?? ''}" ${attrs}>${content}</span>`;
+
+  return `<td class="align-middle p-1">
+    ${span}
   </td>`;
 }
 
@@ -700,20 +722,25 @@ export async function renderEditableTable(
   // The trailing blank row is how rows are added: typing into any of its cells
   // starts a record, and it is written as soon as every required field is set.
   const newRowCells = fields
-    .map(
-      (field) =>
-        `<td class="align-middle p-1">
-          <span
-            class="editable-cell inline-block min-w-8 max-w-full truncate cursor-pointer rounded px-1 text-base-content/40 hover:bg-base-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
+    .map((field) => {
+      const kind = specFieldKind(specFor(config.tableName, field));
+      const attrs = `
             tabindex="0"
             data-et="${escapeHtml(config.instanceId)}"
             data-key=""
             data-field="${escapeHtml(field)}"
-            data-kind="${specFieldKind(specFor(config.tableName, field))}"
-            data-value=""
-          >+</span>
-        </td>`
-    )
+            data-kind="${kind}"
+            data-value=""`;
+      const span =
+        kind === 'foreign'
+          ? renderPickerTrigger({
+              content: '+',
+              className: 'editable-cell min-w-8 text-base-content/40',
+              attrs,
+            })
+          : `<span class="editable-cell inline-block min-w-8 max-w-full truncate cursor-pointer rounded px-1 text-base-content/40 hover:bg-base-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary" ${attrs}>+</span>`;
+      return `<td class="align-middle p-1">${span}</td>`;
+    })
     .join('');
 
   // A host that pins its columns has decided what the table shows, so a new
@@ -1125,7 +1152,10 @@ function setCellDisplay(
   span.dataset.value = value === '' ? '' : String(value);
   const kind = (span.dataset.kind ?? 'text') as SpecFieldKind;
   const label = formatSpecValue(spec, kind, value, undefined);
-  span.textContent = label || (span.dataset.key === '' ? '+' : '-');
+  setPickerTriggerContent(
+    span,
+    escapeHtml(label) || (span.dataset.key === '' ? '+' : '-')
+  );
   if (label) {
     span.classList.remove('text-base-content/40');
   }

@@ -25,6 +25,10 @@ import {
   renderEntityIssueNote,
 } from '../modules/feed-issues.js';
 import { escapeHtml } from './escape-html.js';
+import {
+  renderPickerTrigger,
+  setPickerTriggerContent,
+} from './picker-trigger.js';
 import { openInlineEditor, openInlineMenu } from './inline-edit.js';
 import type { InlineEditorInputType } from './inline-edit.js';
 import {
@@ -223,11 +227,8 @@ export async function renderInlineEditableField(
     ? ` title="${escapeHtml(`No record with ${config.field} ${formatIssueValue(raw)} exists`)}"`
     : '';
 
-  return `
-    <fieldset class="fieldset isolate">
-      ${label}
-      <span${danglingTitle}
-        class="${FIELD_CLASS}${danglingClass} block w-full cursor-pointer truncate rounded-field border border-base-300 px-3 py-1.5 text-sm hover:bg-base-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
+  const boxClass = `${FIELD_CLASS}${danglingClass} w-full cursor-pointer rounded-field border border-base-300 px-3 py-1.5 text-sm hover:bg-base-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary`;
+  const attrs = `${danglingTitle}
         tabindex="0"
         role="button"
         data-table="${escapeHtml(config.tableName ?? '')}"
@@ -236,8 +237,25 @@ export async function renderInlineEditableField(
         data-kind="${kind}"
         data-value="${escapeHtml(raw)}"
         data-placeholder="${escapeHtml(placeholder)}"
-        ${config.gtfsFieldType ? `data-gtfs-type="${escapeHtml(config.gtfsFieldType)}"` : ''}
-      >${displayHtml(text, placeholder)}</span>
+        ${config.gtfsFieldType ? `data-gtfs-type="${escapeHtml(config.gtfsFieldType)}"` : ''}`;
+  const content = displayHtml(text, placeholder);
+
+  // A foreign ID is picked from a modal; an enum drops an inline menu and
+  // everything else swaps for an input, so only this one wears the chevron.
+  const span =
+    kind === 'foreign'
+      ? renderPickerTrigger({
+          content,
+          variant: 'bare',
+          className: boxClass,
+          attrs,
+        })
+      : `<span class="${boxClass} block truncate" ${attrs}>${content}</span>`;
+
+  return `
+    <fieldset class="fieldset isolate">
+      ${label}
+      ${span}
     </fieldset>
   `;
 }
@@ -513,5 +531,8 @@ function setDisplay(
     text = raw && gtfsType ? formatValueForDisplay(raw, gtfsType) : raw;
   }
 
-  span.innerHTML = displayHtml(text, span.dataset.placeholder ?? '-');
+  setPickerTriggerContent(
+    span,
+    displayHtml(text, span.dataset.placeholder ?? '-')
+  );
 }
