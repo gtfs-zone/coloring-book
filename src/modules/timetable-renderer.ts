@@ -21,6 +21,8 @@ import {
   FieldConfig,
   renderFieldLabelContent,
   renderSpecFieldLabelContent,
+  buildFieldTooltipContent,
+  tooltipContentAttr,
 } from '../utils/field-component.js';
 import { visibleStopTimeFields, WINDOW_FIELDS } from './timetable-fields.js';
 import { describeFrequency } from '../utils/frequency-rules.js';
@@ -386,13 +388,23 @@ export class TimetableRenderer {
     `;
     const spacerCell = '<td class="text-center p-2"></td>';
 
+    const addTip = (trip: AlignedTrip): string =>
+      `<div>Add a headway period to <code>${escapeHtml(trip.trip_id)}</code></div>` +
+      '<div class="opacity-70">Appends a <code>frequencies.txt</code> row: a service window and the seconds between departures in it. The trip\'s stop_times become a template of offsets from its first departure.</div>' +
+      buildFieldTooltipContent({
+        field: 'headway_secs',
+        label: 'headway_secs',
+        type: 'number',
+        tableName: 'frequencies.txt',
+      });
+
     const addButton = (trip: AlignedTrip, label: string): string => `
       <td class="text-center p-2">
         <button
           type="button"
-          class="freq-add btn btn-xs btn-ghost"
+          class="freq-add field-tooltip-trigger btn btn-xs btn-ghost"
           data-trip-id="${escapeHtml(trip.trip_id)}"
-          title="Add a headway period to ${escapeHtml(trip.trip_id)}"
+          ${tooltipContentAttr(addTip(trip))}
         >${label}</button>
       </td>
     `;
@@ -442,10 +454,10 @@ export class TimetableRenderer {
                 ${this.renderFrequencySpan(period, 'exact_times', 'enum', 'flex-1 min-w-0')}
                 <button
                   type="button"
-                  class="freq-delete btn btn-ghost btn-xs px-1 text-error"
+                  class="freq-delete field-tooltip-trigger btn btn-ghost btn-xs px-1 text-error"
                   data-trip-id="${escapeHtml(period.trip_id)}"
                   data-start-time="${escapeHtml(period.start_time)}"
-                  title="Delete this headway period"
+                  ${tooltipContentAttr(this.frequencyDeleteTip(period))}
                 >&#10005;</button>
               </div>
             </td>
@@ -476,6 +488,17 @@ export class TimetableRenderer {
     `;
 
     return rows + addRow;
+  }
+
+  /**
+   * The ✕ on a headway period. Names the period it would delete, since a trip
+   * can have several and the glyph itself says nothing about which.
+   */
+  private frequencyDeleteTip(period: TripFrequency): string {
+    return (
+      '<div>Delete this headway period</div>' +
+      `<div class="opacity-70">Removes the <code>frequencies.txt</code> row for <code>${escapeHtml(period.trip_id)}</code> at <code>${escapeHtml(period.start_time)}</code>: ${escapeHtml(describeFrequency(period as unknown as Record<string, unknown>))}. The trip's stop_times stay as they are.</div>`
+    );
   }
 
   /**
@@ -605,6 +628,23 @@ export class TimetableRenderer {
    * @param hasPendingStop - Whether there's a pending stop being added
    * @returns HTML string for the table header
    */
+  /**
+   * The `~ ×N` badge's tooltip: what frequency-based service means for the
+   * cells below, then each period in the trip.
+   */
+  private frequencyBadgeTip(trip: AlignedTrip): string {
+    return (
+      '<div>Frequency-based trip</div>' +
+      '<div class="opacity-70">The stop_times below are a template: only their offsets from the first departure carry meaning, and a vehicle leaves every headway through each period.</div>' +
+      trip.frequencies
+        .map(
+          (f) =>
+            `<div><code>${escapeHtml(describeFrequency(f as unknown as Record<string, unknown>))}</code></div>`
+        )
+        .join('')
+    );
+  }
+
   private renderTimetableHeader(data: TimetableData): string {
     const trips = data.trips;
     const columnStyle = `width:${TRIP_COLUMN_REM}rem`;
@@ -615,8 +655,9 @@ export class TimetableRenderer {
         const badge =
           trip.frequencies.length > 0
             ? `<span
-                 class="badge badge-xs badge-outline badge-info ml-1 align-middle"
-                 title="${escapeHtml(trip.frequencies.map((f) => describeFrequency(f as unknown as Record<string, unknown>)).join('; '))}"
+                 class="badge badge-xs badge-outline badge-info ml-1 align-middle field-tooltip-trigger"
+                 tabindex="0"
+                 ${tooltipContentAttr(this.frequencyBadgeTip(trip))}
                >~ &times;${trip.frequencies.length}</span>`
             : '';
         return `
@@ -634,13 +675,19 @@ export class TimetableRenderer {
           tripStops,
           data.route.route_type ?? ''
         );
+        const brouterTip =
+          '<div>Open in BRouter</div>' +
+          `<div class="opacity-70">Routes this trip's ${tripStops.length} stops in BRouter in a new tab, to draw or check a shape against the road or rail network. Nothing in the feed changes.</div>`;
         const brouterLink = brouterUrl
-          ? `<a href="${brouterUrl}" target="_blank" rel="noopener" class="btn btn-xs btn-outline" title="Open in brouter">${renderRouteWaypointsIcon('h-3 w-3')}</a>`
+          ? `<a href="${brouterUrl}" target="_blank" rel="noopener" class="btn btn-xs btn-outline field-tooltip-trigger" ${tooltipContentAttr(brouterTip)}>${renderRouteWaypointsIcon('h-3 w-3')}</a>`
           : '';
+        const deleteTip =
+          `<div>Delete trip <code>${escapeHtml(trip.trip_id)}</code></div>` +
+          '<div class="opacity-70">Removes the trip and its stop_times. Undoable from the Changes panel.</div>';
         return `
           <td class="trip-header text-center p-2 text-xs" style="${columnStyle}">
             <div class="flex items-center justify-center gap-1">
-              <button class="btn btn-xs btn-error btn-outline delete-trip-btn" data-trip-id="${escapeHtml(trip.trip_id)}" title="Delete">${renderTrashIcon('h-3 w-3')}</button>
+              <button class="btn btn-xs btn-error btn-outline delete-trip-btn field-tooltip-trigger" data-trip-id="${escapeHtml(trip.trip_id)}" ${tooltipContentAttr(deleteTip)}>${renderTrashIcon('h-3 w-3')}</button>
               ${brouterLink}
             </div>
           </td>
@@ -766,6 +813,31 @@ export class TimetableRenderer {
   }
 
   /**
+   * The ✕ that drops a provisional field's sub-row.
+   *
+   * Icon-only, so it gets the portal tooltip rather than a `title`: what it
+   * does, plus the field's own spec entry so the field is readable from the
+   * control that removes it.
+   */
+  private renderRemoveFieldButton(field: string): string {
+    const tip =
+      `<div>Stop showing <code>${escapeHtml(field)}</code></div>` +
+      '<div class="opacity-70">Removes the sub-row from every cell. Values already in the feed are untouched, and the field returns on its own merit once any cell has one.</div>' +
+      buildFieldTooltipContent({
+        field,
+        label: field,
+        type: 'text',
+        tableName: 'stop_times.txt',
+      });
+    return `<button
+        type="button"
+        class="remove-field-btn field-tooltip-trigger btn btn-ghost btn-xs h-4 min-h-0 px-1 align-middle"
+        data-field="${escapeHtml(field)}"
+        ${tooltipContentAttr(tip)}
+      >&#10005;</button>`;
+  }
+
+  /**
    * The frozen column of stop_times field names, one per sub-row.
    *
    * Alignment is by construction, not by measurement: every label and every
@@ -779,14 +851,7 @@ export class TimetableRenderer {
         // so it reads muted and carries its own remove control. A used field has
         // no ✕: it is in the feed, and the way to drop it is to clear its values.
         const isProvisional = ctx.provisional.includes(field);
-        const remove = isProvisional
-          ? `<button
-              type="button"
-              class="remove-field-btn btn btn-ghost btn-xs h-4 min-h-0 px-1 align-middle"
-              data-field="${escapeHtml(field)}"
-              title="Stop showing ${escapeHtml(field)}"
-            >&#10005;</button>`
-          : '';
+        const remove = isProvisional ? this.renderRemoveFieldButton(field) : '';
         return `<div class="h-6 leading-6 truncate${isProvisional ? ' italic opacity-70' : ''}">${remove}${renderSpecFieldLabelContent('stop_times.txt', field, field)}</div>`;
       })
       .join('');
