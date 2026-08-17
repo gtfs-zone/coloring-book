@@ -430,36 +430,76 @@ union of keys across all rows. The data is there. Only the UI derives its
 columns from the spec and therefore cannot see it. So this phase is about
 deriving one more list, not about a new storage path.
 
-- [ ] Create `src/utils/extension-fields.ts` exporting
+- [x] Create `src/utils/extension-fields.ts` exporting
       `extensionFields(tableName: string, rows: Record<string, unknown>[]):
       string[]`: the union of keys across `rows`, minus the keys in
       `GTFS_FIELD_SPECS[tableName]`, ordered by first appearance.
-- [ ] Export `extensionFieldSpec(field: string): GTFSFieldSpec` from the same
+- [x] Export `extensionFieldSpec(field: string): GTFSFieldSpec` from the same
       file: a synthetic spec with `type: 'Text'`, `presence: 'Optional'`, and a
       description saying the field is not part of the GTFS spec and is preserved
       as-is on export.
-- [ ] In `editable-table.ts`, make `columnFields()` (`:232`) append
+- [x] In `editable-table.ts`, make `columnFields()` (`:232`) append
       `extensionFields(...)` after the spec fields, and make `fieldSpecs()`
       lookups at `:426`, `:580`, `:762`, `:1332` fall back to
       `extensionFieldSpec` when the field is not in the spec. Mark extension
       column headers visually (a muted badge or an italic header) so they are
       not mistaken for spec fields.
-- [ ] In `renderInlineEntityFields` (`src/utils/inline-editable-field.ts:240`),
+- [x] In `renderInlineEntityFields` (`src/utils/inline-editable-field.ts:240`),
       append a config per extension key present on the record, with
       `kind: 'text'`, after the schema-derived configs and under a small
       "Additional fields" divider.
-- [ ] Add an `Add field` control to the editable table header. It prompts for a
+- [x] Add an `Add field` control to the editable table header. It prompts for a
       column name, validates it against the existing spec and extension names,
       and records it.
-- [ ] Persist user-added column names per table in the `meta` store under
+- [x] Persist user-added column names per table in the `meta` store under
       `extensionColumns`, and union that list into `extensionFields`. Without
       this, a newly added column has no values in any row, so the data-derived
       list would not contain it and it would vanish on the next render.
-- [ ] Confirm the validator does not report an extension column as an error.
+- [x] Confirm the validator does not report an extension column as an error.
       If it does, downgrade it to an info-level notice naming the field.
-- [ ] Add a `CLAUDE.md` bullet: extension fields are derived from row data via
+- [x] Add a `CLAUDE.md` bullet: extension fields are derived from row data via
       `extensionFields`, never hardcoded, and both shared field renderers append
       them after the spec fields.
+
+**Discoveries**
+
+- The plan's four `fieldSpecs()` call sites became one helper,
+  `specFor(tableName, field)` in `editable-table.ts`, which returns the spec or
+  `extensionFieldSpec(field)`. `foreignLabelMaps` was left alone: it already
+  skips a field with no spec, and an extension field is never a foreign key.
+  `resolve()` lost its "unknown field" null return entirely, since every
+  `data-field` in the DOM came from `columnFields` in the first place.
+- `extensionFields` is synchronous, but the user-added column list lives in
+  IndexedDB. Every consumer (`columnFields`, cell renderers) is synchronous, so
+  the list is mirrored into a module-level `added` at boot by
+  `loadExtensionColumns(gtfsDatabase)`, called from `index.ts` right after
+  `gtfsParser.initialize()`. `addExtensionColumn` writes through to the store
+  and updates the mirror.
+- The memo is a `WeakMap` keyed on the rows array plus a `generation` counter
+  that `addExtensionColumn` bumps, rather than the "compute once and pass it
+  down" the gotcha suggests. Threading a field list through `groupRows`,
+  `crossProductBlocks`, `findGroup` and `commitNewRow` would have changed five
+  signatures for the same effect.
+- `GTFS_FIELD_SPECS` has no entry for `locations.geojson` (its spec file
+  carries no `fields`), so `extensionFields` returning `[]` for a table with no
+  specs guards it with no special case.
+- The validator needed no change and no downgrade: nothing in the app parses a
+  whole row against a schema. `gtfs-validator.ts` never calls `safeParse`, and
+  the only per-field parse (`validateFieldValue` in `spec-field-edit.ts`)
+  already returns null when the schema has no such field. No Zod object in
+  `src/types/` is `.strict()`.
+- Extension fields render through the same label path as spec fields:
+  `FieldConfig` gained `isExtension`, and `renderFieldLabelContent` drops the
+  spec link and appends a `non-spec` badge for it. So the editable table header
+  and the entity page's "Additional fields" rows look like one feature.
+- `attributions` keys on `all_fields`, and `generateCompositeKeyFromRecord`
+  builds that key from `Object.keys(record)`, so an extension column on such a
+  table is part of the row key. That was already true of imported extension
+  columns, and `isKeyField` returns true for `all_fields`, so editing one goes
+  through the existing delete-plus-insert path.
+- The `Add field` button is hidden when a host sets `config.fields`: those
+  columns are pinned, so a new one would be created and then not rendered. No
+  host sets it today.
 
 **Gotchas**
 

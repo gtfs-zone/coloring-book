@@ -52,6 +52,11 @@ import {
   getInputTypeForFieldType,
 } from '../types/gtfs-field-types.js';
 import { getGTFSPrimaryKey } from './gtfs-primary-keys.js';
+import {
+  extensionFieldSpec,
+  extensionFields,
+  EXTENSION_FIELD_DESCRIPTION,
+} from './extension-fields.js';
 import type { GTFSFieldSpec } from '../gtfs-spec/types.js';
 import type { z } from 'zod';
 
@@ -131,11 +136,21 @@ export function installInlineEditableFields(
 
 // ─── Rendering ────────────────────────────────────────────────────────────────
 
+/**
+ * The field's spec, or the synthetic text spec a non-spec column gets.
+ *
+ * A table the spec does not describe at all still returns undefined: that is a
+ * caller mistake, not an extension field.
+ */
 function fieldSpec(
   tableName: string | undefined,
   field: string
 ): GTFSFieldSpec | undefined {
-  return tableName ? GTFS_FIELD_SPECS[tableName]?.[field] : undefined;
+  const specs = tableName ? GTFS_FIELD_SPECS[tableName] : undefined;
+  if (!specs) {
+    return undefined;
+  }
+  return specs[field] ?? extensionFieldSpec(field);
 }
 
 /** The stored value as the user should read it, before escaping. */
@@ -258,6 +273,31 @@ export async function renderInlineEntityFields(
   const fieldsHtml: string[] = [];
   for (const config of configs) {
     fieldsHtml.push(await renderInlineEditableField(config));
+  }
+
+  // Columns this record carries that the spec does not describe. They edit as
+  // plain text: there is no spec to say anything else about them.
+  const extras = extensionFields(tableName, [record]).filter(
+    (field) => !exclude.includes(field)
+  );
+  if (extras.length > 0) {
+    fieldsHtml.push(
+      `<div class="divider text-xs opacity-60" title="${escapeHtml(EXTENSION_FIELD_DESCRIPTION)}">Additional fields</div>`
+    );
+    for (const field of extras) {
+      fieldsHtml.push(
+        await renderInlineEditableField({
+          field,
+          label: field,
+          type: 'text',
+          value: record[field],
+          tableName,
+          recordId,
+          isExtension: true,
+          tooltip: EXTENSION_FIELD_DESCRIPTION,
+        })
+      );
+    }
   }
 
   const note = renderEntityIssueNote(tableName, recordId);

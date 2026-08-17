@@ -74,6 +74,11 @@ export interface FieldConfig {
   recordId?: string;
   /** GTFS field type for specialized handling */
   gtfsFieldType?: GTFSFieldType;
+  /**
+   * A non-spec column carried by the feed. Rendered without a spec link, and
+   * marked so it is not mistaken for a field the reference defines.
+   */
+  isExtension?: boolean;
 }
 
 /**
@@ -206,9 +211,12 @@ export function tooltipContentAttr(content: string): string {
  * position from the trigger's on-screen location, not a fixed CSS side.
  */
 export function renderFieldLabelContent(config: FieldConfig): string {
-  const specUrl = getSpecUrl(config.tableName);
+  // A non-spec field has nothing to link to, and says so instead.
+  const specUrl = config.isExtension ? '' : getSpecUrl(config.tableName);
   const tipContent = buildFieldTooltipContent(config);
-  const labelText = escapeHtml(config.label);
+  const labelText = config.isExtension
+    ? `<span class="italic">${escapeHtml(config.label)}</span> <span class="badge badge-ghost badge-xs align-middle">non-spec</span>`
+    : escapeHtml(config.label);
   const linkContent = specUrl
     ? `<a href="${specUrl}" target="_blank" rel="noopener noreferrer">${labelText}</a>`
     : labelText;
