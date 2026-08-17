@@ -53,6 +53,8 @@ import {
   renderOptionLabel,
 } from '../utils/entity-display.js';
 import { showModal, renderTrashIcon } from './modal-utils.js';
+import { showFeedDataModal } from './feed-data-modal.js';
+import { specStoreName } from '../utils/spec-field-edit.js';
 import { showOptionPickerModal } from './option-picker-modal.js';
 import { notify } from './notification-system.js';
 import { escapeHtml } from '../utils/escape-html.js';
@@ -517,6 +519,8 @@ export class PageContentRenderer {
       <div class="p-4 space-y-4">
         ${await this.renderFeedInfoProperties(feedInfo)}
 
+        ${await this.renderAttributionsSection()}
+
         ${renderIssueCard('Feed issues', getFeedIssues())}
 
         <div class="space-y-4">
@@ -639,6 +643,125 @@ export class PageContentRenderer {
         </div>
       </div>
     `;
+  }
+
+  /**
+   * Render the attributions section of the home page.
+   *
+   * Read-only cards: attributions are feed metadata, so they belong next to
+   * Feed Information, but editing them stays in the Feed Data modal rather than
+   * being duplicated here. Renders nothing when the feed has none.
+   */
+  private async renderAttributionsSection(): Promise<string> {
+    const rows = (await this.dependencies.gtfsDatabase.getAllRows(
+      specStoreName(GTFS_TABLES.ATTRIBUTIONS)
+    )) as Record<string, unknown>[];
+    if (rows.length === 0) {
+      return '';
+    }
+
+    const cards = await Promise.all(
+      rows.map((row) => this.renderAttributionCard(row))
+    );
+
+    return `
+      <div class="space-y-2">
+        <div class="flex items-center justify-between gap-2">
+          <h2 class="text-lg font-semibold">Attributions</h2>
+          <button class="btn btn-xs btn-outline manage-attributions-btn">Manage attributions</button>
+        </div>
+        <div class="card bg-base-100 shadow-lg">
+          <div class="card-body p-4 space-y-3">
+            ${cards.join('')}
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  /** One attribution: organization, roles, scope, and contact links. */
+  private async renderAttributionCard(
+    row: Record<string, unknown>
+  ): Promise<string> {
+    const text = (field: string): string => String(row[field] ?? '').trim();
+
+    const roles = [
+      ['is_producer', 'Producer'],
+      ['is_operator', 'Operator'],
+      ['is_authority', 'Authority'],
+    ]
+      .filter(([field]) => text(field) === '1')
+      .map(
+        ([, label]) =>
+          `<span class="badge badge-sm badge-outline">${label}</span>`
+      )
+      .join('');
+
+    const scopeHtml = await this.renderAttributionScope(row);
+
+    const contacts = [
+      ['attribution_url', text('attribution_url'), text('attribution_url')],
+      [
+        'attribution_email',
+        text('attribution_email'),
+        `mailto:${text('attribution_email')}`,
+      ],
+      [
+        'attribution_phone',
+        text('attribution_phone'),
+        `tel:${text('attribution_phone')}`,
+      ],
+    ]
+      .filter(([, value]) => value !== '')
+      .map(
+        ([, value, href]) =>
+          `<a class="link link-hover text-xs" href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer">${escapeHtml(value)}</a>`
+      )
+      .join('<span class="opacity-40 text-xs">·</span>');
+
+    const organization = text('organization_name');
+
+    return `
+      <div class="space-y-1">
+        <div class="flex items-center gap-2 flex-wrap">
+          <span class="font-semibold">${organization === '' ? '<span class="opacity-60">No organization name</span>' : escapeHtml(organization)}</span>
+          ${roles}
+        </div>
+        <div class="text-xs opacity-70">${scopeHtml}</div>
+        ${contacts === '' ? '' : `<div class="flex items-center gap-2 flex-wrap">${contacts}</div>`}
+      </div>
+    `;
+  }
+
+  /**
+   * What an attribution applies to: the agency, route or trip it names, or the
+   * whole dataset when it names none. A named entity that does not exist is
+   * shown as its raw id rather than hidden, so the broken reference is visible.
+   */
+  private async renderAttributionScope(
+    row: Record<string, unknown>
+  ): Promise<string> {
+    const scopes: Array<[string, string, string]> = [
+      ['agency_id', 'agency', 'Agency'],
+      ['route_id', 'routes', 'Route'],
+      ['trip_id', 'trips', 'Trip'],
+    ];
+
+    for (const [field, table, label] of scopes) {
+      const id = String(row[field] ?? '').trim();
+      if (id === '') {
+        continue;
+      }
+      const matches = (await this.dependencies.gtfsDatabase.queryRows(table, {
+        [field]: id,
+      })) as Record<string, string>[];
+      if (matches.length === 0) {
+        return `${label}: ${escapeHtml(id)} <span class="text-error">(no such ${label.toLowerCase()})</span>`;
+      }
+      return `${label}: ${escapeHtml(renderOptionLabel(getEntityDisplay(table, matches[0])))}`;
+    }
+
+    return 'Applies to the whole dataset';
   }
 
   /**
@@ -1187,6 +1310,22 @@ export class PageContentRenderer {
         }
       });
     });
+
+    // Attributions are edited in the Feed Data modal, not on the home page.
+    const manageAttributionsBtn = container.querySelector(
+      '.manage-attributions-btn'
+    );
+    if (manageAttributionsBtn) {
+      manageAttributionsBtn.addEventListener('click', async () => {
+        const deps = this.editableDeps();
+        if (!deps) {
+          return;
+        }
+        await showFeedDataModal(deps, { table: GTFS_TABLES.ATTRIBUTIONS });
+        // The cards above were rendered from the rows the modal just edited.
+        this.dependencies.onEntityCreated?.();
+      });
+    }
 
     // Delete route button
     const deleteRouteBtn = container.querySelector('.delete-route-btn');
