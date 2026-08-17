@@ -555,9 +555,8 @@ export class TimetableRenderer {
    */
   private renderFrequencySpan(
     period: TripFrequency,
-    field: 'start_time' | 'end_time' | 'headway_secs' | 'exact_times',
-    kind: 'time' | 'number' | 'enum',
-    extraClasses = ''
+    field: FrequencyField,
+    kind: 'time' | 'number' | 'enum'
   ): string {
     const value = String(period[field] ?? '');
 
@@ -586,7 +585,7 @@ export class TimetableRenderer {
 
     return `
       <span
-        class="freq-span block h-6 leading-6 truncate font-mono text-xs cursor-pointer rounded px-1 hover:bg-base-200${muted ? ' opacity-60' : ''} ${extraClasses}"
+        class="freq-span block h-6 leading-6 truncate font-mono text-xs cursor-pointer rounded px-1 hover:bg-base-200${muted ? ' opacity-60' : ''}"
         data-trip-id="${escapeHtml(period.trip_id)}"
         data-start-time="${escapeHtml(period.start_time)}"
         data-field="${field}"
