@@ -4,7 +4,13 @@ import { showModal } from './modal-utils';
 export interface OptionPickerItem {
   value: string;
   primary: string;
+  /** Short trailing hint, kept on the primary line. Truncated, never wrapped. */
   secondary?: string;
+  /**
+   * Long-form text (a spec description) shown on its own line under the
+   * primary, wrapped to two lines with the full text as a tooltip.
+   */
+  detail?: string;
 }
 
 export interface OptionPickerOptions {
@@ -159,7 +165,9 @@ function mountPicker(
     if (!q) {
       filtered = options;
     } else {
-      const haystack = options.map((o) => `${o.primary} ${o.secondary ?? ''}`);
+      const haystack = options.map(
+        (o) => `${o.primary} ${o.secondary ?? ''} ${o.detail ?? ''}`
+      );
       const [idxs] = uf.search(haystack, q);
       filtered = idxs && idxs.length > 0 ? idxs.map((i) => options[i]) : [];
     }
@@ -189,8 +197,13 @@ function mountPicker(
         : `<input type="checkbox" class="checkbox checkbox-xs shrink-0 pointer-events-none" ${mode.selected.has(item.value) ? 'checked' : ''} />`;
       row.innerHTML = `
         ${check}
-        <span class="min-w-0 flex-1 truncate text-sm">${escapeHtml(item.primary)}</span>
-        ${item.secondary ? `<span class="shrink-0 text-xs opacity-60">${escapeHtml(item.secondary)}</span>` : ''}
+        <div class="min-w-0 flex-1">
+          <div class="flex items-center gap-2">
+            <span class="min-w-0 flex-1 truncate text-sm">${escapeHtml(item.primary)}</span>
+            ${item.secondary ? `<span class="shrink-0 text-xs opacity-60">${escapeHtml(item.secondary)}</span>` : ''}
+          </div>
+          ${item.detail ? `<div class="text-xs opacity-60 line-clamp-2" title="${escapeHtml(item.detail)}">${escapeHtml(item.detail)}</div>` : ''}
+        </div>
       `;
       row.addEventListener('mouseenter', () => setActive(i));
       row.addEventListener('click', () => {

@@ -631,7 +631,7 @@ export class ScheduleController {
     ).map((field) => ({
       value: field,
       primary: field,
-      secondary: renderSpecDescriptionPlain(
+      detail: renderSpecDescriptionPlain(
         getGTFSFieldDescription('stop_times.txt', field)
       ),
     }));
