@@ -218,6 +218,12 @@ export interface EditableTableConfig {
    * in place elsewhere, but this cannot be: the host has to re-render.
    */
   onRowsChanged?: () => void;
+  /**
+   * The pointer entered or left a row, for hosts that light the row's subject
+   * elsewhere (the stop page's transfers light their counterpart on the map).
+   * Null when the pointer leaves.
+   */
+  onRowHover?: (row: Record<string, unknown> | null) => void;
 }
 
 interface EditableTableInstance {
@@ -228,6 +234,8 @@ interface EditableTableInstance {
 
 const instances = new Map<string, EditableTableInstance>();
 let listenerInstalled = false;
+/** The row the pointer is currently over, so a re-entry does not re-fire. */
+let hoveredRowElement: HTMLElement | null = null;
 
 // ─── Spec lookups ─────────────────────────────────────────────────────────────
 
@@ -708,7 +716,7 @@ export async function renderEditableTable(
         group.rows.length > 1
           ? `Delete ${group.rows.length} rows`
           : 'Delete row';
-      return `<tr data-et-row="${escapeHtml(key)}">${cells}${joinCells}<td class="align-middle w-8">
+      return `<tr data-et-row="${escapeHtml(key)}" data-et="${escapeHtml(config.instanceId)}">${cells}${joinCells}<td class="align-middle w-8">
         <button class="editable-table-delete btn btn-xs btn-ghost text-error" data-et="${escapeHtml(config.instanceId)}" data-key="${escapeHtml(key)}" title="${escapeHtml(deleteTitle)}">${renderTrashIcon('h-3.5 w-3.5')}</button>
       </td></tr>`;
     })
@@ -811,6 +819,46 @@ export function installEditableTableHandlers(
       openCellEditor(cell);
     }
   });
+
+  // pointerover/out rather than enter/leave: only these bubble to document.
+  document.addEventListener('pointerover', (e) => {
+    const row = hoveredRow(e);
+    if (row && row !== hoveredRowElement) {
+      hoveredRowElement = row;
+      notifyRowHover(row);
+    }
+  });
+  document.addEventListener('pointerout', (e) => {
+    const row = hoveredRow(e);
+    if (row === null || row !== hoveredRowElement) {
+      return;
+    }
+    // Moving between two cells of the same row is not a leave.
+    const next = (e as PointerEvent).relatedTarget;
+    if (next instanceof Element && next.closest('[data-et-row]') === row) {
+      return;
+    }
+    hoveredRowElement = null;
+    instances.get(row.dataset.et ?? '')?.config.onRowHover?.(null);
+  });
+}
+
+/** The row element under an event, or null when the event is not over one. */
+function hoveredRow(e: Event): HTMLElement | null {
+  const row = (e.target as Element)?.closest?.('[data-et-row]');
+  return row instanceof HTMLElement ? row : null;
+}
+
+function notifyRowHover(row: HTMLElement): void {
+  const state = instances.get(row.dataset.et ?? '');
+  if (!state?.config.onRowHover) {
+    return;
+  }
+  const key = row.dataset.etRow ?? '';
+  const hovered = state.config.rows.find(
+    (r) => rowKey(state.config, r) === key
+  );
+  state.config.onRowHover(hovered ?? null);
 }
 
 /** Drop an instance's state, e.g. when its modal closes. */

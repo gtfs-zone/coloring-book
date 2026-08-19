@@ -85,6 +85,12 @@ export interface StopViewDependencies {
    */
   editableDeps?: EditableTableDeps;
   onStopClick?: (stop_id: string) => void;
+  /** Light a stop on the map from a hovered row. Null clears. */
+  onStopHover?: (stop_id: string | null) => void;
+  /** Light one transfer edge on the map from a hovered row. Null clears. */
+  onTransferHover?: (
+    edge: { from_stop_id: string; to_stop_id: string } | null
+  ) => void;
   onPathwayClick?: (pathway_id: string) => void;
   onDeleteStop: (stop_id: string) => Promise<void>;
   /** A transfer was added or removed: re-render the page. */
@@ -442,10 +448,31 @@ export class StopViewController {
         to_stop_id: { widthClass: 'min-w-48' },
       },
       validateRow: validateTransferRow,
+      // Hovering a row lights the stop at the other end and its edge, the same
+      // read as hovering a stop in the timetable's stop column.
+      onRowHover: (row) => {
+        if (!row) {
+          this.dependencies.onStopHover?.(null);
+          this.dependencies.onTransferHover?.(null);
+          return;
+        }
+        const from = String(row.from_stop_id ?? '');
+        const to = String(row.to_stop_id ?? '');
+        this.dependencies.onStopHover?.(from === stop_id ? to : from);
+        this.dependencies.onTransferHover?.({
+          from_stop_id: from,
+          to_stop_id: to,
+        });
+      },
       onInsert: () => this.dependencies.onTransfersChanged?.(),
       onDelete: () => this.dependencies.onTransfersChanged?.(),
       onRowsChanged: () => this.dependencies.onTransfersChanged?.(),
     };
+    // The rows the pointer could be over are about to be replaced, and a
+    // removed row never fires pointerout, so drop the highlight it was holding.
+    this.dependencies.onStopHover?.(null);
+    this.dependencies.onTransferHover?.(null);
+
     // Re-registered on every render of a stop page, so the handlers always hold
     // the rows on screen. The instance outlives the page, but its cells do not.
     installEditableTableHandlers(config);

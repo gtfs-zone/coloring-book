@@ -2,7 +2,7 @@ import { Map as MapLibreMap, LngLatBounds } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 
 import { RouteRenderer } from './route-renderer.js';
-import { LayerManager } from './layer-manager.js';
+import { DEFAULT_STOPS_FILTER, LayerManager } from './layer-manager.js';
 import {
   InteractionHandler,
   InteractionCallbacks,
@@ -82,6 +82,9 @@ export class MapController {
   private focusedObject: FocusedObject = { type: 'none' };
   // Sole owner of the route spotlight (line dimming + revealed stops). Null when cleared.
   private spotlightRouteIds: string[] | null = null;
+  // Identity of the stops filter currently on the map, so applyStopsFilter can
+  // skip a repaint when nothing about it changed. '' is the default filter.
+  private appliedStopsFilterKey = '';
 
   private bottomPadding = 0;
 
@@ -364,10 +367,24 @@ export class MapController {
           // as a real change and re-expands the station (recreating the pathway layer).
           const obj = this.focusedObject;
           this.focusedObject = { type: 'none' };
-          this.applyFocusedObject(obj);
+          const counterparts =
+            obj.type === 'stop' ? this.transferCounterparts(obj.id) : [];
+          this.appliedStopsFilterKey = '';
+          this.applyFocusedObject(obj, counterparts);
           // Re-apply whatever spotlight was active before the basemap swap,
           // regardless of which focus type produced it.
           this.applySpotlight(this.spotlightRouteIds);
+          if (obj.type === 'stop') {
+            // The new source dropped every feature state and the transfer
+            // layers went with the old style, so the additive half of the stop
+            // selection has to be drawn again.
+            this.layerManager.showTransferEdges(obj.id);
+            const station = this.getExpandedStationId();
+            this.layerManager.setKeptStops([
+              ...(station ? this.stationMembers(station) : []),
+              ...counterparts,
+            ]);
+          }
           if (obj.type === 'trip') {
             this.layerManager.highlightTrip(obj.id);
           }
@@ -405,6 +422,7 @@ export class MapController {
     // Reset focus state when feed changes
     this.focusedObject = { type: 'none' };
     this.spotlightRouteIds = null;
+    this.appliedStopsFilterKey = '';
     this.layerManager?.setStopsFilter(null);
 
     // Ensure RouteRenderer is initialized (this waits for map style to load)
@@ -700,29 +718,68 @@ export class MapController {
   }
 
   /**
+   * Narrow the stops layers to the expanded station, and always admit the stops
+   * that have to stay drawn on top of whatever else is showing (the focused
+   * stop's transfer counterparts, which are child platforms often enough that
+   * the default filter would drop them and leave their edge pointing at
+   * nothing). Skipped when the filter is already the one on the map, since
+   * setStopsFilter repaints five layers.
+   */
+  private applyStopsFilter(
+    station_id: string | null,
+    keepVisible: string[]
+  ): void {
+    const key = `${station_id ?? ''}|${[...keepVisible].sort().join(',')}`;
+    if (key === this.appliedStopsFilterKey) {
+      return;
+    }
+    this.appliedStopsFilterKey = key;
+
+    if (station_id === null && keepVisible.length === 0) {
+      this.layerManager?.setStopsFilter(null);
+      return;
+    }
+    const base: unknown =
+      station_id === null
+        ? DEFAULT_STOPS_FILTER
+        : [
+            'any',
+            ['==', ['get', 'stop_id'], station_id],
+            ['==', ['get', 'station_id'], station_id],
+          ];
+    this.layerManager?.setStopsFilter([
+      'any',
+      base,
+      ['in', ['get', 'stop_id'], ['literal', keepVisible]],
+    ] as unknown as import('maplibre-gl').FilterSpecification);
+  }
+
+  /**
    * Set the focused object and apply any station expand/collapse side effects.
    */
-  private applyFocusedObject(obj: FocusedObject): void {
+  private applyFocusedObject(
+    obj: FocusedObject,
+    keepVisible: string[] = []
+  ): void {
     const oldStation = this.deriveExpandedStation();
     this.focusedObject = obj;
     const newStation = this.deriveExpandedStation();
     this.layerManager?.setFocusedStop(obj.type === 'stop' ? obj.id : null);
     this.layerManager?.setFocusedZone(obj.type === 'zone' ? obj.id : null);
 
+    // The filter depends on the focused stop, not only on the station: moving
+    // between two platforms of one station changes which transfer counterparts
+    // have to be admitted, so it is recomputed on every call.
+    this.applyStopsFilter(newStation, keepVisible);
+
     if (oldStation !== newStation) {
       if (newStation) {
-        this.layerManager?.setStopsFilter([
-          'any',
-          ['==', ['get', 'stop_id'], newStation],
-          ['==', ['get', 'station_id'], newStation],
-        ] as unknown as import('maplibre-gl').FilterSpecification);
         this.layerManager?.updatePathwaysLayer(newStation);
         this.layerManager?.setFocusedPathway(
           obj.type === 'pathway' ? obj.id : null
         );
         this.flyToStation(newStation);
       } else {
-        this.layerManager?.setStopsFilter(null);
         this.layerManager?.clearPathwaysLayer();
       }
       this.callbacks.onStationExpandChange?.();
@@ -796,6 +853,70 @@ export class MapController {
   }
 
   /**
+   * The other endpoint of every transfer naming this stop.
+   *
+   * Types 4 and 5 link two trips rather than two places and are not drawn, so
+   * they are skipped here too, matching `LayerManager.showTransferEdges`.
+   */
+  private transferCounterparts(stop_id: string): string[] {
+    const transfers = this.gtfsParser?.getFileDataSync('transfers.txt') || [];
+    const counterparts = new Set<string>();
+    for (const transfer of transfers) {
+      const from = String(transfer.from_stop_id ?? '');
+      const to = String(transfer.to_stop_id ?? '');
+      if (from !== stop_id && to !== stop_id) {
+        continue;
+      }
+      const type = Number(transfer.transfer_type ?? 0) || 0;
+      if (type === 4 || type === 5) {
+        continue;
+      }
+      const other = from === stop_id ? to : from;
+      if (other !== '' && other !== stop_id) {
+        counterparts.add(other);
+      }
+    }
+    return [...counterparts];
+  }
+
+  /**
+   * A station plus every stop below it. The mirror of `withAncestors`: the
+   * station filter draws the whole subtree, so the whole subtree has to survive
+   * the route spotlight's dim, not only the platforms a route happens to serve.
+   */
+  private stationMembers(station_id: string): string[] {
+    const stops =
+      this.gtfsParser?.getFileDataSyncTyped<Stops>('stops.txt') || [];
+    const childrenOf = new Map<string, string[]>();
+    for (const stop of stops) {
+      const parent = stop.parent_station ? String(stop.parent_station) : '';
+      if (!parent) {
+        continue;
+      }
+      const siblings = childrenOf.get(parent);
+      if (siblings) {
+        siblings.push(String(stop.stop_id));
+      } else {
+        childrenOf.set(parent, [String(stop.stop_id)]);
+      }
+    }
+
+    const members = new Set<string>([station_id]);
+    const frontier = [station_id];
+    while (frontier.length > 0) {
+      const current = frontier.pop()!;
+      for (const child of childrenOf.get(current) || []) {
+        if (members.has(child)) {
+          continue;
+        }
+        members.add(child);
+        frontier.push(child);
+      }
+    }
+    return [...members];
+  }
+
+  /**
    * Sole owner of the route spotlight: dims non-matching route lines and
    * reveals the given routes' stops (visible/clickable at any zoom) and zones.
    * Pass null to clear. Callers must not call routeRenderer.highlightRoute(s),
@@ -861,6 +982,16 @@ export class MapController {
     this.layerManager?.setHoveredStop(stop_id);
   }
 
+  /**
+   * Light one transfer edge of the focused stop, e.g. from a hovered row in the
+   * stop page's transfers list. Purely visual, same as hoverStop.
+   */
+  public hoverTransfer(
+    edge: { from_stop_id: string; to_stop_id: string } | null
+  ): void {
+    this.layerManager?.setHoveredTransfer(edge);
+  }
+
   /** The zone counterpart of hoverStop. Purely visual, same as hoverStop. */
   public hoverZone(location_id: string | null): void {
     this.layerManager?.setHoveredZone(location_id);
@@ -887,7 +1018,10 @@ export class MapController {
     this.interactionHandler?.setHighlightedStop(null);
     this.layerManager?.clearHighlights();
 
-    this.applyFocusedObject({ type: 'stop', id: stop_id });
+    // Computed before the filter is applied so the stops admitted by it and the
+    // edges drawn below are the same set.
+    const counterparts = this.transferCounterparts(stop_id);
+    this.applyFocusedObject({ type: 'stop', id: stop_id }, counterparts);
 
     this.interactionHandler?.setHighlightedStop(stop_id);
 
@@ -899,6 +1033,15 @@ export class MapController {
     const routesAtStop = this.gtfsParser?.getRoutesForStop?.(stop_id) || [];
     const route_ids = routesAtStop.map((route) => route.route_id as string);
     this.applySpotlight(route_ids.length > 0 ? route_ids : null);
+
+    // Selecting a stop only adds emphasis: the station's other platforms and
+    // the transfer endpoints stay lit whatever the spotlight dims. After
+    // applySpotlight, which repaints the same layers.
+    const station = this.getExpandedStationId();
+    this.layerManager?.setKeptStops([
+      ...(station ? this.stationMembers(station) : []),
+      ...counterparts,
+    ]);
 
     // For child stops and stations, applyFocusedObject already flew to the
     // expanded station via flyToStation, skip the individual-stop flyTo so
@@ -1533,6 +1676,7 @@ export class MapController {
     this.pageStateManager = null;
     this.callbacks = {};
     this.focusedObject = { type: 'none' };
+    this.appliedStopsFilterKey = '';
     this.isInitialized = false;
 
     console.log('MapController destroyed');
