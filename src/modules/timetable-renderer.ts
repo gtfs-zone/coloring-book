@@ -522,7 +522,7 @@ export class TimetableRenderer {
         `<div class="h-6 leading-6 truncate">${renderSpecFieldLabelContent('frequencies.txt', field, field)}</div>`
     ).join('');
     return `
-      <th class="stop-name py-0 px-2 font-medium border-r border-base-300 bg-base-100" style="${this.labelColumnStyle()}">
+      <th class="stop-name align-top py-0 px-2 font-medium border-r border-base-300 bg-base-100" style="${this.labelColumnStyle()}">
         <div class="flex items-start gap-2 min-w-0">
           <div class="min-w-0 flex-1 self-center stop-name-text truncate">frequency ${index + 1}</div>
           <div
@@ -899,6 +899,11 @@ export class TimetableRenderer {
    * Alignment is by construction, not by measurement: every label and every
    * cell span is exactly `h-6`, and the column's top padding matches the time
    * cells' `p-2`. Do not add JS height syncing here.
+   *
+   * This only holds while the frozen `<th>` is `align-top`. A table cell is
+   * vertically centred by default, and the time cells are taller than the
+   * labels (the hover-only `+` button below the last sub-row), so the whole
+   * label column used to drift down by half that difference.
    */
   private renderFieldLabelColumn(ctx: RenderContext): string {
     const labels = ctx.fields
@@ -1107,7 +1112,7 @@ export class TimetableRenderer {
         return `
         <tr class="${rowClass}" role="row">
           <th
-            class="stop-name ${STRIP_ROW_CLASS} py-0 px-2 pl-0 font-medium border-r border-base-300 bg-base-100"
+            class="stop-name ${STRIP_ROW_CLASS} align-top py-0 px-2 pl-0 font-medium border-r border-base-300 bg-base-100"
             style="${this.labelColumnStyle()}"
             ${rowRefAttrs}
           >
