@@ -1,5 +1,13 @@
 import { showModal } from './modal-utils';
 import {
+  AboutApp,
+  renderBlurb,
+  renderFeedbackSection,
+  renderProjectSection,
+  renderResourcesSection,
+  renderVersionAndSource,
+} from './about-links';
+import {
   PATHWAY_CATEGORIES,
   PATHWAY_CATEGORY_ORDER,
   PATHWAY_MODES,
@@ -73,35 +81,36 @@ function buildShortcutsTable(
   `;
 }
 
+const APP: AboutApp = {
+  name: 'edit.gtfs.zone',
+  blurb:
+    'edit.gtfs.zone is a browser-based GTFS transit data editor inspired by geojson.io. All data stays in your browser. No server, no account required.',
+  repo: 'coloring-book',
+  sibling: {
+    name: 'viz.rt.gtfs.zone',
+    href: 'https://viz.rt.gtfs.zone',
+    note: 'watch a GTFS Realtime feed on a live map',
+  },
+};
+
 export function showAboutModal(
   version: string,
   shortcuts: Array<{ key: string; description: string }>
 ): Promise<void> {
-  const body = `
-    <p>edit.gtfs.zone is a browser-based GTFS transit data editor inspired by geojson.io. All data stays in your browser. No server, no account required.</p>
-
-    <div class="divider text-sm font-semibold opacity-60">Version &amp; Source</div>
-    <ul class="list-none space-y-1 text-sm">
-      <li>Version: <code class="font-mono">${version}</code></li>
-      <li><a href="https://git.kcfam.us/gtfs.zone/coloring-book" target="_blank" rel="noopener noreferrer" class="link">Source code</a></li>
-      <li><a href="https://git.kcfam.us/gtfs.zone/coloring-book/raw/branch/main/CHANGELOG.md" target="_blank" rel="noopener noreferrer" class="link">Changelog</a></li>
-    </ul>
-
-    <div class="divider text-sm font-semibold opacity-60">Keyboard Shortcuts</div>
-    ${buildShortcutsTable(shortcuts)}
-
-    <div class="divider text-sm font-semibold opacity-60">Map Key</div>
-    ${buildMapKey()}
-
-    <div class="divider text-sm font-semibold opacity-60">Resources</div>
-    <ul class="list-none space-y-1 text-sm">
-      <li><a href="https://gtfs.org/reference/" target="_blank" rel="noopener noreferrer" class="link">GTFS Spec Reference</a>: Official file format and field reference</li>
-      <li><a href="https://www.transit.land/" target="_blank" rel="noopener noreferrer" class="link">TransitLand Atlas</a>, real-world GTFS feeds (used by the Load -> From TransitLand Atlas feature)</li>
-    </ul>
-  `;
+  const body = [
+    renderBlurb(APP),
+    renderVersionAndSource(APP, version),
+    renderProjectSection(APP),
+    '<div class="divider text-sm font-semibold opacity-60">Keyboard Shortcuts</div>',
+    buildShortcutsTable(shortcuts),
+    '<div class="divider text-sm font-semibold opacity-60">Map Key</div>',
+    buildMapKey(),
+    renderResourcesSection(),
+    renderFeedbackSection(APP),
+  ].join('\n');
 
   return showModal({
-    title: 'edit.gtfs.zone',
+    title: APP.name,
     body,
     actions: [{ label: 'Close', onClick: () => {} }],
     enterAction: 0,
