@@ -18,6 +18,11 @@ import type {
 import { GTFSTableMap, StopTimes } from '../types/gtfs-entities.js';
 import { generateCompositeKeyFromRecord } from '../utils/gtfs-primary-keys.js';
 import { splitInnerZipPath } from './feed-url-resolve.js';
+import {
+  downloadWithProgress,
+  downloadPercent,
+  formatBytes,
+} from './feed-download.js';
 
 /**
  * One nested archive out of another. Fails loudly with the entries that *are*
@@ -1003,30 +1008,32 @@ export class GTFSParser {
     const { url, innerPaths } = splitInnerZipPath(rawUrl);
     console.log('[GTFSParser] Fetching GTFS from URL:', url, innerPaths);
     feedProgressIndicator.startLoading(operation, 'Downloading feed...');
-    let response: Response;
+
+    let buffer: ArrayBuffer;
     try {
-      response = await fetch(url);
-    } catch (networkError) {
+      buffer = await downloadWithProgress(url, {
+        onProgress: (loaded, total) => {
+          const percent = downloadPercent(loaded, total);
+          feedProgressIndicator.updateProgress(
+            operation,
+            percent ?? 0,
+            total
+              ? `Downloading feed, ${formatBytes(loaded)} of ${formatBytes(total)}`
+              : `Downloading feed, ${formatBytes(loaded)}`
+          );
+        },
+      });
+    } catch (error) {
       feedProgressIndicator.finishLoading(operation);
-      const msg =
-        networkError instanceof TypeError
-          ? `Network error: could not reach ${url}. Check your connection or whether the server allows cross-origin requests (CORS).`
-          : `Fetch failed: ${networkError instanceof Error ? networkError.message : String(networkError)}`;
-
-      console.error('[GTFSParser]', msg, networkError);
-      throw new Error(msg);
+      console.error('[GTFSParser] Download failed:', error);
+      throw error;
     }
 
-    if (!response.ok) {
-      feedProgressIndicator.finishLoading(operation);
-      const msg = `HTTP ${response.status} ${response.statusText} from ${url}`;
-
-      console.error('[GTFSParser]', msg);
-      throw new Error(msg);
-    }
-
-    let blob = await response.blob();
-    feedProgressIndicator.updateProgress(operation, 5, 'Preparing...');
+    // The rest of the pipeline is Blob-shaped (JSZip, the inner-zip descent,
+    // `parseFile`), so the bytes go back into a Blob here rather than threading
+    // an ArrayBuffer through all of it.
+    let blob: Blob = new Blob([buffer]);
+    feedProgressIndicator.updateProgress(operation, 100, 'Preparing...');
 
     for (const innerPath of innerPaths) {
       console.log('[GTFSParser] Descending into nested archive:', innerPath);
