@@ -22,6 +22,7 @@ import {
   downloadWithProgress,
   downloadPercent,
   formatBytes,
+  LoadCancelledError,
 } from './feed-download.js';
 
 /**
@@ -1007,11 +1008,17 @@ export class GTFSParser {
     // and replayed as a descent once the outer archive is in hand.
     const { url, innerPaths } = splitInnerZipPath(rawUrl);
     console.log('[GTFSParser] Fetching GTFS from URL:', url, innerPaths);
-    feedProgressIndicator.startLoading(operation, 'Downloading feed...');
+    // Cancel aborts the fetch only. Once the bytes are in hand the parse runs
+    // to completion, since ingestion into the database has no rollback path.
+    const controller = new AbortController();
+    feedProgressIndicator.startLoading(operation, 'Downloading feed...', {
+      onCancel: () => controller.abort(),
+    });
 
     let buffer: ArrayBuffer;
     try {
       buffer = await downloadWithProgress(url, {
+        signal: controller.signal,
         onProgress: (loaded, total) => {
           const percent = downloadPercent(loaded, total);
           feedProgressIndicator.updateProgress(
@@ -1025,9 +1032,13 @@ export class GTFSParser {
       });
     } catch (error) {
       feedProgressIndicator.finishLoading(operation);
-      console.error('[GTFSParser] Download failed:', error);
+      if (!(error instanceof LoadCancelledError)) {
+        console.error('[GTFSParser] Download failed:', error);
+      }
       throw error;
     }
+    // The same operation key covers the parse, which cannot be aborted.
+    feedProgressIndicator.clearCancel(operation);
 
     // The rest of the pipeline is Blob-shaped (JSZip, the inner-zip descent,
     // `parseFile`), so the bytes go back into a Blob here rather than threading
