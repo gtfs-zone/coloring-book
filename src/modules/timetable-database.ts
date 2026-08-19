@@ -39,6 +39,14 @@ export interface StopTimeEditPlan {
   isInsert: boolean;
   /** Index of the created row in `afterRows`, when the plan inserts one. */
   insertedIndex?: number;
+  /**
+   * Index in `afterRows` of the row the edit touched, which is also its new
+   * stop_sequence. An insert renumbers every row after it, so this is how the
+   * caller carries the selection onto the right cell.
+   */
+  resultIndex?: number;
+  /** Rows the resort moved, as `before -> after` stop_sequence pairs. */
+  moved?: { from: number; to: number }[];
 }
 
 /**
@@ -51,6 +59,22 @@ export interface FlexRowShape {
   drop_off_type: string;
   pickup_booking_rule_id: string;
   drop_off_booking_rule_id: string;
+}
+
+/**
+ * One stop_time as a single readable token for the debug logs:
+ * `seq:ref@time`, where the time is whichever of arrival, departure or
+ * pickup window the row actually carries.
+ */
+function describeRow(st: StopTimes): string {
+  const ref = st.stop_id || st.location_group_id || st.location_id || '?';
+  const time =
+    st.arrival_time ||
+    st.departure_time ||
+    st.start_pickup_drop_off_window ||
+    st.end_pickup_drop_off_window ||
+    '-';
+  return `${st.stop_sequence}:${ref}@${time}`;
 }
 
 /**
@@ -85,9 +109,16 @@ export class TimetableDatabase {
    * caller can diff them, write once, and record one patch. This is the only
    * place stop_sequence numbering is decided.
    *
-   * The target row is located by stop_sequence when the caller knows it
-   * (unambiguous on loop routes, where one stop_id appears several times in a
-   * trip); `forceInsert` skips the lookup entirely for the pending add-stop row.
+   * The target row is located by stop_sequence, the only unambiguous key on a
+   * loop route where one stop_id appears several times in a trip. No
+   * stop_sequence means the cell has no saved row, so the edit inserts one;
+   * `forceInsert` does the same for the pending add-stop row.
+   *
+   * `insertIndex` is where a new row lands in the trip's own stop_sequence
+   * order; it defaults to the end. Passing the slot the edited cell occupies on
+   * the strip is what keeps a second visit to the same stop from being appended
+   * behind the first. Nothing else moves: the trip is never re-sorted by time
+   * behind the user's back, which is `planTripResort`'s job.
    *
    * @param trip_id - GTFS trip identifier
    * @param stop_id - GTFS stop identifier
@@ -95,6 +126,7 @@ export class TimetableDatabase {
    * @param newTime - New HH:MM:SS value, or null to clear the field
    * @param stopSequence - stop_sequence of the row being edited, when known
    * @param forceInsert - Always create a new stop_time instead of editing one
+   * @param insertIndex - Slot in the trip's stop_sequence order for a new row
    * @throws {Error} When the time fails GTFS schema validation
    */
   async planStopTimeEdit(
@@ -103,7 +135,8 @@ export class TimetableDatabase {
     timeType: 'arrival' | 'departure',
     newTime: string | null,
     stopSequence?: string,
-    forceInsert = false
+    forceInsert = false,
+    insertIndex?: number
   ): Promise<StopTimeEditPlan> {
     if (newTime !== null) {
       const timeValidation =
@@ -127,48 +160,83 @@ export class TimetableDatabase {
       (a, b) => Number(a.stop_sequence) - Number(b.stop_sequence)
     );
 
-    const targetIndex = forceInsert
-      ? -1
-      : beforeRows.findIndex((st) =>
-          stopSequence !== undefined && stopSequence !== ''
-            ? String(st.stop_sequence) === stopSequence
-            : st.stop_id === stop_id
-        );
+    const targetIndex =
+      forceInsert || !stopSequence
+        ? -1
+        : beforeRows.findIndex(
+            (st) => String(st.stop_sequence) === stopSequence
+          );
 
     const edited = beforeRows.map((st) => ({ ...st }));
     const isInsert = targetIndex === -1;
+    let target: StopTimes;
     if (isInsert) {
-      edited.push({
+      const slot = Math.max(
+        0,
+        Math.min(insertIndex ?? edited.length, edited.length)
+      );
+      target = {
         trip_id,
         stop_id,
         stop_sequence: 0,
         arrival_time: null,
         departure_time: null,
         [field]: newTime,
-      } as unknown as StopTimes);
+      } as unknown as StopTimes;
+      edited.splice(slot, 0, target);
     } else {
-      (edited[targetIndex] as unknown as Record<string, unknown>)[field] =
-        newTime;
+      target = edited[targetIndex];
+      (target as unknown as Record<string, unknown>)[field] = newTime;
     }
+
+    // A row stays where the user put it. Sorting the trip by time here would
+    // renumber it, and stop_sequence order is what defines a strip element's
+    // occurrence - so re-sorting silently rewrites the identity of rows the
+    // user never touched, and a trip that then disagrees with its siblings
+    // about stop order has no valid supersequence at all. Sorting is an
+    // explicit action instead: see planTripResort.
+    const resultIndex = edited.indexOf(target);
+
+    console.log(
+      `[TimetableDatabase] planStopTimeEdit ${JSON.stringify({
+        trip_id,
+        stop_id,
+        timeType,
+        newTime,
+        stopSequence,
+        forceInsert,
+        insertIndex,
+        isInsert,
+        resultIndex,
+        before: beforeRows.map(describeRow),
+        after: edited.map(describeRow),
+      })}`
+    );
 
     // Numbers, not strings: the parser coerces every *_sequence field to a
     // number, and queryRows filters compare with ===, so a stringified
     // stop_sequence makes the row unfindable by its own primary key.
-    const afterRows = this.reorderByTime(edited).map((st, index) => ({
+    const afterRows = edited.map((st, index) => ({
       ...st,
       stop_sequence: index,
     })) as unknown as StopTimes[];
 
-    return { beforeRows, afterRows, isInsert };
+    return {
+      beforeRows,
+      afterRows,
+      isInsert,
+      insertedIndex: isInsert ? resultIndex : undefined,
+      resultIndex,
+    };
   }
 
   /**
    * Plan the creation of an on-demand stop_time on a trip, without writing.
    *
    * The sibling of planStopTimeEdit for flex rows. It cannot reuse that method:
-   * that one locates a row by stop_id and re-sorts by arrival/departure, and a
-   * flex row has neither. The whole trip is renumbered from 0 over its existing
-   * order once the row is spliced in.
+   * that one edits a named time field on a row addressed by stop_sequence, and
+   * a flex row has neither. The whole trip is renumbered from 0 over its
+   * existing order once the row is spliced in.
    *
    * `insertIndex` is where the row lands in the trip's own stop_sequence order;
    * it defaults to the end. Appending unconditionally would scramble the
@@ -234,27 +302,48 @@ export class TimetableDatabase {
     );
     const edited = beforeRows.map((st) => ({ ...st }));
     edited.splice(slot, 0, newRow);
+
+    console.log(
+      `[TimetableDatabase] planFlexStopTimeInsert ${JSON.stringify({
+        trip_id,
+        ref: `${ref.kind}:${ref.id}`,
+        window,
+        insertIndex,
+        slot,
+        before: beforeRows.map(describeRow),
+        after: edited.map(describeRow),
+      })}`
+    );
+
     const afterRows = edited.map((st, index) => ({
       ...st,
       stop_sequence: index,
     })) as unknown as StopTimes[];
 
-    return { beforeRows, afterRows, isInsert: true, insertedIndex: slot };
+    return {
+      beforeRows,
+      afterRows,
+      isInsert: true,
+      insertedIndex: slot,
+      resultIndex: slot,
+    };
   }
 
   /**
-   * Plan the removal of one on-demand stop_time from a trip, without writing.
+   * Plan the removal of one stop_time from a trip, without writing.
    *
-   * Clearing a window end is a delete rather than a field clear: a flex row with
-   * no window fails `validateFlexStopTimeRow`, so "no window" can only mean
-   * "this trip does not serve this zone". The rest of the trip is renumbered
-   * from 0, which moves every later row's primary key - the caller writes the
-   * whole set as one patch for that reason.
+   * Clearing the last thing that made a row a stop on this trip is a delete
+   * rather than a field clear: a flex row with no window fails
+   * `validateFlexStopTimeRow`, and a stop row with no arrival, no departure and
+   * no window is not addressable from the grid at all, so in both cases "empty"
+   * can only mean "this trip does not serve this row". The rest of the trip is
+   * renumbered from 0, which moves every later row's primary key - the caller
+   * writes the whole set as one patch for that reason.
    *
    * @param trip_id - GTFS trip identifier
    * @param stopSequence - stop_sequence of the row to remove
    */
-  async planFlexStopTimeDelete(
+  async planStopTimeDelete(
     trip_id: string,
     stopSequence: string
   ): Promise<StopTimeEditPlan | null> {
@@ -285,49 +374,119 @@ export class TimetableDatabase {
   }
 
   /**
-   * Sort a trip's rows into chronological order, moving only the timed ones.
+   * Plan a re-sort of one whole trip into chronological order, without writing.
    *
-   * Rows with no arrival and no departure keep the slot they already occupy:
-   * in feeds that only time their timepoints, sorting them alongside timed rows
-   * would fling every untimed stop to one end of the trip.
+   * The explicit counterpart to the edits, which never move a row on their own.
+   * Sorting renumbers rows, and stop_sequence order is what gives a strip
+   * element its occurrence number, so a re-sort can change which strip column
+   * every row of the trip belongs to - and if it leaves this trip disagreeing
+   * with its siblings about stop order, the route has no valid supersequence
+   * and the strip falls back to a fold that can emit duplicate columns. That is
+   * a thing to do on request and then look at, not a side effect of typing a
+   * time.
+   *
+   * Returns null when the trip has no rows or is already in order, so the
+   * caller can say "nothing to do" instead of recording an empty patch.
+   *
+   * @param trip_id - GTFS trip identifier
    */
-  private reorderByTime(rows: StopTimes[]): StopTimes[] {
-    const timeOf = (st: StopTimes): string =>
-      st.arrival_time || st.departure_time || '';
+  async planTripResort(trip_id: string): Promise<StopTimeEditPlan | null> {
+    const beforeRows = await this.gtfsParser.gtfsDatabase.queryRows(
+      'stop_times',
+      { trip_id }
+    );
+    if (beforeRows.length === 0) {
+      return null;
+    }
+    beforeRows.sort(
+      (a, b) => Number(a.stop_sequence) - Number(b.stop_sequence)
+    );
 
-    const timedSlots: number[] = [];
-    rows.forEach((st, index) => {
-      if (timeOf(st)) {
-        timedSlots.push(index);
-      }
-    });
+    const edited = beforeRows.map((st) => ({ ...st }));
+    const reordered = this.reorderByTime(edited);
+    const moved = reordered
+      .map((row, index) => ({ from: edited.indexOf(row), to: index }))
+      .filter((pair) => pair.from !== pair.to);
 
-    const sortedTimed = timedSlots
-      .map((index) => rows[index])
-      .sort((a, b) => timeOf(a).localeCompare(timeOf(b)));
+    console.log(
+      `[TimetableDatabase] planTripResort ${JSON.stringify({
+        trip_id,
+        moved,
+        before: beforeRows.map(describeRow),
+        after: reordered.map(describeRow),
+      })}`
+    );
 
-    const result = [...rows];
-    timedSlots.forEach((slot, i) => {
-      result[slot] = sortedTimed[i];
-    });
-    return result;
+    if (moved.length === 0) {
+      return null;
+    }
+
+    const afterRows = reordered.map((st, index) => ({
+      ...st,
+      stop_sequence: index,
+    })) as unknown as StopTimes[];
+
+    return { beforeRows, afterRows, isInsert: false, moved };
   }
 
   /**
-   * Get stop_time record for querying database state
+   * Sort a trip's rows into chronological order by their effective time.
    *
-   * Retrieves the complete stop_time record for state inspection.
-   * Used to check current values before updates or state transitions.
-   * Returns null if record not found (does not throw for missing records).
+   * A flex row's pickup/drop-off window is a real time, so it sorts on that:
+   * a deviation zone belongs between the timed stops its window falls between,
+   * whatever slot it happens to sit in.
+   *
+   * A row with no time at all inherits the time of the row above it, so in
+   * feeds that only time their timepoints the untimed stops travel with the
+   * timepoint they follow instead of being flung to one end of the trip.
+   *
+   * Sorting whole rows rather than redistributing timed rows into the slots
+   * they already occupy is what makes this safe across an insert: the old
+   * scheme pinned untimed rows to an absolute index, so adding a row shifted
+   * every timed row one place across them and silently changed their relative
+   * order.
+   *
+   * Row objects are returned by identity, never copied: callers locate the row
+   * they edited with `indexOf` and detect movement by reference comparison.
+   */
+  private reorderByTime(rows: StopTimes[]): StopTimes[] {
+    const timeOf = (st: StopTimes): string =>
+      st.arrival_time ||
+      st.departure_time ||
+      st.start_pickup_drop_off_window ||
+      st.end_pickup_drop_off_window ||
+      '';
+
+    // Leading rows with nothing above them to inherit from keep an empty key,
+    // which sorts them to the front - where they already are.
+    let anchor = '';
+    const keyed = rows.map((st, index) => {
+      anchor = timeOf(st) || anchor;
+      return { st, key: anchor, index };
+    });
+
+    // Tie-break on the original index so equal times never churn.
+    keyed.sort((a, b) =>
+      a.key === b.key ? a.index - b.index : a.key.localeCompare(b.key)
+    );
+    return keyed.map((entry) => entry.st);
+  }
+
+  /**
+   * Get one trip's stop_time by its primary key.
+   *
+   * Addressed by stop_sequence only: a stop_id is ambiguous on loop routes,
+   * where the same stop appears at several positions of a trip. A cell with no
+   * stop_sequence has no record behind it yet, so this returns null rather than
+   * guessing at another instance of the same stop.
    *
    * @param trip_id - GTFS trip identifier
-   * @param stop_id - GTFS stop identifier
+   * @param stop_sequence - stop_sequence of the row, when the caller knows it
    * @returns Promise resolving to StopTimes record or null if not found
    * @throws {Error} When database connection unavailable
    */
   async getStopTime(
     trip_id: string,
-    stop_id: string,
     stop_sequence?: string
   ): Promise<StopTimes | null> {
     const database = this.gtfsParser.gtfsDatabase;
@@ -338,37 +497,29 @@ export class TimetableDatabase {
       throw new Error(error);
     }
 
-    if (stop_sequence) {
-      // Unambiguous lookup by primary key, required for loop routes where
-      // the same stop_id appears at multiple positions.
-      const results = await database.queryRows('stop_times', {
-        trip_id,
-        stop_sequence: Number(stop_sequence),
-      });
-      return results[0] ?? null;
-    }
-
-    const stopTimes = await database.queryRows('stop_times', {
-      trip_id: trip_id,
-      stop_id: stop_id,
-    });
-
-    if (stopTimes.length === 0) {
+    if (!stop_sequence) {
       return null;
     }
 
-    return stopTimes[0];
+    const results = await database.queryRows('stop_times', {
+      trip_id,
+      stop_sequence: Number(stop_sequence),
+    });
+    return results[0] ?? null;
   }
 
   /**
    * Validate arrival <= departure time constraint
    *
-   * Checks that arrival time is not later than departure time.
-   * Used before updating individual arrival/departure times to maintain
-   * GTFS specification compliance. Only validates when both times are present.
+   * Checks that arrival time is not later than departure time on the row being
+   * edited. Only validates when both times are present.
+   *
+   * The row is found by stop_sequence. Without one there is no saved row for
+   * this cell, so the edit is an insert and there is nothing to validate
+   * against - never fall back to matching on stop_id, which on a loop route
+   * picks a different instance of the same stop.
    *
    * @param trip_id - GTFS trip identifier
-   * @param stop_id - GTFS stop identifier
    * @param timeType - Which time field is being updated ('arrival' or 'departure')
    * @param newTime - New time value to validate against existing time
    * @param stop_sequence - stop_sequence of the edited row, when known
@@ -376,12 +527,11 @@ export class TimetableDatabase {
    */
   async validateArrivalDepartureConstraint(
     trip_id: string,
-    stop_id: string,
     timeType: 'arrival' | 'departure',
     newTime: string,
     stop_sequence?: string
   ): Promise<{ isValid: boolean; errorMessage?: string }> {
-    const stopTime = await this.getStopTime(trip_id, stop_id, stop_sequence);
+    const stopTime = await this.getStopTime(trip_id, stop_sequence);
     if (!stopTime) {
       // No existing record means no constraints to validate
       return { isValid: true };
