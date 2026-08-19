@@ -259,7 +259,9 @@ export function openInlineMenu(
 
   const rect = span.getBoundingClientRect();
   const menu = document.createElement('div');
-  menu.className = `${MENU_CLASS} fixed z-50 -translate-x-1/2 bg-base-100 border border-base-300 rounded-lg shadow-lg py-1 min-w-40 max-h-72 overflow-y-auto`;
+  // Above the modal layer: the menu is a body child, so a z-index below a
+  // modal's would hide it behind the modal that opened the cell.
+  menu.className = `${MENU_CLASS} fixed z-[2000] -translate-x-1/2 bg-base-100 border border-base-300 rounded-lg shadow-lg py-1 min-w-40 max-h-72 overflow-y-auto`;
   menu.style.top = `${rect.bottom + window.scrollY + 2}px`;
   menu.style.left = `${rect.left + rect.width / 2 + window.scrollX}px`;
   menu.innerHTML = options.options
