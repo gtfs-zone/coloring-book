@@ -266,8 +266,11 @@ export class TimetableCellRenderer {
     // promises a picker that will not open.
     const isPicker = kind === 'booking_rule' && editable;
 
+    // A picker sub-row is inline-flex, so baseline alignment would leave the
+    // strut's descender under it and push the sub-rows below out of line with
+    // their labels. align-top keeps every sub-row exactly h-6.
     const classes = [
-      `time-span font-mono text-xs h-6 leading-6 rounded px-1 ${isPicker ? 'w-full' : 'block truncate'}`,
+      `time-span font-mono text-xs h-6 leading-6 rounded px-1 ${isPicker ? 'w-full align-top' : 'block truncate'}`,
       kind === 'time' && isWindowed ? 'text-info' : '',
       // A forbidden value and a dangling reference read the same way: an error
       // that is still editable, exactly as renderPropertyCell shows one.
