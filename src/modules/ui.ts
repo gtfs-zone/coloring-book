@@ -19,6 +19,7 @@ import {
 import { GTFS_TABLES } from '../types/gtfs.js';
 import { MapMode, MapController } from './map-controller.js';
 import { GTFSParser } from './gtfs-parser.js';
+import { LoadCancelledError } from './feed-download.js';
 import { Editor } from './editor.js';
 import { BrowseNavigation } from './browse-navigation.js';
 import { ScheduleController } from './schedule-controller.js';
@@ -378,6 +379,11 @@ export class UIController {
 
       notify.success('Successfully loaded GTFS from URL');
     } catch (error) {
+      // A cancelled load leaves whatever feed was already loaded untouched.
+      if (error instanceof LoadCancelledError) {
+        notify.info('Load cancelled');
+        return;
+      }
       console.error('Error loading GTFS from URL:', error);
 
       notify.error('Failed to load feed', {
