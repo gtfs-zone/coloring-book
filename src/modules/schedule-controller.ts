@@ -257,6 +257,17 @@ export class ScheduleController {
   // into the timetable from wherever the user really is.
   private selectionHadFocus = false;
 
+  // Where the selection has to land on the next render, when the edit moved the
+  // row it was on. Keyed on stop_sequence rather than strip position: an edit
+  // that reorders the trip changes which stop sits at a given position, so the
+  // position the user typed into would select somebody else's cell.
+  // One-shot: consumed by the first applyTimetableSelection after the edit.
+  private pendingSelection: {
+    tripId: string;
+    stopSequence: string;
+    field: string;
+  } | null = null;
+
   // Map wiring for the stop column, injected by index.ts
   private stopFocus: ((stop_id: string) => void) | null = null;
   private refHover: ((ref: StopTimeRef | null) => void) | null = null;
@@ -410,6 +421,15 @@ export class ScheduleController {
         return;
       }
 
+      const resortBtn = (e.target as Element)?.closest?.('.resort-trip-btn');
+      if (resortBtn instanceof HTMLElement) {
+        const trip_id = resortBtn.dataset.tripId;
+        if (trip_id) {
+          void this.resortTrip(trip_id);
+        }
+        return;
+      }
+
       const deleteBtn = (e.target as Element)?.closest?.('.delete-trip-btn');
       const tripId = deleteBtn?.getAttribute('data-trip-id');
       if (tripId) {
@@ -487,8 +507,15 @@ export class ScheduleController {
 
   /** Clear a selected cell's field, recording a patch like any other edit. */
   private clearTimeCell(span: HTMLElement): void {
-    const { tripId, stopId, field, stopSequence, pending, disabled } =
-      span.dataset;
+    const {
+      tripId,
+      stopId,
+      stopIndex,
+      field,
+      stopSequence,
+      pending,
+      disabled,
+    } = span.dataset;
     // The pending row has no stop_time behind it, so there is nothing to clear.
     if (pending === 'true' || disabled === 'true' || !tripId || !field) {
       return;
@@ -513,7 +540,8 @@ export class ScheduleController {
         field === 'arrival_time' ? 'arrival' : 'departure',
         '',
         stopSequence,
-        false
+        false,
+        stopIndex === undefined ? undefined : Number(stopIndex)
       );
       return;
     }
@@ -772,13 +800,19 @@ export class ScheduleController {
           );
           return;
         }
+        // Enter blurs the input, so nothing in the grid holds focus by the time
+        // the re-render captures it. openInlineEditor has already put the span
+        // back, so focusing it here is what makes the selection survive the
+        // rebuild instead of dropping to the document.
+        this.selectTimeCell(span, true);
         void this.updateArrivalDepartureTime(
           tripId,
           stopId as string,
           field === 'arrival_time' ? 'arrival' : 'departure',
           value,
           stopSequence,
-          pending === 'true'
+          pending === 'true',
+          stopIndex === undefined ? undefined : Number(stopIndex)
         );
       },
       onNavigate: (direction) => this.moveTimeCell(span, direction),
@@ -1066,9 +1100,21 @@ export class ScheduleController {
     const entry = () =>
       view.querySelector<HTMLElement>('.time-span:not([data-disabled="true"])');
 
-    const selected = this.selectedCell
-      ? this.findTimeCell(this.selectedCell)
+    // A pending key wins: the edit that caused this render moved its row, so
+    // the strip position in selectedCell now belongs to a different stop.
+    const pending = this.pendingSelection;
+    this.pendingSelection = null;
+    const moved = pending
+      ? view.querySelector<HTMLElement>(
+          `.time-span[data-trip-id="${CSS.escape(pending.tripId)}"]` +
+            `[data-stop-sequence="${CSS.escape(pending.stopSequence)}"]` +
+            `[data-field="${CSS.escape(pending.field)}"]`
+        )
       : null;
+
+    const selected =
+      moved ??
+      (this.selectedCell ? this.findTimeCell(this.selectedCell) : null);
     const target =
       selected && selected.dataset.disabled !== 'true' ? selected : entry();
     if (!target) {
@@ -1537,6 +1583,7 @@ export class ScheduleController {
    * @param newTime - New time value or empty string to clear
    * @param stopSequence - stop_sequence of the edited row, when the cell knows it
    * @param isPendingRow - The cell belongs to the not-yet-saved add-stop row
+   * @param stopIndex - Supersequence position of the edited cell on the strip
    * @throws {Error} When validation fails or database update fails
    */
   public async updateArrivalDepartureTime(
@@ -1545,7 +1592,8 @@ export class ScheduleController {
     timeType: 'arrival' | 'departure',
     newTime: string,
     stopSequence?: string,
-    isPendingRow = false
+    isPendingRow = false,
+    stopIndex?: number
   ): Promise<void> {
     try {
       const isClear = !newTime.trim();
@@ -1554,12 +1602,13 @@ export class ScheduleController {
         : TimeFormatter.castTimeToHHMMSS(newTime);
 
       // The pending row has no stop_time yet, so there is nothing to validate
-      // against and nothing to find: it always inserts.
+      // against and nothing to find: it always inserts. A cell with no
+      // stop_sequence is in the same position: it has no saved row, so
+      // validateArrivalDepartureConstraint has nothing to compare against.
       if (castedTime !== null && !isPendingRow) {
         const validation =
           await this.database.validateArrivalDepartureConstraint(
             trip_id,
-            stop_id,
             timeType,
             castedTime,
             stopSequence
@@ -1574,13 +1623,24 @@ export class ScheduleController {
         }
       }
 
+      // Clearing the row's last time means the trip no longer serves this stop:
+      // a row with no arrival, no departure and no window has nothing left to
+      // show in the grid, so it is removed rather than left behind empty.
+      if (castedTime === null && stopSequence && !isPendingRow) {
+        if (await this.clearsWholeRow(trip_id, stopSequence, timeType)) {
+          await this.deleteStopTimeRow(trip_id, stopSequence, stop_id);
+          return;
+        }
+      }
+
       const plan = await this.database.planStopTimeEdit(
         trip_id,
         stop_id,
         timeType,
         castedTime,
         stopSequence,
-        isPendingRow
+        isPendingRow,
+        this.stopTimeInsertIndex(trip_id, stopIndex)
       );
 
       // Clearing a cell that has no stop_time behind it would otherwise create
@@ -1609,6 +1669,17 @@ export class ScheduleController {
       console.log(`[ScheduleController] ${label}`);
       if (plan.isInsert) {
         notify.success('Added stop to trip', { duration: 2000 });
+      }
+
+      // An insert renumbers every row after it, so the cell the user typed into
+      // may no longer answer to the stop_sequence it was rendered with. Carry
+      // the selection to where the edited row actually landed.
+      if (plan.resultIndex !== undefined) {
+        this.pendingSelection = {
+          tripId: trip_id,
+          stopSequence: String(plan.resultIndex),
+          field: timeType === 'arrival' ? 'arrival_time' : 'departure_time',
+        };
       }
     } catch (error) {
       console.error('Failed to update arrival/departure time:', error);
@@ -1697,7 +1768,7 @@ export class ScheduleController {
     // the row survives its window, so that is a plain field clear.
     const isFlexRefRow = !!(row.location_id || row.location_group_id);
     if (isClear && isFlexRefRow) {
-      await this.deleteFlexStopTime(trip_id, stopSequence, rowId);
+      await this.deleteStopTimeRow(trip_id, stopSequence, rowId);
       return;
     }
 
@@ -1918,7 +1989,7 @@ export class ScheduleController {
         trip_id,
         ref,
         casted,
-        this.flexInsertIndex(data, trip_id, stopIndex),
+        this.tripInsertIndex(data, trip_id, stopIndex),
         inherited?.shape
       );
       const newRow = plan.afterRows[plan.insertedIndex ?? 0];
@@ -1953,19 +2024,47 @@ export class ScheduleController {
   }
 
   /**
-   * Delete one on-demand stop_time and renumber the trip, as a single patch.
+   * Whether clearing `timeType` would leave the row with nothing that makes it
+   * a served row: no arrival, no departure and no pickup/drop-off window. Such
+   * a row cannot be told apart from an unserved cell in the grid, so the caller
+   * removes it instead of writing it.
+   *
+   * @param trip_id - GTFS trip identifier
+   * @param stopSequence - stop_sequence of the row being cleared
+   * @param timeType - Which time field is being cleared
+   */
+  private async clearsWholeRow(
+    trip_id: string,
+    stopSequence: string,
+    timeType: 'arrival' | 'departure'
+  ): Promise<boolean> {
+    const row = await this.database.getStopTime(trip_id, stopSequence);
+    if (!row) {
+      return false;
+    }
+    const other =
+      timeType === 'arrival' ? row.departure_time : row.arrival_time;
+    return (
+      !other &&
+      !row.start_pickup_drop_off_window &&
+      !row.end_pickup_drop_off_window
+    );
+  }
+
+  /**
+   * Delete one stop_time and renumber the trip, as a single patch.
    *
    * @param trip_id - GTFS trip identifier
    * @param stopSequence - stop_sequence of the row to remove
    * @param rowId - The row's ref id, for error reporting
    */
-  private async deleteFlexStopTime(
+  private async deleteStopTimeRow(
     trip_id: string,
     stopSequence: string,
     rowId: string
   ): Promise<void> {
     try {
-      const plan = await this.database.planFlexStopTimeDelete(
+      const plan = await this.database.planStopTimeDelete(
         trip_id,
         stopSequence
       );
@@ -1985,8 +2084,8 @@ export class ScheduleController {
         duration: 3000,
       });
     } catch (error) {
-      console.error('Failed to delete on-demand stop_time:', error);
-      this.showTimeError(trip_id, rowId, 'Failed to remove on-demand row');
+      console.error('Failed to delete stop_time:', error);
+      this.showTimeError(trip_id, rowId, 'Failed to remove row from trip');
     }
   }
 
@@ -2232,6 +2331,28 @@ export class ScheduleController {
   }
 
   /**
+   * `tripInsertIndex` for the arrival/departure path, resolving the timetable
+   * data itself. Returns undefined when the caller had no strip position or the
+   * timetable is not the one in hand, which leaves planStopTimeEdit appending.
+   */
+  private stopTimeInsertIndex(
+    trip_id: string,
+    stopIndex?: number
+  ): number | undefined {
+    if (stopIndex === undefined || Number.isNaN(stopIndex)) {
+      return undefined;
+    }
+    const data = this.currentTimetableData();
+    if (!data) {
+      console.warn(
+        `[ScheduleController] no timetable data in hand to place a new stop_time on ${trip_id}`
+      );
+      return undefined;
+    }
+    return this.tripInsertIndex(data, trip_id, stopIndex);
+  }
+
+  /**
    * Where a new record for supersequence position `stopIndex` belongs in a
    * trip's own stop_sequence order: before the trip's first row that sits
    * further right on the strip.
@@ -2239,7 +2360,7 @@ export class ScheduleController {
    * `positionOf` returns null for a trip whose pattern was dropped from the
    * ordering, in which case the row degrades to an append rather than throwing.
    */
-  private flexInsertIndex(
+  private tripInsertIndex(
     data: TimetableData,
     trip_id: string,
     stopIndex: number
@@ -2251,13 +2372,23 @@ export class ScheduleController {
     if (!sequence) {
       return rows.length;
     }
-    for (let i = 0; i < rows.length; i++) {
-      const position = sequence.positionOf(trip_id, i);
-      if (position !== null && position > stopIndex) {
-        return i;
-      }
-    }
-    return rows.length;
+    const positions = rows.map((_, i) => sequence.positionOf(trip_id, i));
+    const slot = positions.findIndex(
+      (position) => position !== null && position > stopIndex
+    );
+    const result = slot === -1 ? rows.length : slot;
+
+    console.log(
+      `[ScheduleController] tripInsertIndex ${JSON.stringify({
+        trip_id,
+        stopIndex,
+        stripStops: sequence.stops.map((s) => `${s.ref.id}#${s.occurrence}`),
+        tripRows: rows.map((r) => `${r.stop_sequence}:${r.stop_id ?? '?'}`),
+        positions,
+        result,
+      })}`
+    );
+    return result;
   }
 
   /**
@@ -2927,6 +3058,44 @@ export class ScheduleController {
     } catch (error) {
       console.error('[ScheduleController] changeStopAtRow failed:', error);
       notify.error('Failed to change stop');
+    }
+  }
+
+  /**
+   * Sort one trip's stop_times into chronological order, on request.
+   *
+   * Edits never move a row on their own: stop_sequence order is what numbers a
+   * strip element's occurrence, so re-sorting can change which column every row
+   * of the trip belongs to, and a trip left disagreeing with its siblings about
+   * stop order leaves the route with no valid supersequence. Doing it only when
+   * asked keeps that a visible, undoable step the user can look at.
+   *
+   * @param trip_id - Trip to sort
+   */
+  public async resortTrip(trip_id: string): Promise<void> {
+    try {
+      const plan = await this.database.planTripResort(trip_id);
+      if (!plan) {
+        notify.info(`Trip ${trip_id} is already in time order`, {
+          duration: 2000,
+        });
+        return;
+      }
+
+      const label = `Sort trip ${trip_id} by time`;
+      const wrote = await this.commitStopTimePlan(plan, label);
+      if (!wrote) {
+        console.log(`No stop_time change sorting ${trip_id}`);
+        return;
+      }
+      console.log(`[ScheduleController] ${label}`);
+      notify.success(
+        `Sorted trip ${trip_id} by time (${plan.moved?.length ?? 0} rows moved)`,
+        { duration: 3000 }
+      );
+    } catch (error) {
+      console.error('Failed to sort trip by time:', error);
+      notify.error(`Failed to sort trip ${trip_id}`);
     }
   }
 

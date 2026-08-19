@@ -18,6 +18,14 @@ export function renderRouteWaypointsIcon(sizeClass = 'h-4 w-4'): string {
   return `<svg xmlns="http://www.w3.org/2000/svg" class="${sizeClass}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 4a2 2 0 100 4 2 2 0 000-4zM18 16a2 2 0 100 4 2 2 0 000-4z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 8v3a3 3 0 003 3h6a3 3 0 013 3v-1" /></svg>`;
 }
 
+/**
+ * Sort-by-time icon: descending bars beside a clock face, for the action that
+ * puts a trip's stop_times back into chronological order.
+ */
+export function renderSortByTimeIcon(sizeClass = 'h-4 w-4'): string {
+  return `<svg xmlns="http://www.w3.org/2000/svg" class="${sizeClass}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 6h8M3 12h5M3 18h3" /><circle cx="17" cy="14" r="5" stroke-width="2" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 12v2l1.5 1.5" /></svg>`;
+}
+
 export function renderCloseIcon(sizeClass = 'h-4 w-4'): string {
   return `<svg xmlns="http://www.w3.org/2000/svg" class="${sizeClass}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 6l12 12M18 6L6 18" /></svg>`;
 }

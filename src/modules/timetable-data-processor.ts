@@ -398,6 +398,41 @@ export class TimetableDataProcessor {
           throw new Error(errorMsg);
         }
 
+        // Two stop_times on one strip position means the second overwrites the
+        // first in editableStopTimes: the earlier row vanishes from the grid
+        // and cannot be selected, edited or deleted from here.
+        //
+        // Two *different* stop_ids landing here is the deliberate platform
+        // collapse - MBTA's four JFK/UMass platforms are one station row - so
+        // only the same ref twice is a problem. tripStops keeps consecutive
+        // calls at one stop_id as separate elements precisely so that cannot
+        // happen, which makes this an invariant check.
+        const previous = editableStopTimes.get(position);
+        if (
+          previous &&
+          previous.ref.kind === ref.kind &&
+          previous.ref.id === ref.id
+        ) {
+          console.warn(
+            `[TimetableDataProcessor] two stop_times on ${ref.kind}:${ref.id} share strip position ${position} on trip ${trip.trip_id}; the earlier one is not reachable from the grid: ${JSON.stringify(
+              {
+                trip_id: trip.trip_id,
+                position,
+                kept: {
+                  stop_sequence: String(st.stop_sequence),
+                  arrival_time,
+                  departure_time,
+                },
+                hidden: {
+                  stop_sequence: previous.stop_sequence,
+                  arrival_time: previous.arrival_time,
+                  departure_time: previous.departure_time,
+                },
+              }
+            )}`
+          );
+        }
+
         if (arrival_time) {
           arrival_timeMap.set(position, arrival_time);
         }
@@ -412,32 +447,35 @@ export class TimetableDataProcessor {
         const endWindow = emptyToNull(st.end_pickup_drop_off_window);
         const isFlex = ref.kind !== 'stop' || !!startWindow || !!endWindow;
 
+        // Every row, timed or not: a trip that serves a stop without a
+        // published time still needs an addressable cell, or the grid cannot
+        // tell it apart from a stop the trip skips and an edit there inserts a
+        // duplicate row.
+        //
         // Keep the trip's real platform stop_id, not the collapsed station
         // root - that's what keeps station collapse safe to edit.
-        if (arrival_time || departure_time || isFlex) {
-          editableStopTimes.set(position, {
-            ref,
-            stop_id: ref.kind === 'stop' ? ref.id : undefined,
-            stop_sequence: String(st.stop_sequence),
-            arrival_time: arrival_time,
-            departure_time: departure_time,
-            isSkipped: false,
-            originalArrivalTime: arrival_time,
-            originalDepartureTime: departure_time,
-            isFlex,
-            start_pickup_drop_off_window: startWindow,
-            end_pickup_drop_off_window: endWindow,
-            pickup_booking_rule_id: emptyToNull(st.pickup_booking_rule_id),
-            drop_off_booking_rule_id: emptyToNull(st.drop_off_booking_rule_id),
-            pickup_type: emptyToNull(st.pickup_type),
-            drop_off_type: emptyToNull(st.drop_off_type),
-            stop_headsign: emptyToNull(st.stop_headsign),
-            continuous_pickup: emptyToNull(st.continuous_pickup),
-            continuous_drop_off: emptyToNull(st.continuous_drop_off),
-            shape_dist_traveled: emptyToNull(st.shape_dist_traveled),
-            timepoint: emptyToNull(st.timepoint),
-          });
-        }
+        editableStopTimes.set(position, {
+          ref,
+          stop_id: ref.kind === 'stop' ? ref.id : undefined,
+          stop_sequence: String(st.stop_sequence),
+          arrival_time: arrival_time,
+          departure_time: departure_time,
+          isSkipped: false,
+          originalArrivalTime: arrival_time,
+          originalDepartureTime: departure_time,
+          isFlex,
+          start_pickup_drop_off_window: startWindow,
+          end_pickup_drop_off_window: endWindow,
+          pickup_booking_rule_id: emptyToNull(st.pickup_booking_rule_id),
+          drop_off_booking_rule_id: emptyToNull(st.drop_off_booking_rule_id),
+          pickup_type: emptyToNull(st.pickup_type),
+          drop_off_type: emptyToNull(st.drop_off_type),
+          stop_headsign: emptyToNull(st.stop_headsign),
+          continuous_pickup: emptyToNull(st.continuous_pickup),
+          continuous_drop_off: emptyToNull(st.continuous_drop_off),
+          shape_dist_traveled: emptyToNull(st.shape_dist_traveled),
+          timepoint: emptyToNull(st.timepoint),
+        });
       });
 
       // Get full trip data from database to include all GTFS properties

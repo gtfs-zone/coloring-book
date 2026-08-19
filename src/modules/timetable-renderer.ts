@@ -33,7 +33,11 @@ import { getStopDisplay, renderCardLabel } from '../utils/entity-display.js';
 import { escapeHtml } from '../utils/escape-html.js';
 import { renderPickerTrigger } from '../utils/picker-trigger.js';
 import { formatIssueValue, isDanglingReference } from './feed-issues.js';
-import { renderTrashIcon, renderRouteWaypointsIcon } from './modal-utils.js';
+import {
+  renderTrashIcon,
+  renderRouteWaypointsIcon,
+  renderSortByTimeIcon,
+} from './modal-utils.js';
 import { routeColor } from '../utils/route-colors.js';
 import {
   railCell,
@@ -740,10 +744,17 @@ export class TimetableRenderer {
         const deleteTip =
           `<div>Delete trip <code>${escapeHtml(trip.trip_id)}</code></div>` +
           '<div class="opacity-70">Removes the trip and its stop_times. Undoable from the Changes panel.</div>';
+        // Sorting is offered, never applied on its own: renumbering rows can
+        // move them to different strip columns, so the user asks for it and
+        // then looks at the result.
+        const resortTip =
+          `<div>Sort trip <code>${escapeHtml(trip.trip_id)}</code> by time</div>` +
+          '<div class="opacity-70">Renumbers this trip\'s stop_times into chronological order. Stops can change column on the strip. Undoable from the Changes panel.</div>';
         return `
           <td class="trip-header text-center p-2 text-xs" style="${columnStyle}">
             <div class="flex items-center justify-center gap-1">
               <button class="btn btn-xs btn-error btn-outline delete-trip-btn field-tooltip-trigger" data-trip-id="${escapeHtml(trip.trip_id)}" ${tooltipContentAttr(deleteTip)}>${renderTrashIcon('h-3 w-3')}</button>
+              <button class="btn btn-xs btn-outline resort-trip-btn field-tooltip-trigger" data-trip-id="${escapeHtml(trip.trip_id)}" ${tooltipContentAttr(resortTip)}>${renderSortByTimeIcon('h-3 w-3')}</button>
               ${brouterLink}
             </div>
           </td>
