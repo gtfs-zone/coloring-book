@@ -76,6 +76,10 @@ const TRANSFER_LAYER_IDS = [
 ];
 /** Below this the two endpoints are the same place and the line has nothing to draw. */
 const TRANSFER_STUB_LENGTH_M = 5;
+const TRANSFER_WIDTH = 2.5;
+const TRANSFER_WIDTH_HOVERED = 4.5;
+const TRANSFER_OPACITY = 0.9;
+const TRANSFER_OPACITY_HOVERED = 1;
 
 /** Perpendicular spacing between parallel pathways sharing an endpoint pair. */
 const PATHWAY_PARALLEL_OFFSET_M = 2;
@@ -121,7 +125,7 @@ function offsetSegment([a, b]: Segment, meters: number): Segment {
 }
 
 // Default filter: show all top-level stops (empty parent_station) and stations (location_type=1), hide child stops.
-const DEFAULT_STOPS_FILTER: FilterSpecification = [
+export const DEFAULT_STOPS_FILTER: FilterSpecification = [
   'any',
   ['==', ['get', 'parent_station'], ''],
   ['==', ['get', 'location_type'], 1],
@@ -143,6 +147,11 @@ export class LayerManager {
   private hoveredZoneId: string | null = null;
   // Stops of the currently spotlighted route (onRoute feature-state holders)
   private routeStopIds: string[] = [];
+  // Stops kept visible on top of the spotlight (kept feature-state holders)
+  private keptStopIds: string[] = [];
+  // The transfer edge under the pointer elsewhere in the app, if any
+  private hoveredTransfer: { from_stop_id: string; to_stop_id: string } | null =
+    null;
   // Zones of the currently spotlighted route (onRoute feature-state holders)
   private routeZoneIds: string[] = [];
 
@@ -565,6 +574,7 @@ export class LayerManager {
       this.hoveredStopIds = [];
       this.focusedPathwayId = null;
       this.routeStopIds = [];
+      this.keptStopIds = [];
     }
     this.onStopsDataUpdated?.(stopsGeoJSON);
 
@@ -685,12 +695,14 @@ export class LayerManager {
 
   /**
    * A stop is "special" when it must stay visible and clickable at any zoom:
-   * either focused (clicked) or on the currently spotlighted route.
+   * focused (clicked), on the currently spotlighted route, or kept (a member of
+   * the expanded station, or an endpoint of the focused stop's transfers).
    */
   private static readonly SPECIAL_STOP: ExpressionSpecification = [
     'any',
     ['boolean', ['feature-state', 'focused'], false],
     ['boolean', ['feature-state', 'onRoute'], false],
+    ['boolean', ['feature-state', 'kept'], false],
   ] as unknown as ExpressionSpecification;
 
   /**
@@ -1232,6 +1244,11 @@ export class LayerManager {
     const before = this.map.getLayer('stops-background')
       ? 'stops-background'
       : undefined;
+    const width = this.transferEmphasis(TRANSFER_WIDTH, TRANSFER_WIDTH_HOVERED);
+    const opacity = this.transferEmphasis(
+      TRANSFER_OPACITY,
+      TRANSFER_OPACITY_HOVERED
+    );
 
     this.map.addLayer(
       {
@@ -1245,8 +1262,8 @@ export class LayerManager {
         ] as unknown as FilterSpecification,
         paint: {
           'line-color': color,
-          'line-width': 2.5,
-          'line-opacity': 0.9,
+          'line-width': width,
+          'line-opacity': opacity,
           'line-dasharray': [2, 2],
         },
         layout: { 'line-cap': 'round', 'line-join': 'round' },
@@ -1266,8 +1283,8 @@ export class LayerManager {
         ] as unknown as FilterSpecification,
         paint: {
           'line-color': color,
-          'line-width': 2.5,
-          'line-opacity': 0.9,
+          'line-width': width,
+          'line-opacity': opacity,
         },
         layout: { 'line-cap': 'round', 'line-join': 'round' },
       } as unknown as Parameters<MapLibreMap['addLayer']>[0],
@@ -1284,15 +1301,80 @@ export class LayerManager {
           'circle-radius': 10,
           'circle-color': 'transparent',
           'circle-stroke-color': color,
-          'circle-stroke-width': 2.5,
-          'circle-stroke-opacity': 0.9,
+          'circle-stroke-width': width,
+          'circle-stroke-opacity': opacity,
         },
       } as unknown as Parameters<MapLibreMap['addLayer']>[0],
       before
     );
   }
 
+  /**
+   * Emphasis expression for the hovered transfer edge, matched on the endpoint
+   * pair the features carry. Built in one place so the three transfer layers
+   * and `setHoveredTransfer` never drift apart.
+   */
+  private transferEmphasis(
+    plain: number,
+    emphasized: number
+  ): ExpressionSpecification | number {
+    if (!this.hoveredTransfer) {
+      return plain;
+    }
+    return [
+      'case',
+      [
+        'all',
+        ['==', ['get', 'from_stop_id'], this.hoveredTransfer.from_stop_id],
+        ['==', ['get', 'to_stop_id'], this.hoveredTransfer.to_stop_id],
+      ],
+      emphasized,
+      plain,
+    ] as unknown as ExpressionSpecification;
+  }
+
+  /**
+   * Light one transfer edge, e.g. from a hovered row in the stop page's
+   * transfers list. Purely visual, like `setHoveredStop`. Pass null to clear.
+   */
+  public setHoveredTransfer(
+    edge: { from_stop_id: string; to_stop_id: string } | null
+  ): void {
+    const same =
+      this.hoveredTransfer?.from_stop_id === edge?.from_stop_id &&
+      this.hoveredTransfer?.to_stop_id === edge?.to_stop_id;
+    if (same) {
+      return;
+    }
+    this.hoveredTransfer = edge;
+
+    const width = this.transferEmphasis(TRANSFER_WIDTH, TRANSFER_WIDTH_HOVERED);
+    const opacity = this.transferEmphasis(
+      TRANSFER_OPACITY,
+      TRANSFER_OPACITY_HOVERED
+    );
+    for (const layerId of [TRANSFER_DASHED_LAYER, TRANSFER_SOLID_LAYER]) {
+      if (this.map.getLayer(layerId)) {
+        this.map.setPaintProperty(layerId, 'line-width', width);
+        this.map.setPaintProperty(layerId, 'line-opacity', opacity);
+      }
+    }
+    if (this.map.getLayer(TRANSFER_STUB_LAYER)) {
+      this.map.setPaintProperty(
+        TRANSFER_STUB_LAYER,
+        'circle-stroke-width',
+        width
+      );
+      this.map.setPaintProperty(
+        TRANSFER_STUB_LAYER,
+        'circle-stroke-opacity',
+        opacity
+      );
+    }
+  }
+
   public clearTransferEdges(): void {
+    this.hoveredTransfer = null;
     for (const layerId of TRANSFER_LAYER_IDS) {
       if (this.map.getLayer(layerId)) {
         this.map.removeLayer(layerId);
@@ -1342,6 +1424,37 @@ export class LayerManager {
   }
 
   /**
+   * Keep stops fully visible and clickable regardless of the route spotlight.
+   *
+   * Selection is additive: expanding a station must not hide the platforms it
+   * contains, and a transfer edge must land on a dot that is actually drawn.
+   * Separate from `setRouteStops` because it never touches the dim level, which
+   * belongs to the route spotlight. Pass an empty array to clear.
+   */
+  public setKeptStops(stop_ids: string[]): void {
+    const next = [...new Set(stop_ids)];
+    if (
+      next.length === this.keptStopIds.length &&
+      next.every((stop_id) => this.keptStopIds.includes(stop_id))
+    ) {
+      return;
+    }
+    console.log(`[LayerManager] Keeping ${next.length} stops visible`);
+
+    if (this.map.getSource('stops')) {
+      for (const id of this.keptStopIds) {
+        this.map.setFeatureState({ source: 'stops', id }, { kept: false });
+      }
+      for (const id of next) {
+        this.map.setFeatureState({ source: 'stops', id }, { kept: true });
+      }
+      this.keptStopIds = next;
+    } else {
+      this.keptStopIds = [];
+    }
+  }
+
+  /**
    * Clear all highlights
    */
   public clearHighlights(): void {
@@ -1351,6 +1464,9 @@ export class LayerManager {
     this.setHoveredZone(null);
     if (this.routeStopIds.length > 0) {
       this.setRouteStops([]);
+    }
+    if (this.keptStopIds.length > 0) {
+      this.setKeptStops([]);
     }
     if (this.routeZoneIds.length > 0) {
       this.setRouteZones([]);

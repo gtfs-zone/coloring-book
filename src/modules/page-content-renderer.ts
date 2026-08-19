@@ -161,6 +161,10 @@ export interface ContentRendererDependencies {
     highlightPathway: (pathway_id: string) => void;
     highlightZone: (location_id: string) => void;
     highlightLocationGroup: (location_group_id: string) => void;
+    hoverStop: (stop_id: string | null) => void;
+    hoverTransfer: (
+      edge: { from_stop_id: string; to_stop_id: string } | null
+    ) => void;
     clearHighlights: () => void;
     focusOnAgency: (agency_id: string) => void;
     refreshStops: () => void;
@@ -246,6 +250,8 @@ export class PageContentRenderer {
       gtfsRelationships: dependencies.gtfsRelationships || {},
       editableDeps: this.editableDeps(),
       onStopClick: dependencies.onStopClick,
+      onStopHover: (stop_id) => dependencies.mapController.hoverStop(stop_id),
+      onTransferHover: (edge) => dependencies.mapController.hoverTransfer(edge),
       onPathwayClick: dependencies.onPathwayClick,
       onDeleteStop: (stop_id) => this.handleDeleteStop(stop_id),
       onTransfersChanged: () => dependencies.onEntityCreated?.(),

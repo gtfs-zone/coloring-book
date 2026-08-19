@@ -66,6 +66,10 @@ export class BrowseNavigation {
     highlightPathway: (pathway_id: string) => void;
     highlightZone: (location_id: string) => void;
     highlightLocationGroup: (location_group_id: string) => void;
+    hoverStop: (stop_id: string | null) => void;
+    hoverTransfer: (
+      edge: { from_stop_id: string; to_stop_id: string } | null
+    ) => void;
     clearHighlights: () => void;
     highlightRoute: (route_id: string) => void;
     fitToRoutes: (route_ids: string[]) => void;
@@ -149,6 +153,10 @@ export class BrowseNavigation {
       highlightPathway: (pathway_id: string) => void;
       highlightZone: (location_id: string) => void;
       highlightLocationGroup: (location_group_id: string) => void;
+      hoverStop: (stop_id: string | null) => void;
+      hoverTransfer: (
+        edge: { from_stop_id: string; to_stop_id: string } | null
+      ) => void;
       clearHighlights: () => void;
       highlightRoute: (route_id: string) => void;
       fitToRoutes: (route_ids: string[]) => void;
@@ -292,6 +300,11 @@ export class BrowseNavigation {
           this.mapController.highlightZone(location_id),
         highlightLocationGroup: (location_group_id: string) =>
           this.mapController.highlightLocationGroup(location_group_id),
+        hoverStop: (stop_id: string | null) =>
+          this.mapController.hoverStop(stop_id),
+        hoverTransfer: (
+          edge: { from_stop_id: string; to_stop_id: string } | null
+        ) => this.mapController.hoverTransfer(edge),
         clearHighlights: () => this.mapController.clearHighlights(),
         focusOnAgency: (agency_id: string) =>
           this.highlightAgencyOnMap(agency_id),
