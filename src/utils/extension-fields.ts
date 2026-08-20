@@ -136,12 +136,6 @@ export function extensionFieldSpec(field: string): GTFSFieldSpec {
   return spec;
 }
 
-/** Whether `field` is an extension field of `tableName` rather than a spec one. */
-export function isExtensionField(tableName: string, field: string): boolean {
-  const specs = GTFS_FIELD_SPECS[tableName];
-  return specs !== undefined && specs[field] === undefined;
-}
-
 // ─── Adding a column ──────────────────────────────────────────────────────────
 
 /** CSV header names we are willing to create: the shape GTFS itself uses. */

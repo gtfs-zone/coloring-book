@@ -65,11 +65,3 @@ export function stopTimeRef(row: StopTimes): StopTimeRef | null {
   }
   return null;
 }
-
-/** True when the stop_time carries a pickup/drop-off window (on-demand row). */
-export function isFlexStopTime(row: StopTimes): boolean {
-  return (
-    value(row?.start_pickup_drop_off_window) !== null ||
-    value(row?.end_pickup_drop_off_window) !== null
-  );
-}
