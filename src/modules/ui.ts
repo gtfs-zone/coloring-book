@@ -109,6 +109,12 @@ export class UIController {
       this.exportGTFS();
     });
 
+    // Clear button: the same reset as "New Empty Feed", but reached from the
+    // navbar rather than from a load dialog, so it asks first.
+    document.getElementById('clear-feed-btn')?.addEventListener('click', () => {
+      void this.confirmClearFeed();
+    });
+
     // Pointer button
     document.getElementById('pointer-btn')?.addEventListener('click', () => {
       this.mapController?.setMapMode(MapMode.NAVIGATE);
@@ -1144,6 +1150,23 @@ export class UIController {
       }
 
       container.appendChild(itemEl);
+    });
+  }
+
+  /** Discard the loaded feed and every edit to it, once the user confirms. */
+  async confirmClearFeed(): Promise<void> {
+    await showModal({
+      title: 'Clear feed',
+      body: '<p>This discards the loaded feed and every edit made to it, and starts an empty feed. This cannot be undone.</p>',
+      actions: [
+        {
+          label: 'Clear',
+          className: 'btn-error',
+          onClick: () => this.createNewFeed(),
+        },
+        { label: 'Cancel', onClick: () => {} },
+      ],
+      escapeAction: 1,
     });
   }
 
