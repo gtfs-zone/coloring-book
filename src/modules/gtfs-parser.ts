@@ -2,7 +2,7 @@ import JSZip from 'jszip';
 import Papa from 'papaparse';
 import { CONFIG } from '../config.js';
 import { GTFSDatabase, GTFSDatabaseRecord } from './gtfs-database.js';
-import { GTFS_FILES, GTFSFilePresence, GTFS_TABLES } from '../types/gtfs.js';
+import { GTFS_FILES, GTFS_TABLES } from '../types/gtfs.js';
 import { feedProgressIndicator } from './feed-progress-indicator.js';
 import { notify } from './notification-system.js';
 import {
@@ -1221,7 +1221,7 @@ export class GTFSParser {
   } {
     const allFiles = this.getAllFileNames();
     const requiredFiles = GTFS_FILES.filter(
-      (f) => f.presence === GTFSFilePresence.Required
+      (f) => f.presence === 'Required'
     ).map((f) => f.filename);
 
     return {

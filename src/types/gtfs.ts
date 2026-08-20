@@ -7,6 +7,7 @@
 
 import { z } from 'zod';
 import { gtfsSpec } from '../gtfs-spec/index.js';
+import type { GTFSPresence } from '../gtfs-spec/types.js';
 import {
   deriveGTFSPrimaryKeys,
   deriveGTFSFieldTypes,
@@ -17,18 +18,9 @@ import {
 } from '../gtfs-spec/adapter.js';
 import { GTFS_FIELD_TYPE_METADATA } from './gtfs-field-types.js';
 
-// File presence enum, kept for backward compat with consumers that compare
-// against enum members (e.g. GTFSFilePresence.Required). String values are
-// identical to GTFSPresence in the spec types, so comparisons are safe.
-export enum GTFSFilePresence {
-  Required = 'Required',
-  Optional = 'Optional',
-  ConditionallyRequired = 'Conditionally Required',
-}
-
 export interface GTFSFileInfo {
   filename: string;
-  presence: GTFSFilePresence;
+  presence: GTFSPresence;
   description: string;
   schema: z.ZodSchema;
 }
