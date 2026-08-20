@@ -1015,9 +1015,9 @@ export class GTFSParser {
       onCancel: () => controller.abort(),
     });
 
-    let buffer: ArrayBuffer;
+    let blob: Blob;
     try {
-      buffer = await downloadWithProgress(url, {
+      blob = await downloadWithProgress(url, {
         signal: controller.signal,
         onProgress: (loaded, total) => {
           const percent = downloadPercent(loaded, total);
@@ -1040,10 +1040,6 @@ export class GTFSParser {
     // The same operation key covers the parse, which cannot be aborted.
     feedProgressIndicator.clearCancel(operation);
 
-    // The rest of the pipeline is Blob-shaped (JSZip, the inner-zip descent,
-    // `parseFile`), so the bytes go back into a Blob here rather than threading
-    // an ArrayBuffer through all of it.
-    let blob: Blob = new Blob([buffer]);
     feedProgressIndicator.updateProgress(operation, 100, 'Preparing...');
 
     for (const innerPath of innerPaths) {
