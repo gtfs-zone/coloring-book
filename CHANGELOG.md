@@ -1,3 +1,64 @@
+## v0.27.0 (2026-08-20)
+
+### Feat
+
+- **about**: break the blurb into paragraphs and bullets, link the manager
+- **about**: share the About modal link blocks and add SEO metadata
+- **load**: let a feed download be cancelled from the progress bar
+- **load**: share a byte-progress feed downloader
+- **map**: highlight the stop and transfer edge under a hovered table row
+- **timetable**: place, remove and re-sort stop_time rows explicitly
+- **pickers**: show spec descriptions on their own line in option pickers
+
+### Fix
+
+- **inline-edit**: raise enum menu above modals
+- **route-sequence**: align stop visit indices across patterns by LCS
+- **timetable**: keep the frozen label column aligned with its sub-rows
+
+## v0.26.2 (2026-08-18)
+
+## v0.26.1 (2026-08-18)
+
+### Feat
+
+- **timetable**: labeled sub-rows for frequency periods
+- **pickers**: one trigger shape and manager footers for picker modals
+- **fields**: show and edit non-spec extension columns
+- **timetable**: portal tooltips on icon-only controls
+- **home**: attributions section on the home page
+- **transfers**: stop page section and focused-stop map edges
+- **feed-data**: editor for transfers, attributions and translations
+- **files**: show and edit non-spec passthrough files
+- **timeline**: vertical marker for today in service timelines
+- **timeline**: sort service rows by date range, then trip count
+- **timeline**: clickable route headers on the stop view and per-service trip counts
+- **validator**: report frequencies.txt row, overlap and duplicate-key problems
+- **timetable**: compact-mode flag row for the nine non-time stop_time fields
+- **timetable**: decorate stop_time cells with conditional-presence state
+- **timetable**: sub-row grid for stop_times and a frequencies band
+- **timetable**: add stop_time field model and frequency data path
+- **flex**: make a zone row editable on every trip
+- **flex**: edit pickup/drop-off types and booking rules from the timetable
+- **flex**: make the zone page a real GeoJSON editor
+- **flex**: add on-demand rows from the timetable
+- **flex**: fit the viewport to zones and shapes, not just stops
+- **flex**: make zones and location groups clickable and hoverable
+- **flex**: add the On-Demand modal and flex validation
+- **flex**: add browse pages for zones and location groups
+- **flex**: render on-demand zones on the map with a geojson.io round-trip
+- **flex**: render on-demand stop_times inline in the timetable
+- **flex**: generalize stop_time references through the sequence pipeline
+- **flex**: add StopTimeRef types and fix flex presence conditions
+
+### Fix
+
+- point CORS proxy at cors.kcfam.us
+- point CORS proxy at cors.kcfam.us
+- **load**: do not block an http feed URL that goes through the proxy
+- **edit**: record field edits that only change surrounding whitespace
+- **flex**: decode pasted geojson.io share links instead of fetching them
+
 ## v0.26.0 (2026-08-15)
 
 ### Feat
