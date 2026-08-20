@@ -83,8 +83,10 @@ function buildShortcutsTable(
 
 const APP: AboutApp = {
   name: 'edit.gtfs.zone',
-  blurb:
+  blurb: [
     'edit.gtfs.zone is a browser-based GTFS transit data editor inspired by geojson.io. All data stays in your browser. No server, no account required.',
+  ],
+  contactSubject: 'edit.gtfs.zone feedback',
   repo: 'coloring-book',
   sibling: {
     name: 'viz.rt.gtfs.zone',
