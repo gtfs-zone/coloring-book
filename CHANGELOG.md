@@ -1,3 +1,13 @@
+## v0.27.1 (2026-08-21)
+
+### Refactor
+
+- **types**: drop dead flex/extension helpers and the file presence enum
+
+### Perf
+
+- **load**: coalesce download progress and stop copying the feed twice
+
 ## v0.27.0 (2026-08-20)
 
 ### Feat
