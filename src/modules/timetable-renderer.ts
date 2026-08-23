@@ -1136,7 +1136,9 @@ export class TimetableRenderer {
       })
       .join('');
 
-    // Add new stop row at the bottom
+    // Add new stop row at the bottom. A stop_time belongs to a trip, so with
+    // no trips there is nothing to add a stop to.
+    const noTrips = data.trips.length === 0;
     const newStopTimeCells = data.trips
       .map(() => '<td class="text-center p-2"></td>')
       .join('');
@@ -1145,6 +1147,7 @@ export class TimetableRenderer {
         <th class="stop-name p-2 border-r border-base-300 bg-base-100" style="${this.labelColumnStyle()}">
           <button
             class="add-stop-btn btn btn-ghost btn-sm w-full justify-start opacity-70 hover:opacity-100"
+            ${noTrips ? 'disabled title="Add a trip first: stop times belong to a trip"' : ''}
           >Add stop or zone...</button>
         </th>
         ${newStopTimeCells}
@@ -1155,7 +1158,26 @@ export class TimetableRenderer {
     // Add property rows (and the frequency band) before stop rows
     const propertyRows = this.renderTripPropertyRows(data);
 
-    return `<tbody>${propertyRows}${rows}${newStopRow}</tbody>`;
+    const emptyRow = noTrips ? this.renderNoTripsRow() : '';
+
+    return `<tbody>${propertyRows}${rows}${emptyRow}${newStopRow}</tbody>`;
+  }
+
+  /**
+   * The stop-row area for a route/service/direction with no trips.
+   *
+   * Replaces the stop rows only: the trip-property rows and the new-trip input
+   * column stay, and the "Add stop or zone" row renders disabled above.
+   */
+  private renderNoTripsRow(): string {
+    return `
+      <tr>
+        <td colspan="2" class="p-6 text-center">
+          <p class="text-sm opacity-70">This direction of the route has no trips yet. Stop times belong to a trip, so add one before adding stops.</p>
+          <button class="add-first-trip-btn btn btn-primary btn-sm mt-3">Add first trip</button>
+        </td>
+      </tr>
+    `;
   }
 
   /**
