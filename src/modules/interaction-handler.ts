@@ -11,6 +11,7 @@ import { MapMode } from './map-controller.js';
 import type { GTFSParser } from './gtfs-parser.js';
 import { showModal } from './modal-utils.js';
 import { generateId } from '../utils/uuid.js';
+import { hasLiveEditor } from '../utils/inline-edit.js';
 
 export interface InteractionCallbacks {
   onRouteClick?: (route_id: string) => void;
@@ -36,6 +37,9 @@ export class InteractionHandler {
 
   // Currently highlighted stop (draggable in NAVIGATE mode)
   private highlightedStopId: string | null = null;
+
+  // Whether an inline editor was open when the current press started
+  private hadLiveEditorOnPress = false;
 
   // Local copy of stops GeoJSON for drag: avoids reading MapLibre's private _data
   private stopsGeoJSON: GeoJSON.FeatureCollection | null = null;
@@ -108,13 +112,21 @@ export class InteractionHandler {
     // Primary click handler
     this.map.on('click', this.handleMapClick.bind(this));
 
-    // Mouse events for dragging
-    this.map.on('mousedown', this.handleMouseDown.bind(this));
+    // Mouse events for dragging. The live-editor snapshot is taken here, not
+    // in the click handler: the browser blurs and commits the editor as the
+    // default action of this same mousedown, so by click time it is gone.
+    this.map.on('mousedown', (e) => {
+      this.hadLiveEditorOnPress = hasLiveEditor();
+      this.handleMouseDown(e);
+    });
     this.map.on('mousemove', this.handleMouseMove.bind(this));
     this.map.on('mouseup', this.handleMouseUp.bind(this));
 
     // Touch events for dragging (mobile)
-    this.map.on('touchstart', this.handleTouchStart.bind(this));
+    this.map.on('touchstart', (e) => {
+      this.hadLiveEditorOnPress = hasLiveEditor();
+      this.handleTouchStart(e);
+    });
     this.map.on('touchmove', this.handleTouchMove.bind(this));
     this.map.on('touchend', this.handleTouchEnd.bind(this));
 
@@ -178,6 +190,19 @@ export class InteractionHandler {
    * Handle map click events based on current mode
    */
   private handleMapClick(e: MapMouseEvent): void {
+    // A click that closes an inline editor commits it and stops there: the
+    // blur already fired on mousedown, so navigating now would move the panel
+    // away from the row the user just edited. Explicit placement modes still
+    // place on that click.
+    const dismissedEditor = this.hadLiveEditorOnPress;
+    this.hadLiveEditorOnPress = false;
+    if (dismissedEditor && this.currentMode === MapMode.NAVIGATE) {
+      console.log(
+        '[InteractionHandler] map click swallowed, committing live editor'
+      );
+      return;
+    }
+
     switch (this.currentMode) {
       case MapMode.ADD_STOP:
         this.handleAddStopClick(e);
