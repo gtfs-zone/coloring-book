@@ -48,6 +48,7 @@ import { validateFlexStopTimeRow } from '../utils/flex-rules.js';
 import { renderSpecDescriptionPlain } from '../utils/spec-markup.js';
 import { escapeHtml } from '../utils/escape-html.js';
 import { setPickerTriggerContent } from '../utils/picker-trigger.js';
+import { generateId } from '../utils/uuid.js';
 import { getGTFSFieldDescription } from '../utils/zod-tooltip-helper.js';
 import { GTFS_TABLES } from '../types/gtfs.js';
 import type { LocationGroups } from '../types/gtfs-entities.js';
@@ -229,6 +230,9 @@ export class ScheduleController {
   private currentRouteId?: string;
   private currentServiceId?: string;
   private currentDirectionId?: string;
+  // Trip count of the timetable last rendered, so click handlers can refuse
+  // actions that need a trip without re-querying.
+  private currentTripCount = 0;
 
   // Tracks the last scroll position on the timetable's scroll container.
   // overflow-x-auto scrolls BOTH axes (CSS forces overflow-y to auto when
@@ -362,7 +366,21 @@ export class ScheduleController {
 
       const addStopBtn = (e.target as Element)?.closest?.('.add-stop-btn');
       if (addStopBtn instanceof HTMLElement) {
+        if (this.currentTripCount === 0) {
+          console.warn(
+            '[ScheduleController] add stop ignored: the timetable has no trips'
+          );
+          return;
+        }
         void this.openAddStopPicker();
+        return;
+      }
+
+      const addFirstTripBtn = (e.target as Element)?.closest?.(
+        '.add-first-trip-btn'
+      );
+      if (addFirstTripBtn instanceof HTMLElement) {
+        void this.createFirstTrip();
         return;
       }
 
@@ -1475,6 +1493,7 @@ export class ScheduleController {
     this.currentRouteId = undefined;
     this.currentServiceId = undefined;
     this.currentDirectionId = undefined;
+    this.currentTripCount = 0;
     this.pendingRow = undefined;
     this.provisionalFields = [];
     this.resetTimetableScroll();
@@ -2672,6 +2691,7 @@ export class ScheduleController {
         ...cached,
         stops: [...cached.stops],
       };
+      this.currentTripCount = timetableData.trips.length;
 
       // Add direction information to timetable data
       timetableData.availableDirections = availableDirections;
@@ -2681,11 +2701,21 @@ export class ScheduleController {
       // database). A zone or location group has no stops.txt row, so it gets a
       // synthetic one carrying its resolved name, exactly as
       // TimetableDataProcessor does for saved flex rows.
+      // A timetable with no trips has no sequence and no graph, and the
+      // renderer needs both to draw a stop row. Drop the pending row loudly
+      // rather than pushing it into a body that cannot render it.
       if (this.pendingRow) {
-        timetableData.stops.push({
-          stop_id: this.pendingRow.ref.id,
-          stop_name: this.pendingRow.name,
-        } as Stops);
+        if (!timetableData.sequence || !timetableData.graph) {
+          console.warn(
+            `[ScheduleController] dropping pending ${this.pendingRow.ref.kind} ${this.pendingRow.ref.id}: timetable has no route sequence/graph`
+          );
+          this.pendingRow = undefined;
+        } else {
+          timetableData.stops.push({
+            stop_id: this.pendingRow.ref.id,
+            stop_name: this.pendingRow.name,
+          } as Stops);
+        }
       }
 
       return this.renderer.renderTimetableHTML(
@@ -2812,36 +2842,75 @@ export class ScheduleController {
         return;
       }
 
-      // Validate trip_id
-      const validation = await this.validateTripId(trimmedId);
-      if (!validation.isValid) {
-        notify.error(validation.errorMessage || 'Invalid trip ID');
-        return;
-      }
-
-      // Save trip to database immediately (no pending state)
-      const tripData = {
-        trip_id: trimmedId,
-        route_id: this.currentRouteId,
-        service_id: this.currentServiceId,
-        shape_id: '',
-        ...(this.currentDirectionId && {
-          direction_id: parseInt(this.currentDirectionId),
-        }),
-      };
-
-      await this.gtfsParser.gtfsDatabase.insertRows('trips', [tripData]);
-      this.invalidateCaches();
-      await this.patchManager?.recordInsert(
-        'trips',
-        trimmedId,
-        tripData as Record<string, unknown>
-      );
-      console.log('Trip saved to database:', tripData);
+      await this.insertTrip(trimmedId);
     } catch (error) {
       console.error('Failed to create trip:', error);
       notify.error('Failed to create trip');
     }
+  }
+
+  /**
+   * Create the first trip of the current route/service/direction.
+   *
+   * The entry point from the empty timetable's "Add first trip" button, where
+   * there is no input to type an id into, so one is generated.
+   */
+  public async createFirstTrip(): Promise<void> {
+    try {
+      if (!this.currentRouteId || !this.currentServiceId) {
+        notify.error('No timetable loaded');
+        return;
+      }
+      const trip_id = generateId();
+      console.log(
+        `[ScheduleController] creating first trip ${trip_id} for route=${this.currentRouteId} service=${this.currentServiceId} direction=${this.currentDirectionId ?? '(default)'}`
+      );
+      await this.insertTrip(trip_id);
+    } catch (error) {
+      console.error('Failed to create first trip:', error);
+      notify.error('Failed to create trip');
+    }
+  }
+
+  /**
+   * Write one trip for the current route/service/direction and record it.
+   *
+   * direction_id is only written when the current direction is non-empty:
+   * feeds that omit it collapse to the '' direction, and writing a 0 there
+   * would move the trip out of the timetable it was created from.
+   *
+   * @param trip_id - Trip ID to create, already trimmed
+   */
+  private async insertTrip(trip_id: string): Promise<void> {
+    if (!this.currentRouteId || !this.currentServiceId) {
+      notify.error('No timetable loaded');
+      return;
+    }
+
+    const validation = await this.validateTripId(trip_id);
+    if (!validation.isValid) {
+      notify.error(validation.errorMessage || 'Invalid trip ID');
+      return;
+    }
+
+    const tripData = {
+      trip_id,
+      route_id: this.currentRouteId,
+      service_id: this.currentServiceId,
+      shape_id: '',
+      ...(this.currentDirectionId && {
+        direction_id: parseInt(this.currentDirectionId),
+      }),
+    };
+
+    await this.gtfsParser.gtfsDatabase.insertRows('trips', [tripData]);
+    this.invalidateCaches();
+    await this.patchManager?.recordInsert(
+      'trips',
+      trip_id,
+      tripData as Record<string, unknown>
+    );
+    console.log('Trip saved to database:', tripData);
   }
 
   /**
