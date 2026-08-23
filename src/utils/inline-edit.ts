@@ -120,6 +120,16 @@ export function getLiveEditorState(): {
 }
 
 /**
+ * Whether an inline editor is currently open.
+ *
+ * Reads the module reference rather than the DOM: a re-render can detach the
+ * input while the editor is still logically live.
+ */
+export function hasLiveEditor(): boolean {
+  return liveInput !== null;
+}
+
+/**
  * Swap a display span for a live input until it is committed or cancelled.
  *
  * The span is restored synchronously before `onCommit` runs, so the caller is
