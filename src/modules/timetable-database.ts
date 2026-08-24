@@ -7,6 +7,8 @@
 import { StopTimes, GTFSTableMap } from '../types/gtfs-entities.js';
 import type { StopTimeRef } from '../types/gtfs-flex.js';
 import { StopTimesSchema } from '../types/gtfs.js';
+import type { CoupledTimes } from '../utils/stop-time-coupling.js';
+import { TimeFormatter } from '../utils/time-formatter.js';
 import { notify } from './notification-system.js';
 
 /** The two ends of a stop_time's pickup/drop-off window. */
@@ -127,6 +129,8 @@ export class TimetableDatabase {
    * @param stopSequence - stop_sequence of the row being edited, when known
    * @param forceInsert - Always create a new stop_time instead of editing one
    * @param insertIndex - Slot in the trip's stop_sequence order for a new row
+   * @param coupled - Both time fields as coupleStopTimes resolved them; when
+   *   given, they are written together instead of only the edited field
    * @throws {Error} When the time fails GTFS schema validation
    */
   async planStopTimeEdit(
@@ -136,7 +140,8 @@ export class TimetableDatabase {
     newTime: string | null,
     stopSequence?: string,
     forceInsert = false,
-    insertIndex?: number
+    insertIndex?: number,
+    coupled?: CoupledTimes
   ): Promise<StopTimeEditPlan> {
     if (newTime !== null) {
       const timeValidation =
@@ -152,6 +157,13 @@ export class TimetableDatabase {
     }
 
     const field = timeType === 'arrival' ? 'arrival_time' : 'departure_time';
+    // Coupling supplies field values only, never the insert-vs-update decision.
+    const written: Record<string, string | null> = coupled
+      ? {
+          arrival_time: coupled.arrival_time,
+          departure_time: coupled.departure_time,
+        }
+      : { [field]: newTime };
     const beforeRows = await this.gtfsParser.gtfsDatabase.queryRows(
       'stop_times',
       { trip_id }
@@ -181,12 +193,12 @@ export class TimetableDatabase {
         stop_sequence: 0,
         arrival_time: null,
         departure_time: null,
-        [field]: newTime,
+        ...written,
       } as unknown as StopTimes;
       edited.splice(slot, 0, target);
     } else {
       target = edited[targetIndex];
-      (target as unknown as Record<string, unknown>)[field] = newTime;
+      Object.assign(target as unknown as Record<string, unknown>, written);
     }
 
     // A row stays where the user put it. Sorting the trip by time here would
@@ -203,6 +215,7 @@ export class TimetableDatabase {
         stop_id,
         timeType,
         newTime,
+        written,
         stopSequence,
         forceInsert,
         insertIndex,
@@ -509,57 +522,26 @@ export class TimetableDatabase {
   }
 
   /**
-   * Validate arrival <= departure time constraint
+   * Validate the arrival <= departure constraint on a resolved pair.
    *
-   * Checks that arrival time is not later than departure time on the row being
-   * edited. Only validates when both times are present.
+   * The pair comes from `coupleStopTimes`, so both fields are the values the
+   * edit is about to write. Checking the incoming value against the row's
+   * stored counterpart would reject an arrival edit that legitimately carries
+   * its departure along with it.
    *
-   * The row is found by stop_sequence. Without one there is no saved row for
-   * this cell, so the edit is an insert and there is nothing to validate
-   * against - never fall back to matching on stop_id, which on a loop route
-   * picks a different instance of the same stop.
-   *
-   * @param trip_id - GTFS trip identifier
-   * @param timeType - Which time field is being updated ('arrival' or 'departure')
-   * @param newTime - New time value to validate against existing time
-   * @param stop_sequence - stop_sequence of the edited row, when known
-   * @returns Promise resolving to validation result with optional error message
+   * @param times - Both time fields as they are about to be written
+   * @returns Validation result with an optional error message
    */
-  async validateArrivalDepartureConstraint(
-    trip_id: string,
-    timeType: 'arrival' | 'departure',
-    newTime: string,
-    stop_sequence?: string
-  ): Promise<{ isValid: boolean; errorMessage?: string }> {
-    const stopTime = await this.getStopTime(trip_id, stop_sequence);
-    if (!stopTime) {
-      // No existing record means no constraints to validate
-      return { isValid: true };
-    }
-
-    const currentArrivalTime = stopTime.arrival_time;
-    const currentDepartureTime = stopTime.departure_time;
-
-    // Validate arrival <= departure constraint if both are specified
-    if (
-      timeType === 'arrival' &&
-      currentDepartureTime &&
-      newTime > currentDepartureTime
-    ) {
+  validateArrivalDepartureConstraint(times: CoupledTimes): {
+    isValid: boolean;
+    errorMessage?: string;
+  } {
+    const arrival = TimeFormatter.timeToSeconds(times.arrival_time);
+    const departure = TimeFormatter.timeToSeconds(times.departure_time);
+    if (arrival !== null && departure !== null && arrival > departure) {
       return {
         isValid: false,
         errorMessage: 'Arrival time must be before or equal to departure time',
-      };
-    }
-
-    if (
-      timeType === 'departure' &&
-      currentArrivalTime &&
-      newTime < currentArrivalTime
-    ) {
-      return {
-        isValid: false,
-        errorMessage: 'Departure time must be after or equal to arrival time',
       };
     }
 

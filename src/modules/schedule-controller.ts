@@ -11,6 +11,10 @@ import { formatIssueValue, markReferenceResolved } from './feed-issues.js';
 import type { GTFSParser } from './gtfs-parser.js';
 import { TimeFormatter } from '../utils/time-formatter.js';
 import {
+  coupleStopTimes,
+  type CoupledTimes,
+} from '../utils/stop-time-coupling.js';
+import {
   TimetableDataProcessor,
   TimetableData,
 } from './timetable-data-processor.js';
@@ -1620,18 +1624,26 @@ export class ScheduleController {
         ? null
         : TimeFormatter.castTimeToHHMMSS(newTime);
 
-      // The pending row has no stop_time yet, so there is nothing to validate
+      // The pending row has no stop_time yet, so there is nothing to couple
       // against and nothing to find: it always inserts. A cell with no
-      // stop_sequence is in the same position: it has no saved row, so
-      // validateArrivalDepartureConstraint has nothing to compare against.
-      if (castedTime !== null && !isPendingRow) {
+      // stop_sequence is in the same position.
+      const existing =
+        isPendingRow || !stopSequence
+          ? null
+          : await this.database.getStopTime(trip_id, stopSequence);
+
+      // One time entry writes both fields: a lone arrival is neither what the
+      // user meant nor valid for most feeds.
+      let coupled: CoupledTimes | undefined;
+      if (castedTime !== null) {
+        coupled = coupleStopTimes({
+          field: timeType,
+          oldArrival: existing?.arrival_time,
+          oldDeparture: existing?.departure_time,
+          newValue: castedTime,
+        });
         const validation =
-          await this.database.validateArrivalDepartureConstraint(
-            trip_id,
-            timeType,
-            castedTime,
-            stopSequence
-          );
+          this.database.validateArrivalDepartureConstraint(coupled);
         if (!validation.isValid) {
           this.showTimeError(
             trip_id,
@@ -1640,6 +1652,13 @@ export class ScheduleController {
           );
           return;
         }
+        const delta =
+          coupled.deltaSeconds === null
+            ? 'none'
+            : `${coupled.deltaSeconds >= 0 ? '+' : ''}${coupled.deltaSeconds}s`;
+        console.log(
+          `[ScheduleController] coupled times trip=${trip_id} stop=${stop_id} field=${timeType} delta=${delta} -> ${coupled.arrival_time ?? ''}/${coupled.departure_time ?? ''}`
+        );
       }
 
       // Clearing the row's last time means the trip no longer serves this stop:
@@ -1659,7 +1678,8 @@ export class ScheduleController {
         castedTime,
         stopSequence,
         isPendingRow,
-        this.stopTimeInsertIndex(trip_id, stopIndex)
+        this.stopTimeInsertIndex(trip_id, stopIndex),
+        coupled
       );
 
       // Clearing a cell that has no stop_time behind it would otherwise create
