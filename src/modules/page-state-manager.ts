@@ -217,6 +217,22 @@ export class PageStateManager {
   }
 
   /**
+   * What the current hash points at, without validating it against feed data.
+   *
+   * Boot needs the page type before there is a feed to validate against: a
+   * deep link into an object means the stored feed is the one wanted, so the
+   * load modal is skipped entirely.
+   */
+  peekURLPageState(): PageState {
+    if (typeof window === 'undefined') {
+      return { type: 'home' };
+    }
+    const params = new URLSearchParams(window.location.hash.slice(1));
+    params.delete('load');
+    return this.urlToPageState(params.toString());
+  }
+
+  /**
    * Initialize from URL hash (call this on page load).
    * Parses the hash, skipping any `load=` command param (handled separately).
    * Validates the parsed state; falls back to home if the object doesn't exist.
