@@ -129,16 +129,19 @@ export class BasemapControl {
           .join('')}
       </div>
 
-      <!-- Globe/Mercator projection toggle -->
-      <label class="swap swap-rotate btn btn-lg btn-circle btn-neutral projection-swap" title="Toggle projection">
+      <!-- Globe/flat projection toggle -->
+      <label class="swap swap-rotate btn btn-lg btn-circle btn-neutral projection-swap" title="Toggle globe / flat projection" aria-label="Toggle globe / flat projection">
         <input type="checkbox" class="projection-toggle" ${this.currentProjection === 'globe' ? 'checked' : ''} />
         <!-- Globe icon (when checked) -->
         <svg class="swap-on w-6 h-6" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M12 21a9.004 9.004 0 008.716-6.747M12 21a9.004 9.004 0 01-8.716-6.747M12 21c2.485 0 4.5-4.03 4.5-9S14.485 3 12 3m0 18c-2.485 0-4.5-4.03-4.5-9S9.515 3 12 3m0 0a8.997 8.997 0 017.843 4.582M12 3a8.997 8.997 0 00-7.843 4.582m15.686 0A11.953 11.953 0 0112 10.5c-2.998 0-5.74-1.1-7.843-2.918m15.686 0A8.959 8.959 0 0121 12c0 .778-.099 1.533-.284 2.253m0 0A17.919 17.919 0 0112 16.5c-3.162 0-6.133-.815-8.716-2.247m0 0A9.015 9.015 0 013 12c0-1.605.42-3.113 1.157-4.418" />
+          <circle cx="12" cy="12" r="9" />
+          <path stroke-linecap="round" d="M3 12h18" />
+          <path d="M12 3a4.5 9 0 010 18a4.5 9 0 010-18" />
         </svg>
-        <!-- Mercator/Map icon (when unchecked) -->
+        <!-- Flat graticule icon (when unchecked) -->
         <svg class="swap-off w-6 h-6" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M9 6.75V15m6-6v8.25m.503 3.498l4.875-2.437c.381-.19.622-.58.622-1.006V4.82c0-.836-.88-1.38-1.628-1.006l-3.869 1.934c-.317.159-.69.159-1.006 0L9.503 3.252a1.125 1.125 0 00-1.006 0L3.622 5.689C3.24 5.88 3 6.27 3 6.695V19.18c0 .836.88 1.38 1.628 1.006l3.869-1.934c.317-.159.69.159 1.006 0l4.994 2.497c.317.158.69.158 1.006 0z" />
+          <rect x="3" y="5" width="18" height="14" rx="2" />
+          <path stroke-linecap="round" d="M9 5v14M15 5v14M3 9.667h18M3 14.333h18" />
         </svg>
       </label>
     `;
