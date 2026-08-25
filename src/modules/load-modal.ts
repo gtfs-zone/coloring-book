@@ -94,12 +94,16 @@ export interface ContinueOffer {
 }
 
 /**
- * The user picked the continue card, so the caller should restore the feed
- * already in IndexedDB rather than load anything.
+ * What the modal closed with. `continue` means the user picked the continue
+ * card, so the caller restores the feed already in IndexedDB rather than
+ * loading anything; `selection` carries what the form was filled with. A
+ * discriminated union rather than a sentinel selection, so no caller has to
+ * distinguish the two by identity.
  */
-export const CONTINUE_STORED = 'continue-stored';
-
-export type LoadModalResult = FeedSelection | typeof CONTINUE_STORED | null;
+export type LoadModalResult =
+  | { kind: 'continue' }
+  | { kind: 'selection'; selection: FeedSelection }
+  | null;
 
 export interface LoadModalOptions {
   /** Show the realtime section and require an RT endpoint. Default true. */
@@ -598,7 +602,7 @@ export async function showLoadModal(
           if (describeBadUrl() || !isComplete(sel, realtime)) {
             return true;
           }
-          result = sel;
+          result = { kind: 'selection', selection: sel };
           return;
         },
       },
@@ -612,7 +616,7 @@ export async function showLoadModal(
       document
         .getElementById('load-continue')
         ?.addEventListener('click', () => {
-          result = CONTINUE_STORED;
+          result = { kind: 'continue' };
           close();
         });
 
