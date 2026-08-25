@@ -3,7 +3,7 @@ import { showModal, renderChevronIcon } from './modal-utils.js';
 import { showLoadModal, CONTINUE_STORED } from './load-modal.js';
 import type { ContinueOffer } from './load-modal.js';
 import type { FeedSelection } from './feed-selection.js';
-import { resolvedStaticUrl } from './feed-selection.js';
+import { resolvedScheduledUrl } from './feed-selection.js';
 import {
   getAgencyFieldDescription,
   getRouteFieldDescription,
@@ -303,7 +303,7 @@ export class UIController {
   /**
    * The single entry point into a feed.
    *
-   * `initialUrl` seeds the static field, which is how `#load=<url>` arrives:
+   * `initialUrl` seeds the scheduled field, which is how `#load=<url>` arrives:
    * the URL is offered for review rather than fetched behind the user's back.
    * Otherwise the modal opens on whatever is currently loaded, so reopening it
    * is also how you edit a feed's URL.
@@ -311,7 +311,7 @@ export class UIController {
   async openLoadModal(initialUrl?: string) {
     const seed: FeedSelection | null = initialUrl
       ? {
-          static: {
+          scheduled: {
             kind: 'url',
             url: initialUrl,
             useCors: true,
@@ -378,17 +378,17 @@ export class UIController {
     return continueWith ? 'continue' : 'empty';
   }
 
-  /** Load whichever half of a selection this app cares about: the static feed. */
+  /** Load whichever half of a selection this app cares about: the schedule. */
   async loadSelection(selection: FeedSelection) {
     this.currentSelection = selection;
-    const src = selection.static;
+    const src = selection.scheduled;
     if (!src) {
       return;
     }
     if (src.kind === 'file') {
       await this.loadGTFSFile(src.file);
     } else {
-      await this.loadGTFSFromURL(resolvedStaticUrl(src));
+      await this.loadGTFSFromURL(resolvedScheduledUrl(src));
     }
   }
 
