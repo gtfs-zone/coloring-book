@@ -467,7 +467,7 @@ export async function showLoadModal(
     current?.static?.kind === 'file' ? current.static.file : undefined;
 
   const rtSection = `
-      <section class="shrink-0 rounded-lg border border-base-300 p-3 space-y-2">
+      <section id="load-rt-section" class="shrink-0 rounded-lg border border-base-300 p-3 space-y-2 transition-colors">
         <div class="flex items-center justify-between gap-2">
           <h4 class="font-medium text-sm truncate">
             Realtime GTFS-RT <span id="load-rt-label" class="font-normal opacity-60"></span>
@@ -479,18 +479,8 @@ export async function showLoadModal(
         ${rtField('load-alerts-url', 'Service Alerts', 'https://…/alerts.pb')}
       </section>`;
 
-  // A fixed-height column, not a stack that grows with its contents. The slots
-  // are as tall as they are — the realtime app has four URL fields where the
-  // editor has one — so a content-sized modal is a different height in each
-  // app, and tall enough in the realtime one to make the modal body scroll
-  // *behind* the result list's own scrollbar. Pinning the height and letting
-  // the results absorb the slack means there is exactly one scrollbar on the
-  // screen, always the same one, in both apps.
-  const body = `
-    <div class="flex h-full min-h-0 min-w-0 flex-col gap-3">
-      ${options.continueWith ? continueCard(options.continueWith) : ''}
-
-      <section class="shrink-0 rounded-lg border border-base-300 p-3 space-y-2">
+  const staticSection = `
+      <section id="load-static-section" class="shrink-0 rounded-lg border border-base-300 p-3 space-y-2 transition-colors">
         <div class="flex items-center justify-between gap-2">
           <h4 class="font-medium text-sm truncate">
             Static GTFS <span id="load-static-label" class="font-normal opacity-60"></span>
@@ -508,14 +498,30 @@ export async function showLoadModal(
           <p id="load-file-name" class="text-xs opacity-60 truncate"></p>
           <button type="button" id="load-file-clear" class="btn btn-ghost btn-xs shrink-0">Clear</button>
         </div>
-      </section>
+      </section>`;
 
-      ${realtime ? rtSection : ''}
-
-      ${notes.map((n) => `<p class="shrink-0 text-xs text-warning">${escHtml(n)}</p>`).join('')}
+  // A fixed-height column, not a stack that grows with its contents. The slots
+  // are as tall as they are — the realtime app has four URL fields where the
+  // editor has one — so a content-sized modal is a different height in each
+  // app, and tall enough in the realtime one to make the modal body scroll
+  // *behind* the result list's own scrollbar. Pinning the height and letting
+  // the results absorb the slack means there is exactly one scrollbar on the
+  // screen, always the same one, in both apps.
+  //
+  // Search first: the catalog is how most feeds are loaded, so it and its
+  // results lead, and the URL/upload block sits below as the escape hatch.
+  const body = `
+    <div class="flex h-full min-h-0 min-w-0 flex-col gap-3">
+      ${options.continueWith ? continueCard(options.continueWith) : ''}
 
       <input type="text" id="load-search" class="input input-bordered input-sm w-full shrink-0" placeholder="Search by agency, operator, source, or URL…" autofocus />
       <div id="load-results" class="min-h-0 flex-1 space-y-0.5 overflow-y-auto overflow-x-hidden"></div>
+
+      ${notes.map((n) => `<p class="shrink-0 text-xs text-warning">${escHtml(n)}</p>`).join('')}
+
+      ${staticSection}
+
+      ${realtime ? rtSection : ''}
     </div>
   `;
 
@@ -648,6 +654,21 @@ export async function showLoadModal(
         hintEl.textContent = problem;
       };
 
+      /**
+       * The URL block sits below the result list, so a row click fills a
+       * section the eye is not on. Flash its border to say the click landed.
+       */
+      const flashSection = (id: string) => {
+        const el = document.getElementById(id);
+        if (!el) {
+          return;
+        }
+        el.classList.add('border-primary', 'bg-primary/5');
+        window.setTimeout(() => {
+          el.classList.remove('border-primary', 'bg-primary/5');
+        }, 600);
+      };
+
       /** Fill whichever slots a row supplies, and leave the other one alone. */
       const applyRow = (rowId: string) => {
         const row = rows.find((r) => r.rowId === rowId);
@@ -663,6 +684,7 @@ export async function showLoadModal(
           input('load-static-cors').checked = row.staticCors;
           staticLabel = row.name;
           staticRowId = row.rowId;
+          flashSection('load-static-section');
         }
         if (realtime && row.provides !== 'static') {
           input('load-vehicles-url').value = row.vehiclesUrl ?? '';
@@ -671,6 +693,7 @@ export async function showLoadModal(
           input('load-rt-cors').checked = row.rtCors;
           rtLabel = row.name;
           rtRowId = row.rowId;
+          flashSection('load-rt-section');
         }
         renderResults();
         revalidate();
