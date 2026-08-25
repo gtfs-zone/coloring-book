@@ -888,19 +888,20 @@ export class RouteRenderer {
       return;
     }
 
-    if (op === 'update' || op === 'delete') {
-      const oldFeatureKey = this.tripToFeatureKey?.get(trip_id);
-      if (oldFeatureKey) {
-        this.removeTripFromBucket(trip_id, oldFeatureKey);
-      }
+    // Vacate the current bucket for every op: an insert for a trip id that
+    // already has a bucket would otherwise leave the old feature orphaned.
+    const oldFeatureKey = this.tripToFeatureKey?.get(trip_id);
+    if (oldFeatureKey) {
+      this.removeTripFromBucket(trip_id, oldFeatureKey);
     }
 
     if (op === 'insert' || op === 'update') {
       this.addTripToBucket(trip_id);
     }
 
+    const newFeatureKey = this.tripToFeatureKey?.get(trip_id);
     console.log(
-      `[RouteRenderer] invalidateTrip trip_id=${trip_id} op=${op} -> done`
+      `[RouteRenderer] invalidateTrip trip_id=${trip_id} op=${op} -> ${oldFeatureKey ?? 'none'} => ${newFeatureKey ?? 'none'}`
     );
     this.scheduleSetData();
   }
@@ -1015,20 +1016,22 @@ export class RouteRenderer {
       }
     }
 
-    // Treat as a trip bucket-move: remove from old, add to new
-    if (op === 'update' || op === 'delete') {
-      const oldFeatureKey = this.tripToFeatureKey?.get(trip_id);
-      if (oldFeatureKey) {
-        this.removeTripFromBucket(trip_id, oldFeatureKey);
-      }
+    // Treat as a trip bucket-move: vacate the current bucket for every op, then
+    // re-add. An inserted stop_time changes the stop-sequence geometry key too,
+    // so the old bucket is always wrong.
+    const oldFeatureKey = this.tripToFeatureKey?.get(trip_id);
+    if (oldFeatureKey) {
+      this.removeTripFromBucket(trip_id, oldFeatureKey);
     }
 
-    if (op === 'insert' || op === 'update') {
-      this.addTripToBucket(trip_id);
-    }
+    // Re-add on delete too: the trip keeps its remaining stops, and
+    // addTripToBucket bails on its own if fewer than two are left or if the
+    // trip itself is gone.
+    this.addTripToBucket(trip_id);
 
+    const newFeatureKey = this.tripToFeatureKey?.get(trip_id);
     console.log(
-      `[RouteRenderer] invalidateStopTimes trip_id=${trip_id} op=${op} -> done`
+      `[RouteRenderer] invalidateStopTimes trip_id=${trip_id} op=${op} -> ${oldFeatureKey ?? 'none'} => ${newFeatureKey ?? 'none'}`
     );
     this.scheduleSetData();
   }
