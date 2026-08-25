@@ -7,11 +7,11 @@ export interface ExampleFeed {
 }
 
 /**
- * Curated, ready-to-load feeds. Most entries name both a static source and a
+ * Curated, ready-to-load feeds. Most entries name both a scheduled source and a
  * realtime source, so picking one satisfies the realtime app's load requirement
  * in one click. An entry may leave `realtime` null when the agency publishes no
  * GTFS-RT at all: it is still a complete choice for the schedule editor, and in
- * the realtime app it fills the static slot and leaves the other for you.
+ * the realtime app it fills the scheduled slot and leaves the other for you.
  *
  * Feeds served by our own stack use **path-only** realtime URLs. Those resolve
  * against `RT_BASE` at fetch time (`feed-url-resolve.ts`): the local cafe-car in
@@ -43,9 +43,9 @@ export const EXAMPLES: ExampleFeed[] = [
   {
     name: 'Amtrak',
     description:
-      'National rail — static from Amtrak, realtime via rt.gtfs.zone',
+      'National rail — schedule from Amtrak, realtime via rt.gtfs.zone',
     selection: {
-      static: {
+      scheduled: {
         kind: 'url',
         url: 'https://content.amtrak.com/content/gtfs/GTFS.zip',
         useCors: true,
@@ -65,7 +65,7 @@ export const EXAMPLES: ExampleFeed[] = [
     description:
       'Columbia County Public Transportation, NY — realtime via rt.gtfs.zone',
     selection: {
-      static: {
+      scheduled: {
         kind: 'url',
         url: 'https://raw.githubusercontent.com/columbia-county-ny-transit/gtfs-generator/refs/heads/main/columbia_county_gtfs.zip',
         useCors: false,
@@ -85,7 +85,7 @@ export const EXAMPLES: ExampleFeed[] = [
     description:
       'Boston — three separate realtime .pb files straight from the agency',
     selection: {
-      static: {
+      scheduled: {
         kind: 'url',
         url: 'https://cdn.mbta.com/MBTA_GTFS.zip',
         useCors: true,
@@ -109,7 +109,7 @@ export const EXAMPLES: ExampleFeed[] = [
     description:
       'Philadelphia — bus feed nested inside the public GTFS release zip',
     selection: {
-      static: {
+      scheduled: {
         kind: 'url',
         url: 'https://github.com/septadev/GTFS/releases/latest/download/gtfs_public.zip#google_bus.zip',
         useCors: true,
@@ -127,9 +127,9 @@ export const EXAMPLES: ExampleFeed[] = [
   },
   {
     name: 'Grand Poitiers',
-    description: 'Poitiers, France — Cadavl-hosted static and realtime',
+    description: 'Poitiers, France — Cadavl-hosted schedule and realtime',
     selection: {
-      static: {
+      scheduled: {
         kind: 'url',
         url: 'https://gtfs.gptd.cadavl.com/GPTD/GTFS/GTFS_GPTD.zip',
         useCors: true,
@@ -149,12 +149,12 @@ export const EXAMPLES: ExampleFeed[] = [
   },
   {
     name: 'Divia',
-    // The static half is a data.gouv.fr resource id, so the URL names no file
+    // The scheduled half is a data.gouv.fr resource id, so the URL names no file
     // and has no .zip extension — it is one all the same.
     description:
-      'Dijon, France — static via data.gouv.fr, realtime via transport.data.gouv.fr',
+      'Dijon, France — schedule via data.gouv.fr, realtime via transport.data.gouv.fr',
     selection: {
-      static: {
+      scheduled: {
         kind: 'url',
         url: 'https://www.data.gouv.fr/fr/datasets/r/e0dbd217-15cd-4e28-9459-211a27511a34',
         useCors: true,
@@ -176,7 +176,7 @@ export const EXAMPLES: ExampleFeed[] = [
     // non-standard port; both are fine through the proxy.
     description: 'Rhode Island — realtime on port 81',
     selection: {
-      static: {
+      scheduled: {
         kind: 'url',
         url: 'https://ripta.com/RIPTA-GTFS.zip',
         useCors: true,
@@ -198,7 +198,7 @@ export const EXAMPLES: ExampleFeed[] = [
     name: 'WCTA',
     description: 'Whatcom County, WA — an Avail InfoPoint deployment',
     selection: {
-      static: {
+      scheduled: {
         kind: 'url',
         url: 'https://wcta.rideralerts.com/InfoPoint/gtfs-zip.ashx',
         useCors: true,
@@ -220,7 +220,7 @@ export const EXAMPLES: ExampleFeed[] = [
     name: 'LCTA',
     description: 'Luzerne County, PA — another Avail InfoPoint deployment',
     selection: {
-      static: {
+      scheduled: {
         kind: 'url',
         url: 'https://realtimelctabus.availtec.com/InfoPoint/gtfs-zip.ashx',
         useCors: true,
@@ -244,7 +244,7 @@ export const EXAMPLES: ExampleFeed[] = [
     // but answers the proxy; do not read a curl timeout as a dead feed.
     description: 'Burlington, Ontario — city open-data portal',
     selection: {
-      static: {
+      scheduled: {
         kind: 'url',
         url: 'https://opendata.burlington.ca/gtfs-rt/GTFS_Data.zip',
         useCors: true,
@@ -266,7 +266,7 @@ export const EXAMPLES: ExampleFeed[] = [
     name: 'Big Blue Bus',
     description: 'Santa Monica, CA — realtime served as .bin, over plain http',
     selection: {
-      static: {
+      scheduled: {
         kind: 'url',
         url: 'http://gtfs.bigbluebus.com/current.zip',
         useCors: true,
@@ -283,9 +283,10 @@ export const EXAMPLES: ExampleFeed[] = [
   },
   {
     name: 'London Transit',
-    description: 'London, Ontario — static and realtime on separate http hosts',
+    description:
+      'London, Ontario — schedule and realtime on separate http hosts',
     selection: {
-      static: {
+      scheduled: {
         kind: 'url',
         url: 'http://www.londontransit.ca/gtfsfeed/google_transit.zip',
         useCors: true,
@@ -302,10 +303,10 @@ export const EXAMPLES: ExampleFeed[] = [
   },
   {
     name: 'West Bus Service',
-    // Static only: the operator publishes no GTFS-RT.
-    description: 'Vermont — small hand-maintained feed, static only',
+    // Schedule only: the operator publishes no GTFS-RT.
+    description: 'Vermont — small hand-maintained feed, schedule only',
     selection: {
-      static: {
+      scheduled: {
         kind: 'url',
         url: 'https://westbusservice.com/west_gtfs.zip',
         useCors: true,

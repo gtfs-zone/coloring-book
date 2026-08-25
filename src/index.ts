@@ -545,7 +545,7 @@ export class GTFSEditor {
     if (loadUrl) {
       console.log('[boot] skipped modal: #load', loadUrl);
       await this.uiController.loadSelection({
-        static: {
+        scheduled: {
           kind: 'url',
           url: loadUrl,
           useCors: true,
