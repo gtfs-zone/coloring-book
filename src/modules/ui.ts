@@ -1,6 +1,6 @@
 import { notify } from './notification-system';
 import { showModal, renderChevronIcon } from './modal-utils.js';
-import { showLoadModal, CONTINUE_STORED } from './load-modal.js';
+import { showLoadModal } from './load-modal.js';
 import type { ContinueOffer } from './load-modal.js';
 import type { FeedSelection } from './feed-selection.js';
 import { resolvedScheduledUrl } from './feed-selection.js';
@@ -321,7 +321,7 @@ export class UIController {
         }
       : this.currentSelection;
 
-    const selection = await showLoadModal(seed, {
+    const result = await showLoadModal(seed, {
       realtime: false,
       extraActions: [
         {
@@ -334,8 +334,8 @@ export class UIController {
       ],
     });
 
-    if (selection && selection !== CONTINUE_STORED) {
-      await this.loadSelection(selection);
+    if (result?.kind === 'selection') {
+      await this.loadSelection(result.selection);
     }
   }
 
@@ -351,7 +351,7 @@ export class UIController {
     continueWith?: ContinueOffer
   ): Promise<'continue' | 'empty' | 'loaded'> {
     let emptyChosen = false;
-    const selection = await showLoadModal(null, {
+    const result = await showLoadModal(null, {
       realtime: false,
       continueWith,
       extraActions: [
@@ -365,14 +365,14 @@ export class UIController {
       ],
     });
 
-    if (selection === CONTINUE_STORED) {
+    if (result?.kind === 'continue') {
       return 'continue';
     }
     if (emptyChosen) {
       return 'empty';
     }
-    if (selection) {
-      await this.loadSelection(selection);
+    if (result?.kind === 'selection') {
+      await this.loadSelection(result.selection);
       return 'loaded';
     }
     return continueWith ? 'continue' : 'empty';
