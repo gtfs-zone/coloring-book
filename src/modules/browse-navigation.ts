@@ -7,6 +7,12 @@
 import { PageState } from '../types/page-state.js';
 import { getPageStateManager } from './page-state-manager.js';
 import {
+  BreadcrumbItem,
+  pageTitle,
+  renderBreadcrumbTrail,
+} from './breadcrumb-trail.js';
+import { APP_NAME } from './breadcrumbs.js';
+import {
   navigateToAgency,
   navigateToRoute,
   navigateToStop,
@@ -389,6 +395,7 @@ export class BrowseNavigation {
 
       // Get breadcrumbs from PageStateManager
       const breadcrumbs = await getPageStateManager().getBreadcrumbs();
+      document.title = pageTitle(breadcrumbs, APP_NAME);
 
       // Render page content
       const pageContent = await this.contentRenderer.renderPage(pageState);
@@ -538,37 +545,19 @@ export class BrowseNavigation {
     this.attachEventListeners();
   }
 
-  renderBreadcrumbs(
-    breadcrumbs: { label: string; pageState: PageState }[]
-  ): string {
+  renderBreadcrumbs(breadcrumbs: BreadcrumbItem[]): string {
     if (breadcrumbs.length === 0) {
-      return `
-        <div class="p-3 border-b border-base-300 bg-base-200">
-          <div class="breadcrumbs text-sm">
-            <ul>
-              <li>Home</li>
-            </ul>
-          </div>
-        </div>
-      `;
+      return '';
     }
 
-    const breadcrumbItems = breadcrumbs.map((item, index) => {
-      const isLast = index === breadcrumbs.length - 1;
-      if (isLast) {
-        return `<li>${item.label}</li>`;
-      } else {
-        return `<li><a class="breadcrumb-item" data-breadcrumb-index="${index}">${item.label}</a></li>`;
-      }
+    const trail = renderBreadcrumbTrail(breadcrumbs, (state) => {
+      const hash = getPageStateManager().pageStateToURL(state);
+      return hash ? `#${hash}` : '#';
     });
 
     return `
       <div class="p-3 border-b border-base-300 bg-base-200">
-        <div class="breadcrumbs text-sm">
-          <ul>
-            ${breadcrumbItems.join('')}
-          </ul>
-        </div>
+        ${trail}
       </div>
     `;
   }
@@ -585,13 +574,16 @@ export class BrowseNavigation {
 
     // Breadcrumb navigation
     this.container.addEventListener('click', async (e) => {
-      const target = e.target as HTMLElement;
-      if (target.classList.contains('breadcrumb-item')) {
-        const index = parseInt(target.dataset.breadcrumbIndex || '0');
-        const breadcrumbs = await getPageStateManager().getBreadcrumbs();
-        if (breadcrumbs[index]) {
-          await getPageStateManager().navigateTo(breadcrumbs[index].pageState);
-        }
+      const link = (e.target as HTMLElement).closest('[data-nav]');
+      if (!(link instanceof HTMLElement)) {
+        return;
+      }
+      e.preventDefault();
+      try {
+        const state = JSON.parse(link.dataset.nav || '') as PageState;
+        await getPageStateManager().navigateTo(state);
+      } catch (error) {
+        console.warn('[BrowseNavigation] bad data-nav payload:', error);
       }
     });
   }
