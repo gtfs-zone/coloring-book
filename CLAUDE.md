@@ -54,7 +54,7 @@ There is no centralized state management (no Redux/Zustand). State is distribute
 | Data | `gtfs-parser.ts`, `gtfs-database.ts`, `gtfs-validator.ts`, `gtfs-relationships.ts` |
 | Map | `map-controller.ts`, `route-renderer.ts`, `layer-manager.ts`, `interaction-handler.ts` |
 | Editor | `editor.ts` (CodeMirror 6), `ui.ts` (file list / editor / preview state machine), `patch-manager.ts` (append-only patch log + undo/redo), `history-controller.ts` (Changes panel UI) |
-| Navigation | `page-state-manager.ts`, `objects-navigation.ts`, `page-content-renderer.ts` |
+| Navigation | `page-state-manager.ts`, `breadcrumbs.ts`, `breadcrumb-trail.ts` (vendored downstream), `objects-navigation.ts`, `page-content-renderer.ts` |
 | Views | `schedule-controller.ts`, `service-days-controller.ts`, `stop-view-controller.ts`, `timetable-*.ts` |
 | UI | `notification-system.ts`, `tab-manager.ts`, `theme-controller.ts`, `keyboard-shortcuts.ts` |
 

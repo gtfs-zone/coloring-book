@@ -31,15 +31,6 @@ export type PageState =
   | { type: 'location_group'; location_group_id: string };
 
 /**
- * Represents a single item in the breadcrumb trail.
- * Links a human-readable label to the page state it represents.
- */
-export type BreadcrumbItem = {
-  label: string;
-  pageState: PageState;
-};
-
-/**
  * Type guard to check if a value is a valid PageState
  */
 export function isPageState(value: unknown): value is PageState {

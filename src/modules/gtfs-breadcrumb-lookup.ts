@@ -5,9 +5,18 @@
  * using the GTFS database for object name resolution.
  */
 
-import { BreadcrumbLookup } from './page-state-manager.js';
+import { BreadcrumbLookup, StopAncestor } from './breadcrumbs.js';
 import { GTFSDatabase } from './gtfs-database.js';
 import { getStopDisplay, renderOptionLabel } from '../utils/entity-display.js';
+
+/** A stops row carries location_type as a string; blank means a plain stop. */
+function parseLocationType(value: unknown): number | undefined {
+  if (value === undefined || value === null || value === '') {
+    return undefined;
+  }
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
 
 /**
  * GTFS-specific breadcrumb lookup implementation
@@ -90,12 +99,28 @@ export class GTFSBreadcrumbLookup implements BreadcrumbLookup {
   }
 
   /**
+   * Get a stop's location_type, which decides the word a crumb calls it.
+   */
+  async getStopLocationType(stop_id: string): Promise<number | undefined> {
+    try {
+      const stops = await this.database.queryRows('stops', { stop_id });
+      if (stops.length > 0) {
+        return parseLocationType(stops[0].location_type);
+      }
+    } catch (error) {
+      console.warn(
+        `Failed to lookup location_type for stop ${stop_id}:`,
+        error
+      );
+    }
+    return undefined;
+  }
+
+  /**
    * Get the ancestor chain for a stop (outermost station first, excluding the stop itself).
    */
-  async getStopAncestors(
-    stop_id: string
-  ): Promise<Array<{ stop_id: string; label: string }>> {
-    const chain: Array<{ stop_id: string; label: string }> = [];
+  async getStopAncestors(stop_id: string): Promise<StopAncestor[]> {
+    const chain: StopAncestor[] = [];
     try {
       let currentId = stop_id;
       for (let i = 0; i < 5; i++) {
@@ -122,6 +147,7 @@ export class GTFSBreadcrumbLookup implements BreadcrumbLookup {
           label: renderOptionLabel(
             getStopDisplay(parent as Record<string, string>)
           ),
+          location_type: parseLocationType(parent.location_type),
         });
         currentId = parentId;
       }
@@ -138,9 +164,7 @@ export class GTFSBreadcrumbLookup implements BreadcrumbLookup {
   /**
    * Get the ancestor chain for a pathway (outermost station first, ending at from_stop).
    */
-  async getPathwayAncestors(
-    pathway_id: string
-  ): Promise<Array<{ stop_id: string; label: string }>> {
+  async getPathwayAncestors(pathway_id: string): Promise<StopAncestor[]> {
     try {
       const pathwayRows = await this.database.queryRows('pathways', {
         pathway_id,
@@ -166,7 +190,14 @@ export class GTFSBreadcrumbLookup implements BreadcrumbLookup {
           : `Stop ${from_stop_id}`;
       return [
         ...stopAncestors,
-        { stop_id: from_stop_id, label: fromStopLabel },
+        {
+          stop_id: from_stop_id,
+          label: fromStopLabel,
+          location_type:
+            fromStopRows.length > 0
+              ? parseLocationType(fromStopRows[0].location_type)
+              : undefined,
+        },
       ];
     } catch (error) {
       console.warn(

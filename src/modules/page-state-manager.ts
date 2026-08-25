@@ -8,12 +8,13 @@
 
 import {
   PageState,
-  BreadcrumbItem,
   NavigationEvent,
   PageStateManagerConfig,
   StateValidator,
   isPageState,
 } from '../types/page-state.js';
+import { BreadcrumbItem } from './breadcrumb-trail.js';
+import { BreadcrumbLookup, buildBreadcrumbs } from './breadcrumbs.js';
 import { CONFIG } from '../config.js';
 
 /**
@@ -21,24 +22,7 @@ import { CONFIG } from '../config.js';
  */
 type NavigationEventHandler = (event: NavigationEvent) => void;
 
-/**
- * Breadcrumb lookup functions interface
- * These will be injected to allow the manager to resolve object names
- */
-export interface BreadcrumbLookup {
-  getAgencyName: (agency_id: string) => Promise<string>;
-  getRouteName: (route_id: string) => Promise<string>;
-  getStopName: (stop_id: string) => Promise<string>;
-  getAgencyIdForRoute: (route_id: string) => Promise<string>;
-  getStopAncestors: (
-    stop_id: string
-  ) => Promise<Array<{ stop_id: string; label: string }>>;
-  getPathwayAncestors: (
-    pathway_id: string
-  ) => Promise<Array<{ stop_id: string; label: string }>>;
-  getZoneName: (location_id: string) => Promise<string>;
-  getLocationGroupName: (location_group_id: string) => Promise<string>;
-}
+export type { BreadcrumbLookup };
 
 /**
  * PageStateManager - Single source of truth for navigation state
@@ -145,7 +129,7 @@ export class PageStateManager {
    * Generate breadcrumbs for the current page state
    */
   async getBreadcrumbs(): Promise<BreadcrumbItem[]> {
-    return this.buildBreadcrumbs(this.currentState);
+    return buildBreadcrumbs(this.currentState, this.breadcrumbLookup);
   }
 
   /**
@@ -266,260 +250,6 @@ export class PageStateManager {
       '[PageStateManager] initializeFromURL: restored state',
       candidate
     );
-  }
-
-  /**
-   * Build breadcrumbs for a given page state
-   */
-  private async buildBreadcrumbs(
-    pageState: PageState
-  ): Promise<BreadcrumbItem[]> {
-    const breadcrumbs: BreadcrumbItem[] = [];
-
-    try {
-      switch (pageState.type) {
-        case 'home':
-          // Home page has no breadcrumbs
-          break;
-
-        case 'agency': {
-          const agencyName = await this.getObjectName(
-            'agency',
-            pageState.agency_id
-          );
-          breadcrumbs.push({
-            label: 'Home',
-            pageState: { type: 'home' },
-          });
-          breadcrumbs.push({
-            label: agencyName,
-            pageState: { type: 'agency', agency_id: pageState.agency_id },
-          });
-          break;
-        }
-
-        case 'route': {
-          // Look up the agency for this route
-          const agency_id = this.breadcrumbLookup
-            ? await this.breadcrumbLookup.getAgencyIdForRoute(
-                pageState.route_id
-              )
-            : 'unknown';
-          const agencyName = await this.getObjectName('agency', agency_id);
-          const routeName = await this.getObjectName(
-            'route',
-            pageState.route_id
-          );
-
-          breadcrumbs.push({
-            label: 'Home',
-            pageState: { type: 'home' },
-          });
-          breadcrumbs.push({
-            label: agencyName,
-            pageState: { type: 'agency', agency_id },
-          });
-          breadcrumbs.push({
-            label: routeName,
-            pageState: { type: 'route', route_id: pageState.route_id },
-          });
-          break;
-        }
-
-        case 'timetable': {
-          // Look up the agency for this route
-          const agency_id = this.breadcrumbLookup
-            ? await this.breadcrumbLookup.getAgencyIdForRoute(
-                pageState.route_id
-              )
-            : 'unknown';
-          const agencyName = await this.getObjectName('agency', agency_id);
-          const routeName = await this.getObjectName(
-            'route',
-            pageState.route_id
-          );
-          const serviceName = await this.getObjectName(
-            'service',
-            pageState.service_id
-          );
-
-          breadcrumbs.push({
-            label: 'Home',
-            pageState: { type: 'home' },
-          });
-          breadcrumbs.push({
-            label: agencyName,
-            pageState: { type: 'agency', agency_id },
-          });
-          breadcrumbs.push({
-            label: routeName,
-            pageState: { type: 'route', route_id: pageState.route_id },
-          });
-
-          const timetableLabel = serviceName;
-
-          breadcrumbs.push({
-            label: timetableLabel,
-            pageState: pageState,
-          });
-          break;
-        }
-
-        case 'stop': {
-          const stopName = await this.getObjectName('stop', pageState.stop_id);
-          const ancestors = this.breadcrumbLookup
-            ? await this.breadcrumbLookup.getStopAncestors(pageState.stop_id)
-            : [];
-
-          breadcrumbs.push({
-            label: 'Home',
-            pageState: { type: 'home' },
-          });
-          for (const ancestor of ancestors) {
-            breadcrumbs.push({
-              label: ancestor.label,
-              pageState: { type: 'stop', stop_id: ancestor.stop_id },
-            });
-          }
-          breadcrumbs.push({
-            label: stopName,
-            pageState: { type: 'stop', stop_id: pageState.stop_id },
-          });
-          break;
-        }
-
-        case 'service': {
-          const serviceName = await this.getObjectName(
-            'service',
-            pageState.service_id
-          );
-
-          breadcrumbs.push({
-            label: 'Home',
-            pageState: { type: 'home' },
-          });
-          breadcrumbs.push({
-            label: serviceName,
-            pageState: { type: 'service', service_id: pageState.service_id },
-          });
-          break;
-        }
-
-        case 'pathway': {
-          const pathwayAncestors = this.breadcrumbLookup
-            ? await this.breadcrumbLookup.getPathwayAncestors(
-                pageState.pathway_id
-              )
-            : [];
-
-          breadcrumbs.push({
-            label: 'Home',
-            pageState: { type: 'home' },
-          });
-          for (const ancestor of pathwayAncestors) {
-            breadcrumbs.push({
-              label: ancestor.label,
-              pageState: { type: 'stop', stop_id: ancestor.stop_id },
-            });
-          }
-          breadcrumbs.push({
-            label: `Pathway ${pageState.pathway_id}`,
-            pageState: {
-              type: 'pathway',
-              pathway_id: pageState.pathway_id,
-            },
-          });
-          break;
-        }
-
-        case 'zone': {
-          // A zone has no parent object: it is a standalone polygon.
-          const zoneName = this.breadcrumbLookup
-            ? await this.breadcrumbLookup.getZoneName(pageState.location_id)
-            : pageState.location_id;
-
-          breadcrumbs.push({
-            label: 'Home',
-            pageState: { type: 'home' },
-          });
-          breadcrumbs.push({
-            label: zoneName,
-            pageState: { type: 'zone', location_id: pageState.location_id },
-          });
-          break;
-        }
-
-        case 'location_group': {
-          // No stop parent: a group has many member stops, none of them owning it.
-          const groupName = this.breadcrumbLookup
-            ? await this.breadcrumbLookup.getLocationGroupName(
-                pageState.location_group_id
-              )
-            : pageState.location_group_id;
-
-          breadcrumbs.push({
-            label: 'Home',
-            pageState: { type: 'home' },
-          });
-          breadcrumbs.push({
-            label: groupName,
-            pageState: {
-              type: 'location_group',
-              location_group_id: pageState.location_group_id,
-            },
-          });
-          break;
-        }
-
-        default:
-          // Unknown page state - return just Home
-          breadcrumbs.push({
-            label: 'Home',
-            pageState: { type: 'home' },
-          });
-      }
-    } catch (error) {
-      console.error('Error building breadcrumbs:', error);
-
-      // Return fallback breadcrumbs on error
-      breadcrumbs.length = 0;
-      breadcrumbs.push({
-        label: 'Home',
-        pageState: { type: 'home' },
-      });
-    }
-
-    return breadcrumbs;
-  }
-
-  /**
-   * Get object name with fallback handling
-   */
-  private async getObjectName(
-    type: 'agency' | 'route' | 'stop' | 'service',
-    id: string
-  ): Promise<string> {
-    if (!this.breadcrumbLookup) {
-      return `${type.charAt(0).toUpperCase() + type.slice(1)} ${id}`;
-    }
-
-    try {
-      switch (type) {
-        case 'agency':
-          return await this.breadcrumbLookup.getAgencyName(id);
-        case 'route':
-          return await this.breadcrumbLookup.getRouteName(id);
-        case 'stop':
-          return await this.breadcrumbLookup.getStopName(id);
-        case 'service':
-          return id;
-        default:
-          return `Unknown ${type} ${id}`;
-      }
-    } catch (error) {
-      console.warn(`Failed to lookup ${type} name for ID ${id}:`, error);
-      return `${type.charAt(0).toUpperCase() + type.slice(1)} ${id}`;
-    }
   }
 
   /**
