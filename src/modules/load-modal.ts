@@ -90,7 +90,8 @@ export interface ContinueOffer {
   routes: number;
   stops: number;
   trips: number;
-  edits: number;
+  /** Omitted by apps that do not edit; the card drops the count entirely. */
+  edits?: number;
 }
 
 /**
@@ -380,11 +381,11 @@ function continueCard(offer: ContinueOffer): string {
     plural(offer.routes, 'route'),
     plural(offer.stops, 'stop'),
     plural(offer.trips, 'trip'),
-    plural(offer.edits, 'edit'),
+    ...(offer.edits === undefined ? [] : [plural(offer.edits, 'edit')]),
   ].join(', ');
   return `
       <button type="button" id="load-continue" class="shrink-0 w-full text-left rounded-lg border border-primary/40 bg-primary/10 hover:bg-primary/20 p-3">
-        <p class="text-sm font-medium truncate">Continue editing ${escHtml(offer.name)}</p>
+        <p class="text-sm font-medium truncate">Continue with ${escHtml(offer.name)}</p>
         <p class="text-xs opacity-60 truncate">${escHtml(counts)}</p>
       </button>`;
 }
