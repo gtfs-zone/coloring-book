@@ -37,6 +37,11 @@ export const CONFIG = {
   STATION_FADE_ZOOM_MIN: 7.5,
   STATION_FADE_ZOOM_MAX: 9.5,
 
+  // Map spotlight: below this many stops both fade bands are skipped and every
+  // stop draws at full opacity. The fade exists to stop thousands of dots
+  // piling up; a feed being authored from scratch has no pile to avoid.
+  STOP_FADE_MIN_STOPS: 50,
+
   // Map spotlight: opacity/width treatment applied when a route (and its
   // stops) is selected. Non-matching routes/stops dim; the matched route's
   // line and casing get a width bump.

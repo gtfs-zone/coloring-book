@@ -1592,6 +1592,26 @@ export class MapController {
     // Update layer data to show the new stop
     this.layerManager?.invalidateCoordResolver();
     this.layerManager?.updateStopsData();
+
+    // Focus it: a focused stop is exempt from the zoom fade, so the stop that
+    // was just made is drawn and clickable whatever the zoom.
+    this.layerManager?.setFocusedStop(stop_id);
+
+    // Below the fade band the map is usually still at the default world view
+    // (an empty feed gives fitMapToData nothing to fit), so move to the stop.
+    if (this.map && this.map.getZoom() < CONFIG.STOP_FADE_ZOOM_MAX) {
+      const stop = (
+        this.gtfsParser?.getFileDataSyncTyped<Stops>('stops.txt') || []
+      ).find((s) => s.stop_id === stop_id);
+      if (stop && hasValidCoords(stop)) {
+        console.log(`[MapController] easing to new stop ${stop_id}`);
+        this.map.easeTo({
+          center: [stop.stop_lon, stop.stop_lat],
+          zoom: CONFIG.STOP_FADE_ZOOM_MAX,
+          duration: 800,
+        });
+      }
+    }
   }
 
   // ========================================
