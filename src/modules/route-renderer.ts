@@ -76,7 +76,9 @@ export class RouteRenderer {
   private gtfsParser: GTFSParser;
   private initialized: boolean = false;
   private initializationPromise: Promise<void> | null = null;
-  private renderMode: 'shapes' | 'stops' = 'shapes';
+  // Fixed: routes always draw from shapes. The 'stops' branches below are the
+  // per-trip fallback for a trip with no usable shape, not a user-facing mode.
+  private readonly renderMode: 'shapes' | 'stops' = 'shapes';
 
   // Cached indexes (null = not yet built / invalidated)
   private shapeIndex: Map<string, [number, number][]> | null = null;
@@ -450,12 +452,6 @@ export class RouteRenderer {
     console.log(
       `[RouteRenderer] Index build complete: ${tripsProcessed} trips -> ${this.routeFeatures.size} features (${((1 - this.routeFeatures.size / Math.max(tripsProcessed, 1)) * 100).toFixed(1)}% dedupe)`
     );
-  }
-
-  public setRenderMode(mode: 'shapes' | 'stops'): void {
-    console.log(`[RouteRenderer] Setting render mode: ${mode}`);
-    this.renderMode = mode;
-    void this.renderRoutes();
   }
 
   public async renderRoutes(): Promise<void> {

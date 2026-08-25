@@ -274,9 +274,7 @@ export class MapController {
     this.layerManager = new LayerManager(this.map, this.gtfsParser);
     this.routeRenderer = new RouteRenderer(this.map, this.gtfsParser);
     this.interactionHandler = new InteractionHandler(this.map, this.gtfsParser);
-    this.basemapControl = new BasemapControl(this.map, (mode) => {
-      this.routeRenderer?.setRenderMode(mode);
-    });
+    this.basemapControl = new BasemapControl(this.map);
 
     // Keep InteractionHandler's GeoJSON cache in sync with LayerManager
     this.layerManager.onStopsDataUpdated = (data) => {
