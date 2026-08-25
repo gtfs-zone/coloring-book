@@ -84,11 +84,34 @@ interface AtlasRow {
   alertsUrl?: string;
 }
 
+/** What the stored feed is, for the boot screen's continue card. */
+export interface ContinueOffer {
+  name: string;
+  routes: number;
+  stops: number;
+  trips: number;
+  edits: number;
+}
+
+/**
+ * The user picked the continue card, so the caller should restore the feed
+ * already in IndexedDB rather than load anything.
+ */
+export const CONTINUE_STORED = 'continue-stored';
+
+export type LoadModalResult = FeedSelection | typeof CONTINUE_STORED | null;
+
 export interface LoadModalOptions {
   /** Show the realtime section and require an RT endpoint. Default true. */
   realtime?: boolean;
   /** Extra buttons in the action bar, e.g. "New Empty Feed". */
   extraActions?: ModalAction[];
+  /**
+   * Offer the stored feed as the first card. Only boot passes this: reopening
+   * the modal from inside a feed is how that feed's URL is edited, and
+   * "continue with what is already open" means nothing there.
+   */
+  continueWith?: ContinueOffer;
 }
 
 /** The unfiltered list is thousands of rows; cap what is painted. */
@@ -340,6 +363,25 @@ function rtField(id: string, label: string, placeholder: string): string {
     </label>`;
 }
 
+function plural(n: number, word: string): string {
+  return `${n} ${word}${n === 1 ? '' : 's'}`;
+}
+
+/** The stored feed, as the first thing on the boot screen. */
+function continueCard(offer: ContinueOffer): string {
+  const counts = [
+    plural(offer.routes, 'route'),
+    plural(offer.stops, 'stop'),
+    plural(offer.trips, 'trip'),
+    plural(offer.edits, 'edit'),
+  ].join(', ');
+  return `
+      <button type="button" id="load-continue" class="shrink-0 w-full text-left rounded-lg border border-primary/40 bg-primary/10 hover:bg-primary/20 p-3">
+        <p class="text-sm font-medium truncate">Continue editing ${escHtml(offer.name)}</p>
+        <p class="text-xs opacity-60 truncate">${escHtml(counts)}</p>
+      </button>`;
+}
+
 // ─── The modal ────────────────────────────────────────────────────────────────
 
 /** A URL field, its label, and the proxy checkbox that governs it. */
@@ -367,7 +409,7 @@ const CUSTOM_RT = 'Custom realtime feed';
 export async function showLoadModal(
   current: FeedSelection | null,
   options: LoadModalOptions = {}
-): Promise<FeedSelection | null> {
+): Promise<LoadModalResult> {
   const realtime = options.realtime ?? true;
 
   /** Every URL field on screen, so validation can name the one that is wrong. */
@@ -412,7 +454,7 @@ export async function showLoadModal(
   const groupRank = new Map(GROUP_ORDER.map((g, i) => [g, i]));
 
   let visible = rows.slice(0, DISPLAY_CAP);
-  let result: FeedSelection | null = null;
+  let result: LoadModalResult = null;
 
   // Slot state that is not held in the DOM: the labels a row click supplies,
   // which row each slot came from, and an uploaded file (which cannot be put
@@ -446,6 +488,8 @@ export async function showLoadModal(
   // screen, always the same one, in both apps.
   const body = `
     <div class="flex h-full min-h-0 min-w-0 flex-col gap-3">
+      ${options.continueWith ? continueCard(options.continueWith) : ''}
+
       <section class="shrink-0 rounded-lg border border-base-300 p-3 space-y-2">
         <div class="flex items-center justify-between gap-2">
           <h4 class="font-medium text-sm truncate">
@@ -517,7 +561,7 @@ export async function showLoadModal(
   };
 
   await showModal({
-    title: 'Load Feed',
+    title: options.continueWith ? 'Open a Feed' : 'Load Feed',
     body,
     // An explicit height, not just a cap: `h-full` on the body only resolves
     // against a definite one, and that is what lets the result list flex. Width
@@ -546,7 +590,17 @@ export async function showLoadModal(
       { label: 'Cancel', onClick: () => {} },
       ...(options.extraActions ?? []),
     ],
-    onMount: () => {
+    onMount: (close) => {
+      // The continue card is its own action: it neither reads nor validates the
+      // form, so it closes the modal directly rather than going through one of
+      // the action-bar buttons.
+      document
+        .getElementById('load-continue')
+        ?.addEventListener('click', () => {
+          result = CONTINUE_STORED;
+          close();
+        });
+
       const searchInput = input('load-search');
       const resultsEl = document.getElementById('load-results')!;
       const staticLabelEl = document.getElementById('load-static-label')!;

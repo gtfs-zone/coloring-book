@@ -1,6 +1,7 @@
 import { notify } from './notification-system';
 import { showModal, renderChevronIcon } from './modal-utils.js';
-import { showLoadModal } from './load-modal.js';
+import { showLoadModal, CONTINUE_STORED } from './load-modal.js';
+import type { ContinueOffer } from './load-modal.js';
 import type { FeedSelection } from './feed-selection.js';
 import { resolvedStaticUrl } from './feed-selection.js';
 import {
@@ -333,9 +334,48 @@ export class UIController {
       ],
     });
 
-    if (selection) {
+    if (selection && selection !== CONTINUE_STORED) {
       await this.loadSelection(selection);
     }
+  }
+
+  /**
+   * The boot screen: the same modal, led by the stored feed.
+   *
+   * Returns what the caller has to do next, because only boot knows how to
+   * hydrate the stored feed. Cancelling falls back to the stored feed when
+   * there is one, and to a fresh empty feed when there is not: closing the
+   * boot screen must never leave the app without a feed.
+   */
+  async openBootLoadModal(
+    continueWith?: ContinueOffer
+  ): Promise<'continue' | 'empty' | 'loaded'> {
+    let emptyChosen = false;
+    const selection = await showLoadModal(null, {
+      realtime: false,
+      continueWith,
+      extraActions: [
+        {
+          label: 'New Empty Feed',
+          className: 'btn-ghost',
+          onClick: () => {
+            emptyChosen = true;
+          },
+        },
+      ],
+    });
+
+    if (selection === CONTINUE_STORED) {
+      return 'continue';
+    }
+    if (emptyChosen) {
+      return 'empty';
+    }
+    if (selection) {
+      await this.loadSelection(selection);
+      return 'loaded';
+    }
+    return continueWith ? 'continue' : 'empty';
   }
 
   /** Load whichever half of a selection this app cares about: the static feed. */

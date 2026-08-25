@@ -15,7 +15,6 @@ import {
 } from './gtfs-breadcrumb-lookup.js';
 import { GTFSParser } from './gtfs-parser.js';
 import { GTFSRelationships } from './gtfs-relationships.js';
-import { UIController } from './ui.js';
 import { getZoneFeature } from './zone-store.js';
 
 let globalBreadcrumbLookup: GTFSBreadcrumbLookup | null = null;
@@ -77,24 +76,24 @@ export function initializePageStateWithGTFS(
 }
 
 /**
- * Process URL commands (e.g. #load=<url>) after initializeFromURL().
- * Consumes recognized commands by removing them from the hash.
+ * Consume the `#load=<url>` command, returning the URL it named.
+ *
+ * Removing it from the hash is the consuming half: the command is an
+ * instruction to boot, not page state, and it must not survive a reload.
+ * Boot loads the URL directly; the link already states the intent.
  */
-export function processURLCommands(uiController: UIController): void {
+export function takeLoadCommand(): string | null {
   const rawHash = window.location.hash.slice(1);
   const params = new URLSearchParams(rawHash);
   const loadUrl = params.get('load');
 
-  if (loadUrl) {
-    params.delete('load');
-    const remaining = params.toString();
-    window.location.hash = remaining; // suppress normal hash-change nav; guard in PSM handles it
-    console.log(
-      '[page-state-integration] processURLCommands: showing load modal for',
-      loadUrl
-    );
-    void uiController.openLoadModal(loadUrl);
+  if (!loadUrl) {
+    return null;
   }
+  params.delete('load');
+  window.location.hash = params.toString(); // suppress normal hash-change nav; guard in PSM handles it
+  console.log('[page-state-integration] takeLoadCommand:', loadUrl);
+  return loadUrl;
 }
 
 /**

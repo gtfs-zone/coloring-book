@@ -471,6 +471,34 @@ export class GTFSParser {
     if (v !== undefined) {
       await this.gtfsDatabase.setBlobVersion(v);
     }
+    await this.writeFeedSummary();
+  }
+
+  /**
+   * Describe the stored feed in the meta store, next to the blobs it describes.
+   *
+   * Written on every flush rather than on import, so an edited feed's counts
+   * never drift from the rows the boot screen would restore.
+   */
+  private async writeFeedSummary(): Promise<void> {
+    const rows = (fileName: string) => this.gtfsData[fileName]?.data ?? [];
+    const firstValue = (fileName: string, field: string): string => {
+      const value = rows(fileName)[0]?.[field];
+      return typeof value === 'string' ? value.trim() : '';
+    };
+    const name =
+      firstValue('feed_info.txt', 'feed_publisher_name') ||
+      firstValue('agency.txt', 'agency_name') ||
+      this.feedLabel ||
+      'Untitled feed';
+    await this.gtfsDatabase.setFeedSummary({
+      name,
+      routes: rows('routes.txt').length,
+      stops: rows('stops.txt').length,
+      trips: rows('trips.txt').length,
+      updatedAt: Date.now(),
+    });
+    console.log(`[GTFSParser] feed summary written: ${name}`);
   }
 
   /**
@@ -589,6 +617,21 @@ export class GTFSParser {
 
   private shapeIdsCache: string[] | null = null;
 
+  /** Where the current feed came from: the last resort for its display name. */
+  private feedLabel = '';
+
+  /** Names the feed for the boot screen's continue card. */
+  setFeedLabel(label: string): void {
+    this.feedLabel = label;
+  }
+
+  /**
+   * Open the database and scaffold every table as header-only and empty.
+   *
+   * Deliberately does not read any rows: boot decides whether the stored feed
+   * is the one the user wants before paying for it, and calls
+   * `restoreDataFromDatabase` only if so.
+   */
   async initialize(): Promise<void> {
     await this.gtfsDatabase.initialize();
 
@@ -604,9 +647,6 @@ export class GTFSParser {
         this.setupVirtual(tableName, []);
       }
     }
-
-    // Overlay with real rows from blobs (if any exist).
-    await this.restoreDataFromDatabase();
   }
 
   /**
@@ -750,6 +790,7 @@ export class GTFSParser {
 
   async initializeEmpty(): Promise<void> {
     this.resetInMemoryFeedState();
+    this.feedLabel = 'New feed';
     await this.gtfsDatabase.clearDatabase();
     this.gtfsDatabase.clearVirtualTables();
 
@@ -792,6 +833,11 @@ export class GTFSParser {
     try {
       console.log('Loading GTFS file:', (file as File).name || 'blob');
       console.time('[GTFS] parseFile total');
+
+      const fileName = (file as File).name;
+      if (fileName) {
+        this.feedLabel = fileName.replace(/\.zip$/i, '');
+      }
 
       if (!alreadyStarted) {
         feedProgressIndicator.startLoading(operation, 'Reading file...');
@@ -1008,6 +1054,11 @@ export class GTFSParser {
     // and replayed as a descent once the outer archive is in hand.
     const { url, innerPaths } = splitInnerZipPath(rawUrl);
     console.log('[GTFSParser] Fetching GTFS from URL:', url, innerPaths);
+    this.feedLabel =
+      url
+        .split('/')
+        .pop()
+        ?.replace(/\.zip$/i, '') || url;
     // Cancel aborts the fetch only. Once the bytes are in hand the parse runs
     // to completion, since ingestion into the database has no rollback path.
     const controller = new AbortController();

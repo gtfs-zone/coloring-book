@@ -51,6 +51,21 @@ import { buildExportFilename } from '../utils/export-filename.js';
  */
 export type NetworksMode = 'inline' | 'files';
 
+/**
+ * What the stored feed is, without reading a single row of it.
+ *
+ * The boot screen offers to continue with whatever was last edited, and it has
+ * to describe that feed before deciding to parse it. Written alongside the
+ * blobs so it never describes a feed that is no longer there.
+ */
+export interface FeedSummary {
+  name: string;
+  routes: number;
+  stops: number;
+  trips: number;
+  updatedAt: number;
+}
+
 // Concrete union of all IDB object store names (avoids keyof GTFSDBSchema widening to string)
 type GTFSStoreName =
   | 'agencies'
@@ -183,13 +198,14 @@ export interface GTFSDBSchema extends DBSchema {
     value: SnapshotRecord;
   };
   // Version pointer store: supports 'versions', 'blobVersion',
-  // 'networksMode' and 'extensionColumns' keys
+  // 'networksMode', 'extensionColumns' and 'feedSummary' keys
   meta: {
     key: string;
     value:
       | { key: 'versions'; currentVersion: number; headVersion: number }
       | { key: 'blobVersion'; version: number }
       | { key: 'networksMode'; mode: NetworksMode }
+      | ({ key: 'feedSummary' } & FeedSummary)
       | {
           key: 'extensionColumns';
           columns: Record<string, string[]>;
@@ -1848,6 +1864,31 @@ export class GTFSDatabase {
       throw new Error('Database not initialized');
     }
     await this.db.put('meta', { key: 'networksMode', mode });
+  }
+
+  /**
+   * A description of the stored feed, or null when nothing has been persisted.
+   *
+   * Cheap by construction: it is a single meta record, so boot can render the
+   * "continue" card without touching file_blobs.
+   */
+  async getFeedSummary(): Promise<FeedSummary | null> {
+    if (!this.db) {
+      return null;
+    }
+    const entry = await this.db.get('meta', 'feedSummary');
+    if (!entry || entry.key !== 'feedSummary') {
+      return null;
+    }
+    const { name, routes, stops, trips, updatedAt } = entry;
+    return { name, routes, stops, trips, updatedAt };
+  }
+
+  async setFeedSummary(summary: FeedSummary): Promise<void> {
+    if (!this.db) {
+      throw new Error('Database not initialized');
+    }
+    await this.db.put('meta', { key: 'feedSummary', ...summary });
   }
 
   /**

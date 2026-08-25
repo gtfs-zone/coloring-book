@@ -22,7 +22,7 @@ import { ThemeController } from './modules/theme-controller';
 import { notify } from './modules/notification-system';
 import {
   initializePageStateWithGTFS,
-  processURLCommands,
+  takeLoadCommand,
   updateBreadcrumbLookup,
 } from './modules/page-state-integration';
 import { PageStateManager } from './modules/page-state-manager';
@@ -239,18 +239,9 @@ export class GTFSEditor {
         exportBtn.disabled = false;
       }
 
-      // Restore state from patch history (snapshot + subsequent patches)
-      if (CONFIG.DEBUG_BOOT) {
-        console.time('[boot] patch-manager.initialize');
-      }
-      await this.patchManager.initialize();
-      if (CONFIG.DEBUG_BOOT) {
-        console.timeEnd('[boot] patch-manager.initialize');
-      }
       feedProgressIndicator.updateProgress('boot', 80, 'Building map...');
       this.historyController.initialize(this.patchManager);
       this.navbarCounts.initialize();
-      this.updateUndoRedoState();
 
       // Initialize all modules
       await this.mapController.initialize(this.gtfsParser, this.patchManager);
@@ -467,11 +458,12 @@ export class GTFSEditor {
       // Welcome overlay will be shown by default for empty state
       // It will be hidden when a feed is loaded via map-controller
 
-      // Initialize PageStateManager from URL
-      await this.pageStateManager.initializeFromURL();
+      // Decide which feed this session is about, and hydrate it.
+      await this.bootFeed();
 
-      // Process URL commands (e.g. #load=<url>)
-      processURLCommands(this.uiController);
+      // Initialize PageStateManager from URL. After the feed, so a deep-linked
+      // object is validated against the rows that are actually loaded.
+      await this.pageStateManager.initializeFromURL();
 
       // If no existing data, initialize an empty feed so the invariant "there is always a feed" holds.
       const hasExistingRows = this.gtfsParser
@@ -479,8 +471,11 @@ export class GTFSEditor {
         .some((f) => (this.gtfsParser.getFileDataSync(f)?.length ?? 0) > 0);
 
       if (!hasExistingRows) {
+        console.log('[boot] no rows after load, falling back to an empty feed');
         await this.gtfsParser.initializeEmpty();
       }
+
+      this.updateUndoRedoState();
 
       // Validate the restored feed so the home panel can show its issues.
       this.validateAndUpdateInfo();
@@ -534,6 +529,78 @@ export class GTFSEditor {
         'Failed to initialize application. Please refresh the page and try again.'
       );
     }
+  }
+
+  /**
+   * Which feed this session opens with.
+   *
+   * Boot no longer restores the stored feed unconditionally: parsing it is the
+   * expensive half of startup, and it is the wrong feed as often as it is the
+   * right one. The load modal comes first and the stored feed is one of its
+   * offers. A `#load=` command and a deep link into an object both already
+   * state which feed is wanted, so neither shows the modal.
+   */
+  private async bootFeed(): Promise<void> {
+    const loadUrl = takeLoadCommand();
+    if (loadUrl) {
+      console.log('[boot] skipped modal: #load', loadUrl);
+      await this.uiController.loadSelection({
+        static: {
+          kind: 'url',
+          url: loadUrl,
+          useCors: true,
+          label: 'Linked feed',
+        },
+        realtime: null,
+      });
+      return;
+    }
+
+    const deepLink = this.pageStateManager.peekURLPageState();
+    if (deepLink.type !== 'home') {
+      console.log(`[boot] skipped modal: deep link to ${deepLink.type}`);
+      await this.restoreStoredFeed();
+      return;
+    }
+
+    // Both reads are single meta records: the stored feed is described without
+    // parsing a byte of it.
+    const [summary, versions] = await Promise.all([
+      this.gtfsParser.gtfsDatabase.getFeedSummary(),
+      this.gtfsParser.gtfsDatabase.getVersions(),
+    ]);
+
+    // The modal is the boot screen, not an interruption of a load in progress,
+    // so the progress bar comes down while it is up.
+    feedProgressIndicator.finishLoading('boot');
+    const choice = await this.uiController.openBootLoadModal(
+      summary ? { ...summary, edits: versions.currentVersion } : undefined
+    );
+    feedProgressIndicator.startLoading('boot', 'Opening feed...');
+    console.log(`[boot] load modal: user chose ${choice}`);
+
+    if (choice === 'continue') {
+      await this.restoreStoredFeed();
+    } else if (choice === 'empty') {
+      await this.gtfsParser.initializeEmpty();
+    }
+    // 'loaded' has already parsed the chosen feed into place.
+  }
+
+  /** Hydrate the feed sitting in IndexedDB: rows first, then the patch log. */
+  private async restoreStoredFeed(): Promise<void> {
+    if (CONFIG.DEBUG_BOOT) {
+      console.time('[boot] restore stored feed');
+    }
+    await this.gtfsParser.restoreDataFromDatabase();
+    // Paired with the restore, never run on a feed the user declined: replaying
+    // patches over the wrong rows is how a feed gets corrupted.
+    await this.patchManager.initialize();
+    if (CONFIG.DEBUG_BOOT) {
+      console.timeEnd('[boot] restore stored feed');
+    }
+    const routes = this.gtfsParser.getFileDataSync('routes.txt')?.length ?? 0;
+    console.log(`[boot] continue with stored feed (${routes} routes)`);
   }
 
   // Runs on boot and after every import/replace/new-feed action (see ui.ts validateCallback).
