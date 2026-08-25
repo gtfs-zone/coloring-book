@@ -139,6 +139,8 @@ export class LayerManager {
     | null = null;
 
   private activeStopsFilter: FilterSpecification = DEFAULT_STOPS_FILTER;
+  // True while the feed is small enough that both zoom fade bands are skipped.
+  private stopFadeDisabled = false;
   private focusedStopId: string | null = null;
   // Several at once: a location group hover lights all of its member stops.
   private hoveredStopIds: string[] = [];
@@ -551,6 +553,10 @@ export class LayerManager {
 
     const finalOptions = { ...this.defaultStopOptions, ...options };
 
+    // Before the layers are built, so their expressions are made with the
+    // exemption already decided.
+    this.refreshStopFade(stops.length);
+
     // Create GeoJSON for stops (resolver places coord-less children via Tutte
     // layout over the pathway graph; stops with no resolvable coords or in
     // orphan pathway components are skipped + warned).
@@ -756,6 +762,9 @@ export class LayerManager {
       dim ?? 1,
     ];
     const fullZoom = dim === null ? 1 : this.specialOrDim(dim);
+    if (this.stopFadeDisabled) {
+      return fullZoom as unknown as ExpressionSpecification;
+    }
     return [
       'interpolate',
       ['linear'],
@@ -777,6 +786,11 @@ export class LayerManager {
    * fades out at low zoom and leaves its black center dot floating.
    */
   private stationFadeOpacity(dim: number | null): ExpressionSpecification {
+    if (this.stopFadeDisabled) {
+      return (dim === null
+        ? 1
+        : this.specialOrDim(dim)) as unknown as ExpressionSpecification;
+    }
     return [
       'interpolate',
       ['linear'],
@@ -913,48 +927,56 @@ export class LayerManager {
       return;
     }
 
-    const r = options.clickAreaRadius;
     this.map.addLayer({
       id: 'stops-clickarea',
       type: 'circle',
       source: 'stops',
       filter: this.activeStopsFilter,
       paint: {
-        'circle-radius': [
-          'interpolate',
-          ['linear'],
-          ['zoom'],
-          CONFIG.STATION_FADE_ZOOM_MIN,
-          ['case', LayerManager.SPECIAL_STOP, r, 0],
-          CONFIG.STATION_FADE_ZOOM_MAX,
-          [
-            'case',
-            LayerManager.SPECIAL_STOP,
-            r,
-            ['==', ['get', 'location_type'], 0],
-            0,
-            r,
-          ],
-          CONFIG.STOP_FADE_ZOOM_MIN,
-          [
-            'case',
-            LayerManager.SPECIAL_STOP,
-            r,
-            ['==', ['get', 'location_type'], 0],
-            0,
-            r,
-          ],
-          CONFIG.STOP_FADE_ZOOM_MAX,
-          r,
-          // Stay larger than the biggest visual circle (focused station at
-          // high zoom) so the clickarea is the sole hit-test layer.
-          19,
-          r * 1.6,
-        ] as unknown as ExpressionSpecification,
+        'circle-radius': this.clickAreaRadius(options.clickAreaRadius),
         'circle-color': 'transparent',
         'circle-opacity': 0,
       },
     });
+  }
+
+  /**
+   * Hit radius for the clickarea layer, mirroring `stopFadeOpacity` so an
+   * invisible stop is not hoverable. Under the small-feed exemption nothing
+   * fades, so the radius only grows with zoom.
+   */
+  private clickAreaRadius(r: number): ExpressionSpecification {
+    // Stay larger than the biggest visual circle (focused station at high
+    // zoom) so the clickarea is the sole hit-test layer.
+    const highZoom = [CONFIG.STOP_FADE_ZOOM_MAX, r, 19, r * 1.6];
+    if (this.stopFadeDisabled) {
+      return [
+        'interpolate',
+        ['linear'],
+        ['zoom'],
+        ...highZoom,
+      ] as unknown as ExpressionSpecification;
+    }
+    const stationsOnly = [
+      'case',
+      LayerManager.SPECIAL_STOP,
+      r,
+      ['==', ['get', 'location_type'], 0],
+      0,
+      r,
+    ];
+    return [
+      'interpolate',
+      ['linear'],
+      ['zoom'],
+      CONFIG.STATION_FADE_ZOOM_MIN,
+      ['case', LayerManager.SPECIAL_STOP, r, 0],
+      CONFIG.STATION_FADE_ZOOM_MAX,
+      stationsOnly,
+      CONFIG.STOP_FADE_ZOOM_MIN,
+      stationsOnly,
+      ...highZoom,
+    ] as unknown as ExpressionSpecification;
   }
 
   /**
@@ -1404,7 +1426,16 @@ export class LayerManager {
     }
     this.routeStopIds = this.map.getSource('stops') ? stop_ids : [];
 
-    const dim = stop_ids.length > 0 ? CONFIG.SPOTLIGHT_STOP_DIM : null;
+    this.applyStopFadePaint();
+  }
+
+  /**
+   * Repaint every fade-driven property on the stop layers at the current dim.
+   * Shared by the route spotlight and the small-feed fade exemption, which
+   * both change what those expressions evaluate to.
+   */
+  private applyStopFadePaint(): void {
+    const dim = this.routeStopIds.length > 0 ? CONFIG.SPOTLIGHT_STOP_DIM : null;
     if (this.map.getLayer('stops-background')) {
       const fade = this.stopFadeOpacity(dim);
       this.map.setPaintProperty('stops-background', 'circle-opacity', fade);
@@ -1421,6 +1452,29 @@ export class LayerManager {
         this.stationFadeOpacity(dim)
       );
     }
+    if (this.map.getLayer('stops-clickarea')) {
+      this.map.setPaintProperty(
+        'stops-clickarea',
+        'circle-radius',
+        this.clickAreaRadius(this.defaultStopOptions.clickAreaRadius)
+      );
+    }
+  }
+
+  /**
+   * Turn the zoom fade off for a feed with only a handful of stops, on again
+   * once it grows. Called wherever the stop data changes.
+   */
+  private refreshStopFade(stopCount: number): void {
+    const disabled = stopCount < CONFIG.STOP_FADE_MIN_STOPS;
+    if (disabled === this.stopFadeDisabled) {
+      return;
+    }
+    this.stopFadeDisabled = disabled;
+    console.log(
+      `[LayerManager] stop fade ${disabled ? 'disabled' : 'enabled'}, ${stopCount} stops`
+    );
+    this.applyStopFadePaint();
   }
 
   /**
@@ -1641,6 +1695,7 @@ export class LayerManager {
 
     const stopsGeoJSON = this.createStopsGeoJSON(stops);
     stopsSource.setData(stopsGeoJSON);
+    this.refreshStopFade(stops.length);
     this.onStopsDataUpdated?.(stopsGeoJSON);
     console.log(`Updated stops data: ${stopsGeoJSON.features.length} stops`);
   }
