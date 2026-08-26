@@ -1,7 +1,5 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
-
 ## Project Overview
 
 **GTFS.zone** is a browser-based GTFS (General Transit Feed Specification) transit data editor, inspired by geojson.io. It is a client-only SPA: no backend, all data stays in the browser via IndexedDB.
@@ -113,34 +111,3 @@ Tailwind CSS v4 + DaisyUI v5. Themes are configured in `tailwind.config.js` (9 t
 ### Testing
 
 Playwright tests exist but are not actively maintained because the project is moving too fast. Do not write new Playwright test files and do not run tests as part of implementing features. The user handles all testing manually.
-
-### Issue Workflow (Forgejo)
-
-The repo is at `gtfs.zone/coloring-book`. Use the `mcp__forgejo__*` tools to interact with it.
-
-**Making a plan**: triggered by a prompt like "Lets make a plan for issue #50":
-
-1. Fetch the issue with `mcp__forgejo__get_issue_by_index` using `owner: "gtfs.zone"`, `repo: "coloring-book"`.
-2. Explore the codebase as needed to understand the scope.
-3. Ask the user clarifying questions inline (in chat). Wait for answers before writing the plan.
-4. Write the plan to the issue body using `mcp__forgejo__update_issue`. Preserve the original issue text verbatim at the bottom under a `---` divider and `## Original Issue` heading. The plan itself goes at the top and must include:
-   - **Summary**: 2–4 sentences on what the feature/fix is, why it matters, and the chosen approach. Include any key tradeoffs or alternatives considered.
-   - **Relevant context**: the specific files, types, functions, and architectural patterns involved. Enough that a future session can start coding immediately without re-exploring.
-   - **Numbered phases**, each containing:
-     - A short prose description of the goal of that phase and why it's sequenced here
-     - A markdown checklist of concrete, atomic implementation steps (specific enough that no ambiguity remains, e.g. "add `renderMode: 'shapes' | 'stops'` field to `RouteRendererState` in `src/modules/route-renderer.ts`" not "update the renderer")
-     - Any gotchas, edge cases, or invariants to preserve that are specific to that phase
-5. Do not start any implementation: the plan session ends here.
-
-**Creating a PR**: triggered by a prompt like "make a pr for this branch closing #50":
-
-1. Use `mcp__forgejo__create_pull_request` with `owner: "gtfs.zone"`, `repo: "coloring-book"`, the current branch as `head`, `main` as `base`, the issue title as the PR title, and `Closes #50` as the body (substituting the actual issue number).
-
-**Completing a phase**: triggered by a prompt like "Lets complete phase 1 of the plan in #50":
-
-1. Fetch the issue body with `mcp__forgejo__get_issue_by_index` using `owner: "gtfs.zone"`, `repo: "coloring-book"`.
-2. If this is phase 1 (or `CURRENT_PLAN.md` does not yet exist), write the full plan to `CURRENT_PLAN.md` in the repo root. This file is the local working copy of the plan: all phase progress is tracked here, not on the issue.
-3. Implement everything in the requested phase. Commit as you go using conventional commits.
-4. After completing the phase, update `CURRENT_PLAN.md`: check off all completed items in that phase's checklist, and append any discoveries, surprises, or revised understanding to that phase's prose description so future phases have accurate context.
-5. Do not update the Forgejo issue: wait until the user explicitly says "Update issue #50" (substituting the actual issue number). At that point, overwrite the issue body with the current contents of `CURRENT_PLAN.md`.
-6. Do not run tests, do not start the next phase. Stop and let the user test.
