@@ -2,8 +2,10 @@ import type { Pathways, Stops } from '../types/gtfs-entities.js';
 import type { QueryOnlyDatabase } from '../utils/field-component.js';
 import { renderInlineEntityFields } from '../utils/inline-editable-field.js';
 import { GTFS_TABLES } from '../types/gtfs.js';
+import { ENTITY_REF_BTN } from '../utils/entity-references.js';
 import { getStopDisplay, renderOptionLabel } from '../utils/entity-display.js';
 import { pathwayModeLabel } from '../utils/pathway-modes.js';
+import { pageHeaderEyebrow } from './breadcrumb-trail.js';
 
 function escapeAttr(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
@@ -11,7 +13,6 @@ function escapeAttr(s: string): string {
 
 export interface PathwayViewDependencies {
   gtfsDatabase?: QueryOnlyDatabase;
-  onStopClick?: (stop_id: string) => void;
   onDeletePathway: (pathway_id: string) => Promise<void>;
 }
 
@@ -84,24 +85,26 @@ export class PathwayViewController {
     fromStop: Stops | null,
     toStop: Stops | null
   ): string {
-    const renderStopLink = (stop_id: string, stop: Stops | null): string => {
-      const label = stop
+    const renderCrumb = (
+      typeLabel: string,
+      stop_id: string,
+      stop: Stops | null
+    ): string => {
+      const stopLabel = stop
         ? escapeAttr(
             renderOptionLabel(
               getStopDisplay(stop as unknown as Record<string, string>)
             )
           )
         : escapeAttr(stop_id);
-      return `<button class="btn btn-xs btn-ghost font-mono stop-link-btn" data-stop-id="${escapeAttr(stop_id)}">${label}</button>`;
+      return `<button type="button" class="flex flex-col hover:underline text-left ${ENTITY_REF_BTN}" data-stop-id="${escapeAttr(stop_id)}">${pageHeaderEyebrow(typeLabel)}<span class="block leading-tight break-words">${stopLabel}</span></button>`;
     };
 
     return `
-      <div class="flex items-center gap-2 text-sm">
-        <span class="opacity-60">From:</span>
-        ${renderStopLink(pathway.from_stop_id, fromStop)}
-        <span class="opacity-40">-&gt;</span>
-        <span class="opacity-60">To:</span>
-        ${renderStopLink(pathway.to_stop_id, toStop)}
+      <div class="flex flex-wrap items-start gap-x-2 gap-y-2 text-sm">
+        ${renderCrumb('From', pathway.from_stop_id, fromStop)}
+        <span aria-hidden="true" class="pt-4 opacity-40 select-none">/</span>
+        ${renderCrumb('To', pathway.to_stop_id, toStop)}
       </div>
     `;
   }
@@ -136,18 +139,6 @@ export class PathwayViewController {
   }
 
   addEventListeners(container: HTMLElement): void {
-    // Stop link buttons
-    if (this.dependencies.onStopClick) {
-      container.querySelectorAll('.stop-link-btn').forEach((btn) => {
-        btn.addEventListener('click', () => {
-          const stop_id = btn.getAttribute('data-stop-id');
-          if (stop_id) {
-            this.dependencies.onStopClick!(stop_id);
-          }
-        });
-      });
-    }
-
     // Delete pathway button
     container.querySelectorAll('.delete-pathway-btn').forEach((btn) => {
       btn.addEventListener('click', async () => {

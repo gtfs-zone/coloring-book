@@ -261,7 +261,6 @@ export class PageContentRenderer {
     // Initialize PathwayViewController
     const pathwayViewDependencies: PathwayViewDependencies = {
       gtfsDatabase: dependencies.gtfsDatabase,
-      onStopClick: dependencies.onStopClick,
       onDeletePathway: (pathway_id) => this.handleDeletePathway(pathway_id),
     };
     this.pathwayViewController = new PathwayViewController(
