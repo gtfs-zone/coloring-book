@@ -33,8 +33,8 @@ import { HistoryController } from './modules/history-controller';
 import { TabLockController } from './modules/tab-lock';
 import { humanLabel } from './utils/patch-label';
 import { loadExtensionColumns } from './utils/extension-fields';
-import { showAboutModal } from './modules/about-modal';
 import { showHelpModal, shouldShowHelpPage } from './modules/help-modal';
+import { setHelpRuntimeData } from './modules/help-pages';
 import { showFaresModal } from './modules/fares-modal';
 import { showFeedDataModal } from './modules/feed-data-modal';
 import { showOnDemandModal } from './modules/on-demand-modal';
@@ -396,16 +396,12 @@ export class GTFSEditor {
         });
       });
 
-      // Wire up about modal
-      const openAbout = () =>
-        showAboutModal(
-          __APP_VERSION__,
-          this.keyboardShortcuts.getShortcutsList()
-        );
-      this.keyboardShortcuts.setShowHelpHandler(openAbout);
-      document
-        .getElementById('about-btn')
-        ?.addEventListener('click', openAbout);
+      // Wire up help modal
+      setHelpRuntimeData({
+        version: __APP_VERSION__,
+        shortcuts: this.keyboardShortcuts.getShortcutsList(),
+      });
+      this.keyboardShortcuts.setShowHelpHandler(() => showHelpModal('about'));
       document
         .getElementById('help-btn')
         ?.addEventListener('click', () => void showHelpModal());
