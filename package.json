@@ -40,7 +40,7 @@
     "map"
   ],
   "author": "gtfs.zone contributors",
-  "license": "MIT",
+  "license": "AGPL-3.0",
   "devDependencies": {
     "@commitlint/cli": "^20.5.3",
     "@commitlint/config-conventional": "^20.5.3",
