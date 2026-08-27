@@ -12,6 +12,7 @@ import type { GTFSParser } from './gtfs-parser.js';
 import { showModal } from './modal-utils.js';
 import { generateId } from '../utils/uuid.js';
 import { hasLiveEditor } from '../utils/inline-edit.js';
+import { renderSpecFieldLabelContent } from '../utils/field-component.js';
 
 export interface InteractionCallbacks {
   onRouteClick?: (route_id: string) => void;
@@ -49,6 +50,9 @@ export class InteractionHandler {
 
   // First stop selected during ADD_PATHWAY mode
   private addPathwayFirstStopId: string | null = null;
+
+  // Id of the persistent "click two stops" / "From: ..." notification shown while in ADD_PATHWAY mode
+  private addPathwayNotificationId: number | null = null;
 
   constructor(map: MapLibreMap, gtfsParser: GTFSParser) {
     this.map = map;
@@ -320,7 +324,7 @@ export class InteractionHandler {
 
     const locationTypeSelect = expandedStationId
       ? `
-        <label class="label mt-2"><span class="label-text">Location Type</span></label>
+        <label class="label mt-2"><span class="label-text">${renderSpecFieldLabelContent('stops.txt', 'location_type', 'Location Type')}</span></label>
         <select id="new-stop-type-select" class="select select-bordered w-full">
           <option value="0">0: Platform (stop within a station)</option>
           <option value="2">2: Entrance / Exit</option>
@@ -334,7 +338,7 @@ export class InteractionHandler {
       : '';
 
     const bodyHtml = `
-      <label class="label"><span class="label-text">Stop ID</span></label>
+      <label class="label"><span class="label-text">${renderSpecFieldLabelContent('stops.txt', 'stop_id', 'Stop ID')}</span></label>
       <input
         id="new-stop-id-input"
         type="text"
@@ -342,7 +346,7 @@ export class InteractionHandler {
         value="${suggestedId}"
       />
       ${locationTypeSelect}
-      <p class="text-xs opacity-60 mt-2">The Stop ID cannot be changed after creation.</p>
+      <p class="text-xs opacity-60 mt-2">The Stop ID cannot be changed after creation. Examples: <code>1234</code>, <code>STOP_1</code>, <code>place-gilman</code>.</p>
       ${parentInfo}
       <p id="stop-id-error" class="text-xs text-error mt-1 hidden"></p>
     `;
@@ -466,8 +470,9 @@ export class InteractionHandler {
 
     if (this.addPathwayFirstStopId === null) {
       this.addPathwayFirstStopId = stop_id;
-      const { notify } = await import('./notification-system.js');
-      notify.info(`From: ${stop_id}. Now click the second stop to connect.`);
+      await this.showAddPathwayNotification(
+        `From: ${stop_id}. Now click the second stop to connect.`
+      );
       return;
     }
 
@@ -498,7 +503,7 @@ export class InteractionHandler {
           <div class="font-mono text-sm bg-base-200 px-3 py-2 rounded">${toStopId}</div>
         </div>
         <label class="form-control w-full">
-          <div class="label"><span class="label-text">Pathway Mode</span></div>
+          <div class="label"><span class="label-text">${renderSpecFieldLabelContent('pathways.txt', 'pathway_mode', 'Pathway Mode')}</span></div>
           <select id="new-pathway-mode" class="select select-bordered select-sm w-full">
             <option value="1">1: Walkway</option>
             <option value="2">2: Stairs</option>
@@ -511,7 +516,7 @@ export class InteractionHandler {
         </label>
         <label class="label cursor-pointer justify-start gap-3">
           <input type="checkbox" id="new-pathway-bidirectional" class="checkbox checkbox-sm" checked />
-          <span class="label-text">Bidirectional</span>
+          <span class="label-text">${renderSpecFieldLabelContent('pathways.txt', 'is_bidirectional', 'Bidirectional')}</span>
         </label>
         <p id="pathway-error" class="text-xs text-error hidden"></p>
       </div>
@@ -830,11 +835,42 @@ export class InteractionHandler {
   private handleModeChange(previousMode: MapMode, newMode: MapMode): void {
     console.log(`Map mode changed: ${previousMode} -> ${newMode}`);
     if (
+      previousMode !== MapMode.ADD_PATHWAY &&
+      newMode === MapMode.ADD_PATHWAY
+    ) {
+      void this.showAddPathwayNotification(
+        'Click two stops to make a pathway between them.'
+      );
+    } else if (
       previousMode === MapMode.ADD_PATHWAY &&
       newMode !== MapMode.ADD_PATHWAY
     ) {
       this.addPathwayFirstStopId = null;
+      void this.clearAddPathwayNotification();
     }
+  }
+
+  /**
+   * Show the persistent ADD_PATHWAY hint notification, replacing any prior one.
+   */
+  private async showAddPathwayNotification(message: string): Promise<void> {
+    const { notify } = await import('./notification-system.js');
+    if (this.addPathwayNotificationId !== null) {
+      notify.removeNotification(this.addPathwayNotificationId);
+    }
+    this.addPathwayNotificationId = notify.info(message, { autoHide: false });
+  }
+
+  /**
+   * Clear the persistent ADD_PATHWAY hint notification, if any.
+   */
+  private async clearAddPathwayNotification(): Promise<void> {
+    if (this.addPathwayNotificationId === null) {
+      return;
+    }
+    const { notify } = await import('./notification-system.js');
+    notify.removeNotification(this.addPathwayNotificationId);
+    this.addPathwayNotificationId = null;
   }
 
   /**
