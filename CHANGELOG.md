@@ -1,3 +1,9 @@
+## v0.29.0 (2026-08-27)
+
+### Feat
+
+- **help**: merge About modal into the help menu
+
 ## v0.28.0 (2026-08-27)
 
 ### Feat
