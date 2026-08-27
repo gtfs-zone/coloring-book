@@ -4,7 +4,7 @@
  * The exact SCS of k sequences is NP-hard in k, and a naive k-way DP memoises
  * on a position tuple, so its state space is the product of all k input
  * lengths, unusable for real inputs. We instead fold pairwise: each fold is
- * the exact two-sequence SCS, computed with an iterative O(n·m) table and
+ * the exact two-sequence SCS, computed with an iterative O(n*m) table and
  * backpointers (no recursion, no memo-size guard, bounded memory). Folding is
  * not guaranteed to yield the globally shortest supersequence, but the result
  * always contains every input, and it runs in predictable time and space for
@@ -78,7 +78,7 @@ function elementKey<T>(element: T): string {
  *
  * Iterative bottom-up DP: `dp[i][j]` is the SCS length of the first `i`
  * elements of `a` and the first `j` of `b`. The supersequence is recovered by
- * walking the table back from `(n, m)`. O(n·m) time and memory, with no
+ * walking the table back from `(n, m)`. O(n*m) time and memory, with no
  * recursion and no fallback path, the failure mode of the old k-way memo is
  * gone.
  */
