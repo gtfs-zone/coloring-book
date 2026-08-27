@@ -370,7 +370,11 @@ export function refreshFeedIssuesIfStale(): void {
   console.log(
     `[FeedIssues] revalidating: issues are from version ${validatedVersion}, feed is at ${version}`
   );
+  const start = performance.now();
   publishFeedIssues(revalidator.validate(), revalidator.source);
+  console.log(
+    `[FeedIssues] revalidated in ${Math.round(performance.now() - start)}ms`
+  );
 }
 
 export function isDanglingReference(

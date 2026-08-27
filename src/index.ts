@@ -34,6 +34,7 @@ import { TabLockController } from './modules/tab-lock';
 import { humanLabel } from './utils/patch-label';
 import { loadExtensionColumns } from './utils/extension-fields';
 import { showAboutModal } from './modules/about-modal';
+import { showHelpModal, shouldShowHelpPage } from './modules/help-modal';
 import { showFaresModal } from './modules/fares-modal';
 import { showFeedDataModal } from './modules/feed-data-modal';
 import { showOnDemandModal } from './modules/on-demand-modal';
@@ -339,17 +340,27 @@ export class GTFSEditor {
         shapesBtn.innerHTML = renderRouteWaypointsIcon('h-5 w-5');
       }
       shapesBtn?.addEventListener('click', () => {
-        void shapesManager.open();
+        void (async () => {
+          if (shouldShowHelpPage('shapes')) {
+            await showHelpModal('shapes');
+          }
+          void shapesManager.open();
+        })();
       });
 
       // Wire fares button to open Fares modal
       document.getElementById('fares-btn')?.addEventListener('click', () => {
-        showFaresModal({
-          gtfsDatabase: this.gtfsParser.gtfsDatabase as Parameters<
-            typeof showFaresModal
-          >[0]['gtfsDatabase'],
-          patchManager: this.patchManager,
-        });
+        void (async () => {
+          if (shouldShowHelpPage('fares')) {
+            await showHelpModal('fares');
+          }
+          showFaresModal({
+            gtfsDatabase: this.gtfsParser.gtfsDatabase as Parameters<
+              typeof showFaresModal
+            >[0]['gtfsDatabase'],
+            patchManager: this.patchManager,
+          });
+        })();
       });
 
       // Wire feed data button to open the Feed Data modal
@@ -395,6 +406,9 @@ export class GTFSEditor {
       document
         .getElementById('about-btn')
         ?.addEventListener('click', openAbout);
+      document
+        .getElementById('help-btn')
+        ?.addEventListener('click', () => void showHelpModal());
 
       // Wire levels button
       document.getElementById('levels-btn')?.addEventListener('click', () => {
@@ -454,9 +468,6 @@ export class GTFSEditor {
 
       // Set up navigation event listener for automatic tab switching
       this.setupNavigationTabSwitching(bottomSheet);
-
-      // Welcome overlay will be shown by default for empty state
-      // It will be hidden when a feed is loaded via map-controller
 
       // Decide which feed this session is about, and hydrate it.
       await this.bootFeed();
@@ -571,8 +582,11 @@ export class GTFSEditor {
     ]);
 
     // The modal is the boot screen, not an interruption of a load in progress,
-    // so the progress bar comes down while it is up.
+    // so the progress bar comes down while both it and the welcome page are up.
     feedProgressIndicator.finishLoading('boot');
+    if (shouldShowHelpPage('welcome')) {
+      await showHelpModal('welcome');
+    }
     const choice = await this.uiController.openBootLoadModal(
       summary ? { ...summary, edits: versions.currentVersion } : undefined
     );
@@ -583,6 +597,11 @@ export class GTFSEditor {
       await this.restoreStoredFeed();
     } else if (choice === 'empty') {
       await this.gtfsParser.initializeEmpty();
+      feedProgressIndicator.finishLoading('boot');
+      if (shouldShowHelpPage('getting-started')) {
+        await showHelpModal('getting-started');
+      }
+      feedProgressIndicator.startLoading('boot', 'Opening feed...');
     }
     // 'loaded' has already parsed the chosen feed into place.
   }

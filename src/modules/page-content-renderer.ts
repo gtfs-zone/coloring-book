@@ -241,6 +241,9 @@ export class PageContentRenderer {
   private zoneViewController: ZoneViewController;
   private locationGroupViewController: LocationGroupViewController;
 
+  // Time the last applyMapFocus took, folded into the renderHome timing line.
+  private lastMapFocusMs = 0;
+
   constructor(dependencies: ContentRendererDependencies) {
     this.dependencies = dependencies;
 
@@ -429,7 +432,9 @@ export class PageContentRenderer {
    * @returns HTML string for the content
    */
   async renderPage(pageState: PageState): Promise<string> {
+    const focusStart = performance.now();
     this.applyMapFocus(pageState);
+    this.lastMapFocusMs = performance.now() - focusStart;
 
     try {
       // Render based on page type
@@ -496,18 +501,25 @@ export class PageContentRenderer {
    * Render home page (feed info and agencies list)
    */
   private async renderHome(): Promise<string> {
+    const t0 = performance.now();
+
     // Edits since the last pass are not reflected in the published issues.
     refreshFeedIssuesIfStale();
+    const tIssues = performance.now();
 
     const agencies = await this.dependencies.relationships.getAgenciesAsync();
 
     // Get feed_info data
     const feedInfo = await this.getFeedInfo();
+    const tMeta = performance.now();
 
     // Every service in the feed, rendered as the shared timeline
-    const serviceData = await loadServiceData(this.serviceTimelineSource());
+    const timelineSource = this.serviceTimelineSource();
+    const serviceData = await loadServiceData(timelineSource);
     const serviceCount = serviceData.size;
-    const tripCounts = await loadTripCounts(this.serviceTimelineSource());
+    const tServices = performance.now();
+    const tripCounts = await loadTripCounts(timelineSource);
+    const tTripCounts = performance.now();
 
     const agencyItems = agencies
       .map((agency: unknown) => {
@@ -524,7 +536,14 @@ export class PageContentRenderer {
       })
       .join('');
 
-    return `
+    const tTimelineStart = performance.now();
+    const timelineHtml =
+      serviceCount === 0
+        ? ''
+        : renderServiceTimeline(serviceData, { tripCounts });
+    const tTimeline = performance.now();
+
+    const html = `
       <div class="p-4 space-y-4">
         ${await this.renderFeedInfoProperties(feedInfo)}
 
@@ -590,7 +609,7 @@ export class PageContentRenderer {
                 </div>`
               : `<div class="card bg-base-100 shadow-lg">
                   <div class="card-body p-4">
-                    ${renderServiceTimeline(serviceData, { tripCounts })}
+                    ${timelineHtml}
                   </div>
                 </div>`
           }
@@ -598,6 +617,20 @@ export class PageContentRenderer {
 
       </div>
     `;
+
+    console.log(
+      `[PageContentRenderer] renderHome: issues=${Math.round(tIssues - t0)}ms ` +
+        `meta=${Math.round(tMeta - tIssues)}ms ` +
+        `services=${Math.round(tServices - tMeta)}ms ` +
+        `tripCounts=${Math.round(tTripCounts - tServices)}ms ` +
+        `timeline=${Math.round(tTimeline - tTimelineStart)}ms ` +
+        `mapFocus=${Math.round(this.lastMapFocusMs)}ms ` +
+        `total=${Math.round(tTimeline - t0)}ms ` +
+        `services=${serviceCount} agencies=${agencies.length} ` +
+        `html=${Math.round(html.length / 1024)}kb`
+    );
+
+    return html;
   }
 
   /**
