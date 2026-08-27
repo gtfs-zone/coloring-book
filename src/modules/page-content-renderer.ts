@@ -67,6 +67,7 @@ import {
   navigateToHome,
   navigateToLocationGroup,
   navigateToZone,
+  focusAfterNextRender,
 } from './navigation-actions.js';
 import type { GTFSParser } from './gtfs-parser.js';
 import { renderRouteDiagram, ROUTE_DIAGRAM_ROW } from './route-diagram.js';
@@ -939,7 +940,8 @@ export class PageContentRenderer {
               Object.keys(serviceGroups).length === 0 &&
               allServices.length === 0
                 ? `<div class="text-center py-6 opacity-70">
-                    No services found. Create a service first.
+                    No services found.
+                    <button type="button" class="link link-primary create-service-link">Create one</button>.
                   </div>`
                 : Object.keys(serviceGroups).length === 0
                   ? `<div class="text-center py-6 opacity-70 mt-4">
@@ -1409,6 +1411,15 @@ export class PageContentRenderer {
 
     // Add service selection dropdown listener
     this.addServiceSelectionListener(container);
+
+    // "No services found" empty state: jump to the Feed page and focus the
+    // new-service input so the user can create one.
+    container
+      .querySelector('.create-service-link')
+      ?.addEventListener('click', () => {
+        focusAfterNextRender('[data-inline-create="service"]');
+        void navigateToHome();
+      });
 
     // Route network field: same activation contract as the click-to-edit
     // property fields, so it is reachable by Tab and opens on Enter or Space.
