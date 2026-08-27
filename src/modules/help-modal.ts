@@ -89,7 +89,7 @@ export async function showHelpModal(pageId?: string): Promise<void> {
       return;
     }
     sidebarEl.innerHTML = renderSidebar(activePage.id);
-    paneEl.innerHTML = `<h4 class="font-semibold text-base mb-2">${escapeHtml(activePage.title)}</h4>${activePage.render()}`;
+    paneEl.innerHTML = `<h4 class="font-semibold text-base mb-2">${escapeHtml(activePage.title)}</h4><div class="flex flex-col gap-3">${activePage.render()}</div>`;
     const actionBar = document.getElementById('help-action-bar');
     if (actionBar) {
       actionBar.innerHTML = renderCheckbox(activePage);
@@ -155,7 +155,16 @@ export function eyebrow(text: string): string {
 }
 
 export function lede(text: string): string {
-  return `<p class="text-base-content/70">${text}</p>`;
+  return `<p class="text-sm text-base-content/70">${text}</p>`;
+}
+
+/**
+ * A trailing aside after a glyph list (e.g. "you can revisit this later").
+ * Styled distinctly from `lede()` and spaced off from the content above it,
+ * so it doesn't read as one more list item.
+ */
+export function footnote(text: string): string {
+  return `<p class="mt-3 text-xs italic text-base-content/50">${text}</p>`;
 }
 
 export interface GlyphListItem {
@@ -172,22 +181,10 @@ export function glyphList(items: GlyphListItem[]): string {
         <div class="shrink-0 w-6 h-6 text-primary">${item.icon}</div>
         <div>
           <dt class="font-semibold">${escapeHtml(item.term)}</dt>
-          <dd class="text-sm text-base-content/60">${escapeHtml(item.description)}</dd>
+          ${item.description ? `<dd class="text-sm text-base-content/60">${escapeHtml(item.description)}</dd>` : ''}
         </div>
       </div>`
     )
     .join('');
   return `<dl class="flex flex-col gap-3">${rows}</dl>`;
-}
-
-export function numberedTimeline(steps: string[]): string {
-  const rows = steps
-    .map(
-      (step, i) => `<li class="flex gap-3 items-start">
-        <span class="badge badge-primary badge-sm shrink-0 mt-0.5">${i + 1}</span>
-        <span>${step}</span>
-      </li>`
-    )
-    .join('');
-  return `<ol class="flex flex-col gap-2">${rows}</ol>`;
 }
