@@ -52,7 +52,6 @@ import { validateFlexStopTimeRow } from '../utils/flex-rules.js';
 import { renderSpecDescriptionPlain } from '../utils/spec-markup.js';
 import { escapeHtml } from '../utils/escape-html.js';
 import { setPickerTriggerContent } from '../utils/picker-trigger.js';
-import { generateId } from '../utils/uuid.js';
 import { getGTFSFieldDescription } from '../utils/zod-tooltip-helper.js';
 import { GTFS_TABLES } from '../types/gtfs.js';
 import type { LocationGroups } from '../types/gtfs-entities.js';
@@ -1169,8 +1168,15 @@ export class ScheduleController {
       this.editingCell = null;
       return;
     }
-    this.editingCell.value = live.value;
-    this.editingCell.caret = live.selectionStart;
+    // An editor the user only navigated onto (Enter/Tab moved focus there but
+    // no key has been typed yet) shows stale seed text, not a real edit in
+    // progress - e.g. a just-coupled departure_time still reads the pre-write
+    // placeholder. Only a dirty editor's text is worth protecting from the
+    // rebuild; an untouched one should reseed from the freshly rendered span.
+    if (live.dirty) {
+      this.editingCell.value = live.value;
+      this.editingCell.caret = live.selectionStart;
+    }
   }
 
   /**
@@ -1182,21 +1188,45 @@ export class ScheduleController {
    */
   public restoreTimetableEditor(): void {
     const cell = this.editingCell;
-    if (!cell || cell.value === undefined) {
+    if (!cell) {
       return;
     }
     this.editingCell = null;
 
-    const span = this.findTimeCell(cell);
+    // The edit that caused this render may have renumbered stop_sequence and
+    // moved this row's strip position out from under cell.stopIndex - the same
+    // reason applyTimetableSelection resolves `pendingSelection` by
+    // stop_sequence instead. Peek rather than consume: applyTimetableSelection
+    // runs next and needs the same pending entry to land the roving tabindex on
+    // this cell too.
+    const pending = this.pendingSelection;
+    const moved =
+      pending && pending.tripId === cell.tripId && pending.field === cell.field
+        ? document
+            .getElementById('schedule-view')
+            ?.querySelector<HTMLElement>(
+              `.time-span[data-trip-id="${CSS.escape(pending.tripId)}"]` +
+                `[data-stop-sequence="${CSS.escape(pending.stopSequence)}"]` +
+                `[data-field="${CSS.escape(pending.field)}"]`
+            )
+        : null;
+
+    const span = moved ?? this.findTimeCell(cell);
     if (!span) {
       console.log('[ScheduleController] edited cell is gone, dropping focus');
       return;
     }
 
-    this.openStopTimeEditor(span, {
-      value: cell.value,
-      caret: cell.caret ?? null,
-    });
+    // No captured value means the editor was only navigated onto, never typed
+    // into: reopen with no seed so it picks up the freshly rendered span's
+    // text (e.g. a just-coupled departure_time) instead of the stale text it
+    // opened with before the write landed.
+    this.openStopTimeEditor(
+      span,
+      cell.value === undefined
+        ? undefined
+        : { value: cell.value, caret: cell.caret ?? null }
+    );
   }
 
   /**
@@ -2870,25 +2900,15 @@ export class ScheduleController {
   }
 
   /**
-   * Create the first trip of the current route/service/direction.
-   *
-   * The entry point from the empty timetable's "Add first trip" button, where
-   * there is no input to type an id into, so one is generated.
+   * The entry point from the empty timetable's "Add first trip" button.
+   * Focuses the "New trip ID..." input rather than creating a trip directly,
+   * so the trip gets a meaningful id instead of a generated one.
    */
   public async createFirstTrip(): Promise<void> {
-    try {
-      if (!this.currentRouteId || !this.currentServiceId) {
-        notify.error('No timetable loaded');
-        return;
-      }
-      const trip_id = generateId();
-      console.log(
-        `[ScheduleController] creating first trip ${trip_id} for route=${this.currentRouteId} service=${this.currentServiceId} direction=${this.currentDirectionId ?? '(default)'}`
-      );
-      await this.insertTrip(trip_id);
-    } catch (error) {
-      console.error('Failed to create first trip:', error);
-      notify.error('Failed to create trip');
+    const input = document.getElementById('new-trip-input');
+    if (input instanceof HTMLInputElement) {
+      input.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+      input.focus();
     }
   }
 
