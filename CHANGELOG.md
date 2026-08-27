@@ -1,3 +1,34 @@
+## v0.28.0 (2026-08-27)
+
+### Feat
+
+- **service**: add a "Create timetable" action to the service view
+- **help**: add in-app help modal with first-run tips
+- **load**: make the continue card's edit count optional
+- **nav**: verbose two-line breadcrumbs and page titles
+- **load-modal**: lead with the search, move the URL block to the bottom
+- **boot**: open the load modal first, with a continue card
+- **map**: replace the projection toggle icons with a globe and a graticule
+- **timetable**: couple arrival and departure on a single time edit
+
+### Fix
+
+- **timetable**: stop clobbering untouched cell editors on rebuild
+- **pathway**: show a persistent hint while in ADD_PATHWAY mode
+- **nav**: attach breadcrumb listener once, add focus-after-render
+- **pathway**: style From/To endpoints as breadcrumb-style crumbs
+- **nav**: stack breadcrumb crumbs instead of daisyUI's row
+- **map**: keep a new stop on a small feed visible and clickable
+- **map**: vacate the old geometry bucket on every stop_times op
+- **timetable**: stop a route with no trips from breaking add stop
+- **map**: do not navigate on a click that closes an inline editor
+
+### Refactor
+
+- **load**: return a discriminated result from the load modal
+- **vocab**: call a static feed a scheduled feed
+- **map**: remove the route geometry toggle
+
 ## v0.27.1 (2026-08-21)
 
 ### Refactor
