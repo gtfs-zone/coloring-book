@@ -15,6 +15,13 @@ import {
   TIMETABLE_REF_ROW,
   VIEW_ROUTE_BTN,
 } from '../utils/entity-references.js';
+import { getRouteDisplay } from '../utils/entity-display.js';
+import {
+  showOptionPickerModal,
+  type OptionPickerItem,
+} from './option-picker-modal.js';
+
+const CREATE_TIMETABLE_BTN = 'create-timetable-btn';
 
 export interface ServiceViewDependencies {
   gtfsDatabase?: QueryOnlyDatabase;
@@ -81,7 +88,7 @@ export class ServiceViewController {
       const html = `
         <div class="p-4 space-y-4">
           ${await this.renderServiceProperties(service_id)}
-          ${this.renderTimetablesSection(routes, agencyNameByNormalizedId, tripCountByRoute, calendar, calendarDates)}
+          ${this.renderTimetablesSection(service_id, routes, agencyNameByNormalizedId, tripCountByRoute, calendar, calendarDates)}
         </div>
       `;
       console.log('Service view HTML length:', html.length);
@@ -228,7 +235,21 @@ export class ServiceViewController {
     `;
   }
 
+  private renderTimetablesHeader(service_id: string): string {
+    return `
+      <div class="flex items-center justify-between gap-4">
+        <h2 class="text-lg font-semibold">Timetables</h2>
+        <button
+          type="button"
+          class="btn btn-sm btn-outline ${CREATE_TIMETABLE_BTN}"
+          data-service-id="${service_id}"
+        >+ Timetable</button>
+      </div>
+    `;
+  }
+
   private renderTimetablesSection(
+    service_id: string,
     routes: Routes[],
     agencyNameByNormalizedId: Map<string, string>,
     tripCountByRoute: Map<string, number>,
@@ -238,11 +259,18 @@ export class ServiceViewController {
     if (routes.length === 0) {
       return `
         <div class="space-y-4">
-          <h2 class="text-lg font-semibold">Timetables</h2>
+          ${this.renderTimetablesHeader(service_id)}
           <div class="card bg-base-100 shadow-lg">
             <div class="card-body p-4">
               <div class="text-center py-6 opacity-70">
                 No routes are using this service.
+                <div>
+                  <button
+                    type="button"
+                    class="btn btn-sm btn-primary ${CREATE_TIMETABLE_BTN} mt-2"
+                    data-service-id="${service_id}"
+                  >Create a timetable</button>
+                </div>
               </div>
             </div>
           </div>
@@ -268,7 +296,7 @@ export class ServiceViewController {
 
     return `
       <div class="space-y-4">
-        <h2 class="text-lg font-semibold">Timetables</h2>
+        ${this.renderTimetablesHeader(service_id)}
         <div class="card bg-base-100 shadow-lg">
           <div class="card-body p-4">
             <div class="space-y-2">${items}</div>
@@ -276,6 +304,41 @@ export class ServiceViewController {
         </div>
       </div>
     `;
+  }
+
+  /**
+   * Route picker for creating a timetable on this service: excludes routes
+   * that already have one, and hands the choice off to onTimetableClick, the
+   * same navigation the Route page's service dropdown uses.
+   */
+  private async openCreateTimetablePicker(service_id: string): Promise<void> {
+    if (!this.dependencies.gtfsDatabase) {
+      return;
+    }
+    const existingRoutes = await this.getRoutesForService(service_id);
+    const existingRouteIds = new Set(
+      existingRoutes.map((route) => route.route_id)
+    );
+    const allRoutes = await this.dependencies.gtfsDatabase.queryRows('routes');
+    const options: OptionPickerItem[] = (allRoutes as Routes[])
+      .filter((route) => !existingRouteIds.has(route.route_id))
+      .map((route) => {
+        const display = getRouteDisplay(route as Record<string, string>);
+        return {
+          value: route.route_id,
+          primary: display.primary,
+          secondary: display.secondary,
+        };
+      });
+
+    const route_id = await showOptionPickerModal({
+      title: 'Create timetable',
+      options,
+      searchable: true,
+    });
+    if (route_id) {
+      this.dependencies.onTimetableClick(route_id, service_id);
+    }
   }
 
   /**
@@ -328,6 +391,19 @@ export class ServiceViewController {
         const route_id = btn.getAttribute('data-route-id');
         if (route_id) {
           this.dependencies.onRouteClick(route_id);
+        }
+      });
+    });
+
+    // "+ Timetable" / "Create a timetable" open the route picker
+    const createTimetableBtns = container.querySelectorAll(
+      `.${CREATE_TIMETABLE_BTN}`
+    );
+    createTimetableBtns.forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const service_id = btn.getAttribute('data-service-id');
+        if (service_id) {
+          void this.openCreateTimetablePicker(service_id);
         }
       });
     });
