@@ -215,6 +215,25 @@ export class BrowseNavigation {
     // Initialize content renderer
     this.initializeContentRenderer();
 
+    // Breadcrumb navigation. Delegated to the container, which survives every
+    // render (render() only replaces its innerHTML), so this is attached once
+    // here rather than in attachEventListeners(): re-attaching it per render
+    // stacked up duplicate handlers, and since the handler itself navigates,
+    // one crumb click then fanned out into one full re-render per handler.
+    this.container.addEventListener('click', async (e) => {
+      const link = (e.target as HTMLElement).closest('[data-nav]');
+      if (!(link instanceof HTMLElement)) {
+        return;
+      }
+      e.preventDefault();
+      try {
+        const state = JSON.parse(link.dataset.nav || '') as PageState;
+        await getPageStateManager().navigateTo(state);
+      } catch (error) {
+        console.warn('[BrowseNavigation] bad data-nav payload:', error);
+      }
+    });
+
     // Set up bidirectional communication with map
     this.setupMapCallbacks();
 
@@ -410,6 +429,7 @@ export class BrowseNavigation {
         return;
       }
 
+      const domStart = performance.now();
       this.container.innerHTML = `
         <div class="browse-navigation h-full flex flex-col">
           ${this.renderBreadcrumbs(breadcrumbs)}
@@ -420,6 +440,11 @@ export class BrowseNavigation {
       `;
 
       this.attachEventListeners();
+      console.log(
+        `[BrowseNavigation] rendered ${pageState.type}: dom=${Math.round(
+          performance.now() - domStart
+        )}ms`
+      );
 
       this.lastRenderedPageState = pageState;
       if (isSamePage) {
@@ -567,25 +592,13 @@ export class BrowseNavigation {
       return;
     }
 
-    // Add event listeners from content renderer for agency/route/service cards
+    // Add event listeners from content renderer for agency/route/service cards.
+    // These bind to elements inside the container, which the render replaced,
+    // so they have to be re-attached. The breadcrumb listener does not: it is
+    // delegated to the container itself and attached once in initialize().
     if (this.contentRenderer) {
       this.contentRenderer.addEventListeners(this.container);
     }
-
-    // Breadcrumb navigation
-    this.container.addEventListener('click', async (e) => {
-      const link = (e.target as HTMLElement).closest('[data-nav]');
-      if (!(link instanceof HTMLElement)) {
-        return;
-      }
-      e.preventDefault();
-      try {
-        const state = JSON.parse(link.dataset.nav || '') as PageState;
-        await getPageStateManager().navigateTo(state);
-      } catch (error) {
-        console.warn('[BrowseNavigation] bad data-nav payload:', error);
-      }
-    });
   }
 
   // Map highlighting methods

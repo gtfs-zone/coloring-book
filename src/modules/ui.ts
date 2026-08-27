@@ -26,6 +26,7 @@ import { BrowseNavigation } from './browse-navigation.js';
 import { ScheduleController } from './schedule-controller.js';
 import { getStopDisplay, renderOptionLabel } from '../utils/entity-display.js';
 import { buildExportFilename } from '../utils/export-filename.js';
+import { showHelpModal, shouldShowHelpPage } from './help-modal.js';
 
 function escapeHtml(text: string): string {
   return text
@@ -1236,6 +1237,10 @@ export class UIController {
       }
 
       notify.success('New empty GTFS feed created.');
+
+      if (shouldShowHelpPage('getting-started')) {
+        await showHelpModal('getting-started');
+      }
     } catch (error) {
       console.error('Error creating new GTFS feed:', error);
       notify.error(
@@ -1371,6 +1376,7 @@ export class UIController {
     const addPathwayBtn = document.getElementById(
       'add-pathway-btn'
     ) as HTMLButtonElement | null;
+    const addPathwayTooltip = document.getElementById('add-pathway-tooltip');
     pointerBtn?.classList.toggle('btn-primary', mode === MapMode.NAVIGATE);
     addStopBtn?.classList.toggle('btn-primary', mode === MapMode.ADD_STOP);
     if (addPathwayBtn) {
@@ -1380,6 +1386,16 @@ export class UIController {
         'btn-primary',
         mode === MapMode.ADD_PATHWAY
       );
+      if (addPathwayTooltip) {
+        addPathwayTooltip.setAttribute(
+          'data-tip',
+          mode === MapMode.ADD_PATHWAY
+            ? 'Click two stops to connect them'
+            : hasExpandedStation
+              ? 'Add pathway'
+              : 'Add pathway (expand a station first)'
+        );
+      }
     }
   }
 }

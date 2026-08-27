@@ -83,6 +83,22 @@ export class PageStateManager {
       throw new Error('Invalid page state provided');
     }
 
+    // Navigating to the page we are already on is a no-op: every handler
+    // re-renders, and re-rendering the current page from here would throw away
+    // scroll and focus for nothing. Guarded on the hash too, so a boot URL
+    // carrying extra params (?load=) still gets rewritten.
+    if (
+      this.config.enableUrlSync &&
+      typeof window !== 'undefined' &&
+      JSON.stringify(this.currentState) === JSON.stringify(newState) &&
+      this.pageStateToURL(newState) === window.location.hash.slice(1)
+    ) {
+      console.log(
+        `[PageStateManager] already on ${newState.type}, skipping navigation`
+      );
+      return;
+    }
+
     const previousState = this.currentState;
     this.currentState = { ...newState };
 
