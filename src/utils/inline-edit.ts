@@ -31,6 +31,15 @@ export const LIVE_EDITOR_CLASS = 'editor-input-live';
  */
 let liveInput: HTMLInputElement | null = null;
 
+/**
+ * Whether the live editor has been typed into since it opened. Distinguishes
+ * an edit in progress from an editor that was merely navigated to (Enter/Tab
+ * moved focus onto it but the user has not typed a key yet), so a caller
+ * deciding whether to carry the input's current text across a re-render does
+ * not mistake the latter for the former.
+ */
+let liveInputDirty = false;
+
 /** Makes each editor's `<datalist>` id unique for as long as it is in the DOM. */
 let suggestionListSeq = 0;
 
@@ -106,6 +115,7 @@ export interface InlineEditorOptions {
 export function getLiveEditorState(): {
   value: string;
   selectionStart: number | null;
+  dirty: boolean;
 } | null {
   if (!liveInput) {
     return null;
@@ -116,7 +126,7 @@ export function getLiveEditorState(): {
   } catch {
     // Input type does not expose a caret.
   }
-  return { value: liveInput.value, selectionStart };
+  return { value: liveInput.value, selectionStart, dirty: liveInputDirty };
 }
 
 /**
@@ -171,6 +181,10 @@ export function openInlineEditor(
 
   span.replaceWith(input);
   liveInput = input;
+  liveInputDirty = false;
+  input.addEventListener('input', () => {
+    liveInputDirty = true;
+  });
   input.focus();
   if (options.selectionStart !== undefined && options.selectionStart !== null) {
     try {
