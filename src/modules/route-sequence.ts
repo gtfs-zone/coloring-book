@@ -322,7 +322,7 @@ function alignToSupersequence(
 /**
  * Whether `seq` already embeds in `supersequence`, by the same greedy leftmost
  * walk the alignment uses. Contained patterns cannot change a fold's result, so
- * this rejects them for the cost of one linear scan instead of the DP's O(n·m)
+ * this rejects them for the cost of one linear scan instead of the DP's O(n*m)
  * — which is what makes folding every pattern of a route affordable.
  */
 function isSubsequence(seq: string[], supersequence: string[]): boolean {
