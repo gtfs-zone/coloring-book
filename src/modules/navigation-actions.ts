@@ -130,6 +130,26 @@ export function getCurrentPageState(): PageState {
   return getPageStateManager().getPageState();
 }
 
+let pendingFocusSelector: string | null = null;
+
+/**
+ * Request that a selector be focused after the next page render completes.
+ * Navigation triggers an async re-render that isn't awaited by navigateTo*,
+ * so a caller can't just navigate then query the DOM immediately after.
+ */
+export function focusAfterNextRender(selector: string): void {
+  pendingFocusSelector = selector;
+}
+
+/**
+ * Consume (and clear) the pending focus selector, if any was requested.
+ */
+export function consumePendingFocusSelector(): string | null {
+  const selector = pendingFocusSelector;
+  pendingFocusSelector = null;
+  return selector;
+}
+
 /**
  * Navigation event listener type
  */
