@@ -29,7 +29,16 @@ import {
   renderPickerTrigger,
   setPickerTriggerContent,
 } from '../utils/picker-trigger.js';
-import { openInlineEditor, openInlineMenu } from '../utils/inline-edit.js';
+import {
+  COLOR_EMPTY,
+  openInlineEditor,
+  openInlineMenu,
+} from '../utils/inline-edit.js';
+import {
+  convertValueToGTFS,
+  formatValueForDisplay,
+} from '../utils/field-formatters.js';
+import { GTFSFieldType, mapGTFSTypeString } from '../types/gtfs-field-types.js';
 import {
   generateCompositeKeyFromRecord,
   getGTFSPrimaryKey,
@@ -45,6 +54,7 @@ import {
   buildForeignKeyOptions,
   coerceFieldValue,
   formatSpecValue,
+  constrainedOptions,
   specFieldKind,
   specStoreName,
   validateFieldValue,
@@ -194,6 +204,20 @@ export interface EditableTableConfig {
    */
   joinColumns?: EditableTableJoinColumn[];
   deps: EditableTableDeps;
+  /**
+   * Values every new row carries but no column shows, for a table rendering
+   * rows that all share them (one service's removed dates). They are merged
+   * into the record before it is keyed, validated and written, so `fields`
+   * must leave them out.
+   */
+  fixedValues?: Record<string, unknown>;
+  /**
+   * Write the new row in place of the table's own insert. For a table showing
+   * a filtered subset, where a key that collides with a row outside the subset
+   * has to be reconciled rather than inserted. Returns an error message to
+   * show on the cell, or null once it has written and recorded its patch.
+   */
+  insertRow?: (record: Record<string, unknown>) => Promise<string | null>;
   /**
    * Shown in place of the rows when the table is empty. Trusted markup: it is
    * either literal copy or a rendered spec description, never user input.
@@ -604,10 +628,11 @@ function renderCell(
       data-value="${escapeHtml(raw)}"`;
   const content = escapeHtml(text) || '-';
 
-  // A foreign ID opens the searchable modal; an enum drops an inline menu and
-  // everything else swaps for an input, so only this one wears the chevron.
+  // A foreign ID and a standards code open the searchable modal; an enum drops
+  // an inline menu and everything else swaps for an input, so only the modal
+  // kinds wear the chevron.
   const span =
-    kind === 'foreign'
+    kind === 'foreign' || kind === 'constrained'
       ? renderPickerTrigger({
           content,
           className: `editable-cell min-w-8 ${override?.widthClass ?? ''}`,
@@ -659,7 +684,8 @@ export async function renderEditableTable(
             tableName: config.tableName,
             isExtension: true,
             tooltip: EXTENSION_FIELD_DESCRIPTION,
-          }
+          },
+          { short: true }
         )}</th>`;
       }
       if (!fieldConfig) {
@@ -668,7 +694,8 @@ export async function renderEditableTable(
       return `<th class="align-bottom ${widthClass}">${renderFieldLabelContent(
         override?.label
           ? { ...fieldConfig, label: override.label }
-          : fieldConfig
+          : fieldConfig,
+        { short: true }
       )}</th>`;
     })
     .join('');
@@ -1043,6 +1070,64 @@ function openCellEditor(span: HTMLElement): void {
         await commitCell(state, span, field, spec, picked);
       }
     })();
+    return;
+  }
+
+  if (span.dataset.kind === 'constrained') {
+    void (async () => {
+      const options = constrainedOptions(spec) ?? [];
+      // A value the standard's list does not carry is offered back, so the
+      // picker cannot silently blank a code the user did not touch.
+      const extra =
+        current && !options.some((o) => o.value === current)
+          ? [{ value: current, primary: current, secondary: 'current value' }]
+          : [];
+      let custom = false;
+      const picked = await showOptionPickerModal({
+        title: `Select ${field}`,
+        options: [{ value: '', primary: '- none -' }, ...extra, ...options],
+        selectedValue: current,
+        searchable: true,
+        footerAction: {
+          label: 'Enter a custom value...',
+          onClick: () => {
+            custom = true;
+          },
+        },
+      });
+      if (custom) {
+        openInlineEditor(span, {
+          value: current,
+          className: 'w-full',
+          onCommit: (value) => void commitCell(state, span, field, spec, value),
+        });
+        return;
+      }
+      if (picked !== null && picked !== current) {
+        await commitCell(state, span, field, spec, picked);
+      }
+    })();
+    return;
+  }
+
+  // A color is picked from the browser's swatch, which speaks `#RRGGBB` while
+  // GTFS stores `RRGGBB`, so the hash is added and stripped at this boundary.
+  if (mapGTFSTypeString(spec.type) === GTFSFieldType.Color) {
+    openInlineEditor(span, {
+      value: current
+        ? formatValueForDisplay(current, GTFSFieldType.Color)
+        : COLOR_EMPTY,
+      inputType: 'color',
+      className: 'w-full',
+      onCommit: (value) =>
+        void commitCell(
+          state,
+          span,
+          field,
+          spec,
+          convertValueToGTFS(value, GTFSFieldType.Color)
+        ),
+    });
     return;
   }
 
@@ -1550,6 +1635,8 @@ async function commitNewRow(
     record[f] = 'error' in coerced ? pendingValue : coerced.value;
   }
 
+  Object.assign(record, config.fixedValues ?? {});
+
   const rowError = config.validateRow?.(record);
   if (rowError) {
     markCellError(span, rowError);
@@ -1559,6 +1646,17 @@ async function commitNewRow(
   const key = rowKey(config, record);
   if (config.rows.some((r) => rowKey(config, r) === key)) {
     markCellError(span, 'A row with these key values already exists');
+    return;
+  }
+
+  if (config.insertRow) {
+    const hostError = await config.insertRow(record);
+    if (hostError) {
+      markCellError(span, hostError);
+      return;
+    }
+    state.pending = {};
+    config.onInsert?.(key, record);
     return;
   }
 

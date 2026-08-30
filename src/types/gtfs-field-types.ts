@@ -100,14 +100,16 @@ export const GTFS_FIELD_TYPE_METADATA: Record<
 
   [GTFSFieldType.LanguageCode]: {
     type: GTFSFieldType.LanguageCode,
-    description: 'IETF BCP 47 language code (e.g., en, en-US, de)',
-    pattern: /^[a-z]{2,3}(-[A-Z]{2})?$/,
+    description: 'IETF BCP 47 language code (e.g., en, en-US, de, zh-Hans)',
+    // Well-formedness only. BCP 47 allows script, region and variant subtags,
+    // so a two-letter-plus-region pattern would reject valid tags like zh-Hans.
+    pattern: /^[A-Za-z]{2,8}(-[A-Za-z0-9]{2,8})*$/,
     inputType: 'text',
     zodValidator: (z) =>
       z
         .string()
         .regex(
-          /^[a-z]{2,3}(-[A-Z]{2})?$/,
+          /^[A-Za-z]{2,8}(-[A-Za-z0-9]{2,8})*$/,
           'Must be a valid IETF BCP 47 language code'
         ),
   },
@@ -137,7 +139,9 @@ export const GTFS_FIELD_TYPE_METADATA: Record<
   [GTFSFieldType.Timezone]: {
     type: GTFSFieldType.Timezone,
     description: 'TZ timezone (e.g., Asia/Tokyo, America/Los_Angeles)',
-    pattern: /^[A-Za-z_]+\/[A-Za-z_]+$/,
+    // Zones can be single-part (UTC) or three-part
+    // (America/Argentina/Buenos_Aires), so the shape is a slash-joined path.
+    pattern: /^[A-Za-z0-9_+-]+(\/[A-Za-z0-9_+-]+)*$/,
     inputType: 'text',
     zodValidator: (z) => z.string(),
   },
@@ -147,7 +151,7 @@ export const GTFS_FIELD_TYPE_METADATA: Record<
     description:
       'Six-digit hexadecimal color WITHOUT # prefix (e.g., FFFFFF, 0039A6)',
     pattern: /^[0-9A-Fa-f]{6}$/,
-    inputType: 'text',
+    inputType: 'color',
     zodValidator: (z) =>
       z
         .string()

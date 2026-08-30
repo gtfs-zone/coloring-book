@@ -2,6 +2,12 @@ import { showModal, renderTriangleIcon } from './modal-utils.js';
 import { escapeHtml } from '../utils/escape-html.js';
 import { toGtfsDate as formatGTFS } from '../utils/gtfs-date.js';
 import {
+  trimOrExtendAllServices,
+  type BatchMixedPatchManager,
+  type FeedBoundsWriteDatabase,
+} from '../utils/feed-bounds.js';
+import { notify } from './notification-system.js';
+import {
   attachServiceTimelineListeners,
   isServiceActive,
   loadServiceData,
@@ -13,7 +19,8 @@ import {
 } from './service-timeline.js';
 
 export interface CalendarModalDeps {
-  gtfsDatabase: ServiceTimelineSource;
+  gtfsDatabase: ServiceTimelineSource & FeedBoundsWriteDatabase;
+  patchManager?: BatchMixedPatchManager | null;
   onServiceClick: (service_id: string) => void;
 }
 
@@ -164,18 +171,41 @@ export async function showCalendarModal(
 
   let currentTab: 'month' | 'timeline' = 'month';
 
-  const tabBarHtml = `
-    <div class="tabs tabs-border mb-4" id="cal-tabs">
-      <button class="tab tab-active" data-tab="month">Month Grid</button>
-      <button class="tab" data-tab="timeline">Timeline</button>
+  const trimTitle = feedStartDate
+    ? `Set every service's start_date to ${feedStartDate}`
+    : 'feed_info has no feed_start_date';
+  const extendTitle = feedEndDate
+    ? `Set every service's end_date to ${feedEndDate}`
+    : 'feed_info has no feed_end_date';
+
+  const toolbarHtml = `
+    <div class="flex items-center justify-between gap-2 mb-2">
+      <div class="tabs tabs-border" id="cal-tabs">
+        <button class="tab tab-active" data-tab="month">Month Grid</button>
+        <button class="tab" data-tab="timeline">Timeline</button>
+      </div>
+      <div class="flex items-center gap-2">
+        <button
+          type="button"
+          class="btn btn-xs btn-outline"
+          id="cal-trim-all-btn"
+          title="${escapeHtml(trimTitle)}"
+          ${feedStartDate ? '' : 'disabled'}
+        >Trim all to feed start</button>
+        <button
+          type="button"
+          class="btn btn-xs btn-outline"
+          id="cal-extend-all-btn"
+          title="${escapeHtml(extendTitle)}"
+          ${feedEndDate ? '' : 'disabled'}
+        >Extend all to feed end</button>
+      </div>
     </div>
   `;
 
-  const timelineHtml = renderServiceTimeline(data, { tripCounts });
-
   const body = `
     <div>
-      ${tabBarHtml}
+      ${toolbarHtml}
       <div id="cal-panel">${renderMonthGrid(data, year, month1, feedStartDate, feedEndDate)}</div>
     </div>
   `;
@@ -191,10 +221,19 @@ export async function showCalendarModal(
       const tabBtns = document.querySelectorAll<HTMLButtonElement>(
         '#cal-tabs [data-tab]'
       );
+      const trimAllBtn = document.getElementById(
+        'cal-trim-all-btn'
+      ) as HTMLButtonElement | null;
+      const extendAllBtn = document.getElementById(
+        'cal-extend-all-btn'
+      ) as HTMLButtonElement | null;
 
       if (!panelEl) {
         return;
       }
+
+      const renderTimelineHtml = (): string =>
+        renderServiceTimeline(data, { tripCounts });
 
       const rerenderGrid = (): void => {
         panelEl.innerHTML = renderMonthGrid(
@@ -205,6 +244,15 @@ export async function showCalendarModal(
           feedEndDate
         );
         attachGridListeners();
+      };
+
+      const rerenderPanel = (): void => {
+        if (currentTab === 'month') {
+          rerenderGrid();
+        } else {
+          panelEl.innerHTML = renderTimelineHtml();
+          attachTimelineListeners();
+        }
       };
 
       const attachGridListeners = (): void => {
@@ -248,6 +296,57 @@ export async function showCalendarModal(
         });
       };
 
+      /** Reloads every service's calendar/exception rows after a batch write. */
+      const refreshServiceData = async (): Promise<void> => {
+        const fresh = await loadServiceData(deps.gtfsDatabase);
+        data.clear();
+        for (const [sid, sd] of fresh) {
+          data.set(sid, sd);
+        }
+      };
+
+      const runBoundBatch = async (
+        btn: HTMLButtonElement,
+        field: 'start_date' | 'end_date',
+        value: string
+      ): Promise<void> => {
+        if (!deps.patchManager) {
+          console.warn('[CalendarModal] No patchManager wired, cannot batch');
+          return;
+        }
+        btn.disabled = true;
+        try {
+          const count = await trimOrExtendAllServices(
+            deps.gtfsDatabase,
+            deps.patchManager,
+            field,
+            value
+          );
+          if (count === 0) {
+            notify.info('Every service is already at that bound');
+          } else {
+            const verb = field === 'start_date' ? 'Trimmed' : 'Extended';
+            notify.success(`${verb} ${count} service${count === 1 ? '' : 's'}`);
+          }
+          await refreshServiceData();
+          rerenderPanel();
+        } finally {
+          btn.disabled = false;
+        }
+      };
+
+      trimAllBtn?.addEventListener('click', () => {
+        if (feedStartDate) {
+          void runBoundBatch(trimAllBtn, 'start_date', feedStartDate);
+        }
+      });
+
+      extendAllBtn?.addEventListener('click', () => {
+        if (feedEndDate) {
+          void runBoundBatch(extendAllBtn, 'end_date', feedEndDate);
+        }
+      });
+
       attachGridListeners();
 
       tabBtns.forEach((btn) => {
@@ -270,7 +369,7 @@ export async function showCalendarModal(
             );
             attachGridListeners();
           } else {
-            panelEl.innerHTML = timelineHtml;
+            panelEl.innerHTML = renderTimelineHtml();
             attachTimelineListeners();
           }
         });

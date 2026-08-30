@@ -1,4 +1,3 @@
-import type { HolidayPattern } from './types.js';
 import { toGtfsDate as toYYYYMMDD } from '../utils/gtfs-date.js';
 
 /** Day of week for a UTC date (0=Sun, 1=Mon, ..., 6=Sat) */
@@ -59,7 +58,8 @@ function nthWeekday(
   }
 }
 
-function getUsFederalDates(year: number): string[] {
+/** Observed dates of the eleven US federal holidays in one year, as YYYYMMDD. */
+export function getUsFederalDates(year: number): string[] {
   return [
     // New Year's Day: Jan 1
     fixedObserved(year, 0, 1),
@@ -85,10 +85,3 @@ function getUsFederalDates(year: number): string[] {
     fixedObserved(year, 11, 25),
   ];
 }
-
-export const US_FEDERAL_HOLIDAYS: HolidayPattern = {
-  id: 'us-federal',
-  name: 'US Federal Holidays',
-  region: 'US',
-  getDates: getUsFederalDates,
-};

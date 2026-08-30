@@ -23,10 +23,11 @@ import { notify } from './modules/notification-system';
 import {
   initializePageStateWithGTFS,
   takeLoadCommand,
-  updateBreadcrumbLookup,
 } from './modules/page-state-integration';
 import { PageStateManager } from './modules/page-state-manager';
-import { navigateToTimetable } from './modules/navigation-actions';
+import { openModal, openTimetable } from './modules/navigation-actions';
+import { getModalRouter } from './modules/modal-router';
+import { showTimetableModal } from './modules/timetable-modal';
 import type { PageState } from './types/page-state';
 import { PatchManager } from './modules/patch-manager';
 import { HistoryController } from './modules/history-controller';
@@ -85,12 +86,11 @@ export class GTFSEditor {
   public themeController: ThemeController;
   public pageStateManager: PageStateManager;
   public patchManager: PatchManager;
-  /** Built in init(), so the shape picker's footer reaches it lazily. */
-  private shapesManager: ShapesManager | null = null;
   public historyController: HistoryController;
   public navbarCounts: NavbarCounts;
   public tabLock: TabLockController;
   public levelsController: LevelsController;
+  public shapesManager: ShapesManager;
 
   constructor() {
     this.gtfsParser = new GTFSParser();
@@ -108,7 +108,6 @@ export class GTFSEditor {
     this.browseNavigation = new BrowseNavigation(
       this.relationships,
       this.mapController,
-      this.scheduleController,
       this.serviceDaysController,
       this.gtfsParser
     );
@@ -137,7 +136,8 @@ export class GTFSEditor {
     setFeedIssueRevalidator({
       validate: () => this.validator.validateFeed(),
       source: this.gtfsParser,
-      getVersion: () => this.patchManager.version,
+      getStalenessKey: () =>
+        `${this.gtfsParser.feedGeneration}:${this.patchManager.version}`,
     });
 
     this.historyController = new HistoryController();
@@ -147,6 +147,7 @@ export class GTFSEditor {
     });
     this.tabLock = new TabLockController();
     this.levelsController = new LevelsController(this.gtfsParser.gtfsDatabase);
+    this.shapesManager = new ShapesManager(this.gtfsParser, this.patchManager);
 
     const appContainer = document.querySelector<HTMLElement>('.app-container')!;
     new PanelResizer(appContainer, this.mapController);
@@ -183,15 +184,20 @@ export class GTFSEditor {
     });
 
     // A timetable picker's footer button -> the modal that authors what the
-    // picker lists. Both are reached lazily, since the shapes manager is not
-    // built until init().
+    // picker lists. Both go through the hash, so the modal is linkable and
+    // back closes it.
     this.scheduleController.setManagerHandlers({
       openOnDemand: (target) => {
-        void showOnDemandModal(this.onDemandModalDeps(), target);
+        void openModal(
+          { type: 'on_demand', ...(target.table && { table: target.table }) },
+          { rowKey: target.rowKey }
+        );
       },
       openShapes: () => {
-        void this.shapesManager?.open();
+        void openModal({ type: 'shapes' });
       },
+      uploadShape: (tripId, currentShapeId) =>
+        this.shapesManager.uploadShapeForTrip(tripId, currentShapeId),
     });
 
     this.init().catch((error) => {
@@ -259,9 +265,7 @@ export class GTFSEditor {
         this.gtfsParser,
         this.editor,
         this.mapController,
-        this.browseNavigation,
-        this.scheduleController,
-        this.validateAndUpdateInfo.bind(this)
+        this.browseNavigation
       );
 
       // Initialize Browse navigation
@@ -269,7 +273,6 @@ export class GTFSEditor {
 
       // Set up circular references
       this.browseNavigation.uiController = this.uiController;
-      this.browseNavigation.scheduleController = this.scheduleController;
 
       // Initialize search controller
       this.searchController.initialize();
@@ -325,78 +328,70 @@ export class GTFSEditor {
         this.updateUndoRedoState();
       });
 
+      // Every feed-scoped cache invalidation, in one place. Before this signal
+      // existed each swap path had to remember these by hand, and the boot
+      // paths did not. The parser fires it only once the new rows are final.
+      this.gtfsParser.onFeedReplaced(() => {
+        // Timetable data and picker options are keyed by ids that collide
+        // across feeds, so stale entries redisplay the previous feed's rows.
+        this.scheduleController.resetForNewFeed();
+        // Issues and the navbar count badges: import writes rows directly,
+        // bypassing the patch events these otherwise listen to.
+        this.validateAndUpdateInfo();
+        // Async, and nothing renders a column list synchronously inside the
+        // swap, so it is fire-and-forget. User-added columns live in the meta
+        // store, which clearDatabase() wipes; without this the in-memory list
+        // keeps the previous feed's columns.
+        loadExtensionColumns(this.gtfsParser.gtfsDatabase).catch((e: unknown) =>
+          console.error('[GTFSEditor] failed to reload extension columns:', e)
+        );
+      });
+
       // Initialize keyboard shortcuts
       this.keyboardShortcuts.initialize();
 
-      // Wire shapes button to open Shapes manager
-      const shapesManager = new ShapesManager(
-        this.gtfsParser,
-        this.patchManager
-      );
-      this.shapesManager = shapesManager;
       const shapesBtn = document.getElementById('shapes-btn');
       if (shapesBtn) {
         // Same icon as the "open in brouter" affordance, at navbar icon size.
         shapesBtn.innerHTML = renderRouteWaypointsIcon('h-5 w-5');
       }
-      shapesBtn?.addEventListener('click', () => {
-        void (async () => {
-          if (shouldShowHelpPage('shapes')) {
-            await showHelpModal('shapes');
-          }
-          void shapesManager.open();
-        })();
-      });
 
-      // Wire fares button to open Fares modal
+      // Content modals live in the URL hash: the navbar buttons move page
+      // state, and the router below opens the modal that state names. The guide
+      // page gating sits in the opener, not the button, so a deep link gets the
+      // same first-use guide.
+      this.registerModals(this.shapesManager);
+
+      document
+        .getElementById('timetable-btn')
+        ?.addEventListener('click', () => void this.openDefaultTimetable());
+      document
+        .getElementById('dock-timetable')
+        ?.addEventListener('click', () => void this.openDefaultTimetable());
+      document.getElementById('shapes-btn')?.addEventListener('click', () => {
+        void openModal({ type: 'shapes' });
+      });
       document.getElementById('fares-btn')?.addEventListener('click', () => {
-        void (async () => {
-          if (shouldShowHelpPage('fares')) {
-            await showHelpModal('fares');
-          }
-          showFaresModal({
-            gtfsDatabase: this.gtfsParser.gtfsDatabase as Parameters<
-              typeof showFaresModal
-            >[0]['gtfsDatabase'],
-            patchManager: this.patchManager,
-          });
-        })();
+        void openModal({ type: 'fares' });
       });
-
-      // Wire feed data button to open the Feed Data modal
       document
         .getElementById('feed-data-btn')
         ?.addEventListener('click', () => {
-          void showFeedDataModal({
-            gtfsDatabase: this.gtfsParser.gtfsDatabase as Parameters<
-              typeof showFeedDataModal
-            >[0]['gtfsDatabase'],
-            patchManager: this.patchManager,
-          });
+          void openModal({ type: 'feed_data' });
         });
-
-      // Wire on-demand button to open the On-Demand (GTFS Flex) modal
       document
         .getElementById('on-demand-btn')
         ?.addEventListener('click', () => {
-          void showOnDemandModal(this.onDemandModalDeps());
+          void openModal({ type: 'on_demand' });
         });
-
-      // Wire calendar button to open Calendar modal
       document.getElementById('calendar-btn')?.addEventListener('click', () => {
-        void showCalendarModal({
-          gtfsDatabase: this.gtfsParser
-            .gtfsDatabase as CalendarModalDeps['gtfsDatabase'],
-          onServiceClick: (service_id) => {
-            void this.pageStateManager.setPageState({
-              type: 'service',
-              service_id,
-            });
-          },
-        });
+        void openModal({ type: 'calendar' });
+      });
+      document.getElementById('levels-btn')?.addEventListener('click', () => {
+        void openModal({ type: 'levels' });
       });
 
-      // Wire up help modal
+      // Wire up guide modal
       setHelpRuntimeData({
         version: __APP_VERSION__,
         shortcuts: this.keyboardShortcuts.getShortcutsList(),
@@ -405,13 +400,6 @@ export class GTFSEditor {
       document
         .getElementById('help-btn')
         ?.addEventListener('click', () => void showHelpModal());
-
-      // Wire levels button
-      document.getElementById('levels-btn')?.addEventListener('click', () => {
-        this.levelsController
-          .showLevelsModal()
-          .catch((e: unknown) => console.error('[levels] modal failed:', e));
-      });
 
       // Initialize theme controller
       this.themeController.initialize();
@@ -484,9 +472,6 @@ export class GTFSEditor {
 
       this.updateUndoRedoState();
 
-      // Validate the restored feed so the home panel can show its issues.
-      this.validateAndUpdateInfo();
-
       if (CONFIG.DEBUG_BOOT) {
         console.time('[boot] browse-navigation.refresh');
       }
@@ -505,6 +490,11 @@ export class GTFSEditor {
       if (CONFIG.DEBUG_BOOT) {
         console.timeEnd('[boot] total');
       }
+
+      // initializeFromURL sets the state without dispatching a navigation, so
+      // a modal named by the boot URL is opened here, once the feed it reads
+      // is in place.
+      getModalRouter().sync(this.pageStateManager.getPageState());
 
       runWhenIdle(() => {
         if (CONFIG.DEBUG_BOOT) {
@@ -564,8 +554,10 @@ export class GTFSEditor {
     }
 
     const deepLink = this.pageStateManager.peekURLPageState();
-    if (deepLink.type !== 'home') {
-      console.log(`[boot] skipped modal: deep link to ${deepLink.type}`);
+    if (deepLink.type !== 'home' || deepLink.modal) {
+      console.log(
+        `[boot] skipped modal: deep link to ${deepLink.modal?.type ?? deepLink.type}`
+      );
       await this.restoreStoredFeed();
       return;
     }
@@ -611,6 +603,9 @@ export class GTFSEditor {
     // Paired with the restore, never run on a feed the user declined: replaying
     // patches over the wrong rows is how a feed gets corrupted.
     await this.patchManager.initialize();
+    // Only now are the rows final: the snapshot branch of patchManager.initialize
+    // rebinds tables and replays the patch log on top of what the restore read.
+    this.gtfsParser.markFeedReplaced();
     if (CONFIG.DEBUG_BOOT) {
       console.timeEnd('[boot] restore stored feed');
     }
@@ -618,7 +613,7 @@ export class GTFSEditor {
     console.log(`[boot] continue with stored feed (${routes} routes)`);
   }
 
-  // Runs on boot and after every import/replace/new-feed action (see ui.ts validateCallback).
+  // Runs on every whole-feed swap, via the parser's feed-replaced signal.
   // Publishes the grouped issues the home panel renders.
   public validateAndUpdateInfo(): void {
     // Feed import writes rows directly, bypassing the patch events the count
@@ -630,6 +625,103 @@ export class GTFSEditor {
     console.log(
       `[GTFSEditor] validation: ${validationResults.errors.length} error(s), ${validationResults.warnings.length} warning(s), ${issues.length} issue group(s)`
     );
+  }
+
+  /**
+   * Teach the modal router how to open each content modal, then let it react
+   * to every navigation. Registration happens before the handler is added so a
+   * navigation can never arrive at an empty registry.
+   */
+  private registerModals(shapesManager: ShapesManager): void {
+    const router = getModalRouter();
+
+    router.register('timetable', (modal) =>
+      showTimetableModal(
+        {
+          scheduleController: this.scheduleController,
+          patchManager: this.patchManager,
+        },
+        modal
+      )
+    );
+
+    router.register('shapes', async (_modal, _transient, cancelled) => {
+      if (shouldShowHelpPage('shapes')) {
+        await showHelpModal('shapes', { continueLabel: 'Continue to Shapes' });
+        if (cancelled()) {
+          return;
+        }
+      }
+      await shapesManager.open();
+    });
+
+    router.register('fares', async (_modal, _transient, cancelled) => {
+      if (shouldShowHelpPage('fares')) {
+        await showHelpModal('fares', { continueLabel: 'Continue to Fares' });
+        if (cancelled()) {
+          return;
+        }
+      }
+      await showFaresModal({
+        gtfsDatabase: this.gtfsParser.gtfsDatabase as Parameters<
+          typeof showFaresModal
+        >[0]['gtfsDatabase'],
+        patchManager: this.patchManager,
+      });
+    });
+
+    router.register('feed_data', (modal, transient) =>
+      showFeedDataModal(
+        {
+          gtfsDatabase: this.gtfsParser.gtfsDatabase as Parameters<
+            typeof showFeedDataModal
+          >[0]['gtfsDatabase'],
+          patchManager: this.patchManager,
+        },
+        { table: modal.table, rowKey: transient.rowKey }
+      )
+    );
+
+    router.register('on_demand', (modal, transient) =>
+      showOnDemandModal(this.onDemandModalDeps(), {
+        table: modal.table,
+        rowKey: transient.rowKey,
+      })
+    );
+
+    router.register('calendar', () =>
+      showCalendarModal({
+        gtfsDatabase: this.gtfsParser
+          .gtfsDatabase as CalendarModalDeps['gtfsDatabase'],
+        patchManager: this.patchManager,
+        onServiceClick: (service_id) => {
+          // Navigating drops the modal from the state, so the router closes it.
+          void this.pageStateManager.setPageState({
+            type: 'service',
+            service_id,
+          });
+        },
+      })
+    );
+
+    router.register('levels', () => this.levelsController.showLevelsModal());
+
+    this.pageStateManager.addNavigationHandler((event) => {
+      router.sync(event.to);
+    });
+  }
+
+  /**
+   * The navbar and dock buttons name no timetable, so the controller picks
+   * one: the first route with trips, its first service, its busiest direction.
+   */
+  private async openDefaultTimetable(): Promise<void> {
+    const target = await this.scheduleController.resolveTimetableTarget();
+    if (!target) {
+      notify.warning('This feed has no trips yet, so there is no timetable.');
+      return;
+    }
+    await openTimetable(target.route_id, target.service_id);
   }
 
   /** Deps for the On-Demand modal, which several affordances can open. */
@@ -668,12 +760,8 @@ export class GTFSEditor {
     this.pageStateManager.addNavigationHandler((event) => {
       const { to } = event;
 
-      // Open the bottom sheet on mobile for route, stop, and timetable navigation
-      if (
-        to.type === 'route' ||
-        to.type === 'stop' ||
-        to.type === 'timetable'
-      ) {
+      // Open the bottom sheet on mobile for route and stop navigation
+      if (to.type === 'route' || to.type === 'stop') {
         bottomSheet?.open('half');
       }
     });
@@ -687,13 +775,6 @@ export class GTFSEditor {
     if (versionElement) {
       versionElement.textContent = `v${__APP_VERSION__}`;
     }
-  }
-
-  /**
-   * Call this method when GTFS data is reloaded to update breadcrumb lookup cache
-   */
-  public onGTFSDataReloaded(): void {
-    updateBreadcrumbLookup(this.gtfsParser);
   }
 
   private updateUndoRedoState(): void {
@@ -787,15 +868,6 @@ export class GTFSEditor {
           `Redo failed: ${e instanceof Error ? e.message : String(e)}`
         )
       );
-  }
-
-  // Navigation helper methods for global access
-  async navigateToTimetable(
-    route_id: string,
-    service_id: string,
-    direction_id?: string
-  ): Promise<void> {
-    await navigateToTimetable(route_id, service_id, direction_id);
   }
 }
 

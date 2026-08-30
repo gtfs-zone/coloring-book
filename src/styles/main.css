@@ -139,6 +139,24 @@ body {
     z-index: 1;
   }
 
+  /* Each pinned header row is its own stacking context (`z-[2]`), and its
+     frozen first cell is a plain sibling of the trip cells that scroll under
+     it. With no z-index of its own that cell paints first, so the per-trip
+     action buttons slide over the frozen Stop column on horizontal scroll.
+     table-pin-cols already makes the cell sticky, so a z-index applies. */
+  #schedule-view thead .stop-header {
+    z-index: 1;
+  }
+
+  /* table-pin-rows sticks every thead row at top: 0, so the trip action row
+     lands on top of the trip id row instead of below it. Only the id row
+     freezes; the action row scrolls away with the body. It keeps no z-index of
+     its own so it passes under the pinned row (z-[2]) on the way out. */
+  #schedule-view thead tr.trip-actions-row {
+    position: static;
+    z-index: auto;
+  }
+
   .tooltip:before {
     max-width: 20rem;
     white-space: pre-line; /* Preserve newlines, allow wrapping */

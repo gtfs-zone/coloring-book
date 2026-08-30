@@ -26,6 +26,14 @@ export function renderSortByTimeIcon(sizeClass = 'h-4 w-4'): string {
   return `<svg xmlns="http://www.w3.org/2000/svg" class="${sizeClass}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 6h8M3 12h5M3 18h3" /><circle cx="17" cy="14" r="5" stroke-width="2" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 12v2l1.5 1.5" /></svg>`;
 }
 
+/**
+ * Simplify icon: a jagged line above the straight line it collapses to, for
+ * the action that drops intermediate shape points.
+ */
+export function renderSimplifyIcon(sizeClass = 'h-4 w-4'): string {
+  return `<svg xmlns="http://www.w3.org/2000/svg" class="${sizeClass}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9l4-4 4 4 4-4 6 4" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 17h18" /></svg>`;
+}
+
 export function renderCloseIcon(sizeClass = 'h-4 w-4'): string {
   return `<svg xmlns="http://www.w3.org/2000/svg" class="${sizeClass}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 6l12 12M18 6L6 18" /></svg>`;
 }
@@ -80,10 +88,38 @@ export interface ModalAction {
 // Stack of currently-open showModal() modals, innermost last. Every open modal
 // has its own document-level keydown listener, so all of them fire on a single
 // Escape; only the topmost is allowed to act on it.
-const modalStack: HTMLElement[] = [];
+interface OpenModal {
+  el: HTMLElement;
+  close: () => void;
+}
+
+const modalStack: OpenModal[] = [];
 
 function isTopmostModal(modal: HTMLElement): boolean {
-  return modalStack[modalStack.length - 1] === modal;
+  return modalStack[modalStack.length - 1]?.el === modal;
+}
+
+/** How many modals are open, used as a mark to close back down to. */
+export function modalStackDepth(): number {
+  return modalStack.length;
+}
+
+/**
+ * Close every modal opened after the stack reached `depth`, topmost first.
+ *
+ * The modal router uses this to take down a routed modal, along with anything
+ * the modal itself stacked on top (a confirm, a picker), when the URL says the
+ * modal is no longer open.
+ */
+export function closeModalsAbove(depth: number): void {
+  while (modalStack.length > depth) {
+    const top = modalStack[modalStack.length - 1];
+    top.close();
+    if (modalStack[modalStack.length - 1] === top) {
+      console.error('[modal-utils] modal did not leave the stack on close');
+      modalStack.pop();
+    }
+  }
 }
 
 /**
@@ -128,17 +164,18 @@ export async function showModal(options: {
       </div>
     `;
     document.body.appendChild(modal);
-    modalStack.push(modal);
 
     const close = () => {
       document.removeEventListener('keydown', onKeydown);
-      const idx = modalStack.indexOf(modal);
+      const idx = modalStack.findIndex((entry) => entry.el === modal);
       if (idx !== -1) {
         modalStack.splice(idx, 1);
       }
       document.body.removeChild(modal);
       resolve();
     };
+
+    modalStack.push({ el: modal, close });
 
     const triggerAction = async (idx: number): Promise<void> => {
       modal

@@ -119,30 +119,6 @@ export async function buildBreadcrumbs(
         ];
       }
 
-      case 'timetable': {
-        const agency_id = lookup
-          ? await lookup.getAgencyIdForRoute(pageState.route_id)
-          : 'unknown';
-        return [
-          HOME,
-          {
-            typeLabel: 'Agency',
-            label: await nameOf(lookup, 'agency', agency_id),
-            pageState: { type: 'agency', agency_id },
-          },
-          {
-            typeLabel: 'Route',
-            label: await nameOf(lookup, 'route', pageState.route_id),
-            pageState: { type: 'route', route_id: pageState.route_id },
-          },
-          {
-            typeLabel: 'Timetable',
-            label: pageState.service_id,
-            pageState,
-          },
-        ];
-      }
-
       case 'stop': {
         const ancestors = lookup
           ? await lookup.getStopAncestors(pageState.stop_id)

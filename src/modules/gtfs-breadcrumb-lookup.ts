@@ -254,20 +254,6 @@ export class GTFSBreadcrumbLookup implements BreadcrumbLookup {
   }
 
   /**
-   * No-op cache clearing method for compatibility
-   */
-  clearCache(): void {
-    // No cache to clear - data is always loaded fresh from database
-  }
-
-  /**
-   * No-op preload method for compatibility
-   */
-  async preloadCache(): Promise<void> {
-    // No cache to preload - data is always loaded fresh from database
-  }
-
-  /**
    * Get agency ID for a route (needed for simplified navigation)
    */
   async getAgencyIdForRoute(route_id: string): Promise<string> {

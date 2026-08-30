@@ -7,7 +7,6 @@
  */
 
 import type { Agency, Routes, Trips } from '../types/gtfs.js';
-import type { QueryOnlyDatabase } from '../utils/field-component.js';
 import { normalizeAgencyId } from '../utils/agency-helpers.js';
 import { renderTrashIcon } from './modal-utils.js';
 import {
@@ -16,15 +15,30 @@ import {
   VIEW_ROUTE_BTN,
 } from '../utils/entity-references.js';
 import { getRouteDisplay } from '../utils/entity-display.js';
+import { feedBounds, type FeedBounds } from '../utils/feed-bounds.js';
+import { patchUpdate } from '../utils/patch-utils.js';
 import {
   showOptionPickerModal,
   type OptionPickerItem,
 } from './option-picker-modal.js';
 
 const CREATE_TIMETABLE_BTN = 'create-timetable-btn';
+const TRIM_TO_FEED_START_BTN = 'trim-to-feed-start-btn';
+const EXTEND_TO_FEED_END_BTN = 'extend-to-feed-end-btn';
 
 export interface ServiceViewDependencies {
-  gtfsDatabase?: QueryOnlyDatabase;
+  gtfsDatabase?: {
+    queryRows: (
+      tableName: string,
+      filter?: Record<string, unknown>
+    ) => Promise<unknown[]>;
+    getAllRows: (tableName: string) => Promise<unknown[]>;
+    updateRow?: (
+      tableName: string,
+      key: string,
+      data: Record<string, unknown>
+    ) => Promise<void>;
+  };
   gtfsRelationships?: {
     getRoutesForService?: (service_id: string) => Promise<unknown[]>;
     getTripsForService?: (service_id: string) => Promise<unknown[]>;
@@ -32,6 +46,14 @@ export interface ServiceViewDependencies {
   serviceDaysController: {
     renderServiceEditor: (service_id: string) => Promise<string>;
   };
+  patchManager?: {
+    recordUpdate: (
+      table: string,
+      id: string,
+      before: Record<string, unknown>,
+      after: Record<string, unknown>
+    ) => Promise<void>;
+  } | null;
   onAgencyClick?: (agency_id: string) => void;
   onRouteClick: (route_id: string) => void;
   onTimetableClick: (
@@ -40,6 +62,8 @@ export interface ServiceViewDependencies {
     direction_id?: string
   ) => void;
   onDeleteService?: (service_id: string) => void;
+  /** Re-render the page after the service's calendar row is trimmed/extended. */
+  onServiceChanged?: (service_id: string) => void;
 }
 
 export class ServiceViewController {
@@ -84,10 +108,13 @@ export class ServiceViewController {
 
       const { calendar, calendarDates } =
         await this.getServiceCalendar(service_id);
+      const bounds = this.dependencies.gtfsDatabase
+        ? await feedBounds(this.dependencies.gtfsDatabase)
+        : {};
 
       const html = `
         <div class="p-4 space-y-4">
-          ${await this.renderServiceProperties(service_id)}
+          ${await this.renderServiceProperties(service_id, calendar, bounds)}
           ${this.renderTimetablesSection(service_id, routes, agencyNameByNormalizedId, tripCountByRoute, calendar, calendarDates)}
         </div>
       `;
@@ -213,18 +240,54 @@ export class ServiceViewController {
   /**
    * Render service properties section (weekly pattern editor)
    */
-  private async renderServiceProperties(service_id: string): Promise<string> {
+  private async renderServiceProperties(
+    service_id: string,
+    calendar: Record<string, unknown>,
+    bounds: FeedBounds
+  ): Promise<string> {
     // Use the service days controller to render the weekly pattern editor
     const serviceEditorHTML =
       await this.dependencies.serviceDaysController.renderServiceEditor(
         service_id
       );
 
+    const startDate =
+      calendar.start_date !== undefined ? String(calendar.start_date) : null;
+    const endDate =
+      calendar.end_date !== undefined ? String(calendar.end_date) : null;
+    // A service that lives only in calendar_dates.txt has no calendar row at
+    // all, so there is nothing for either button to trim or extend.
+    const hasCalendarRow = startDate !== null || endDate !== null;
+
+    const trimDisabled =
+      !hasCalendarRow || !bounds.start || startDate === bounds.start;
+    const trimTitle = !hasCalendarRow
+      ? 'This service has no calendar.txt row'
+      : !bounds.start
+        ? 'feed_info has no feed_start_date'
+        : startDate === bounds.start
+          ? 'Already at feed start'
+          : `Set start_date to ${bounds.start}`;
+
+    const extendDisabled =
+      !hasCalendarRow || !bounds.end || endDate === bounds.end;
+    const extendTitle = !hasCalendarRow
+      ? 'This service has no calendar.txt row'
+      : !bounds.end
+        ? 'feed_info has no feed_end_date'
+        : endDate === bounds.end
+          ? 'Already at feed end'
+          : `Set end_date to ${bounds.end}`;
+
     return `
       <div class="space-y-4">
         <div class="flex items-center justify-between gap-2">
           <h2 class="text-lg font-semibold">Service Schedule</h2>
-          <button class="btn btn-sm btn-error btn-outline delete-service-btn" data-service-id="${service_id}" title="Delete">${renderTrashIcon()}</button>
+          <div class="flex items-center gap-2">
+            <button class="btn btn-xs btn-outline ${TRIM_TO_FEED_START_BTN}" data-service-id="${service_id}" title="${trimTitle}" ${trimDisabled ? 'disabled' : ''}>Trim to feed start</button>
+            <button class="btn btn-xs btn-outline ${EXTEND_TO_FEED_END_BTN}" data-service-id="${service_id}" title="${extendTitle}" ${extendDisabled ? 'disabled' : ''}>Extend to feed end</button>
+            <button class="btn btn-sm btn-error btn-outline delete-service-btn" data-service-id="${service_id}" title="Delete">${renderTrashIcon()}</button>
+          </div>
         </div>
         <div class="card bg-base-100 shadow-lg">
           <div class="card-body p-4">
@@ -342,6 +405,47 @@ export class ServiceViewController {
   }
 
   /**
+   * Set the one service's `start_date` or `end_date` to the matching
+   * `feed_info` bound. A no-op call (bound missing or already equal) is
+   * prevented by disabling the button in the markup, but is also harmless
+   * here since `patchUpdate` -> `recordUpdate` drops a no-change patch.
+   */
+  private async trimOrExtendService(
+    service_id: string,
+    field: 'start_date' | 'end_date'
+  ): Promise<void> {
+    const db = this.dependencies.gtfsDatabase;
+    if (!db?.updateRow) {
+      return;
+    }
+    const bounds = await feedBounds(db);
+    const value = field === 'start_date' ? bounds.start : bounds.end;
+    if (!value) {
+      return;
+    }
+    const rows = await db.queryRows('calendar', { service_id });
+    const calendar = rows[0] as Record<string, unknown> | undefined;
+    if (!calendar || calendar[field] === value) {
+      return;
+    }
+    await patchUpdate(
+      db as {
+        updateRow: (
+          table: string,
+          key: string,
+          data: Record<string, unknown>
+        ) => Promise<void>;
+      },
+      this.dependencies.patchManager ?? null,
+      'calendar',
+      service_id,
+      { [field]: calendar[field] },
+      { [field]: value }
+    );
+    this.dependencies.onServiceChanged?.(service_id);
+  }
+
+  /**
    * Render error state
    */
   private renderError(message: string): string {
@@ -370,6 +474,23 @@ export class ServiceViewController {
         }
       });
     }
+
+    // Trim/extend this service's calendar row to the feed's declared bounds
+    const trimBtn = container.querySelector(`.${TRIM_TO_FEED_START_BTN}`);
+    trimBtn?.addEventListener('click', () => {
+      const service_id = trimBtn.getAttribute('data-service-id');
+      if (service_id) {
+        void this.trimOrExtendService(service_id, 'start_date');
+      }
+    });
+
+    const extendBtn = container.querySelector(`.${EXTEND_TO_FEED_END_BTN}`);
+    extendBtn?.addEventListener('click', () => {
+      const service_id = extendBtn.getAttribute('data-service-id');
+      if (service_id) {
+        void this.trimOrExtendService(service_id, 'end_date');
+      }
+    });
 
     // Timetable row click goes to the timetable
     const routeRows = container.querySelectorAll(`.${TIMETABLE_REF_ROW}`);

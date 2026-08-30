@@ -88,6 +88,15 @@ export class GTFSParser {
   constructor() {
     this.gtfsData = {};
     this.gtfsDatabase = new GTFSDatabase();
+
+    // A reload can outrun the 3-second debounce. Flush when the page is
+    // hidden, which fires before a refresh or a tab close.
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden' && this.blobDirty.size > 0) {
+        console.log('[GTFSParser] Page hidden with dirty blobs, flushing');
+        void this.persistDirtyBlobs();
+      }
+    });
   }
 
   setPatchManager(pm: PatchManagerRef): void {
@@ -407,6 +416,14 @@ export class GTFSParser {
    * For stop_times, the stop_id Map is kept as a class field for synchronous lookups.
    */
   private setupVirtual(tableName: string, data: GTFSDatabaseRecord[]): void {
+    // Rebinding a table's rows invalidates anything memoized off them. Boot
+    // reads the shape ids for the navbar badge before the feed is restored,
+    // and an empty cached array is truthy, so without this the ids stay empty
+    // for the whole session.
+    if (tableName === 'shapes') {
+      this.shapeIdsCache = null;
+    }
+
     const fieldMaps = new Map<string, Map<string, GTFSDatabaseRecord[]>>();
 
     if (tableName === 'stop_times') {
@@ -451,23 +468,57 @@ export class GTFSParser {
    * Flush all dirty blobs to IDB immediately. Called before export and on demand.
    * If `version` is provided (or can be read from the current patchManager), records
    * it in meta.blobVersion so the next restore can skip snapshot+replay entirely.
+   *
+   * The dirty set and the version are both captured before the first await. An
+   * edit landing mid-flush must stay dirty and must not be covered by the
+   * blobVersion this run stamps: PatchManager skips snapshot+replay entirely
+   * when blobVersion equals currentVersion, so a stamp that runs ahead of what
+   * was actually written loses that edit on the next reload. Writing a blob
+   * that is *ahead* of the stamped version is safe in the other direction,
+   * because replaying a patch already reflected in memory is a no-op.
+   *
+   * Runs are serialized: two overlapping flushes would interleave their writes
+   * and their version stamps.
    */
   async persistDirtyBlobs(version?: number): Promise<void> {
+    const run = this.blobFlushChain.then(() => this.flushBlobsOnce(version));
+    // Swallow here only so one failed flush does not poison the chain; the
+    // caller still sees the rejection through `run`.
+    this.blobFlushChain = run.catch(() => {});
+    return run;
+  }
+
+  private blobFlushChain: Promise<void> = Promise.resolve();
+
+  private async flushBlobsOnce(version?: number): Promise<void> {
     if (this.blobPersistTimer) {
       clearTimeout(this.blobPersistTimer);
       this.blobPersistTimer = null;
     }
-    for (const tableName of this.blobDirty) {
+    const pending = Array.from(this.blobDirty);
+    this.blobDirty.clear();
+    const v = version ?? this.patchManager?.version;
+
+    for (const tableName of pending) {
       const fileName = `${tableName}.txt`;
       const rows = this.gtfsData[fileName]?.data ?? [];
-      if (rows.length === 0) {
-        continue;
+      try {
+        // An emptied table is written as `[]` rather than skipped: skipping
+        // leaves the pre-delete blob on disk and the rows come back on reload.
+        await this.gtfsDatabase.saveTableBlob(tableName, JSON.stringify(rows));
+      } catch (error) {
+        // Keep it dirty so the next flush retries, and do not stamp a version
+        // that claims this table was written.
+        this.blobDirty.add(tableName);
+        console.error(
+          `[GTFSParser] Failed to persist ${tableName} blob:`,
+          error
+        );
+        throw error;
       }
-      await this.gtfsDatabase.saveTableBlob(tableName, JSON.stringify(rows));
     }
-    this.blobDirty.clear();
+
     // Record the version at which blobs were last fully flushed.
-    const v = version ?? this.patchManager?.version;
     if (v !== undefined) {
       await this.gtfsDatabase.setBlobVersion(v);
     }
@@ -616,6 +667,104 @@ export class GTFSParser {
   }
 
   private shapeIdsCache: string[] | null = null;
+
+  /**
+   * Insert shapes.txt rows, guaranteeing `gtfsData['shapes.txt']` (and the
+   * `shapeIdsCache` it feeds) stays in sync even if the shapes virtual table
+   * were ever missing at write time.
+   *
+   * `GTFSDatabase.insertRows` normally routes through the virtual table
+   * registered in `setupVirtual`, which keeps memory current as a side
+   * effect. If that table is somehow unregistered, the write falls straight
+   * through to IndexedDB and memory goes stale, which is exactly the bug
+   * `getShapeIds()` (and the timetable's shape picker built on it) cannot
+   * silently tolerate. Resync from the database rather than trust the
+   * assumption.
+   */
+  async insertShapeRows(rows: GTFSDatabaseRecord[]): Promise<void> {
+    const hadVirtualTable = this.gtfsDatabase.hasVirtualTable('shapes');
+    await this.gtfsDatabase.insertRows('shapes', rows);
+    if (!hadVirtualTable) {
+      console.warn(
+        '[GTFSParser] shapes virtual table missing at insert time; resyncing memory from IndexedDB'
+      );
+      await this.resyncShapesFromDatabase();
+    }
+    this.shapeIdsCache = null;
+  }
+
+  /** Delete shapes.txt rows by composite key. See `insertShapeRows` for why this resyncs defensively. */
+  async deleteShapeRows(keys: string[]): Promise<void> {
+    const hadVirtualTable = this.gtfsDatabase.hasVirtualTable('shapes');
+    await this.gtfsDatabase.deleteRows('shapes', keys);
+    if (!hadVirtualTable) {
+      console.warn(
+        '[GTFSParser] shapes virtual table missing at delete time; resyncing memory from IndexedDB'
+      );
+      await this.resyncShapesFromDatabase();
+    }
+    this.shapeIdsCache = null;
+  }
+
+  /** Re-reads shapes.txt from IndexedDB into memory and re-registers its virtual table. */
+  private async resyncShapesFromDatabase(): Promise<void> {
+    const rows = await this.gtfsDatabase.getAllRows('shapes');
+    this.gtfsData['shapes.txt'] = { content: '', data: rows, errors: [] };
+    this.setupVirtual('shapes', rows);
+    // The rows reached memory without going through a virtual table, so
+    // nothing has marked the blob dirty. Restore reads blobs, not rows.
+    this.invalidateBlobForTable('shapes');
+  }
+
+  // ===== Feed replacement signal =====
+
+  private feedListeners = new Set<() => void>();
+  private generation = 0;
+
+  /** Bumps on every whole-feed swap. Feed-scoped memos key on this. */
+  get feedGeneration(): number {
+    return this.generation;
+  }
+
+  /**
+   * Subscribe to whole-feed swaps. There is no unsubscribe: the listeners are
+   * the app's long-lived modules, registered once in `src/index.ts`.
+   */
+  onFeedReplaced(listener: () => void): void {
+    this.feedListeners.add(listener);
+  }
+
+  /**
+   * Announce that a different feed is now in memory.
+   *
+   * Called at the END of each lifecycle method, never at the start: the
+   * contract listeners rely on is that the new rows are already in place when
+   * this fires. Emitting from resetInMemoryFeedState() would hand every
+   * listener the empty state and re-cache the same staleness this signal
+   * exists to prevent.
+   *
+   * Every module is constructed and can read feed data before a feed exists,
+   * so a cache guarded only by `if (this.cache)` pins the empty boot scaffold
+   * for the whole session unless it keys on `feedGeneration` or subscribes here.
+   *
+   * `parseFile` and `initializeEmpty` call this themselves. The boot restore is
+   * the one path the parser cannot close on its own: `restoreDataFromDatabase`
+   * is only half of it, and the rows are not final until `PatchManager.initialize`
+   * has replayed the patch log over them, so `GTFSEditor.restoreStoredFeed` calls
+   * this once that pairing is complete. Do not add a third caller.
+   */
+  markFeedReplaced(): void {
+    this.generation++;
+    console.log(`[GTFSParser] feed replaced (generation ${this.generation})`);
+    for (const listener of this.feedListeners) {
+      try {
+        listener();
+      } catch (e) {
+        // One bad listener must not strand the rest mid-swap.
+        console.error('[GTFSParser] feed-replaced listener threw:', e);
+      }
+    }
+  }
 
   /** Where the current feed came from: the last resort for its display name. */
   private feedLabel = '';
@@ -819,6 +968,8 @@ export class GTFSParser {
     // This guarantees that a quick refresh (before the 3-second debounce) still
     // has a row for patch replay to land on. Fresh DB has no patches yet, version 0.
     await this.persistDirtyBlobs(0);
+
+    this.markFeedReplaced();
   }
 
   async parseFile(
@@ -943,6 +1094,9 @@ export class GTFSParser {
 
       console.log('Loaded GTFS data to IndexedDB and memory:', this.gtfsData);
       console.timeEnd('[GTFS] parseFile total');
+      // Success path only: a throw leaves the previous feed's caches invalid
+      // but there is no new feed to announce, and boot's fallback re-announces.
+      this.markFeedReplaced();
       return { data: this.gtfsData, unknownFiles };
     } catch (error) {
       console.error('Error loading GTFS file:', error);

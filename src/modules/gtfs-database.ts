@@ -259,6 +259,11 @@ export class GTFSDatabase {
     this.virtualTables.set(tableName, handlers);
   }
 
+  /** Whether a table's writes are currently routed through an in-memory virtual table. */
+  hasVirtualTable(tableName: string): boolean {
+    return this.virtualTables.has(tableName);
+  }
+
   constructor() {}
 
   /**

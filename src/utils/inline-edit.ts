@@ -58,6 +58,13 @@ export type InlineEditorInputType =
   | 'date'
   | 'time';
 
+/**
+ * A native color input has no empty state: a blank value shows as black. An
+ * editor for an empty color field opens on that same black, so closing it
+ * without picking commits nothing rather than writing 000000.
+ */
+export const COLOR_EMPTY = '#000000';
+
 export interface InlineEditorOptions {
   /**
    * The stored value. Doubles as the baseline a commit is compared against, so
@@ -226,7 +233,11 @@ export function openInlineEditor(
   input.addEventListener('blur', commit);
   input.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
+      // Cancel the edit and stop there: inside a modal (the timetable) the
+      // same key closes the modal, and Escape belongs to the innermost thing
+      // it can dismiss.
       e.preventDefault();
+      e.stopPropagation();
       cancel();
       return;
     }
@@ -309,7 +320,9 @@ export function openInlineMenu(
   };
   const onKeydown = (e: KeyboardEvent): void => {
     if (e.key === 'Escape') {
+      // Closes the menu only: see the editor's handler above.
       e.preventDefault();
+      e.stopPropagation();
       close();
     }
   };

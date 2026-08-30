@@ -14,21 +14,110 @@
  * Simplified: route_id and stop_id are unique across the entire GTFS feed,
  * so we don't need to track agency_id for routes/timetables.
  */
-export type PageState =
+export type PageLocation =
   | { type: 'home' }
   | { type: 'agency'; agency_id: string }
   | { type: 'route'; route_id: string }
-  | {
-      type: 'timetable';
-      route_id: string;
-      service_id: string;
-      direction_id?: string;
-    }
   | { type: 'stop'; stop_id: string }
   | { type: 'service'; service_id: string }
   | { type: 'pathway'; pathway_id: string }
   | { type: 'zone'; location_id: string }
   | { type: 'location_group'; location_group_id: string };
+
+/**
+ * The content modals that live in the URL hash.  Transient modals (guide,
+ * load, option pickers, confirms, files, history) stay out of the hash.
+ */
+export const MODAL_TYPES = [
+  'timetable',
+  'shapes',
+  'calendar',
+  'fares',
+  'on_demand',
+  'feed_data',
+  'levels',
+] as const;
+
+export type ModalType = (typeof MODAL_TYPES)[number];
+
+/** Which route, service and direction the timetable modal is showing. */
+export interface TimetableModalState {
+  type: 'timetable';
+  route_id: string;
+  service_id: string;
+  direction_id?: string;
+}
+
+/** Every content modal but the timetable: a single optional pane selector. */
+export type PaneModalType = Exclude<ModalType, 'timetable'>;
+
+/**
+ * Written as a mapped type over the pane modal types rather than one interface
+ * with a union `type`, so `ModalStateOf` can pick a single member out of it.
+ */
+export type PaneModalState = {
+  [T in PaneModalType]: {
+    type: T;
+    /** Which pane a multi-table modal opens on. */
+    table?: string;
+  };
+}[PaneModalType];
+
+/**
+ * A modal is orthogonal to the page beneath it: closing one returns to that
+ * page rather than to a separate modal page state.
+ */
+export type ModalState = TimetableModalState | PaneModalState;
+
+/** The modal state shape belonging to one modal type. */
+export type ModalStateOf<T extends ModalType> = Extract<
+  ModalState,
+  { type: T }
+>;
+
+/** Distributed so that narrowing on `type` still works through the modal field. */
+type WithModal<T> = T extends unknown ? T & { modal?: ModalState } : never;
+
+export type PageState = WithModal<PageLocation>;
+
+export function isModalState(value: unknown): value is ModalState {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+  const modal = value as {
+    type?: unknown;
+    table?: unknown;
+    route_id?: unknown;
+    service_id?: unknown;
+    direction_id?: unknown;
+  };
+  if (!MODAL_TYPES.includes(modal.type as ModalType)) {
+    return false;
+  }
+
+  if (modal.type === 'timetable') {
+    if (
+      typeof modal.route_id !== 'string' ||
+      typeof modal.service_id !== 'string'
+    ) {
+      return false;
+    }
+    if (
+      modal.direction_id !== undefined &&
+      typeof modal.direction_id !== 'string'
+    ) {
+      return false;
+    }
+    return Object.keys(modal).every((k) =>
+      ['type', 'route_id', 'service_id', 'direction_id'].includes(k)
+    );
+  }
+
+  if (modal.table !== undefined && typeof modal.table !== 'string') {
+    return false;
+  }
+  return Object.keys(modal).every((k) => k === 'type' || k === 'table');
+}
 
 /**
  * Type guard to check if a value is a valid PageState
@@ -38,7 +127,12 @@ export function isPageState(value: unknown): value is PageState {
     return false;
   }
 
-  const state = value as { type?: string };
+  // The modal dimension is validated on its own; the checks below count the
+  // keys of the page underneath it.
+  const { modal, ...state } = value as { modal?: unknown; type?: string };
+  if (modal !== undefined && !isModalState(modal)) {
+    return false;
+  }
   if (!state.type || typeof state.type !== 'string') {
     return false;
   }
@@ -60,27 +154,6 @@ export function isPageState(value: unknown): value is PageState {
       return (
         Object.keys(state).length === 2 &&
         typeof routeState.route_id === 'string'
-      );
-    }
-
-    case 'timetable': {
-      const timetableState = state as {
-        type: string;
-        route_id?: string;
-        service_id?: string;
-        direction_id?: string;
-      };
-      const hasRequiredFields =
-        typeof timetableState.route_id === 'string' &&
-        typeof timetableState.service_id === 'string';
-      const hasValidDirectionId =
-        timetableState.direction_id === undefined ||
-        typeof timetableState.direction_id === 'string';
-      const keyCount = Object.keys(state).length;
-      return (
-        hasRequiredFields &&
-        hasValidDirectionId &&
-        (keyCount === 3 || keyCount === 4)
       );
     }
 
