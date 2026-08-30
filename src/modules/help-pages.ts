@@ -13,6 +13,8 @@ import {
   renderProjectSection,
   renderResourcesSection,
   renderFeedbackSection,
+  renderExternalLink,
+  TRANSITLAND_URL,
   type AboutApp,
 } from './about-links.js';
 import {
@@ -21,6 +23,16 @@ import {
   PATHWAY_MODES,
   modesInCategory,
 } from '../utils/pathway-modes.js';
+import { getSpecUrl } from '../utils/field-component.js';
+
+/**
+ * A link into the GTFS reference for one file, dropped after a `lede()` or
+ * `footnote()` block (both interpolate raw HTML). `glyphList()` escapes its
+ * text, so this never goes inside one.
+ */
+function specLink(tableName: string, label: string): string {
+  return `<a href="${getSpecUrl(tableName)}" target="_blank" rel="noopener noreferrer" class="link link-primary">${label}</a>`;
+}
 
 export type HelpGroup = 'Getting Started' | 'Reference';
 
@@ -86,12 +98,15 @@ const ICON_CARD = icon(
 const ICON_LEG = icon(
   '<circle cx="6" cy="26" r="2"/><circle cx="24" cy="8" r="2"/><path d="M6.5 24c5.5-9 8-11 8-16 0 5 2.5 7 8 16"/>'
 );
+const ICON_BELL = icon(
+  '<path d="M10 24c-3 0-4-1.5-4-3 2-2 2-4 2-8 0-4.5 3.5-8 8-8s8 3.5 8 8c0 4 0 6 2 8 0 1.5-1 3-4 3z"/><path d="M13 27a3 3 0 006 0"/>'
+);
 
 const welcomePage: HelpPage = {
   id: 'welcome',
   label: 'Welcome',
   group: 'Getting Started',
-  title: 'Welcome to edit.gtfs.zone',
+  title: 'Load, edit, and export a GTFS feed',
   showOnceKey: 'help.welcome.seen',
   render: () =>
     [
@@ -171,7 +186,10 @@ const gettingStartedPage: HelpPage = {
           description: 'Fill in that trip’s stop times.',
         },
       ]),
-      footnote('You can revisit this at any time from the help menu.'),
+      lede(
+        `Spec reference: ${specLink('feed_info.txt', 'Feed Info')}, ${specLink('agency.txt', 'Agencies')}, ${specLink('calendar.txt', 'Calendar')}, ${specLink('routes.txt', 'Routes')}, ${specLink('trips.txt', 'Trips')}, ${specLink('stop_times.txt', 'Stop Times')}.`
+      ),
+      footnote('You can revisit this at any time from the Guide menu.'),
     ].join(''),
 };
 
@@ -214,7 +232,8 @@ const shapesPage: HelpPage = {
           description: 'Link the imported shape to your trips.',
         },
       ]),
-      footnote('You can revisit this at any time from the help menu.'),
+      lede(`Spec reference: ${specLink('shapes.txt', 'Shapes')}.`),
+      footnote('You can revisit this at any time from the Guide menu.'),
     ].join(''),
 };
 
@@ -222,7 +241,7 @@ const faresPage: HelpPage = {
   id: 'fares',
   label: 'Fares',
   group: 'Getting Started',
-  title: 'How GTFS-Fares V2 fits together',
+  title: 'How to specify fares in your GTFS feed',
   showOnceKey: 'help.fares.seen',
   render: () =>
     [
@@ -249,7 +268,10 @@ const faresPage: HelpPage = {
             'Apply your fare products to specific legs of a journey.',
         },
       ]),
-      footnote('You can revisit this at any time from the help menu.'),
+      lede(
+        `Spec reference: ${specLink('fare_products.txt', 'Fare Products')}, ${specLink('fare_media.txt', 'Fare Media')}, ${specLink('fare_leg_rules.txt', 'Fare Leg Rules')}.`
+      ),
+      footnote('You can revisit this at any time from the Guide menu.'),
     ].join(''),
 };
 
@@ -340,7 +362,7 @@ const mapKeyPage: HelpPage = {
   id: 'map-key',
   label: 'Map Key',
   group: 'Reference',
-  title: 'Map Key',
+  title: 'Reading the map symbols',
   render: () => {
     const row = (swatch: string, label: string) =>
       `<div class="flex items-center gap-2">${swatch}<span>${label}</span></div>`;
@@ -376,13 +398,57 @@ const mapKeyPage: HelpPage = {
   },
 };
 
+// ─── Getting Started: Publishing, shown once after a successful export ────
+
+const publishingPage: HelpPage = {
+  id: 'publishing',
+  label: 'Publishing your Feed',
+  group: 'Getting Started',
+  title: 'Publishing your feed',
+  showOnceKey: 'help.publishing.seen',
+  render: () =>
+    [
+      lede(
+        'A GTFS feed is only useful once riders and their apps can reach it. A few steps turn the file you just exported into a published feed.'
+      ),
+      glyphList([
+        {
+          icon: ICON_EXPORT,
+          term: 'Host the zip at a stable URL',
+          description:
+            'Somewhere that does not move, so apps can keep fetching the latest version.',
+        },
+        {
+          icon: ICON_CONNECT,
+          term: 'Register with the Mobility Database and TransitLand Atlas',
+          description:
+            'So trip planners and other apps can discover your feed.',
+        },
+        {
+          icon: ICON_CHECK,
+          term: 'Validate with the canonical GTFS validator',
+          description: 'Catch anything this editor does not check.',
+        },
+        {
+          icon: ICON_BELL,
+          term: 'Notify the apps your riders use',
+          description: 'Tell them where to find the new or updated feed.',
+        },
+      ]),
+      lede(
+        `${renderExternalLink('https://mobilitydatabase.org/', 'Mobility Database')}, ${renderExternalLink(TRANSITLAND_URL, 'TransitLand Atlas')}, ${renderExternalLink('https://gtfs-validator.mobilitydata.org/', 'Canonical GTFS Validator')}.`
+      ),
+      footnote('You can revisit this at any time from the Guide menu.'),
+    ].join(''),
+};
+
 // ─── Reference: Keyboard Shortcuts ─────────────────────────────────────────
 
 const shortcutsPage: HelpPage = {
   id: 'shortcuts',
   label: 'Keyboard Shortcuts',
   group: 'Reference',
-  title: 'Keyboard Shortcuts',
+  title: 'Using keyboard shortcuts',
   render: () => buildShortcutsTable(helpRuntimeData.shortcuts),
 };
 
@@ -391,6 +457,7 @@ export const HELP_PAGES: HelpPage[] = [
   gettingStartedPage,
   shapesPage,
   faresPage,
+  publishingPage,
   aboutPage,
   mapKeyPage,
   shortcutsPage,

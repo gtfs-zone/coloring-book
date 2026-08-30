@@ -43,7 +43,7 @@ import {
   type EditableTableConfig,
   type EditableTableDeps,
 } from './editable-table.js';
-import { showFeedDataModal } from './feed-data-modal.js';
+import { openModal } from './navigation-actions.js';
 import { specStoreName } from '../utils/spec-field-edit.js';
 import { validateTransferRow } from '../utils/fares-rules.js';
 
@@ -757,11 +757,11 @@ export class StopViewController {
         const manageTransfers = (e.target as Element).closest(
           '.manage-transfers-btn'
         );
-        if (manageTransfers && this.dependencies.editableDeps) {
-          await showFeedDataModal(this.dependencies.editableDeps, {
-            table: GTFS_TABLES.TRANSFERS,
-          });
-          this.dependencies.onTransfersChanged?.();
+        if (manageTransfers) {
+          await openModal(
+            { type: 'feed_data', table: GTFS_TABLES.TRANSFERS },
+            { onClosed: () => this.dependencies.onTransfersChanged?.() }
+          );
           return;
         }
       },

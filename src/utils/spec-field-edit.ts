@@ -9,6 +9,11 @@
 
 import { GTFSSchemas } from '../types/gtfs.js';
 import { GTFSFieldType, mapGTFSTypeString } from '../types/gtfs-field-types.js';
+import {
+  currencyOptions,
+  languageOptions,
+  timezoneOptions,
+} from './constrained-values.js';
 import { getGTFSPrimaryKey } from './gtfs-primary-keys.js';
 import { getEntityDisplay, renderOptionLabel } from './entity-display.js';
 import { TimeFormatter } from './time-formatter.js';
@@ -16,7 +21,37 @@ import type { OptionPickerItem } from '../modules/option-picker-modal.js';
 import type { GTFSFieldSpec } from '../gtfs-spec/types.js';
 import type { z } from 'zod';
 
-export type SpecFieldKind = 'text' | 'number' | 'enum' | 'foreign';
+export type SpecFieldKind =
+  | 'text'
+  | 'number'
+  | 'enum'
+  | 'foreign'
+  | 'constrained';
+
+/**
+ * Field types whose values come from a standard's closed set, and where that
+ * set comes from.
+ *
+ * These are not `enumValues` fields: the spec names the standard rather than
+ * listing the values, so the options come from `Intl` instead of the reference
+ * snapshot. The lists run to hundreds of entries, so they open the searchable
+ * picker rather than an inline menu.
+ */
+const CONSTRAINED_OPTION_PROVIDERS: Partial<
+  Record<GTFSFieldType, () => OptionPickerItem[]>
+> = {
+  [GTFSFieldType.LanguageCode]: languageOptions,
+  [GTFSFieldType.Timezone]: timezoneOptions,
+  [GTFSFieldType.CurrencyCode]: currencyOptions,
+};
+
+/** The picker options for a constrained field, or null if it is not one. */
+export function constrainedOptions(
+  spec: GTFSFieldSpec
+): OptionPickerItem[] | null {
+  const provider = CONSTRAINED_OPTION_PROVIDERS[mapGTFSTypeString(spec.type)];
+  return provider ? provider() : null;
+}
 
 /** Field types whose values are stored as numbers, so Zod expects a number. */
 const NUMERIC_FIELD_TYPES = new Set<GTFSFieldType>([
@@ -68,9 +103,11 @@ export function specFieldKind(spec: GTFSFieldSpec): SpecFieldKind {
   if (spec.enumValues && spec.enumValues.length > 0) {
     return 'enum';
   }
-  return NUMERIC_FIELD_TYPES.has(mapGTFSTypeString(spec.type))
-    ? 'number'
-    : 'text';
+  const type = mapGTFSTypeString(spec.type);
+  if (CONSTRAINED_OPTION_PROVIDERS[type]) {
+    return 'constrained';
+  }
+  return NUMERIC_FIELD_TYPES.has(type) ? 'number' : 'text';
 }
 
 /** Parse a raw input into the type the spec (and Zod) expect. */

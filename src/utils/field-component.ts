@@ -81,6 +81,12 @@ export interface FieldConfig {
   isExtension?: boolean;
 }
 
+/** Rendering options for a field label. */
+export interface FieldLabelOptions {
+  /** Use abbreviated presence wording, for narrow columns and headers. */
+  short?: boolean;
+}
+
 /**
  * Escape HTML special characters to prevent XSS
  */
@@ -139,23 +145,56 @@ export function getSpecUrl(tableName: string | undefined): string {
   );
 }
 
+/** Badge class and wording for each presence value that gets a badge. */
+const PRESENCE_BADGES: Partial<
+  Record<GTFSPresence, { badgeClass: string; label: string; short: string }>
+> = {
+  Required: {
+    badgeClass: 'badge-error',
+    label: 'Required',
+    short: 'Required',
+  },
+  'Conditionally Required': {
+    badgeClass: 'badge-warning',
+    label: 'Conditionally required',
+    short: 'Cond. required',
+  },
+  Recommended: {
+    badgeClass: 'badge-success',
+    label: 'Recommended',
+    short: 'Recommended',
+  },
+  'Conditionally Forbidden': {
+    badgeClass: 'badge-ghost',
+    label: 'Conditionally forbidden',
+    short: 'Cond. forbidden',
+  },
+};
+
 /**
- * Render presence indicator (*) with color coding
+ * Render the presence indicator as a badge carrying the presence word.
+ *
+ * `Optional` and a missing presence render nothing: an optional field is the
+ * default and a badge on every one of them would be noise.
+ *
+ * Narrow contexts (table headers, the timetable label column) pass
+ * `short: true` to get the abbreviated wording instead of clipping with CSS.
  */
-function renderPresenceMark(config: FieldConfig): string {
-  if (!config.presence || config.presence === 'Optional') {
+function renderPresenceMark(
+  config: FieldConfig,
+  options?: FieldLabelOptions
+): string {
+  if (!config.presence) {
     return '';
   }
 
-  const presenceColors: Partial<Record<GTFSPresence, string>> = {
-    Required: 'text-error',
-    'Conditionally Required': 'text-warning',
-    Recommended: 'text-success',
-    'Conditionally Forbidden': 'text-base-content opacity-40',
-  };
-  const colorClass = presenceColors[config.presence] ?? '';
+  const badge = PRESENCE_BADGES[config.presence];
+  if (!badge) {
+    return '';
+  }
 
-  return ` <span class="${colorClass}">*</span>`;
+  const text = options?.short ? badge.short : badge.label;
+  return ` <span class="badge badge-xs ${badge.badgeClass} align-middle whitespace-nowrap">${escapeHtml(text)}</span>`;
 }
 
 /**
@@ -200,7 +239,7 @@ export function tooltipContentAttr(content: string): string {
 }
 
 /**
- * Render the shared label content pattern: label text (linked to spec) + presence mark,
+ * Render the shared label content pattern: label text (linked to spec) + presence badge,
  * wrapped in a tooltip trigger showing structured field info on hover.
  * Used by both form field labels and timetable trip property rows.
  *
@@ -210,7 +249,10 @@ export function tooltipContentAttr(content: string): string {
  * inside). There is no direction parameter here since the portal picks a
  * position from the trigger's on-screen location, not a fixed CSS side.
  */
-export function renderFieldLabelContent(config: FieldConfig): string {
+export function renderFieldLabelContent(
+  config: FieldConfig,
+  options?: FieldLabelOptions
+): string {
   // A non-spec field has nothing to link to, and says so instead.
   const specUrl = config.isExtension ? '' : getSpecUrl(config.tableName);
   const tipContent = buildFieldTooltipContent(config);
@@ -220,7 +262,7 @@ export function renderFieldLabelContent(config: FieldConfig): string {
   const linkContent = specUrl
     ? `<a href="${specUrl}" target="_blank" rel="noopener noreferrer">${labelText}</a>`
     : labelText;
-  const presenceMark = renderPresenceMark(config);
+  const presenceMark = renderPresenceMark(config, options);
 
   if (tipContent) {
     return `<span class="field-tooltip-trigger" tabindex="0" data-tooltip-content="${escapeAttr(tipContent)}">${linkContent}${presenceMark}</span>`;
@@ -236,7 +278,7 @@ export function renderFieldLabelContent(config: FieldConfig): string {
  * where building the whole config from the schema would be wasted work.
  *
  * Presence is deliberately left off: the field is required of a join row, not
- * of the row being rendered, so a required mark here would be a lie.
+ * of the row being rendered, so a required badge here would be a lie.
  */
 export function renderSpecFieldLabelContent(
   tableName: string,
@@ -247,7 +289,7 @@ export function renderSpecFieldLabelContent(
 }
 
 /**
- * Render a field's label: the spec-linked name, its presence mark, and a lock
+ * Render a field's label: the spec-linked name, its presence badge, and a lock
  * icon for primary keys.
  *
  * `inputId` is omitted for click-to-edit fields, which have no input to point
@@ -255,9 +297,10 @@ export function renderSpecFieldLabelContent(
  */
 export function renderFieldLabel(
   config: FieldConfig,
-  inputId?: string
+  inputId?: string,
+  options?: FieldLabelOptions
 ): string {
-  const labelContent = renderFieldLabelContent(config);
+  const labelContent = renderFieldLabelContent(config, options);
 
   let readonlyIcon = '';
   if (config.readonly) {

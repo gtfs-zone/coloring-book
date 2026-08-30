@@ -8,6 +8,10 @@
 
 import {
   PageState,
+  ModalState,
+  ModalType,
+  PaneModalType,
+  MODAL_TYPES,
   NavigationEvent,
   PageStateManagerConfig,
   StateValidator,
@@ -256,7 +260,11 @@ export class PageStateManager {
         console.warn(
           '[PageStateManager] initializeFromURL: object not found in current feed, falling back to home'
         );
-        this.currentState = { type: 'home' };
+        // The modal survives: it does not depend on the object that is missing.
+        this.currentState = {
+          type: 'home',
+          ...(candidate.modal && { modal: candidate.modal }),
+        };
         return;
       }
     }
@@ -276,101 +284,154 @@ export class PageStateManager {
     const params = new URLSearchParams();
 
     switch (pageState.type) {
-      case 'home':
-        return '';
-
       case 'agency':
         params.set('agency', pageState.agency_id);
-        return params.toString();
+        break;
 
       case 'route':
         params.set('route', pageState.route_id);
-        return params.toString();
-
-      case 'timetable':
-        params.set('route', pageState.route_id);
-        params.set('service', pageState.service_id);
-        if (pageState.direction_id) {
-          params.set('direction', pageState.direction_id);
-        }
-        return params.toString();
+        break;
 
       case 'stop':
         params.set('stop', pageState.stop_id);
-        return params.toString();
+        break;
 
       case 'service':
         params.set('service', pageState.service_id);
-        return params.toString();
+        break;
 
       case 'pathway':
         params.set('pathway', pageState.pathway_id);
-        return params.toString();
+        break;
 
       case 'zone':
         params.set('zone', pageState.location_id);
-        return params.toString();
+        break;
 
       case 'location_group':
         params.set('location_group', pageState.location_group_id);
-        return params.toString();
+        break;
 
       default:
-        return '';
+        break;
     }
+
+    // The modal rides on top of whatever page is beneath it, home included.
+    // Its own params are prefixed so they cannot collide with the page's: a
+    // timetable modal over a service page carries two different service ids.
+    const modal = pageState.modal;
+    if (modal) {
+      params.set('modal', modal.type);
+      if (modal.type === 'timetable') {
+        params.set('modal_route', modal.route_id);
+        params.set('modal_service', modal.service_id);
+        if (modal.direction_id) {
+          params.set('modal_direction', modal.direction_id);
+        }
+      } else if (modal.table) {
+        params.set('modal_table', modal.table);
+      }
+    }
+
+    return params.toString();
   }
 
   /**
    * Convert a hash string (no leading `#`) to a PageState.
    * Parses with URLSearchParams.  Priority: stop -> service (no route) ->
-   * timetable (route + service) -> route -> agency -> home.
+   * route -> agency -> home.
    * Always returns a valid PageState (never null).
    */
   urlToPageState(hash: string): PageState {
     const params = new URLSearchParams(hash);
+    const modal = this.parseModalParams(params);
+    const withModal = (state: PageState): PageState =>
+      modal ? { ...state, modal } : state;
 
     if (params.has('stop')) {
-      return { type: 'stop', stop_id: params.get('stop')! };
+      return withModal({ type: 'stop', stop_id: params.get('stop')! });
     }
 
     if (params.has('pathway')) {
-      return { type: 'pathway', pathway_id: params.get('pathway')! };
+      return withModal({ type: 'pathway', pathway_id: params.get('pathway')! });
     }
 
     if (params.has('zone')) {
-      return { type: 'zone', location_id: params.get('zone')! };
+      return withModal({ type: 'zone', location_id: params.get('zone')! });
     }
 
     if (params.has('location_group')) {
-      return {
+      return withModal({
         type: 'location_group',
         location_group_id: params.get('location_group')!,
-      };
+      });
     }
 
     if (params.has('service') && !params.has('route')) {
-      return { type: 'service', service_id: params.get('service')! };
-    }
-
-    if (params.has('route') && params.has('service')) {
-      const direction_id = params.get('direction') ?? undefined;
-      return {
-        type: 'timetable',
-        route_id: params.get('route')!,
-        service_id: params.get('service')!,
-        ...(direction_id !== undefined && { direction_id }),
-      };
+      return withModal({ type: 'service', service_id: params.get('service')! });
     }
 
     if (params.has('route')) {
-      return { type: 'route', route_id: params.get('route')! };
+      return withModal({ type: 'route', route_id: params.get('route')! });
     }
 
     if (params.has('agency')) {
-      return { type: 'agency', agency_id: params.get('agency')! };
+      return withModal({ type: 'agency', agency_id: params.get('agency')! });
     }
 
-    return { type: 'home' };
+    return withModal({ type: 'home' });
+  }
+
+  /**
+   * Read the modal dimension out of a parsed hash.  An unknown modal name is
+   * dropped rather than throwing: the hash is user-editable.
+   */
+  private parseModalParams(params: URLSearchParams): ModalState | null {
+    const type = params.get('modal');
+    if (type === null) {
+      return null;
+    }
+    if (!MODAL_TYPES.includes(type as ModalType)) {
+      console.warn(`[PageStateManager] unknown modal in hash: ${type}`);
+      return null;
+    }
+    if (type === 'timetable') {
+      const route_id = params.get('modal_route');
+      const service_id = params.get('modal_service');
+      if (route_id === null || service_id === null) {
+        console.warn(
+          '[PageStateManager] timetable modal in hash is missing route or service'
+        );
+        return null;
+      }
+      const direction_id = params.get('modal_direction');
+      return {
+        type: 'timetable',
+        route_id,
+        service_id,
+        ...(direction_id !== null && { direction_id }),
+      };
+    }
+    const table = params.get('modal_table');
+    return {
+      type: type as PaneModalType,
+      ...(table !== null && { table }),
+    };
+  }
+
+  /**
+   * Drop the modal from the current state, leaving the page beneath it.
+   * A no-op when no modal is open, so a modal that navigated away before
+   * closing does not bounce the page.
+   */
+  async clearModal(): Promise<void> {
+    const current = this.getPageState();
+    if (!current.modal) {
+      return;
+    }
+    const rest = { ...current };
+    delete rest.modal;
+    await this.setPageState(rest as PageState);
   }
 
   /**
@@ -396,7 +457,10 @@ export class PageStateManager {
         console.warn(
           '[PageStateManager] hashchange: object not found, falling back to home'
         );
-        newState = { type: 'home' };
+        newState = {
+          type: 'home',
+          ...(newState.modal && { modal: newState.modal }),
+        };
       }
     }
 

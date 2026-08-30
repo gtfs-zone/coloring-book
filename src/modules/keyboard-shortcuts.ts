@@ -5,22 +5,13 @@ export class KeyboardShortcuts {
     uiController: {
       createNewFeed: () => void;
       exportGTFS: () => void;
-    };
-    editor: {
-      saveCurrentFileChanges: () => void;
+      openLoadModal: (initialUrl?: string) => Promise<void>;
     };
     mapController?: {
       clearHighlights: () => void;
     };
     searchController?: {
       clearSearch: () => void;
-    };
-    browseNavigation?: {
-      searchQuery: string;
-      render: () => void;
-    };
-    tabManager?: {
-      switchToTab: (tabName: string) => void;
     };
     patchManager?: {
       undo: () => Promise<void>;
@@ -41,22 +32,13 @@ export class KeyboardShortcuts {
     uiController: {
       createNewFeed: () => void;
       exportGTFS: () => void;
-    };
-    editor: {
-      saveCurrentFileChanges: () => void;
+      openLoadModal: (initialUrl?: string) => Promise<void>;
     };
     mapController?: {
       clearHighlights: () => void;
     };
     searchController?: {
       clearSearch: () => void;
-    };
-    browseNavigation?: {
-      searchQuery: string;
-      render: () => void;
-    };
-    tabManager?: {
-      switchToTab: (tabName: string) => void;
     };
     patchManager?: {
       undo: () => Promise<void>;
@@ -85,7 +67,8 @@ export class KeyboardShortcuts {
     // File operations
     this.addShortcut(
       'ctrl+n',
-      () => {
+      (e) => {
+        e?.preventDefault();
         this.gtfsEditor.uiController.createNewFeed();
       },
       'Create new GTFS feed'
@@ -93,24 +76,17 @@ export class KeyboardShortcuts {
 
     this.addShortcut(
       'ctrl+o',
-      () => {
-        document.getElementById('file-input')?.click();
-      },
-      'Upload GTFS file'
-    );
-
-    this.addShortcut(
-      'ctrl+s',
       (e) => {
         e?.preventDefault();
-        this.gtfsEditor.editor.saveCurrentFileChanges();
+        void this.gtfsEditor.uiController.openLoadModal();
       },
-      'Save current file'
+      'Open the load feed dialog'
     );
 
     this.addShortcut(
       'ctrl+e',
-      () => {
+      (e) => {
+        e?.preventDefault();
         this.gtfsEditor.uiController.exportGTFS();
       },
       'Export GTFS feed'
@@ -123,7 +99,7 @@ export class KeyboardShortcuts {
         e?.preventDefault();
         this.showHelp();
       },
-      'Show help'
+      'Show guide'
     );
 
     this.addShortcut(
@@ -140,7 +116,7 @@ export class KeyboardShortcuts {
       () => {
         this.clearSearches();
       },
-      'Clear searches and close dialogs'
+      'Clear searches'
     );
 
     // Undo / redo
@@ -197,14 +173,10 @@ export class KeyboardShortcuts {
             (activeElement as HTMLElement).contentEditable === 'true' ||
             activeElement.classList.contains('cm-content')); // CodeMirror editor
 
-        // Allow some shortcuts even in input fields
-        const allowInInputFields = [
-          'escape',
-          'f1',
-          'ctrl+s',
-          'ctrl+z',
-          'ctrl+shift+z',
-        ];
+        // Allow some shortcuts even in input fields. Undo and redo are not on
+        // this list: inside a text field or CodeMirror the native undo stack is
+        // what the user means.
+        const allowInInputFields = ['escape', 'f1'];
 
         if (!isInputField || allowInInputFields.includes(key)) {
           shortcut.handler(e);
@@ -271,12 +243,6 @@ export class KeyboardShortcuts {
       mapSearch.blur();
     }
 
-    // Clear objects search
-    const objectsSearch = document.getElementById('browse-search');
-    if (objectsSearch) {
-      (objectsSearch as HTMLInputElement).value = '';
-    }
-
     // Clear map highlights
     if (this.gtfsEditor.mapController) {
       this.gtfsEditor.mapController.clearHighlights();
@@ -285,19 +251,6 @@ export class KeyboardShortcuts {
     // Clear search controller
     if (this.gtfsEditor.searchController) {
       this.gtfsEditor.searchController.clearSearch();
-    }
-
-    // Clear objects navigation search
-    if (this.gtfsEditor.browseNavigation) {
-      this.gtfsEditor.browseNavigation.searchQuery = '';
-      this.gtfsEditor.browseNavigation.render();
-    }
-  }
-
-  switchToTab(tabName: string) {
-    // Use TabManager for DaisyUI radio tabs
-    if (this.gtfsEditor.tabManager) {
-      this.gtfsEditor.tabManager.switchToTab(tabName);
     }
   }
 

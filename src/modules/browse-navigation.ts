@@ -18,7 +18,7 @@ import {
   navigateToStop,
   navigateToService,
   navigateToPathway,
-  navigateToTimetable,
+  openTimetable,
   addNavigationListener,
   getCurrentPageState,
   consumePendingFocusSelector,
@@ -93,19 +93,6 @@ export class BrowseNavigation {
   public uiController: {
     showFileInEditor: (filename: string, rowId?: string) => void;
   } | null = null; // Will be set after initialization
-  public scheduleController: {
-    renderSchedule: (
-      route_id: string,
-      service_id: string,
-      direction_id?: string
-    ) => Promise<string>;
-    timetableScrollLeft: number;
-    timetableScrollTop: number;
-    resetTimetableScroll: () => void;
-    captureTimetableEditor: () => void;
-    restoreTimetableEditor: () => void;
-    applyTimetableSelection: () => void;
-  } | null = null; // Will be set after initialization
   public serviceDaysController: {
     renderServiceEditor: (service_id: string) => Promise<string>;
   } | null = null; // Will be set after initialization
@@ -177,19 +164,6 @@ export class BrowseNavigation {
       focusFeed: () => void;
       highlightAgencyRoutes: (agency_id: string) => void;
     },
-    scheduleController?: {
-      renderSchedule: (
-        route_id: string,
-        service_id: string,
-        direction_id?: string
-      ) => Promise<string>;
-      timetableScrollLeft: number;
-      timetableScrollTop: number;
-      resetTimetableScroll: () => void;
-      captureTimetableEditor: () => void;
-      restoreTimetableEditor: () => void;
-      applyTimetableSelection: () => void;
-    },
     serviceDaysController?: {
       renderServiceEditor: (service_id: string) => Promise<string>;
     },
@@ -202,7 +176,6 @@ export class BrowseNavigation {
     this.gtfsRelationshipsInstance =
       gtfsRelationships as unknown as import('./gtfs-relationships.js').GTFSRelationships;
     this.mapController = mapController;
-    this.scheduleController = scheduleController ?? null;
     this.serviceDaysController = serviceDaysController ?? null;
   }
 
@@ -307,10 +280,6 @@ export class BrowseNavigation {
           this.relationships.getTripsForServiceAsync?.(service_id) ||
           Promise.resolve([]),
       },
-      scheduleController: this.scheduleController || {
-        renderSchedule: () =>
-          Promise.resolve('<div>Schedule not available</div>'),
-      },
       serviceDaysController: this.serviceDaysController || {
         renderServiceEditor: () =>
           Promise.resolve('<div>Service days editor not available</div>'),
@@ -347,7 +316,7 @@ export class BrowseNavigation {
         route_id: string,
         service_id: string,
         direction_id?: string
-      ) => navigateToTimetable(route_id, service_id, direction_id),
+      ) => openTimetable(route_id, service_id, direction_id),
       onEntityCreated: () => this.render(),
       patchManager: this.patchManager ?? undefined,
       gtfsParser: this.gtfsParser ?? undefined,
@@ -381,23 +350,11 @@ export class BrowseNavigation {
       const contentDiv = this.container.querySelector<HTMLElement>('.content');
       const savedScrollTop = contentDiv?.scrollTop ?? 0;
 
-      // For the timetable, .overflow-x-auto scrolls both axes (CSS forces
-      // overflow-y to auto when overflow-x is non-visible).  The DOM values
-      // are unreliable at this point: read from the controller's listener.
-      const savedScrollLeft = this.scheduleController?.timetableScrollLeft ?? 0;
-      const savedTimetableScrollTop =
-        this.scheduleController?.timetableScrollTop ?? 0;
-
       // Capture focus before rebuild. An edit committed on blur re-renders the
       // page while the user is already clicking the next field, so without this
       // the rebuild drops focus on whatever they just moved to. Only elements
       // carrying an id can be found again afterwards.
       const savedFocus = this.captureFocus();
-
-      // Timetable time cells carry no id, so captureFocus cannot see them. The
-      // controller tracks its own open editor, including what has been typed
-      // into it but not yet committed.
-      this.scheduleController?.captureTimetableEditor();
 
       // Get current page state from PageStateManager
       const pageState = getCurrentPageState();
@@ -406,12 +363,6 @@ export class BrowseNavigation {
         this.lastRenderedPageState !== null &&
         JSON.stringify(this.lastRenderedPageState) ===
           JSON.stringify(pageState);
-
-      if (!isSamePage) {
-        // Navigation to a new page: reset tracked timetable scroll so the
-        // next timetable opens at the top-left.
-        this.scheduleController?.resetTimetableScroll();
-      }
 
       // Get breadcrumbs from PageStateManager
       const breadcrumbs = await getPageStateManager().getBreadcrumbs();
@@ -454,33 +405,13 @@ export class BrowseNavigation {
 
       this.lastRenderedPageState = pageState;
       if (isSamePage) {
-        // Restore .content vertical scroll (non-timetable pages)
         const newContent =
           this.container.querySelector<HTMLElement>('.content');
         if (newContent && savedScrollTop > 0) {
           newContent.scrollTop = savedScrollTop;
         }
-        // Restore timetable scroll (.overflow-x-auto scrolls both axes)
-        if (savedScrollLeft > 0 || savedTimetableScrollTop > 0) {
-          const newScrollXDiv =
-            this.container.querySelector<HTMLElement>('.overflow-x-auto');
-          if (newScrollXDiv) {
-            if (savedScrollLeft > 0) {
-              newScrollXDiv.scrollLeft = savedScrollLeft;
-            }
-            if (savedTimetableScrollTop > 0) {
-              newScrollXDiv.scrollTop = savedTimetableScrollTop;
-            }
-          }
-        }
         this.restoreFocus(savedFocus);
-        this.scheduleController?.restoreTimetableEditor();
       }
-
-      // Outside the isSamePage guard: a freshly opened timetable has no
-      // selection to restore, but still needs one cell carrying tabindex="0"
-      // or the grid cannot be tabbed into.
-      this.scheduleController?.applyTimetableSelection();
     } catch (error) {
       console.error('Error rendering browse navigation:', error);
       this.renderErrorState();

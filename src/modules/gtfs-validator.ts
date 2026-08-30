@@ -1,8 +1,17 @@
 import { GTFSDatabaseRecord } from './gtfs-database.js';
-import { GTFS_TABLES, GTFS_FOREIGN_KEYS } from '../types/gtfs.js';
+import {
+  GTFS_TABLES,
+  GTFS_FOREIGN_KEYS,
+  GTFS_FIELD_SPECS,
+} from '../types/gtfs.js';
 import type { GTFSForeignKeyRef } from '../gtfs-spec/adapter.js';
 import { generateCompositeKeyFromRecord } from '../utils/gtfs-primary-keys.js';
-import { GTFSFieldType } from '../types/gtfs-field-types.js';
+import { GTFSFieldType, mapGTFSTypeString } from '../types/gtfs-field-types.js';
+import {
+  isValidCurrencyCode,
+  isValidLanguageCode,
+  isValidTimezone,
+} from '../utils/constrained-values.js';
 import { validateValue } from '../utils/field-formatters.js';
 import {
   buildStopCoordResolver,
@@ -137,6 +146,7 @@ export class GTFSValidator {
     this.validateRiderCategoryDefaults();
     this.validateForeignKeys();
     this.validateFieldWhitespace();
+    this.validateConstrainedCodes();
     this.validateReferences();
 
     // Update summary
@@ -1376,6 +1386,69 @@ export class GTFSValidator {
           );
         }
       });
+    }
+  }
+
+  /**
+   * Language, timezone and currency values that no standard recognises.
+   *
+   * These are the field types whose values come from a published list rather
+   * than from the feed, so the check is spec-driven: every field the reference
+   * types as one of the three is swept, in every table, rather than naming the
+   * handful of fields by hand.
+   */
+  validateConstrainedCodes() {
+    const checks: Record<
+      string,
+      { label: string; valid: (v: string) => boolean }
+    > = {
+      [GTFSFieldType.LanguageCode]: {
+        label: 'a valid IETF BCP 47 language code',
+        valid: isValidLanguageCode,
+      },
+      [GTFSFieldType.Timezone]: {
+        label: 'a valid IANA timezone',
+        valid: isValidTimezone,
+      },
+      [GTFSFieldType.CurrencyCode]: {
+        label: 'a 3-letter ISO 4217 currency code',
+        valid: isValidCurrencyCode,
+      },
+    };
+
+    for (const file of Object.values(GTFS_TABLES)) {
+      const specs = GTFS_FIELD_SPECS[file];
+      if (!specs) {
+        continue;
+      }
+      const constrained = Object.entries(specs)
+        .map(([field, spec]) => ({
+          field,
+          check: checks[mapGTFSTypeString(spec.type)],
+        }))
+        .filter((entry) => entry.check !== undefined);
+      if (constrained.length === 0) {
+        continue;
+      }
+
+      const tableName = file.replace(/\.txt$/, '');
+      this.gtfsParser
+        .getFileDataSyncTyped(file)
+        .forEach((row, index: number) => {
+          for (const { field, check } of constrained) {
+            const value = String(row[field] ?? '').trim();
+            if (value === '' || check.valid(value)) {
+              continue;
+            }
+            this.addWarning(
+              `Row ${index + 1}: ${field} '${value}' is not ${check.label}`,
+              'INVALID_CODE',
+              file,
+              index + 1,
+              { file, id: this.rowId(tableName, row), field, value }
+            );
+          }
+        });
     }
   }
 

@@ -103,6 +103,8 @@ export interface EntityChipOpts {
   label: string;
   /** CSS color for the leading dot; omitted renders no dot. */
   color?: string;
+  /** Extra `data-*` attributes for actions keyed by more than one id. */
+  data?: Record<string, string>;
 }
 
 /**
@@ -116,8 +118,15 @@ export function renderEntityChip(opts: EntityChipOpts): string {
   const dot = opts.color
     ? `<span class="w-2 h-2 rounded-full flex-shrink-0" style="background-color: ${opts.color}"></span>`
     : '';
+  const extraData = opts.data
+    ? Object.entries(opts.data)
+        .map(
+          ([key, value]) => ` data-${escapeHtml(key)}="${escapeAttr(value)}"`
+        )
+        .join('')
+    : '';
   return `
-    <button class="inline-flex items-center gap-1 max-w-full text-xs cursor-pointer hover:underline" data-action="${escapeHtml(opts.action)}" data-entity-id="${escapeHtml(opts.id)}" title="${escapeHtml(opts.label)}">
+    <button class="inline-flex items-center gap-1 max-w-full text-xs cursor-pointer hover:underline" data-action="${escapeHtml(opts.action)}" data-entity-id="${escapeHtml(opts.id)}"${extraData} title="${escapeHtml(opts.label)}">
       ${dot}
       <span class="truncate">${escapeHtml(opts.label)}</span>
     </button>`;

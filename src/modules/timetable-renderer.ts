@@ -3,12 +3,7 @@
  * Handles HTML generation for timetable views and schedule headers
  */
 
-import {
-  Routes,
-  Stops,
-  Calendar,
-  CalendarDates,
-} from '../types/gtfs-entities.js';
+import { Stops } from '../types/gtfs-entities.js';
 import {
   TimetableData,
   DirectionInfo,
@@ -29,14 +24,26 @@ import { describeFrequency } from '../utils/frequency-rules.js';
 import { TimeFormatter } from '../utils/time-formatter.js';
 import { getEnumOptions } from '../types/gtfs-enums.js';
 import { TripsSchema, GTFS_TABLES } from '../types/gtfs.js';
-import { getStopDisplay, renderCardLabel } from '../utils/entity-display.js';
+import {
+  getRouteDisplay,
+  getStopDisplay,
+  renderCardLabel,
+  renderOptionLabel,
+} from '../utils/entity-display.js';
 import { escapeHtml } from '../utils/escape-html.js';
 import { renderPickerTrigger } from '../utils/picker-trigger.js';
+import {
+  TIMETABLE_ADD_DIRECTION,
+  TIMETABLE_DIRECTION_TAB,
+  TIMETABLE_ROUTE_PICKER,
+  TIMETABLE_SERVICE_PICKER,
+} from './timetable-selectors.js';
 import { formatIssueValue, isDanglingReference } from './feed-issues.js';
 import {
   renderTrashIcon,
   renderRouteWaypointsIcon,
   renderSortByTimeIcon,
+  renderUploadIcon,
 } from './modal-utils.js';
 import { routeColor } from '../utils/route-colors.js';
 import {
@@ -96,7 +103,13 @@ function buildBrouterUrl(
 
 /** Width of one trip column, and of the field-label sub-column, in rem. */
 const TRIP_COLUMN_REM = 11;
+/** Width of the trailing new-trip column, wide enough for a typed trip id. */
+const NEW_TRIP_COLUMN_REM = 16;
 const LABEL_COLUMN_REM = 10;
+/** The stop-name half of the frozen first column. */
+const STOP_NAME_COLUMN_REM = 20;
+/** The frozen first column: the stop name block plus the field labels. */
+const FROZEN_COLUMN_REM = STOP_NAME_COLUMN_REM + LABEL_COLUMN_REM;
 
 /** The frequencies.txt fields a headway period row stacks, in spec order. */
 const FREQUENCY_FIELDS = [
@@ -188,42 +201,51 @@ export class TimetableRenderer {
         data-fields-per-cell="${ctx.fields.length}"
         data-fields="${escapeHtml(ctx.fields.join(','))}"
       >
-        ${this.renderDirectionTabs(data)}
+        ${this.renderSelectorBar(data)}
         ${this.renderTimetableContent(data, ctx, pendingRef)}
       </div>
     `;
   }
 
   /**
-   * Render schedule header with route and service information
+   * Render the modal's selector bar: route, service, direction.
    *
-   * Creates the top section with route name, service ID, and service properties.
-   * Displays route name (short + long name if available) and service period.
+   * All three are required, so all three always render a value. Route and
+   * service are picker triggers (a feed has too many of either for a select);
+   * direction stays a tab strip, which is where the "no trips" signal lives.
    *
-   * @param route - GTFS route entity with naming information
-   * @param service - Calendar or CalendarDates entity with service details
-   * @returns HTML string for the schedule header section
+   * Inside `#schedule-view` on purpose: it is replaced wholesale on every
+   * rebuild, so the direction trip counts follow an edit that adds or deletes
+   * a trip without a second refresh path.
    */
-  public renderScheduleHeader(
-    route: Routes,
-    service: Calendar | CalendarDates
-  ): string {
-    const routeName = route.route_short_name
-      ? `${route.route_short_name}${route.route_long_name ? ' - ' + route.route_long_name : ''}`
-      : route.route_long_name || route.route_id;
+  public renderSelectorBar(data: TimetableData): string {
+    const routeLabel = renderOptionLabel(
+      getRouteDisplay(data.route as unknown as Record<string, string>)
+    );
+    const serviceLabel = data.service.service_id;
 
-    const serviceName = service.service_id;
+    const routeTrigger = renderPickerTrigger({
+      content: escapeHtml(routeLabel),
+      className: TIMETABLE_ROUTE_PICKER,
+      attrs: 'role="button" tabindex="0"',
+    });
+    const serviceTrigger = renderPickerTrigger({
+      content: escapeHtml(serviceLabel),
+      className: TIMETABLE_SERVICE_PICKER,
+      attrs: 'role="button" tabindex="0"',
+    });
 
     return `
-      <div class="border-b border-base-300">
-        <div class="p-4">
-          <h2 class="text-lg font-semibold">
-            ${routeName} - ${serviceName}
-          </h2>
-          <p class="text-sm opacity-70">
-            Timetable View
-          </p>
-        </div>
+      <div class="border-b border-base-300 flex flex-wrap items-center gap-x-6 gap-y-2 px-3 py-2">
+        <label class="flex items-center gap-2 text-sm">
+          <span class="opacity-60">Route</span>
+          ${routeTrigger}
+        </label>
+        <label class="flex items-center gap-2 text-sm">
+          <span class="opacity-60">Service</span>
+          ${serviceTrigger}
+        </label>
+        ${this.renderDirectionTabs(data)}
       </div>
     `;
   }
@@ -231,12 +253,14 @@ export class TimetableRenderer {
   /**
    * Render direction tabs navigation
    *
-   * Creates tab navigation for multi-direction routes.
-   * Hides tabs if only one or no directions are available.
-   * Highlights the currently selected direction.
+   * One tab per direction the route runs, the selected one highlighted and a
+   * direction with no trips dimmed and labelled. Always rendered, even for a
+   * single direction: the bar states the whole selection, not just the parts
+   * that happen to have a choice. A trailing "+" tab selects the first unused
+   * direction_id so a direction with no trips yet can be opened.
    *
    * @param data - Timetable data containing available directions
-   * @returns HTML string for direction tabs or empty string if not needed
+   * @returns HTML string for direction tabs
    */
   public renderDirectionTabs(data: TimetableData): string {
     const directions = data.availableDirections || [];
@@ -252,18 +276,35 @@ export class TimetableRenderer {
         const dimClass = direction.tripCount === 0 ? 'opacity-40' : '';
 
         return `
-          <a class="tab ${activeClass} ${dimClass}"
-             onclick="gtfsEditor.navigateToTimetable('${data.route.route_id}', '${data.service.service_id}', '${direction.id}')">
+          <a class="tab ${activeClass} ${dimClass} ${TIMETABLE_DIRECTION_TAB}"
+             data-direction-id="${escapeHtml(direction.id)}">
             ${this.getDirectionDisplayName(direction)}
           </a>
         `;
       })
       .join('');
 
+    // GTFS only defines direction_id 0 and 1, so the "+" tab appears only
+    // while one of them is still unused.
+    const nextDirectionId = ['0', '1'].find(
+      (id) => !directions.some((direction) => direction.id === id)
+    );
+    const addTabHTML = nextDirectionId
+      ? `
+          <a class="tab ${TIMETABLE_ADD_DIRECTION}"
+             data-direction-id="${nextDirectionId}"
+             aria-label="Add direction">
+            +
+          </a>
+        `
+      : '';
+
     return `
-      <div class="border-b border-base-300">
-        <div class="tabs tabs-border p-2 flex items-center">
+      <div class="flex items-center gap-2 text-sm">
+        <span class="opacity-60">Direction</span>
+        <div class="tabs tabs-border">
           ${tabsHTML}
+          ${addTabHTML}
         </div>
       </div>
     `;
@@ -287,14 +328,17 @@ export class TimetableRenderer {
   ): string {
     // Always render the table structure, even when empty.
     //
-    // `table-fixed` plus an explicit width on every column in the header row is
-    // what keeps a trip column exactly TRIP_COLUMN_REM wide however long a
-    // booking rule id or a headsign is. `w-auto` overrides DaisyUI's
-    // `width: 100%`, which would otherwise stretch the columns whenever the
-    // trips do not already fill the viewport.
+    // `table-fixed` keeps a trip column exactly TRIP_COLUMN_REM wide however
+    // long a booking rule id or a headsign is, but only when the table itself
+    // has a width: `table-layout: fixed` with `width: auto` falls back to
+    // content-driven sizing, which both stretches columns past their declared
+    // width and collapses a column whose only content is a `w-full` control.
+    // So the width is stated here as the sum of the columns the header row
+    // declares, and that first row is what sizes every column below it.
+    const tableStyle = `width:${this.tableWidthRem(data)}rem`;
     return `
       <div class="flex-1 overflow-x-auto">
-        <table class="table table-xs table-fixed w-auto table-pin-rows table-pin-cols" role="grid">
+        <table class="table table-xs table-fixed table-pin-rows table-pin-cols" style="${tableStyle}" role="grid">
           ${this.renderTimetableHeader(data)}
           ${this.renderTimetableBody(data, ctx, pendingRef)}
         </table>
@@ -302,9 +346,18 @@ export class TimetableRenderer {
     `;
   }
 
+  /** The declared width of every column in the header row, summed. */
+  private tableWidthRem(data: TimetableData): number {
+    return (
+      FROZEN_COLUMN_REM +
+      data.trips.length * TRIP_COLUMN_REM +
+      NEW_TRIP_COLUMN_REM
+    );
+  }
+
   /** The frozen first column's width: the stop name block plus the labels. */
   private labelColumnStyle(): string {
-    return `width:${20 + LABEL_COLUMN_REM}rem`;
+    return `width:${FROZEN_COLUMN_REM}rem`;
   }
 
   /**
@@ -370,19 +423,86 @@ export class TimetableRenderer {
         // Add empty cell for "New Trip" column
         const newTripCell = '<td class="text-center p-2"></td>';
 
-        return `
+        const row = `
         <tr class="trip-property-row" data-property="${config.field}">
           <th class="stop-name p-2 font-medium border-r border-base-300 bg-base-100" style="${this.labelColumnStyle()}">
-            <div class="stop-name-text truncate">${renderFieldLabelContent(config)}</div>
+            <div class="stop-name-text truncate">${renderFieldLabelContent(config, { short: true })}</div>
           </th>
           ${cells}
           ${newTripCell}
         </tr>
       `;
+
+        // The shape actions row belongs directly beneath shape_id, since both
+        // are about the same value.
+        return config.field === 'shape_id'
+          ? row + this.renderShapeActionsRow(data)
+          : row;
       })
       .join('');
 
     return propertyRows + this.renderFrequencyBand(data);
+  }
+
+  /**
+   * The row beneath shape_id: per-trip actions on its shape, rather than on
+   * its value. "Open in BRouter" used to live in the sticky header
+   * (`renderTimetableHeader`); it moved here so it stops crowding the header
+   * and to sit next to "Upload shape", which does the same GPX parse as the
+   * Shapes manager but also assigns the result to this one trip.
+   */
+  private renderShapeActionsRow(data: TimetableData): string {
+    const trips = data.trips;
+
+    const cells = trips
+      .map((trip) => {
+        const tripStops = data.stops.filter((_, i) => trip.stopTimes.has(i));
+        const brouterUrl = buildBrouterUrl(
+          tripStops,
+          data.route.route_type ?? ''
+        );
+        const brouterTip =
+          '<div>Open in BRouter</div>' +
+          `<div class="opacity-70">Routes this trip's ${tripStops.length} stops in BRouter in a new tab, to draw or check a shape against the road or rail network. Nothing in the feed changes.</div>`;
+        const brouterLink = brouterUrl
+          ? `<a href="${brouterUrl}" target="_blank" rel="noopener" class="btn btn-xs btn-outline field-tooltip-trigger" ${tooltipContentAttr(brouterTip)}>${renderRouteWaypointsIcon('h-3 w-3')}</a>`
+          : '';
+
+        const uploadTip =
+          '<div>Upload shape for this trip</div>' +
+          '<div class="opacity-70">Parses a GPX file into new shapes.txt rows and points this trip\'s shape_id at them. Undoable from the Changes panel.</div>';
+        const uploadBtn = `
+          <button
+            type="button"
+            class="btn btn-xs btn-outline upload-shape-btn field-tooltip-trigger"
+            data-trip-id="${escapeHtml(trip.trip_id)}"
+            data-shape-id="${escapeHtml(String(trip.shape_id ?? ''))}"
+            ${tooltipContentAttr(uploadTip)}
+          >${renderUploadIcon('h-3 w-3')}</button>
+        `;
+
+        return `
+          <td class="text-center p-2">
+            <div class="flex items-center justify-center gap-1">
+              ${uploadBtn}
+              ${brouterLink}
+            </div>
+          </td>
+        `;
+      })
+      .join('');
+
+    const newTripCell = '<td class="text-center p-2"></td>';
+
+    return `
+      <tr class="trip-property-row" data-property="shape_actions">
+        <th class="stop-name p-2 font-medium border-r border-base-300 bg-base-100" style="${this.labelColumnStyle()}">
+          <div class="stop-name-text truncate">Shape actions</div>
+        </th>
+        ${cells}
+        ${newTripCell}
+      </tr>
+    `;
   }
 
   /**
@@ -730,17 +850,6 @@ export class TimetableRenderer {
 
     const tripActionCells = trips
       .map((trip) => {
-        const tripStops = data.stops.filter((_, i) => trip.stopTimes.has(i));
-        const brouterUrl = buildBrouterUrl(
-          tripStops,
-          data.route.route_type ?? ''
-        );
-        const brouterTip =
-          '<div>Open in BRouter</div>' +
-          `<div class="opacity-70">Routes this trip's ${tripStops.length} stops in BRouter in a new tab, to draw or check a shape against the road or rail network. Nothing in the feed changes.</div>`;
-        const brouterLink = brouterUrl
-          ? `<a href="${brouterUrl}" target="_blank" rel="noopener" class="btn btn-xs btn-outline field-tooltip-trigger" ${tooltipContentAttr(brouterTip)}>${renderRouteWaypointsIcon('h-3 w-3')}</a>`
-          : '';
         const deleteTip =
           `<div>Delete trip <code>${escapeHtml(trip.trip_id)}</code></div>` +
           '<div class="opacity-70">Removes the trip and its stop_times. Undoable from the Changes panel.</div>';
@@ -755,19 +864,27 @@ export class TimetableRenderer {
             <div class="flex items-center justify-center gap-1">
               <button class="btn btn-xs btn-error btn-outline delete-trip-btn field-tooltip-trigger" data-trip-id="${escapeHtml(trip.trip_id)}" ${tooltipContentAttr(deleteTip)}>${renderTrashIcon('h-3 w-3')}</button>
               <button class="btn btn-xs btn-outline resort-trip-btn field-tooltip-trigger" data-trip-id="${escapeHtml(trip.trip_id)}" ${tooltipContentAttr(resortTip)}>${renderSortByTimeIcon('h-3 w-3')}</button>
-              ${brouterLink}
             </div>
           </td>
         `;
       })
       .join('');
 
-    // Always add a "new trip" column on the right
+    // Always add a "new trip" column on the right. It is wider than a trip
+    // column so a typed trip id is readable while being entered.
+    //
+    // The input states its own width rather than taking `w-full`, so the cell
+    // is the right size even if the table ever loses its fixed layout: a
+    // `w-full` input contributes nothing to a content-sized column, which then
+    // collapses to its padding. Subtract the cell's `p-2` (1rem).
+    const newTripColumnStyle = `width:${NEW_TRIP_COLUMN_REM}rem`;
+    const newTripInputStyle = `width:${NEW_TRIP_COLUMN_REM - 1}rem`;
     const newTripHeader = `
-      <td class="trip-header text-center p-2 text-xs" style="${columnStyle}">
+      <td class="trip-header text-center p-2 text-xs" style="${newTripColumnStyle}">
         <input
           type="text"
-          class="input input-xs w-full text-center"
+          class="input input-xs text-center"
+          style="${newTripInputStyle}"
           placeholder="New trip ID..."
           id="new-trip-input"
           onchange="gtfsEditor.scheduleController.createTripFromInput(this.value)"
@@ -784,8 +901,10 @@ export class TimetableRenderer {
           ${tripHeaders}
           ${newTripHeader}
         </tr>
-        <tr class="z-[2]">
-          <th class="stop-header p-2 text-left bg-base-100"></th>
+        <tr class="trip-actions-row">
+          <th class="stop-header p-2 text-left bg-base-100">
+            <div class="truncate">Trip actions</div>
+          </th>
           ${tripActionCells}
           <td class="trip-header text-center p-2 text-xs"></td>
         </tr>

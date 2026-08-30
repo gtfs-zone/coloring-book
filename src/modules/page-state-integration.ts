@@ -55,8 +55,6 @@ export function initializePageStateWithGTFS(
           (await relationships.getCalendarForServiceAsync(state.service_id)) !==
           null
         );
-      case 'timetable':
-        return (await relationships.getRouteByIdAsync(state.route_id)) !== null;
       case 'zone':
         return getZoneFeature(gtfsParser, state.location_id) !== null;
       case 'location_group':
@@ -94,12 +92,4 @@ export function takeLoadCommand(): string | null {
   window.location.hash = params.toString(); // suppress normal hash-change nav; guard in PSM handles it
   console.log('[page-state-integration] takeLoadCommand:', loadUrl);
   return loadUrl;
-}
-
-/**
- * Update breadcrumb lookup when GTFS data is reloaded
- */
-export function updateBreadcrumbLookup(_gtfsParser: GTFSParser): void {
-  // No caching, so no need to clear cache or preload
-  // Data is always loaded fresh from the database
 }

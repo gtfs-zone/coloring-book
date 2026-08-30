@@ -27,6 +27,17 @@ export interface IssueItem {
   data?: Record<string, string>;
 }
 
+/**
+ * A button in the row header, for a fix that applies to the whole row rather
+ * than to one item. The card only renders it and stamps the data attribute; the
+ * host app attaches its own delegated click handler, as it does for items.
+ */
+export interface IssueAction {
+  label: string;
+  /** Value of the `data-issue-action` attribute the host delegates on. */
+  dataAction: string;
+}
+
 export interface IssueRow {
   label: string;
   count: number;
@@ -34,6 +45,7 @@ export interface IssueRow {
   items?: IssueItem[];
   /** Items omitted from `items` because of the display cap. */
   moreCount?: number;
+  action?: IssueAction;
 }
 
 function renderItem(item: IssueItem): string {
@@ -50,10 +62,20 @@ function renderItem(item: IssueItem): string {
   return `<li><span class="${classes}"${attrs}>${escapeHtml(item.label)}</span>${detail}</li>`;
 }
 
+function renderAction(row: IssueRow): string {
+  if (!row.action) {
+    return '';
+  }
+  return `<button type="button" class="btn btn-xs btn-warning btn-outline" data-issue-action="${escapeHtml(row.action.dataAction)}">${escapeHtml(row.action.label)}</button>`;
+}
+
 function renderHeader(row: IssueRow): string {
   return `
     <span>${escapeHtml(row.label)}</span>
-    <span class="tabular-nums font-semibold">${row.count}</span>
+    <span class="flex items-center gap-2 shrink-0">
+      ${renderAction(row)}
+      <span class="tabular-nums font-semibold">${row.count}</span>
+    </span>
   `;
 }
 

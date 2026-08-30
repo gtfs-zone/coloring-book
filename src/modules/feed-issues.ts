@@ -12,6 +12,7 @@
 import type { ValidationEntity, ValidationResults } from './gtfs-validator.js';
 import { renderIssueCard } from '../utils/issue-card.js';
 import type { IssueItem, IssueRow } from '../utils/issue-card.js';
+import { WHITESPACE_FIX_ACTION } from '../utils/whitespace-fix.js';
 import {
   getEntityDisplay,
   renderOptionLabel,
@@ -25,13 +26,13 @@ export interface FeedIssueRowSource {
 
 /**
  * What `refreshFeedIssuesIfStale` needs to re-run a pass on its own: the
- * validator, the rows for the labels, and the patch version that tells it
- * whether the feed has moved since the last pass.
+ * validator, the rows for the labels, and a key that tells it whether the feed
+ * has moved since the last pass.
  */
 export interface FeedIssueRevalidator {
   validate(): ValidationResults;
   source: FeedIssueRowSource;
-  getVersion(): number;
+  getStalenessKey(): string;
 }
 
 /** Most entities a single issue row lists before it collapses into a tail. */
@@ -99,12 +100,24 @@ interface IssueGroup {
 let currentIssues: IssueRow[] = [];
 
 /**
- * The revalidator and the patch version the published issues were derived at.
+ * Every entity the last pass flagged, keyed by code, for the bulk fixes.
+ * The issue rows cap their item lists at MAX_ITEMS for display; a fix has to
+ * see all of them, so it reads this instead.
+ */
+const entitiesByCode = new Map<string, ValidationEntity[]>();
+
+/** Every entity the last pass flagged under one code, uncapped. */
+export function getFeedIssueEntities(code: string): ValidationEntity[] {
+  return entitiesByCode.get(code) ?? [];
+}
+
+/**
+ * The revalidator and the staleness key the published issues were derived at.
  * `null` until the editor registers one, which is only the case before boot
  * finishes: until then a render draws the empty list rather than validating.
  */
 let revalidator: FeedIssueRevalidator | null = null;
-let validatedVersion: number | null = null;
+let validatedKey: string | null = null;
 
 /**
  * Groups messages by file, code and field. Field is part of the key because a
@@ -172,12 +185,18 @@ export function deriveFeedIssues(
   const index = new RowIndex(source);
   return deriveFeedIssueGroups(results).map((group) => {
     const shown = group.entities.slice(0, MAX_ITEMS);
-    return {
+    const row: IssueRow = {
       ...feedIssueGroupLabel(group),
       count: group.count,
       items: shown.map((entity) => buildIssueItem(entity, index)),
       moreCount: group.entities.length - shown.length,
     };
+    // Hidden whitespace is the one issue with a mechanical fix, and it always
+    // arrives in bulk. The button clears every one of them, not just this row.
+    if (group.code === 'UNCLEAN_VALUE') {
+      row.action = { label: 'Fix all', dataAction: WHITESPACE_FIX_ACTION };
+    }
+    return row;
   });
 }
 
@@ -327,6 +346,15 @@ export function publishFeedIssues(
 ): IssueRow[] {
   danglingByValue.clear();
   danglingByRow.clear();
+  entitiesByCode.clear();
+  for (const message of [...results.errors, ...results.warnings]) {
+    if (message.entity && message.code) {
+      entitiesByCode.set(message.code, [
+        ...(entitiesByCode.get(message.code) ?? []),
+        message.entity,
+      ]);
+    }
+  }
   for (const message of results.errors) {
     const entity = message.entity;
     if (!entity || message.code !== 'INVALID_REFERENCE') {
@@ -339,7 +367,7 @@ export function publishFeedIssues(
 
   const issues = deriveFeedIssues(results, source);
   setFeedIssues(issues);
-  validatedVersion = revalidator?.getVersion() ?? null;
+  validatedKey = revalidator?.getStalenessKey() ?? null;
   return issues;
 }
 
@@ -355,20 +383,23 @@ export function setFeedIssueRevalidator(next: FeedIssueRevalidator): void {
  * deliberately not wired to the patch events: an edit costs nothing until
  * something asks to see the issues again.
  *
- * The patch version is the staleness watermark because every user edit goes
- * through the patch log, and it moves on undo, redo and jump too, so undoing a
- * fix brings the issue back.
+ * The patch version is half the staleness watermark because every user edit
+ * goes through the patch log, and it moves on undo, redo and jump too, so
+ * undoing a fix brings the issue back. The feed generation is the other half:
+ * the patch version resets to 0 on a feed swap, so a fresh unedited feed and
+ * the empty boot scaffold both read 0 and the version alone would report "not
+ * stale" while these issues describe a feed that is no longer loaded.
  */
 export function refreshFeedIssuesIfStale(): void {
   if (!revalidator) {
     return;
   }
-  const version = revalidator.getVersion();
-  if (version === validatedVersion) {
+  const key = revalidator.getStalenessKey();
+  if (key === validatedKey) {
     return;
   }
   console.log(
-    `[FeedIssues] revalidating: issues are from version ${validatedVersion}, feed is at ${version}`
+    `[FeedIssues] revalidating: issues are from ${validatedKey}, feed is at ${key}`
   );
   const start = performance.now();
   publishFeedIssues(revalidator.validate(), revalidator.source);

@@ -29,7 +29,11 @@ import {
   renderPickerTrigger,
   setPickerTriggerContent,
 } from './picker-trigger.js';
-import { openInlineEditor, openInlineMenu } from './inline-edit.js';
+import {
+  COLOR_EMPTY,
+  openInlineEditor,
+  openInlineMenu,
+} from './inline-edit.js';
 import type { InlineEditorInputType } from './inline-edit.js';
 import {
   generateFieldConfigsFromSchema,
@@ -39,6 +43,7 @@ import {
 import {
   buildForeignKeyOptions,
   coerceFieldValue,
+  constrainedOptions,
   formatSpecValue,
   resolveForeignLabel,
   specFieldKind,
@@ -240,10 +245,11 @@ export async function renderInlineEditableField(
         ${config.gtfsFieldType ? `data-gtfs-type="${escapeHtml(config.gtfsFieldType)}"` : ''}`;
   const content = displayHtml(text, placeholder);
 
-  // A foreign ID is picked from a modal; an enum drops an inline menu and
-  // everything else swaps for an input, so only this one wears the chevron.
+  // A foreign ID and a standards code are picked from a modal; an enum drops an
+  // inline menu and everything else swaps for an input, so only the modal kinds
+  // wear the chevron.
   const span =
-    kind === 'foreign'
+    kind === 'foreign' || kind === 'constrained'
       ? renderPickerTrigger({
           content,
           variant: 'bare',
@@ -393,10 +399,72 @@ function openFieldEditor(span: HTMLElement): void {
     return;
   }
 
+  if (kind === 'constrained') {
+    void openConstrainedPicker(span, spec, field, current, gtfsType);
+    return;
+  }
+
+  openPlainEditor(span, spec, current, gtfsType);
+}
+
+/**
+ * Pick a language, timezone or currency code from the standard's list.
+ *
+ * The list is long enough that it has to be searchable, and open enough that
+ * the user has to be able to step outside it: the footer button hands the field
+ * back to the plain text editor rather than choosing anything.
+ */
+async function openConstrainedPicker(
+  span: HTMLElement,
+  spec: GTFSFieldSpec,
+  field: string,
+  current: string,
+  gtfsType: string | undefined
+): Promise<void> {
+  const options = constrainedOptions(spec) ?? [];
+  // A value the standard's list does not carry is offered back, so the picker
+  // cannot silently blank a code the user did not touch.
+  const extra =
+    current && !options.some((o) => o.value === current)
+      ? [{ value: current, primary: current, secondary: 'current value' }]
+      : [];
+
+  let custom = false;
+  const picked = await showOptionPickerModal({
+    title: `Select ${field}`,
+    options: [{ value: '', primary: '- none -' }, ...extra, ...options],
+    selectedValue: current,
+    searchable: true,
+    footerAction: {
+      label: 'Enter a custom value...',
+      onClick: () => {
+        custom = true;
+      },
+    },
+  });
+
+  if (custom) {
+    openPlainEditor(span, spec, current, gtfsType);
+    return;
+  }
+  if (picked !== null && picked !== current) {
+    await commit(span, spec, picked);
+  }
+}
+
+function openPlainEditor(
+  span: HTMLElement,
+  spec: GTFSFieldSpec,
+  current: string,
+  gtfsType: string | undefined
+): void {
   const type = gtfsType as GTFSFieldType | undefined;
+  const inputType = editorInputType(gtfsType);
+  const display =
+    current && type ? formatValueForDisplay(current, type) : current;
   openInlineEditor(span, {
-    value: current && type ? formatValueForDisplay(current, type) : current,
-    inputType: editorInputType(gtfsType),
+    value: inputType === 'color' && display === '' ? COLOR_EMPTY : display,
+    inputType,
     sizeClass: 'input-sm',
     className: 'w-full',
     placeholder: span.dataset.placeholder,

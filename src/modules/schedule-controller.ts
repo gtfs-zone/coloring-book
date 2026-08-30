@@ -7,7 +7,11 @@
 import { Stops, StopTimes } from '../types/gtfs-entities.js';
 import type { StopTimeRef } from '../types/gtfs-flex.js';
 import { notify } from './notification-system';
-import { formatIssueValue, markReferenceResolved } from './feed-issues.js';
+import {
+  formatIssueValue,
+  markReferenceResolved,
+  refreshFeedIssuesIfStale,
+} from './feed-issues.js';
 import type { GTFSParser } from './gtfs-parser.js';
 import { TimeFormatter } from '../utils/time-formatter.js';
 import {
@@ -27,7 +31,6 @@ import {
 } from './timetable-database.js';
 import { generateCompositeKeyFromRecord } from '../utils/gtfs-primary-keys.js';
 import { patchUpdate } from '../utils/patch-utils.js';
-import { getStopDisplay } from '../utils/entity-display.js';
 import {
   openInlineEditor,
   openInlineMenu,
@@ -46,7 +49,15 @@ import { getEnumOptions } from '../types/gtfs-enums.js';
 import {
   navigateToLocationGroup,
   navigateToZone,
+  openTimetable,
 } from './navigation-actions.js';
+import {
+  TIMETABLE_ADD_DIRECTION,
+  TIMETABLE_DIRECTION_TAB,
+  TIMETABLE_ROUTE_PICKER,
+  TIMETABLE_SERVICE_PICKER,
+} from './timetable-selectors.js';
+import { getRouteDisplay, getStopDisplay } from '../utils/entity-display.js';
 import { getZoneFeatures, zoneName } from './zone-store.js';
 import { validateFlexStopTimeRow } from '../utils/flex-rules.js';
 import { renderSpecDescriptionPlain } from '../utils/spec-markup.js';
@@ -88,6 +99,16 @@ interface TimeCellKey {
 export interface OnDemandTarget {
   table?: string;
   rowKey?: string;
+}
+
+/**
+ * Which timetable the modal is showing. `direction_id` is optional: left out,
+ * `renderSchedule` picks the busiest direction the route runs.
+ */
+export interface TimetableTarget {
+  route_id: string;
+  service_id: string;
+  direction_id?: string;
 }
 
 /** Is this sub-row one end of a pickup/drop-off window? */
@@ -280,6 +301,9 @@ export class ScheduleController {
   private refHover: ((ref: StopTimeRef | null) => void) | null = null;
   private onDemandOpen: ((target: OnDemandTarget) => void) | null = null;
   private shapesOpen: (() => void) | null = null;
+  private shapeUpload:
+    | ((tripId: string, currentShapeId: string) => Promise<string | null>)
+    | null = null;
   private hoveredRef: StopTimeRef | null = null;
 
   /**
@@ -367,6 +391,63 @@ export class ScheduleController {
         return;
       }
 
+      const routePicker = (e.target as Element)?.closest?.(
+        `.${TIMETABLE_ROUTE_PICKER}`
+      );
+      if (routePicker instanceof HTMLElement) {
+        void this.openRoutePicker();
+        return;
+      }
+
+      const servicePicker = (e.target as Element)?.closest?.(
+        `.${TIMETABLE_SERVICE_PICKER}`
+      );
+      if (servicePicker instanceof HTMLElement) {
+        void this.openServicePicker();
+        return;
+      }
+
+      const addDirection = (e.target as Element)?.closest?.(
+        `.${TIMETABLE_ADD_DIRECTION}`
+      );
+      if (addDirection instanceof HTMLElement) {
+        const direction_id = addDirection.dataset.directionId;
+        if (
+          direction_id !== undefined &&
+          this.currentRouteId &&
+          this.currentServiceId
+        ) {
+          console.log(
+            `[ScheduleController] adding direction ${direction_id} to route ${this.currentRouteId}`
+          );
+          void openTimetable(
+            this.currentRouteId,
+            this.currentServiceId,
+            direction_id
+          );
+        }
+        return;
+      }
+
+      const directionTab = (e.target as Element)?.closest?.(
+        `.${TIMETABLE_DIRECTION_TAB}`
+      );
+      if (directionTab instanceof HTMLElement) {
+        const direction_id = directionTab.dataset.directionId;
+        if (
+          direction_id !== undefined &&
+          this.currentRouteId &&
+          this.currentServiceId
+        ) {
+          void openTimetable(
+            this.currentRouteId,
+            this.currentServiceId,
+            direction_id
+          );
+        }
+        return;
+      }
+
       const addStopBtn = (e.target as Element)?.closest?.('.add-stop-btn');
       if (addStopBtn instanceof HTMLElement) {
         if (this.currentTripCount === 0) {
@@ -447,6 +528,20 @@ export class ScheduleController {
         const trip_id = resortBtn.dataset.tripId;
         if (trip_id) {
           void this.resortTrip(trip_id);
+        }
+        return;
+      }
+
+      const uploadShapeBtn = (e.target as Element)?.closest?.(
+        '.upload-shape-btn'
+      );
+      if (uploadShapeBtn instanceof HTMLElement) {
+        const trip_id = uploadShapeBtn.dataset.tripId;
+        if (trip_id) {
+          void this.handleUploadShapeForTrip(
+            trip_id,
+            uploadShapeBtn.dataset.shapeId ?? ''
+          );
         }
         return;
       }
@@ -654,9 +749,14 @@ export class ScheduleController {
   public setManagerHandlers(handlers: {
     openOnDemand: (target: OnDemandTarget) => void;
     openShapes: () => void;
+    uploadShape: (
+      tripId: string,
+      currentShapeId: string
+    ) => Promise<string | null>;
   }): void {
     this.onDemandOpen = handlers.openOnDemand;
     this.shapesOpen = handlers.openShapes;
+    this.shapeUpload = handlers.uploadShape;
   }
 
   /** The roster the last render used, stamped on #schedule-view. */
@@ -1470,6 +1570,49 @@ export class ScheduleController {
       span.removeAttribute('title');
       void this.updateTripProperty(tripId, 'shape_id', picked);
     }
+  }
+
+  /**
+   * The "Upload shape" button in the shape actions row: pick a GPX file, name
+   * a shape, and point this one trip's shape_id at it, in one step.
+   *
+   * The insert and the trip update are recorded together by
+   * `ShapesManager.uploadShapeForTrip`, so there is nothing left to record
+   * here - only the DOM to catch up, mirroring what
+   * `openTripPropShapePicker` does after a pick.
+   */
+  private async handleUploadShapeForTrip(
+    tripId: string,
+    currentShapeId: string
+  ): Promise<void> {
+    if (!this.shapeUpload) {
+      return;
+    }
+
+    const shapeId = await this.shapeUpload(tripId, currentShapeId);
+    if (!shapeId) {
+      return;
+    }
+
+    const span = document.querySelector(
+      `.trip-prop-span[data-trip-id="${CSS.escape(tripId)}"][data-field="shape_id"]`
+    );
+    if (span instanceof HTMLElement) {
+      setPickerTriggerContent(span, escapeHtml(shapeId) || '-');
+      span.dataset.value = shapeId;
+      markReferenceResolved('trips.txt', 'shape_id', currentShapeId);
+      span.classList.remove('text-error', 'font-semibold');
+      span.removeAttribute('title');
+    }
+
+    const uploadBtn = document.querySelector(
+      `.upload-shape-btn[data-trip-id="${CSS.escape(tripId)}"]`
+    );
+    if (uploadBtn instanceof HTMLElement) {
+      uploadBtn.dataset.shapeId = shapeId;
+    }
+
+    notify.success(`Uploaded shape ${shapeId} for trip ${tripId}`);
   }
 
   /**
@@ -2694,6 +2837,13 @@ export class ScheduleController {
         `[ScheduleController] renderSchedule route=${route_id} service=${service_id} direction=${direction_id ?? '(default)'}`
       );
 
+      // The dangling-reference styling (e.g. a red shape_id) is only as fresh
+      // as the last validation pass, which otherwise only reruns when the
+      // home panel draws. Without this, fixing a reference from inside the
+      // timetable (assign a shape, add a stop) leaves it red until something
+      // else triggers a revalidation.
+      refreshFeedIssuesIfStale();
+
       // Leaving a timetable drops the UI-only field roster: it is a choice
       // about this route and direction, not a persisted preference.
       if (
@@ -2743,6 +2893,17 @@ export class ScheduleController {
       };
       this.currentTripCount = timetableData.trips.length;
 
+      // A direction the user just added from the "+" tab has no trips, so
+      // directionsForRoute cannot see it. Show it as an empty tab so the
+      // first trip can be created there.
+      if (!availableDirections.some((d) => d.id === selectedDirection)) {
+        availableDirections.push({
+          id: selectedDirection,
+          name: `Direction ${selectedDirection}`,
+          tripCount: 0,
+        });
+      }
+
       // Add direction information to timetable data
       timetableData.availableDirections = availableDirections;
       timetableData.selectedDirectionId = selectedDirection;
@@ -2780,37 +2941,177 @@ export class ScheduleController {
   }
 
   /**
-   * Re-render the timetable in place, for UI-only state that no patch covers.
+   * Fill in whatever the caller did not name, so the timetable modal always
+   * opens on a real timetable.
    *
-   * Every *recorded* edit is redrawn by the patch:change listener in index.ts
-   * (browseNavigation.refresh -> renderSchedule), so calling this after one
-   * would run two renders against the same container at once. The only caller
-   * is the pending add-stop row, which exists purely in this controller.
-   * No-op if no timetable is currently displayed.
+   * Defaults are the first route that runs trips, the first service that route
+   * runs, and (left to `renderSchedule`) the busiest direction. Returns null
+   * when the feed has no trips at all, which is the one case the modal cannot
+   * show anything for.
    */
-  async refreshCurrentTimetable(): Promise<void> {
-    if (!this.currentRouteId || !this.currentServiceId) {
+  async resolveTimetableTarget(
+    partial: Partial<TimetableTarget> = {}
+  ): Promise<TimetableTarget | null> {
+    const trips = this.gtfsParser.getFileDataSyncTyped<Record<string, unknown>>(
+      GTFS_TABLES.TRIPS
+    );
+    if (!trips || trips.length === 0) {
+      console.warn(
+        '[ScheduleController] no trips in feed, no timetable to open'
+      );
+      return null;
+    }
+
+    const route_id = partial.route_id ?? String(trips[0].route_id ?? '');
+    if (route_id === '') {
+      return null;
+    }
+
+    const services = this.servicesForRoute(route_id);
+    const service_id =
+      partial.service_id !== undefined && services.includes(partial.service_id)
+        ? partial.service_id
+        : (services[0] ?? partial.service_id);
+    if (service_id === undefined || service_id === '') {
+      console.warn(
+        `[ScheduleController] route ${route_id} runs no service, no timetable to open`
+      );
+      return null;
+    }
+
+    return {
+      route_id,
+      service_id,
+      ...(partial.direction_id !== undefined && {
+        direction_id: partial.direction_id,
+      }),
+    };
+  }
+
+  /** Distinct service_ids this route runs, in the order trips.txt lists them. */
+  private servicesForRoute(route_id: string): string[] {
+    const trips =
+      this.gtfsParser.getFileDataSyncTyped<Record<string, unknown>>(
+        GTFS_TABLES.TRIPS
+      ) ?? [];
+    const seen: string[] = [];
+    for (const trip of trips) {
+      if (String(trip.route_id ?? '') !== route_id) {
+        continue;
+      }
+      const service_id = String(trip.service_id ?? '');
+      if (service_id !== '' && !seen.includes(service_id)) {
+        seen.push(service_id);
+      }
+    }
+    return seen;
+  }
+
+  /**
+   * Repoint the timetable at another route. Service and direction reset to
+   * values valid for the new route, which is what makes the three selectors
+   * always name a timetable that exists.
+   */
+  private async openRoutePicker(): Promise<void> {
+    const routes =
+      this.gtfsParser.getFileDataSyncTyped<Record<string, string>>(
+        GTFS_TABLES.ROUTES
+      ) ?? [];
+    const options: OptionPickerItem[] = routes.map((route) => {
+      const display = getRouteDisplay(route);
+      return {
+        value: String(route.route_id ?? ''),
+        primary: display.primary,
+        ...(display.secondary && { secondary: display.secondary }),
+      };
+    });
+
+    const picked = await showOptionPickerModal({
+      title: 'Timetable route',
+      options,
+      searchable: true,
+      ...(this.currentRouteId && { selectedValue: this.currentRouteId }),
+    });
+    if (picked === null || picked === '' || picked === this.currentRouteId) {
+      return;
+    }
+
+    const target = await this.resolveTimetableTarget({ route_id: picked });
+    if (!target) {
+      notify.warning(`Route ${picked} has no trips, so it has no timetable.`);
+      return;
+    }
+    await openTimetable(target.route_id, target.service_id);
+  }
+
+  /** Repoint the timetable at another of this route's services. */
+  private async openServicePicker(): Promise<void> {
+    if (!this.currentRouteId) {
+      return;
+    }
+    const options: OptionPickerItem[] = this.servicesForRoute(
+      this.currentRouteId
+    ).map((service_id) => ({ value: service_id, primary: service_id }));
+
+    const picked = await showOptionPickerModal({
+      title: 'Timetable service',
+      options,
+      searchable: true,
+      ...(this.currentServiceId && { selectedValue: this.currentServiceId }),
+    });
+    if (picked === null || picked === '' || picked === this.currentServiceId) {
+      return;
+    }
+    await openTimetable(this.currentRouteId, picked);
+  }
+
+  /**
+   * Re-render the timetable in place.
+   *
+   * The timetable modal's only rebuild path. It subscribes this to the patch
+   * events, so a recorded edit redraws through here; the callers inside this
+   * controller are the UI-only states no patch covers (the pending add-stop
+   * row, the provisional field roster).
+   *
+   * Passing a `target` repoints the timetable at another route, service or
+   * direction without tearing the modal down. No-op when nothing is displayed
+   * and no target names one.
+   */
+  async refreshCurrentTimetable(target?: TimetableTarget): Promise<void> {
+    const route_id = target?.route_id ?? this.currentRouteId;
+    const service_id = target?.service_id ?? this.currentServiceId;
+    const direction_id = target ? target.direction_id : this.currentDirectionId;
+
+    if (!route_id || !service_id) {
       console.log('No current timetable to refresh');
       return;
     }
 
     console.log('Refreshing timetable:', {
-      route_id: this.currentRouteId,
-      service_id: this.currentServiceId,
-      direction_id: this.currentDirectionId,
+      route_id,
+      service_id,
+      direction_id,
     });
+
+    // Landing on a different timetable is a fresh grid: its scroll, its open
+    // editor and its selection all belong to the timetable being left.
+    const isRetarget =
+      route_id !== this.currentRouteId ||
+      service_id !== this.currentServiceId ||
+      direction_id !== this.currentDirectionId;
+    if (isRetarget) {
+      this.resetTimetableScroll();
+      this.editingCell = null;
+    } else {
+      this.captureTimetableEditor();
+    }
 
     // Use the value tracked by the scroll listener, the DOM is unreliable here
     // because the browser resets scrollLeft during every async DB await.
     const savedScrollLeft = this.timetableScrollLeft;
     const savedScrollTop = this.timetableScrollTop;
-    this.captureTimetableEditor();
 
-    const html = await this.renderSchedule(
-      this.currentRouteId,
-      this.currentServiceId,
-      this.currentDirectionId
-    );
+    const html = await this.renderSchedule(route_id, service_id, direction_id);
 
     // renderSchedule emits its own #schedule-view wrapper, so the old element
     // is replaced rather than filled - assigning innerHTML would nest a second

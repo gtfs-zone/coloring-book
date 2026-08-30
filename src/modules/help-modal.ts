@@ -76,8 +76,25 @@ function renderCheckbox(page: { id: string; showOnceKey?: string }): string {
   </label>`;
 }
 
-export async function showHelpModal(pageId?: string): Promise<void> {
-  if (HELP_PAGES.length === 0) {
+// Open state, so F1 (and a second click on Guide) cannot stack a duplicate
+// modal on top of the one already showing.
+let helpModalOpen = false;
+
+/**
+ * Shown when the guide is opened as a gate before another modal (the shapes
+ * and fares buttons). The action button reads this label instead of "Close"
+ * so it is clear that dismissing the guide continues to the thing that was
+ * gated, rather than merely closing a dialog.
+ */
+export interface HelpModalOptions {
+  continueLabel?: string;
+}
+
+export async function showHelpModal(
+  pageId?: string,
+  options?: HelpModalOptions
+): Promise<void> {
+  if (HELP_PAGES.length === 0 || helpModalOpen) {
     return;
   }
   let activePage = (pageId && getHelpPage(pageId)) || HELP_PAGES[0];
@@ -117,35 +134,42 @@ export async function showHelpModal(pageId?: string): Promise<void> {
     </div>
   `;
 
-  await showModal({
-    title: 'Help',
-    body,
-    actions: [{ label: 'Close', onClick: () => {} }],
-    actionBarContent: '<div id="help-action-bar"></div>',
-    escapeAction: 0,
-    boxClassName: 'max-w-4xl w-11/12',
-    onMount: () => {
-      render();
+  helpModalOpen = true;
+  try {
+    await showModal({
+      title: 'Guide',
+      body,
+      actions: [
+        { label: options?.continueLabel ?? 'Close', onClick: () => {} },
+      ],
+      actionBarContent: '<div id="help-action-bar"></div>',
+      escapeAction: 0,
+      boxClassName: 'max-w-4xl w-11/12',
+      onMount: () => {
+        render();
 
-      document
-        .getElementById('help-sidebar')
-        ?.addEventListener('click', (e) => {
-          const btn = (e.target as HTMLElement).closest<HTMLButtonElement>(
-            '[data-help-entry]'
-          );
-          const id = btn?.dataset.helpEntry;
-          if (!id || id === activePage.id) {
-            return;
-          }
-          const page = getHelpPage(id);
-          if (!page) {
-            return;
-          }
-          activePage = page;
-          render();
-        });
-    },
-  });
+        document
+          .getElementById('help-sidebar')
+          ?.addEventListener('click', (e) => {
+            const btn = (e.target as HTMLElement).closest<HTMLButtonElement>(
+              '[data-help-entry]'
+            );
+            const id = btn?.dataset.helpEntry;
+            if (!id || id === activePage.id) {
+              return;
+            }
+            const page = getHelpPage(id);
+            if (!page) {
+              return;
+            }
+            activePage = page;
+            render();
+          });
+      },
+    });
+  } finally {
+    helpModalOpen = false;
+  }
 }
 
 // ─── Shared render helpers for page content ────────────────────────────────

@@ -41,7 +41,17 @@ import type {
   EditableTablePatchManager,
 } from './editable-table.js';
 import { renderIssueCard } from '../utils/issue-card.js';
-import { getFeedIssues, refreshFeedIssuesIfStale } from './feed-issues.js';
+import { showHelpModal } from './help-modal.js';
+import {
+  getFeedIssueEntities,
+  getFeedIssues,
+  refreshFeedIssuesIfStale,
+} from './feed-issues.js';
+import {
+  applyWhitespaceFix,
+  describeWhitespaceFix,
+  WHITESPACE_FIX_ACTION,
+} from '../utils/whitespace-fix.js';
 import { GTFS_TABLES } from '../types/gtfs.js';
 import { InlineEntityCreator } from '../utils/inline-entity-creator.js';
 import {
@@ -53,7 +63,6 @@ import {
   renderOptionLabel,
 } from '../utils/entity-display.js';
 import { showModal, renderTrashIcon } from './modal-utils.js';
-import { showFeedDataModal } from './feed-data-modal.js';
 import { specStoreName } from '../utils/spec-field-edit.js';
 import { showOptionPickerModal } from './option-picker-modal.js';
 import {
@@ -65,6 +74,7 @@ import { escapeHtml } from '../utils/escape-html.js';
 import {
   getCurrentPageState,
   navigateToHome,
+  openModal,
   navigateToLocationGroup,
   navigateToZone,
   focusAfterNextRender,
@@ -139,15 +149,6 @@ export interface ContentRendererDependencies {
     getRoutesServingStop?: (stop_id: string) => Promise<unknown[]>;
     getRoutesForService?: (service_id: string) => Promise<unknown[]>;
     getTripsForService?: (service_id: string) => Promise<unknown[]>;
-  };
-
-  // Schedule controller for timetables
-  scheduleController: {
-    renderSchedule: (
-      route_id: string,
-      service_id: string,
-      direction_id?: string
-    ) => Promise<string>;
   };
 
   // Service days controller for calendar editing
@@ -316,10 +317,12 @@ export class PageContentRenderer {
       gtfsDatabase: dependencies.gtfsDatabase,
       gtfsRelationships: dependencies.gtfsRelationships || {},
       serviceDaysController: dependencies.serviceDaysController,
+      patchManager: dependencies.patchManager ?? null,
       onAgencyClick: dependencies.onAgencyClick,
       onRouteClick: dependencies.onRouteClick,
       onTimetableClick: dependencies.onTimetableClick,
       onDeleteService: (service_id) => this.handleDeleteService(service_id),
+      onServiceChanged: () => dependencies.onEntityCreated?.(),
     };
     this.serviceViewController = new ServiceViewController(
       serviceViewDependencies
@@ -383,6 +386,41 @@ export class PageContentRenderer {
   }
 
   /**
+   * Clean every value the last validation pass flagged as carrying hidden
+   * whitespace, as one patch.
+   *
+   * The button is disabled for the duration rather than left clickable: the
+   * fix reads the published issue list, so a second run while the first is in
+   * flight would work from entities that have already been rewritten.
+   */
+  private async runWhitespaceFix(button: HTMLButtonElement): Promise<void> {
+    const deps = this.editableDeps();
+    if (!deps) {
+      notify.error('This feed is open read-only, so it cannot be fixed');
+      return;
+    }
+    const entities = getFeedIssueEntities('UNCLEAN_VALUE');
+    button.disabled = true;
+    try {
+      const result = await applyWhitespaceFix(entities, deps);
+      const message = describeWhitespaceFix(result);
+      if (result.rows === 0) {
+        notify.warning(message);
+      } else {
+        notify.success(message);
+      }
+    } catch (error) {
+      console.error('[PageContentRenderer] whitespace fix failed:', error);
+      notify.error('Could not clean the whitespace, see the console');
+      button.disabled = false;
+      return;
+    }
+    // Re-render the home panel; the patch moved the feed version, so drawing
+    // the issue card revalidates and the fixed rows drop out of it.
+    this.dependencies.onEntityCreated?.();
+  }
+
+  /**
    * Point the map at whatever the page being rendered is about.
    *
    * Synchronous and up front rather than inside the individual render*
@@ -405,7 +443,6 @@ export class PageContentRenderer {
         map.focusOnAgency(pageState.agency_id);
         break;
       case 'route':
-      case 'timetable':
         map.highlightRoute(pageState.route_id);
         break;
       case 'stop':
@@ -446,12 +483,6 @@ export class PageContentRenderer {
           return await this.renderAgency(pageState.agency_id);
         case 'route':
           return await this.renderRoute(pageState.route_id);
-        case 'timetable':
-          return await this.renderTimetable(
-            pageState.route_id,
-            pageState.service_id,
-            pageState.direction_id
-          );
         case 'stop':
           return await this.renderStop(pageState.stop_id);
         case 'service':
@@ -494,6 +525,22 @@ export class PageContentRenderer {
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
         </svg>
         <span>${message}</span>
+      </div>
+    `;
+  }
+
+  /**
+   * A clean feed renders no issue card, which would otherwise leave the home
+   * panel with nothing to say about the feed's health. Shown only when the
+   * feed has data and zero warnings or errors.
+   */
+  private renderCleanFeedEncouragement(): string {
+    return `
+      <div class="rounded-lg border border-success/40 bg-success/10 p-3 text-sm flex items-center justify-between gap-3">
+        <span>Everything look good? Export your feed and publish.</span>
+        <button type="button" class="btn btn-xs btn-success btn-outline" data-open-guide="publishing">
+          Publishing guide
+        </button>
       </div>
     `;
   }
@@ -544,13 +591,26 @@ export class PageContentRenderer {
         : renderServiceTimeline(serviceData, { tripCounts });
     const tTimeline = performance.now();
 
+    const feedIssues = getFeedIssues();
+    // Only worth encouraging export once there is something to export, and
+    // nothing left to clean up first.
+    const feedIsEmpty = !this.dependencies.gtfsParser
+      ?.getAllFileNames()
+      .some(
+        (f) =>
+          (this.dependencies.gtfsParser!.getFileDataSync(f)?.length ?? 0) > 0
+      );
+    const cleanFeedEncouragement =
+      !feedIsEmpty && feedIssues.every((row) => row.count === 0);
+
     const html = `
       <div class="p-4 space-y-4">
         ${await this.renderFeedInfoProperties(feedInfo)}
 
         ${await this.renderAttributionsSection()}
 
-        ${renderIssueCard('Feed issues', getFeedIssues())}
+        ${renderIssueCard('Feed issues', feedIssues)}
+        ${cleanFeedEncouragement ? this.renderCleanFeedEncouragement() : ''}
 
         <div class="space-y-4">
           <div class="flex items-center justify-between gap-4">
@@ -972,27 +1032,6 @@ export class PageContentRenderer {
   }
 
   /**
-   * Render timetable page
-   */
-  private async renderTimetable(
-    route_id: string,
-    service_id: string,
-    direction_id?: string
-  ): Promise<string> {
-    try {
-      // Get the rendered schedule HTML directly
-      return await this.dependencies.scheduleController.renderSchedule(
-        route_id,
-        service_id,
-        direction_id
-      );
-    } catch (error) {
-      console.error('Error rendering timetable:', error);
-      return this.renderError('Failed to load timetable. Please try again.');
-    }
-  }
-
-  /**
    * Render stop page
    */
   private async renderStop(stop_id: string): Promise<string> {
@@ -1202,6 +1241,14 @@ export class PageContentRenderer {
   }
 
   addEventListeners(container: HTMLElement): void {
+    // Clean-feed encouragement's link into the publishing guide.
+    container.querySelectorAll('[data-open-guide]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const pageId = btn.getAttribute('data-open-guide') || undefined;
+        void showHelpModal(pageId);
+      });
+    });
+
     // Agency card clicks
     const agencyCards = container.querySelectorAll('.agency-card');
     agencyCards.forEach((card) => {
@@ -1360,19 +1407,33 @@ export class PageContentRenderer {
       });
     });
 
+    // Feed issue card row actions: a bulk fix for a whole group of issues.
+    container.querySelectorAll('[data-issue-action]').forEach((button) => {
+      button.addEventListener('click', (event) => {
+        // The button sits inside a <summary>, which would otherwise toggle.
+        event.preventDefault();
+        event.stopPropagation();
+        if (
+          button.getAttribute('data-issue-action') === WHITESPACE_FIX_ACTION
+        ) {
+          void this.runWhitespaceFix(button as HTMLButtonElement);
+        }
+      });
+    });
+
     // Attributions are edited in the Feed Data modal, not on the home page.
     const manageAttributionsBtn = container.querySelector(
       '.manage-attributions-btn'
     );
     if (manageAttributionsBtn) {
-      manageAttributionsBtn.addEventListener('click', async () => {
-        const deps = this.editableDeps();
-        if (!deps) {
-          return;
-        }
-        await showFeedDataModal(deps, { table: GTFS_TABLES.ATTRIBUTIONS });
-        // The cards above were rendered from the rows the modal just edited.
-        this.dependencies.onEntityCreated?.();
+      manageAttributionsBtn.addEventListener('click', () => {
+        void openModal(
+          { type: 'feed_data', table: GTFS_TABLES.ATTRIBUTIONS },
+          {
+            // The cards above were rendered from the rows the modal just edited.
+            onClosed: () => this.dependencies.onEntityCreated?.(),
+          }
+        );
       });
     }
 

@@ -12,7 +12,7 @@ import {
   getSchemaFieldName,
 } from '../utils/zod-tooltip-helper.js';
 import {
-  navigateToTimetable,
+  openTimetable,
   navigateToHome,
   navigateToAgency,
   navigateToRoute,
@@ -23,7 +23,6 @@ import { GTFSParser } from './gtfs-parser.js';
 import { LoadCancelledError } from './feed-download.js';
 import { Editor } from './editor.js';
 import { BrowseNavigation } from './browse-navigation.js';
-import { ScheduleController } from './schedule-controller.js';
 import { getStopDisplay, renderOptionLabel } from '../utils/entity-display.js';
 import { buildExportFilename } from '../utils/export-filename.js';
 import { showHelpModal, shouldShowHelpPage } from './help-modal.js';
@@ -55,8 +54,6 @@ export class UIController {
   editor: Editor | null;
   mapController: MapController | null;
   browseNavigation: BrowseNavigation | null;
-  scheduleController: ScheduleController | null;
-  validateCallback: (() => void) | null;
   /**
    * What the load modal last produced. Kept only so reopening the modal seeds
    * from it; the feed itself lives in IndexedDB, not here.
@@ -68,8 +65,6 @@ export class UIController {
     this.editor = null;
     this.mapController = null;
     this.browseNavigation = null;
-    this.scheduleController = null;
-    this.validateCallback = null;
     this.currentSelection = null;
   }
 
@@ -77,16 +72,12 @@ export class UIController {
     gtfsParser: GTFSParser,
     editor: Editor,
     mapController: MapController,
-    browseNavigation: BrowseNavigation,
-    scheduleController: ScheduleController | null = null,
-    validateCallback: (() => void) | null = null
+    browseNavigation: BrowseNavigation
   ) {
     this.gtfsParser = gtfsParser;
     this.editor = editor;
     this.mapController = mapController;
     this.browseNavigation = browseNavigation;
-    this.scheduleController = scheduleController;
-    this.validateCallback = validateCallback;
     this.setupEventListeners();
     this.setupMapCallbacks();
   }
@@ -109,12 +100,6 @@ export class UIController {
     // Export button
     document.getElementById('export-btn')!.addEventListener('click', () => {
       this.exportGTFS();
-    });
-
-    // Clear button: the same reset as "New Empty Feed", but reached from the
-    // navbar rather than from a load dialog, so it asks first.
-    document.getElementById('clear-feed-btn')?.addEventListener('click', () => {
-      void this.confirmClearFeed();
     });
 
     // Pointer button
@@ -226,11 +211,6 @@ export class UIController {
         throw new Error('Please upload a ZIP file containing GTFS data');
       }
 
-      // Drop cached timetable state from whatever feed was loaded before:
-      // it's keyed by route/service/direction ids, which can collide with
-      // the new feed's ids and would otherwise redisplay stale stop times.
-      this.scheduleController?.resetForNewFeed();
-
       // Parse the file
       const { unknownFiles } = await this.gtfsParser!.parseFile(file);
       if (unknownFiles.length > 0) {
@@ -253,14 +233,6 @@ export class UIController {
 
       // Populate the file list without opening the Files modal
       this.showFileList();
-
-      // Validate before rendering: the home panel draws the resulting issues.
-      if (this.validateCallback) {
-        console.time('[GTFS] validate');
-        this.validateCallback();
-
-        console.timeEnd('[GTFS] validate');
-      }
 
       // Refresh Objects navigation if available
       if (this.browseNavigation) {
@@ -397,8 +369,6 @@ export class UIController {
     try {
       console.log('Loading GTFS from URL:', url);
 
-      this.scheduleController?.resetForNewFeed();
-
       const { unknownFiles } = await this.gtfsParser!.parseFromURL(url);
       if (unknownFiles.length > 0) {
         notify.warning(
@@ -409,11 +379,6 @@ export class UIController {
       // Update UI
       this.updateFileList();
       await this.mapController!.updateMap();
-
-      // Validate before rendering: the home panel draws the resulting issues.
-      if (this.validateCallback) {
-        this.validateCallback();
-      }
 
       // Refresh Objects navigation if available
       if (this.browseNavigation) {
@@ -1003,7 +968,7 @@ export class UIController {
                   service.data?.service_id
                 ) {
                   // Navigate to timetable view using the new navigation system
-                  navigateToTimetable(
+                  openTimetable(
                     service.route_id,
                     service.data.service_id,
                     service.direction_id || service.data.direction_id
@@ -1166,7 +1131,7 @@ export class UIController {
         itemEl.addEventListener('click', async () => {
           if (obj.scheduleAction && obj.route_id && obj.data?.service_id) {
             // Navigate to timetable view using the new navigation system
-            navigateToTimetable(
+            openTimetable(
               obj.route_id,
               obj.data.service_id,
               obj.direction_id || obj.data.direction_id
@@ -1194,27 +1159,9 @@ export class UIController {
     });
   }
 
-  /** Discard the loaded feed and every edit to it, once the user confirms. */
-  async confirmClearFeed(): Promise<void> {
-    await showModal({
-      title: 'Clear feed',
-      body: '<p>This discards the loaded feed and every edit made to it, and starts an empty feed. This cannot be undone.</p>',
-      actions: [
-        {
-          label: 'Clear',
-          className: 'btn-error',
-          onClick: () => this.createNewFeed(),
-        },
-        { label: 'Cancel', onClick: () => {} },
-      ],
-      escapeAction: 1,
-    });
-  }
-
   async createNewFeed() {
     try {
       // Reset to empty GTFS feed
-      this.scheduleController?.resetForNewFeed();
       await this.gtfsParser!.initializeEmpty();
       this.updateFileList();
       await this.mapController!.updateMap();
@@ -1224,11 +1171,6 @@ export class UIController {
 
       // Clear editor
       this.editor!.clearEditor();
-
-      // Validate before rendering: the home panel draws the resulting issues.
-      if (this.validateCallback) {
-        this.validateCallback();
-      }
 
       // Refresh Objects navigation if available
       if (this.browseNavigation) {
@@ -1305,6 +1247,10 @@ export class UIController {
         notify.removeNotification(loadingNotificationId);
       }
       notify.success('GTFS data exported successfully!');
+
+      if (shouldShowHelpPage('publishing')) {
+        await showHelpModal('publishing');
+      }
     } catch (error) {
       console.error('Error exporting GTFS:', error);
 
