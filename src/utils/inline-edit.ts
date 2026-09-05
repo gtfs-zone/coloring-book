@@ -198,7 +198,7 @@ export function openInlineEditor(
     // A body child, above the modal layer, so a cell inside a modal is not
     // clipped by it - same reason as the inline menu below.
     todayChip.className =
-      'inline-edit-today btn btn-xs fixed z-[2000] bg-base-100 border-base-300 shadow';
+      'inline-edit-today btn btn-xs btn-ghost fixed z-[2000] text-primary';
     // Keeps the input focused, so the click is not swallowed by a blur commit.
     todayChip.addEventListener('mousedown', (e) => e.preventDefault());
     todayChip.addEventListener('click', () => {
@@ -226,10 +226,13 @@ export function openInlineEditor(
   }
 
   if (todayChip) {
-    const rect = input.getBoundingClientRect();
-    todayChip.style.top = `${rect.bottom + 2}px`;
-    todayChip.style.left = `${rect.left}px`;
+    // Sits just past the input's right edge, level with the native picker's
+    // calendar button, so the two date shortcuts read as one control.
     document.body.appendChild(todayChip);
+    const rect = input.getBoundingClientRect();
+    const chipRect = todayChip.getBoundingClientRect();
+    todayChip.style.top = `${rect.top + (rect.height - chipRect.height) / 2}px`;
+    todayChip.style.left = `${rect.right + 2}px`;
   }
 
   let settled = false;
