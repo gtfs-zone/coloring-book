@@ -12,8 +12,15 @@ import {
 import { GTFS_TABLES } from '../types/gtfs.js';
 import { notify } from './notification-system';
 import { patchUpdate } from '../utils/patch-utils.js';
-import { getUsFederalDates } from '../calendar-patterns/us-federal.js';
-import { fromInputValue, toGtfsDateLocal } from '../utils/gtfs-date.js';
+import {
+  getUsFederalDates,
+  getUsFederalHolidays,
+} from '../calendar-patterns/us-federal.js';
+import {
+  formatGtfsDateWithWeekday,
+  fromInputValue,
+  toGtfsDateLocal,
+} from '../utils/gtfs-date.js';
 import {
   installEditableTableHandlers,
   renderEditableTable,
@@ -458,11 +465,24 @@ export class ServiceDaysController {
 
     const unavailable =
       '<div class="text-xs text-base-content/60">Exceptions cannot be edited until the edit history is ready.</div>';
+    const holidayNames = this.federalHolidayNames(calendar, exceptions);
     const addedHTML = deps
-      ? await this.renderExceptionTable(service_id, deps, 1, added)
+      ? await this.renderExceptionTable(
+          service_id,
+          deps,
+          1,
+          added,
+          holidayNames
+        )
       : unavailable;
     const removedHTML = deps
-      ? await this.renderExceptionTable(service_id, deps, 2, removed)
+      ? await this.renderExceptionTable(
+          service_id,
+          deps,
+          2,
+          removed,
+          holidayNames
+        )
       : unavailable;
 
     return `
@@ -497,7 +517,8 @@ export class ServiceDaysController {
     service_id: string,
     deps: EditableTableDeps,
     exception_type: 1 | 2,
-    rows: CalendarDates[]
+    rows: CalendarDates[],
+    holidayNames: Map<string, string>
   ): Promise<string> {
     const config: EditableTableConfig = {
       instanceId: `calendar-dates-${exception_type}-${service_id}`,
@@ -505,6 +526,22 @@ export class ServiceDaysController {
       fields: ['date'],
       rows: rows as unknown as Record<string, unknown>[],
       deps,
+      columnOverrides: {
+        date: {
+          format: (value) => {
+            const date = String(value ?? '');
+            if (!/^\d{8}$/.test(date)) {
+              return date;
+            }
+            const text = formatGtfsDateWithWeekday(date);
+            // Only the removed list names the holiday: that is the list a
+            // holiday explains being in.
+            const name =
+              exception_type === 2 ? holidayNames.get(date) : undefined;
+            return name ? `${text} - ${name}` : text;
+          },
+        },
+      },
       fixedValues: { service_id, exception_type },
       emptyMessage:
         exception_type === 1
@@ -574,6 +611,31 @@ export class ServiceDaysController {
    * Empty when the service has no usable range, which is what disables the
    * checkbox: there is nothing to add dates to.
    */
+  /**
+   * Observed federal holiday date to name, over the years the calendar spans.
+   *
+   * Unlike `federalHolidayDates` this is not clipped to the service's start and
+   * end: an exception date outside the range still deserves its name.
+   */
+  private federalHolidayNames(
+    calendar: Calendar | null,
+    exceptions: CalendarDates[]
+  ): Map<string, string> {
+    const range = this.getYearsRange(calendar, exceptions);
+    const years = exceptions
+      .map((e) => parseInt(String(e.date).substring(0, 4)))
+      .filter((year) => Number.isFinite(year));
+    const startYear = Math.min(range.startYear, ...years);
+    const endYear = Math.max(range.endYear, ...years);
+    const names = new Map<string, string>();
+    for (let year = startYear; year <= endYear; year++) {
+      for (const holiday of getUsFederalHolidays(year)) {
+        names.set(holiday.date, holiday.name);
+      }
+    }
+    return names;
+  }
+
   private federalHolidayDates(
     calendar: Calendar | null,
     exceptions: CalendarDates[]
