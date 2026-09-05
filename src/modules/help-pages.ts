@@ -476,24 +476,26 @@ const publishingPage: HelpPage = {
         {
           icon: ICON_CONNECT,
           term: 'Register with the Mobility Database and TransitLand Atlas',
+          termHtml: `Register with the ${renderExternalLink('https://mobilitydatabase.org/contribute', 'Mobility Database')} and ${renderExternalLink(TRANSITLAND_URL, 'TransitLand Atlas')}`,
           description:
             'So trip planners and other apps can discover your feed.',
         },
         {
           icon: ICON_CHECK,
           term: 'Validate with the canonical GTFS validator',
+          termHtml: `Validate with the ${renderExternalLink('https://gtfs-validator.mobilitydata.org/', 'canonical GTFS validator')}`,
           description: 'Catch anything this editor does not check.',
         },
         {
           icon: ICON_BELL,
           term: 'Notify the apps your riders use',
           description: 'Tell them where to find the new or updated feed.',
+          descriptionHtml: `Tell them where to find the new or updated feed. ${renderExternalLink('https://support.google.com/transitpartners/answer/1111577', 'Google Transit')} is the worked example.`,
         },
       ]),
-      lede(
-        `${renderExternalLink('https://mobilitydatabase.org/', 'Mobility Database')}, ${renderExternalLink(TRANSITLAND_URL, 'TransitLand Atlas')}, ${renderExternalLink('https://gtfs-validator.mobilitydata.org/', 'Canonical GTFS Validator')}.`
+      footnote(
+        `You can revisit this at any time from the Guide menu. ${renderExternalLink('https://gtfs.org/getting-started/publish/', 'Publishing on gtfs.org')} covers the whole process.`
       ),
-      footnote('You can revisit this at any time from the Guide menu.'),
     ].join(''),
 };
 
