@@ -196,19 +196,28 @@ export interface GlyphListItem {
   icon: string;
   term: string;
   description: string;
+  /** Raw HTML used instead of the escaped `term`, for inline links. */
+  termHtml?: string;
+  /** Raw HTML used instead of the escaped `description`, for inline links. */
+  descriptionHtml?: string;
 }
 
 export function glyphList(items: GlyphListItem[]): string {
   const rows = items
-    .map(
-      (item) => `<div class="flex gap-3 items-start">
+    .map((item) => {
+      const term = item.termHtml ?? escapeHtml(item.term);
+      const description = item.descriptionHtml ?? escapeHtml(item.description);
+      const hasDescription = item.descriptionHtml
+        ? true
+        : Boolean(item.description);
+      return `<div class="flex gap-3 items-start">
         <div class="shrink-0 w-6 h-6 text-primary">${item.icon}</div>
         <div>
-          <dt class="font-semibold">${escapeHtml(item.term)}</dt>
-          ${item.description ? `<dd class="text-sm text-base-content/60">${escapeHtml(item.description)}</dd>` : ''}
+          <dt class="font-semibold">${term}</dt>
+          ${hasDescription ? `<dd class="text-sm text-base-content/60">${description}</dd>` : ''}
         </div>
-      </div>`
-    )
+      </div>`;
+    })
     .join('');
   return `<dl class="flex flex-col gap-3">${rows}</dl>`;
 }
