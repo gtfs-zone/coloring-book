@@ -170,10 +170,12 @@ async function renderZonesPane(deps: OnDemandModalDeps): Promise<string> {
  * Ask for the new zone's id and name.
  *
  * Validation runs inside the action so a clash is reported in place rather
- * than closing the modal and losing what was typed.
+ * than closing the modal and losing what was typed. `taken` maps every id
+ * already claimed across the shared ID namespace to who owns it, so a zone
+ * cannot be created that the validator would immediately flag.
  */
 async function promptNewZone(
-  taken: Set<string>
+  taken: Map<string, string>
 ): Promise<{ location_id: string; stop_name: string } | null> {
   let created: { location_id: string; stop_name: string } | null = null;
 
@@ -222,8 +224,11 @@ async function promptNewZone(
           if (location_id === '') {
             return showError('location_id is required.');
           }
-          if (taken.has(location_id)) {
-            return showError(`"${location_id}" is already taken.`);
+          const owner = taken.get(location_id);
+          if (owner) {
+            return showError(
+              `"${location_id}" is already used as ${owner}; the ID must be unique across stops.txt, locations.geojson and location_groups.txt.`
+            );
           }
 
           created = { location_id, stop_name: nameEl?.value.trim() ?? '' };
@@ -333,6 +338,29 @@ async function readIdOwners(
     const id = String(feature.id ?? '').trim();
     if (id !== '') {
       owners.set(id, 'a locations.geojson id');
+    }
+  }
+  return owners;
+}
+
+/**
+ * Every id a new zone may not take.
+ *
+ * `readIdOwners` covers stops and existing zones, which is all the location
+ * group validator may see (it must not flag a row against its own id). A new
+ * zone is checked against the whole namespace, so the location groups go on top.
+ */
+async function readNewZoneIdOwners(
+  deps: OnDemandModalDeps
+): Promise<Map<string, string>> {
+  const owners = await readIdOwners(deps);
+  const groups = await deps.gtfsDatabase.getAllRows(
+    specStoreName(GTFS_TABLES.LOCATION_GROUPS)
+  );
+  for (const group of groups) {
+    const id = String(group.location_group_id ?? '').trim();
+    if (id !== '' && !owners.has(id)) {
+      owners.set(id, 'a location_groups.txt location_group_id');
     }
   }
   return owners;
@@ -480,10 +508,9 @@ export async function showOnDemandModal(
 
           if (target.closest('[data-new-zone]')) {
             void (async () => {
-              const taken = new Set(
-                (await readZoneFeatures(deps)).map((f) => String(f.id ?? ''))
+              const created = await promptNewZone(
+                await readNewZoneIdOwners(deps)
               );
-              const created = await promptNewZone(taken);
               if (!created) {
                 return;
               }

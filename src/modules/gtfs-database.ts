@@ -39,6 +39,7 @@ import {
   getNaturalKeyField,
   isNaturalKey,
   generateCompositeKeyFromRecord,
+  getGTFSPrimaryKey,
 } from '../utils/gtfs-primary-keys.js';
 import { TimeFormatter } from '../utils/time-formatter.js';
 import { buildExportFilename } from '../utils/export-filename.js';
@@ -751,6 +752,11 @@ export class GTFSDatabase {
       );
       const store = transaction.objectStore(tableName as GTFSStoreName);
       const keyPath = this.getNaturalKeyPath(tableName);
+      // A single-row table's key is a constant, so replaying an insert patch
+      // that is already applied would hit `add` twice on the same key and throw.
+      // Virtual tables dedupe an insert on byId; these have no virtual table,
+      // so an upsert is what gives them the same replay-safety.
+      const singleRow = getGTFSPrimaryKey(tableName)?.singleRow === true;
 
       for (let index = 0; index < rows.length; index++) {
         const row = rows[index];
@@ -764,7 +770,11 @@ export class GTFSDatabase {
           store.add(row);
         } else {
           const key = this.generateCompositeKey(tableName, row);
-          store.add(row, key);
+          if (singleRow) {
+            store.put(row, key);
+          } else {
+            store.add(row, key);
+          }
         }
       }
 

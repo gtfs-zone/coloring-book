@@ -2,20 +2,26 @@
  * Browse page for one on-demand zone (a locations.geojson feature).
  *
  * A zone has no CSV row, so there are no spec-driven property fields here: its
- * name lives in the feature's properties and its geometry is edited through the
- * geojson.io round trip in `zone-geometry-editor`.
+ * name and description live in the feature's properties and are edited by the
+ * details form below, and its geometry goes through the geojson.io round trip
+ * in `zone-geometry-editor`.
  */
 
 import type { GTFSParser } from './gtfs-parser.js';
 import { escapeHtml } from '../utils/escape-html.js';
 import { getRouteDisplay, renderCardLabel } from '../utils/entity-display.js';
+import { renderTrashIcon } from './modal-utils.js';
+import { notify } from './notification-system.js';
 import {
   attachZoneGeometryHandlers,
   renderZoneGeometrySection,
 } from './zone-geometry-editor.js';
 import {
   getZoneFeature,
+  setZoneProperties,
+  zoneDescription,
   zoneName,
+  type ZoneFeature,
   type ZonePatchRecorder,
 } from './zone-store.js';
 
@@ -26,6 +32,9 @@ import {
  */
 const ZONE_ROUTE_ROW = 'zone-route-row';
 
+const DETAILS_FORM = 'zone-details-form';
+const DELETE_BTN = 'zone-delete-btn';
+
 export interface ZoneViewDependencies {
   gtfsParser?: GTFSParser;
   patchManager?: ZonePatchRecorder | null;
@@ -35,6 +44,10 @@ export interface ZoneViewDependencies {
   onRouteClick?: (route_id: string) => void;
   /** Re-render the page after the geometry is rewritten. */
   onGeometryChanged?: (location_id: string) => void;
+  /** Re-render the page after the name or description is rewritten. */
+  onPropertiesChanged?: (location_id: string) => void;
+  /** Remove the zone, cascading to the stop_times that reference it. */
+  onDeleteZone?: (location_id: string) => Promise<void>;
 }
 
 export class ZoneViewController {
@@ -66,10 +79,21 @@ export class ZoneViewController {
 
       return `
         <div class="p-4 space-y-4">
-          <div>
-            <h2 class="text-lg font-semibold">${escapeHtml(name)}</h2>
-            <div class="text-xs opacity-60 font-mono">${escapeHtml(location_id)}</div>
-            <div class="badge badge-sm badge-outline mt-1">On-demand zone</div>
+          <div class="flex items-start justify-between gap-2">
+            <div>
+              <h2 class="text-lg font-semibold">${escapeHtml(name)}</h2>
+              <div class="text-xs opacity-60 font-mono">${escapeHtml(location_id)}</div>
+              <div class="badge badge-sm badge-outline mt-1">On-demand zone</div>
+            </div>
+            <button type="button" class="btn btn-sm btn-error btn-outline ${DELETE_BTN}"
+              data-location-id="${escapeHtml(location_id)}" title="Delete zone">
+              ${renderTrashIcon()}
+            </button>
+          </div>
+          <div class="card bg-base-100 shadow-lg">
+            <div class="card-body p-4">
+              ${this.renderDetails(location_id, feature)}
+            </div>
           </div>
           <div class="card bg-base-100 shadow-lg">
             <div class="card-body p-4">
@@ -88,6 +112,33 @@ export class ZoneViewController {
       console.error('[ZoneViewController] Error rendering zone view:', error);
       return this.renderError('Failed to load zone information.');
     }
+  }
+
+  /**
+   * Name and description, the only two properties the flex reference gives a
+   * locations.geojson feature. Save stays disabled until a value changes, the
+   * same contract as the geometry block below it.
+   */
+  private renderDetails(location_id: string, feature: ZoneFeature): string {
+    const name = zoneName(feature);
+    const description = zoneDescription(feature);
+    return `
+      <div class="space-y-3 ${DETAILS_FORM}" data-location-id="${escapeHtml(location_id)}">
+        <h3 class="font-semibold">Details</h3>
+        <fieldset class="fieldset">
+          <label class="label" for="zone-name-input">Name</label>
+          <input id="zone-name-input" class="input w-full zone-name-input" type="text"
+            placeholder="e.g. North service area" value="${escapeHtml(name)}" />
+          <label class="label" for="zone-desc-input">Description</label>
+          <input id="zone-desc-input" class="input w-full zone-desc-input" type="text"
+            placeholder="Optional" value="${escapeHtml(description)}" />
+        </fieldset>
+        <div class="flex items-center gap-2">
+          <button type="button" class="btn btn-sm btn-primary zone-details-save" disabled>Save details</button>
+          <span class="text-xs text-error hidden zone-details-error"></span>
+        </div>
+      </div>
+    `;
   }
 
   /** Trips referencing the zone, collapsed to one row per route. */
@@ -134,7 +185,18 @@ export class ZoneViewController {
         onGeometryChanged: (location_id) =>
           this.dependencies.onGeometryChanged?.(location_id),
       });
+      this.attachDetailsHandlers(container, parser);
     }
+
+    container
+      .querySelector<HTMLButtonElement>(`.${DELETE_BTN}`)
+      ?.addEventListener('click', (event) => {
+        const location_id =
+          (event.currentTarget as HTMLElement).dataset.locationId ?? '';
+        if (location_id) {
+          void this.dependencies.onDeleteZone?.(location_id);
+        }
+      });
 
     if (!this.dependencies.onRouteClick) {
       return;
@@ -146,6 +208,63 @@ export class ZoneViewController {
           this.dependencies.onRouteClick!(route_id);
         }
       });
+    });
+  }
+
+  private attachDetailsHandlers(
+    container: HTMLElement,
+    parser: GTFSParser
+  ): void {
+    const form = container.querySelector<HTMLElement>(`.${DETAILS_FORM}`);
+    if (!form) {
+      return;
+    }
+    const location_id = form.dataset.locationId ?? '';
+    const nameInput = form.querySelector<HTMLInputElement>('.zone-name-input');
+    const descInput = form.querySelector<HTMLInputElement>('.zone-desc-input');
+    const saveButton =
+      form.querySelector<HTMLButtonElement>('.zone-details-save');
+    const errorEl = form.querySelector<HTMLElement>('.zone-details-error');
+    if (!nameInput || !descInput || !saveButton) {
+      return;
+    }
+
+    // defaultValue is what was rendered, so Save stays disabled until the user
+    // actually changes something.
+    const syncSaveState = (): void => {
+      saveButton.disabled =
+        nameInput.value === nameInput.defaultValue &&
+        descInput.value === descInput.defaultValue;
+    };
+    for (const input of [nameInput, descInput]) {
+      input.addEventListener('input', () => {
+        errorEl?.classList.add('hidden');
+        syncSaveState();
+      });
+    }
+
+    saveButton.addEventListener('click', async () => {
+      errorEl?.classList.add('hidden');
+      try {
+        await setZoneProperties(
+          parser,
+          this.dependencies.patchManager ?? null,
+          location_id,
+          {
+            stop_name: nameInput.value.trim(),
+            stop_desc: descInput.value.trim(),
+          }
+        );
+        notify.success(`Updated zone ${location_id}`);
+        this.dependencies.onPropertiesChanged?.(location_id);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (errorEl) {
+          errorEl.textContent = message;
+          errorEl.classList.remove('hidden');
+        }
+        console.warn(`[ZoneViewController] ${location_id}: ${message}`);
+      }
     });
   }
 

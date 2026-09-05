@@ -25,6 +25,13 @@ import {
   LoadCancelledError,
 } from './feed-download.js';
 
+/** Store names backed by a .geojson file rather than a CSV table. */
+const GEOJSON_TABLES = new Set(
+  ALL_GTFS_FILES.filter((f) => f.endsWith('.geojson')).map((f) =>
+    f.replace('.geojson', '')
+  )
+);
+
 /**
  * One nested archive out of another. Fails loudly with the entries that *are*
  * there: a wrong `#inner.zip` is a typo the user can fix, and the list is the
@@ -416,6 +423,17 @@ export class GTFSParser {
    * For stop_times, the stop_id Map is kept as a class field for synchronous lookups.
    */
   private setupVirtual(tableName: string, data: GTFSDatabaseRecord[]): void {
+    // Only CSV tables get a virtual table. locations.geojson is one row holding
+    // a whole FeatureCollection: a virtual table would intercept every db.*
+    // call on it, so the rows never reach IndexedDB and the zones are lost on
+    // reload. Throw rather than skip, so a caller that reintroduces this breaks
+    // where the mistake is.
+    if (GEOJSON_TABLES.has(tableName)) {
+      throw new Error(
+        `[GTFSParser] ${tableName} is a GeoJSON table and must not have a virtual table`
+      );
+    }
+
     // Rebinding a table's rows invalidates anything memoized off them. Boot
     // reads the shape ids for the navbar badge before the feed is restored,
     // and an empty cached array is truthy, so without this the ids stay empty
@@ -501,7 +519,16 @@ export class GTFSParser {
 
     for (const tableName of pending) {
       const fileName = `${tableName}.txt`;
-      const rows = this.gtfsData[fileName]?.data ?? [];
+      // Only CSV tables are blob-backed. A dirty mark on anything else means a
+      // caller wrote through the wrong path; persisting `[]` for it would stamp
+      // a blobVersion claiming a table was saved that was never read back.
+      if (!this.gtfsData[fileName]) {
+        console.warn(
+          `[GTFSParser] Skipping blob flush for ${tableName}: no ${fileName} in memory`
+        );
+        continue;
+      }
+      const rows = this.gtfsData[fileName].data;
       try {
         // An emptied table is written as `[]` rather than skipped: skipping
         // leaves the pre-delete blob on disk and the rows come back on reload.
@@ -1046,17 +1073,24 @@ export class GTFSParser {
       // Apply worker results on the main thread: set up virtual tables and persist blobs
       this.gtfsData = {};
       for (const [fileName, fileResult] of Object.entries(workerFiles)) {
-        if (fileResult.isGeoJSON) {
-          const geoJsonData = fileResult.data[0] ?? {};
+        // Branch on the extension, not on the worker's flag: a GeoJSON file
+        // stored as a CSV table gets a virtual table, and every later write to
+        // it then stops at memory instead of reaching IndexedDB.
+        if (fileName.endsWith('.geojson')) {
           this.gtfsData[fileName] = {
             content: fileResult.rawContent,
             data: fileResult.data,
             errors: [],
           };
-          const tableName = this.getTableName(fileName);
-          await this.gtfsDatabase.insertRows(tableName, [
-            geoJsonData as GTFSDatabaseRecord,
-          ]);
+          // A file the ZIP did not carry has no row to store. Inserting a
+          // placeholder here would make an empty collection indistinguishable
+          // from one the feed actually shipped.
+          const geoJsonData = fileResult.data[0];
+          if (geoJsonData) {
+            await this.gtfsDatabase.insertRows(this.getTableName(fileName), [
+              geoJsonData,
+            ]);
+          }
         } else {
           this.gtfsData[fileName] = {
             content: '',

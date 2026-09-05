@@ -83,6 +83,12 @@ import type { GTFSParser } from './gtfs-parser.js';
 import { renderRouteDiagram, ROUTE_DIAGRAM_ROW } from './route-diagram.js';
 import { generateCompositeKeyFromRecord } from '../utils/gtfs-primary-keys.js';
 import {
+  applyZoneFeatures,
+  getZoneFeatures,
+  LOCATIONS_ROW_KEY,
+  LOCATIONS_TABLE,
+} from './zone-store.js';
+import {
   attachServiceTimelineListeners,
   filterServiceDataMap,
   loadServiceData,
@@ -285,6 +291,13 @@ export class PageContentRenderer {
         dependencies.mapController.refreshZones();
         dependencies.onEntityCreated?.();
       },
+      onPropertiesChanged: () => {
+        // Zone labels are drawn from the feature properties, so the map needs
+        // the same refresh a geometry edit gets.
+        dependencies.mapController.refreshZones();
+        dependencies.onEntityCreated?.();
+      },
+      onDeleteZone: (location_id) => this.handleDeleteZone(location_id),
     };
     this.zoneViewController = new ZoneViewController(zoneViewDependencies);
 
@@ -2154,6 +2167,105 @@ export class PageContentRenderer {
     return this.locationGroupViewController.renderLocationGroupView(
       location_group_id
     );
+  }
+
+  /**
+   * Remove a zone from locations.geojson, cascading to the stop_times that
+   * reference it.
+   *
+   * The feature removal is an update of the single locations row, not a row
+   * delete, so the cascade goes through recordBatchMixed: the stop_time deletes
+   * and that update land as one patch and undo restores them together.
+   */
+  private async handleDeleteZone(location_id: string): Promise<void> {
+    const db = this.dependencies.gtfsDatabase;
+    const pm = this.dependencies.patchManager;
+    const parser = this.dependencies.gtfsParser;
+    if (!db || !pm || !db.deleteRow || !parser) {
+      console.warn('[PageContentRenderer] handleDeleteZone: missing deps', {
+        db: !!db,
+        pm: !!pm,
+        deleteRow: !!db?.deleteRow,
+        parser: !!parser,
+      });
+      return;
+    }
+
+    const features = getZoneFeatures(parser);
+    if (!features.some((f) => String(f.id) === location_id)) {
+      console.warn(
+        `[PageContentRenderer] handleDeleteZone: zone ${location_id} not in locations.geojson`
+      );
+      return;
+    }
+
+    const stopTimes = (await db.queryRows('stop_times', {
+      location_id,
+    })) as Record<string, unknown>[];
+
+    const doDelete = async (): Promise<void> => {
+      for (const st of stopTimes) {
+        const key = generateCompositeKeyFromRecord('stop_times', st);
+        await db.deleteRow!('stop_times', key);
+      }
+      const { before, after } = await applyZoneFeatures(
+        parser,
+        features.filter((f) => String(f.id) !== location_id)
+      );
+
+      await pm.recordBatchMixed(
+        [
+          ...stopTimes.map((st) => ({
+            op: 'delete' as const,
+            table: 'stop_times',
+            id: generateCompositeKeyFromRecord('stop_times', st),
+            record: st,
+          })),
+          {
+            op: 'update' as const,
+            table: LOCATIONS_TABLE,
+            id: LOCATIONS_ROW_KEY,
+            before,
+            after,
+          },
+        ],
+        stopTimes.length > 0
+          ? `Delete zone + ${stopTimes.length} stop_time${stopTimes.length !== 1 ? 's' : ''}`
+          : 'Delete zone'
+      );
+
+      console.log(
+        `[PageContentRenderer] Deleted zone ${location_id}${stopTimes.length > 0 ? ` and ${stopTimes.length} stop_times` : ''}`
+      );
+      this.dependencies.mapController.refreshZones();
+      await navigateToHome();
+    };
+
+    if (stopTimes.length === 0) {
+      await doDelete();
+      return;
+    }
+
+    const tripIds = [...new Set(stopTimes.map((st) => st.trip_id as string))];
+    const tripSummary =
+      tripIds.slice(0, 5).join(', ') +
+      (tripIds.length > 5 ? ` … and ${tripIds.length - 5} more` : '');
+    await showModal({
+      title: 'Zone has scheduled pickups',
+      body: `<p>This zone is referenced by <strong>${stopTimes.length} stop_time${stopTimes.length !== 1 ? 's' : ''}</strong> across ${tripIds.length} trip${tripIds.length !== 1 ? 's' : ''}:</p>
+             <p class="text-sm opacity-70 mt-1">${tripSummary}</p>
+             <p class="mt-3">You can cascade-delete the zone and all its stop_times (reversible via undo), or cancel.</p>`,
+      enterAction: 1,
+      escapeAction: 0,
+      actions: [
+        { label: 'Cancel', className: 'btn-ghost', onClick: () => {} },
+        {
+          label: `Delete zone + ${stopTimes.length} stop_times`,
+          className: 'btn-error',
+          onClick: () => doDelete(),
+        },
+      ],
+    });
   }
 
   private async handleDeletePathway(pathway_id: string): Promise<void> {

@@ -88,6 +88,11 @@ export function zoneName(feature: ZoneFeature): string {
   return properties.stop_name ? String(properties.stop_name) : '';
 }
 
+export function zoneDescription(feature: ZoneFeature): string {
+  const properties = (feature.properties ?? {}) as Record<string, unknown>;
+  return properties.stop_desc ? String(properties.stop_desc) : '';
+}
+
 /** Every position in a polygon or multipolygon, rings included. */
 function positionsOf(feature: ZoneFeature): GeoJSON.Position[] {
   const geometry = feature.geometry;
@@ -201,6 +206,63 @@ export function mergeZoneFeatures(
   return { features: result, added, updated, removed };
 }
 
+/** The before/after payloads of a zone write, for the caller's patch. */
+export interface ZoneWritePayloads {
+  before: { features: ZoneFeature[] };
+  after: { features: ZoneFeature[] };
+}
+
+/**
+ * Write a new zone feature array to the database and memory, recording nothing.
+ *
+ * For callers that fold the zone write into a batch patch of their own. Anything
+ * else wants `writeZoneFeatures`, which records the patch too.
+ */
+export async function applyZoneFeatures(
+  parser: GTFSParser,
+  features: ZoneFeature[]
+): Promise<ZoneWritePayloads> {
+  const collection = getZoneCollection(parser);
+  const before = collection.features as ZoneFeature[];
+
+  await parser.gtfsDatabase.updateRow(LOCATIONS_TABLE, LOCATIONS_ROW_KEY, {
+    features,
+  } as unknown as Partial<GTFSDatabaseRecord>);
+
+  parser.setInMemoryFileData(GTFS_TABLES.LOCATIONS_GEOJSON, [
+    { ...collection, type: 'FeatureCollection', features },
+  ] as unknown as GTFSDatabaseRecord[]);
+
+  console.log(
+    `[ZoneStore] Wrote ${features.length} zone features (was ${before.length})`
+  );
+  return { before: { features: before }, after: { features } };
+}
+
+/**
+ * Create the locations.geojson row if the feed has none, as its own patch.
+ *
+ * A feed imported without the file has no row to update, so the update that
+ * follows needs a target and undo needs both steps to walk back through.
+ */
+export async function ensureLocationsRow(
+  parser: GTFSParser,
+  patchManager: ZonePatchRecorder | null
+): Promise<void> {
+  const existing = await parser.gtfsDatabase.getRow(
+    LOCATIONS_TABLE,
+    LOCATIONS_ROW_KEY
+  );
+  if (existing) {
+    return;
+  }
+  const empty = { type: 'FeatureCollection', features: [] };
+  await parser.gtfsDatabase.insertRows(LOCATIONS_TABLE, [
+    empty as unknown as GTFSDatabaseRecord,
+  ]);
+  await patchManager?.recordInsert(LOCATIONS_TABLE, LOCATIONS_ROW_KEY, empty);
+}
+
 /**
  * Persist a new zone feature array as a single recorded patch.
  *
@@ -212,23 +274,10 @@ export async function writeZoneFeatures(
   patchManager: ZonePatchRecorder | null,
   features: ZoneFeature[]
 ): Promise<void> {
+  await ensureLocationsRow(parser, patchManager);
+
   const collection = getZoneCollection(parser);
   const before = collection.features;
-
-  // A feed with no locations.geojson has no row to update. Create the empty
-  // collection first, as its own recorded patch, so the update below has a
-  // target and undo walks back through both steps.
-  const existing = await parser.gtfsDatabase.getRow(
-    LOCATIONS_TABLE,
-    LOCATIONS_ROW_KEY
-  );
-  if (!existing) {
-    const empty = { type: 'FeatureCollection', features: [] };
-    await parser.gtfsDatabase.insertRows(LOCATIONS_TABLE, [
-      empty as unknown as GTFSDatabaseRecord,
-    ]);
-    await patchManager?.recordInsert(LOCATIONS_TABLE, LOCATIONS_ROW_KEY, empty);
-  }
 
   await patchUpdate(
     parser.gtfsDatabase,
@@ -246,4 +295,40 @@ export async function writeZoneFeatures(
   console.log(
     `[ZoneStore] Wrote ${features.length} zone features (was ${before.length})`
   );
+}
+
+/**
+ * Overlay properties onto one zone's feature.
+ *
+ * An empty value removes the property rather than storing `""`: the exported
+ * locations.geojson should carry a `stop_desc` only when there is one.
+ */
+export async function setZoneProperties(
+  parser: GTFSParser,
+  patchManager: ZonePatchRecorder | null,
+  location_id: string,
+  properties: Record<string, string>
+): Promise<void> {
+  const features = getZoneFeatures(parser);
+  const target = features.find((f) => String(f.id) === location_id);
+  if (!target) {
+    throw new Error(
+      `Zone ${location_id} is no longer in locations.geojson. Reload the page.`
+    );
+  }
+
+  const merged = { ...(target.properties ?? {}) } as Record<string, unknown>;
+  for (const [key, value] of Object.entries(properties)) {
+    if (value === '') {
+      delete merged[key];
+    } else {
+      merged[key] = value;
+    }
+  }
+
+  const next = features.map((feature) =>
+    feature === target ? { ...feature, properties: merged } : feature
+  );
+  await writeZoneFeatures(parser, patchManager, next);
+  console.log(`[ZoneStore] Updated properties of zone ${location_id}`);
 }
