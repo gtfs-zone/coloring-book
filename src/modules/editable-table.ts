@@ -1110,6 +1110,25 @@ function openCellEditor(span: HTMLElement): void {
     return;
   }
 
+  // A date gets the browser's picker, which speaks `YYYY-MM-DD` while GTFS
+  // stores `YYYYMMDD`, so the dashes are added and stripped at this boundary.
+  if (mapGTFSTypeString(spec.type) === GTFSFieldType.Date) {
+    openInlineEditor(span, {
+      value: current ? formatValueForDisplay(current, GTFSFieldType.Date) : '',
+      inputType: 'date',
+      className: 'w-full',
+      onCommit: (value) =>
+        void commitCell(
+          state,
+          span,
+          field,
+          spec,
+          convertValueToGTFS(value, GTFSFieldType.Date)
+        ),
+    });
+    return;
+  }
+
   // A color is picked from the browser's swatch, which speaks `#RRGGBB` while
   // GTFS stores `RRGGBB`, so the hash is added and stripped at this boundary.
   if (mapGTFSTypeString(spec.type) === GTFSFieldType.Color) {

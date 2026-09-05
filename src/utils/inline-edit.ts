@@ -11,10 +11,12 @@
  * that drift.
  *
  * They deliberately know nothing about GTFS, patches, or the database: the
- * caller decides what a committed value means.
+ * caller decides what a committed value means. The one date import below is a
+ * formatting helper, not GTFS semantics.
  */
 
 import { escapeHtml } from './escape-html.js';
+import { todayInputValue } from './gtfs-date.js';
 import {
   keyToGridDirection,
   isVerticalArrow,
@@ -186,6 +188,26 @@ export function openInlineEditor(
     input.setAttribute('list', datalist.id);
   }
 
+  // A date editor gets a Today chip under it: the browser's own picker marks
+  // today but still costs a popup and a click to reach.
+  let todayChip: HTMLButtonElement | null = null;
+  if (input.type === 'date') {
+    todayChip = document.createElement('button');
+    todayChip.type = 'button';
+    todayChip.textContent = 'Today';
+    // A body child, above the modal layer, so a cell inside a modal is not
+    // clipped by it - same reason as the inline menu below.
+    todayChip.className =
+      'inline-edit-today btn btn-xs fixed z-[2000] bg-base-100 border-base-300 shadow';
+    // Keeps the input focused, so the click is not swallowed by a blur commit.
+    todayChip.addEventListener('mousedown', (e) => e.preventDefault());
+    todayChip.addEventListener('click', () => {
+      input.value = todayInputValue();
+      liveInputDirty = true;
+      input.blur();
+    });
+  }
+
   span.replaceWith(input);
   liveInput = input;
   liveInputDirty = false;
@@ -203,10 +225,18 @@ export function openInlineEditor(
     input.select();
   }
 
+  if (todayChip) {
+    const rect = input.getBoundingClientRect();
+    todayChip.style.top = `${rect.bottom + 2}px`;
+    todayChip.style.left = `${rect.left}px`;
+    document.body.appendChild(todayChip);
+  }
+
   let settled = false;
   const restore = (): void => {
     input.replaceWith(span);
     datalist?.remove();
+    todayChip?.remove();
     if (liveInput === input) {
       liveInput = null;
     }

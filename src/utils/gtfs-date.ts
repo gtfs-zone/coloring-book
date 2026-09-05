@@ -80,6 +80,11 @@ export function todayGtfsDate(): string {
   return toGtfsDateLocal(new Date());
 }
 
+/** Today in the user's timezone, as an `<input type="date">` value. */
+export function todayInputValue(): string {
+  return toInputValue(todayGtfsDate());
+}
+
 /**
  * Human-readable form of a single GTFS date.
  *

@@ -15,7 +15,11 @@ import { escapeHtml } from '../utils/escape-html.js';
 import { notify } from './notification-system.js';
 import { createDefaultService } from '../utils/default-values.js';
 import { feedBounds, type FeedBoundsSource } from '../utils/feed-bounds.js';
-import { fromInputValue, toInputValue } from '../utils/gtfs-date.js';
+import {
+  fromInputValue,
+  toInputValue,
+  todayInputValue,
+} from '../utils/gtfs-date.js';
 import { DAYS_OF_WEEK } from './service-days-controller.js';
 
 export interface NewServiceModalDeps {
@@ -77,6 +81,11 @@ function renderBody(startInput: string, endInput: string): string {
             class="input input-bordered w-full"
             value="${escapeHtml(startInput)}"
           />
+          <button
+            type="button"
+            class="btn btn-xs btn-ghost self-start"
+            data-today-for="new-service-start"
+          >Today</button>
         </label>
         <label class="flex flex-1 flex-col gap-1">
           <span class="text-sm opacity-60">End date</span>
@@ -86,6 +95,11 @@ function renderBody(startInput: string, endInput: string): string {
             class="input input-bordered w-full"
             value="${escapeHtml(endInput)}"
           />
+          <button
+            type="button"
+            class="btn btn-xs btn-ghost self-start"
+            data-today-for="new-service-end"
+          >Today</button>
         </label>
       </div>
 
@@ -201,6 +215,19 @@ export async function showNewServiceModal(
     boxClassName: 'max-w-lg',
     onMount: () => {
       document.getElementById('new-service-id')?.focus();
+
+      document
+        .querySelectorAll<HTMLButtonElement>('[data-today-for]')
+        .forEach((btn) => {
+          btn.addEventListener('click', () => {
+            const target = document.getElementById(
+              btn.dataset.todayFor ?? ''
+            ) as HTMLInputElement | null;
+            if (target) {
+              target.value = todayInputValue();
+            }
+          });
+        });
 
       document
         .querySelectorAll<HTMLButtonElement>('.new-service-day')
