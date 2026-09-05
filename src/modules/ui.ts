@@ -25,7 +25,7 @@ import { Editor } from './editor.js';
 import { BrowseNavigation } from './browse-navigation.js';
 import { getStopDisplay, renderOptionLabel } from '../utils/entity-display.js';
 import { buildExportFilename } from '../utils/export-filename.js';
-import { showHelpModal, shouldShowHelpPage } from './help-modal.js';
+import { showHelpPageOnce } from './help-modal.js';
 
 function escapeHtml(text: string): string {
   return text
@@ -1180,9 +1180,7 @@ export class UIController {
 
       notify.success('New empty GTFS feed created.');
 
-      if (shouldShowHelpPage('getting-started')) {
-        await showHelpModal('getting-started');
-      }
+      await showHelpPageOnce('getting-started');
     } catch (error) {
       console.error('Error creating new GTFS feed:', error);
       notify.error(
@@ -1248,9 +1246,7 @@ export class UIController {
       }
       notify.success('GTFS data exported successfully!');
 
-      if (shouldShowHelpPage('publishing')) {
-        await showHelpModal('publishing');
-      }
+      await showHelpPageOnce('publishing');
     } catch (error) {
       console.error('Error exporting GTFS:', error);
 

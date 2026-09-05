@@ -43,10 +43,10 @@ export interface HelpPage {
   title: string;
   render(): string;
   /**
-   * localStorage key for a "don't show this again" checkbox. Pages without
-   * one are reference-only: always available from the menu, never suppressed.
+   * Marks a page that is auto-shown once at its trigger and afterwards only
+   * reachable from the Guide menu. Pages without it are reference-only.
    */
-  showOnceKey?: string;
+  showOnce?: boolean;
 }
 
 function icon(paths: string): string {
@@ -117,7 +117,7 @@ const welcomePage: HelpPage = {
   label: 'Welcome',
   group: 'Getting Started',
   title: 'Load, edit, and export a GTFS feed',
-  showOnceKey: 'help.welcome.seen',
+  showOnce: true,
   render: () =>
     [
       eyebrow('GTFS.zone'),
@@ -162,7 +162,7 @@ const gettingStartedPage: HelpPage = {
   label: 'Writing a New Feed',
   group: 'Getting Started',
   title: 'Building a feed from scratch',
-  showOnceKey: 'help.getting-started.seen',
+  showOnce: true,
   render: () =>
     [
       lede(
@@ -208,7 +208,7 @@ const shapesPage: HelpPage = {
   label: 'Shapes',
   group: 'Getting Started',
   title: 'Creating route shapes',
-  showOnceKey: 'help.shapes.seen',
+  showOnce: true,
   render: () =>
     [
       lede(
@@ -253,7 +253,7 @@ const faresPage: HelpPage = {
   label: 'Fares',
   group: 'Getting Started',
   title: 'How to specify fares in your GTFS feed',
-  showOnceKey: 'help.fares.seen',
+  showOnce: true,
   render: () =>
     [
       lede(
@@ -291,7 +291,7 @@ const onDemandPage: HelpPage = {
   label: 'On-Demand',
   group: 'Getting Started',
   title: 'Describing on-demand service (GTFS Flex)',
-  showOnceKey: 'help.on-demand.seen',
+  showOnce: true,
   render: () =>
     [
       lede(
@@ -460,7 +460,7 @@ const publishingPage: HelpPage = {
   label: 'Publishing your Feed',
   group: 'Getting Started',
   title: 'Publishing your feed',
-  showOnceKey: 'help.publishing.seen',
+  showOnce: true,
   render: () =>
     [
       lede(

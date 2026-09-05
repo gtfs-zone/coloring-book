@@ -15,27 +15,19 @@ function shownKey(id: string): string {
 }
 
 /**
- * Whether a help page should be shown. A page with no `showOnceKey` is always
- * shown. `localStorage` failing (private browsing, quota) must never block
- * boot, so any error here also means "show it".
+ * Whether an auto-shown help page has already been shown. `localStorage`
+ * failing (private browsing, quota) must never block boot, so any error here
+ * also means "show it".
  */
-export function shouldShowHelpPage(id: string): boolean {
-  const page = getHelpPage(id);
-  if (!page?.showOnceKey) {
-    return true;
-  }
+function alreadySeen(id: string): boolean {
   try {
-    return localStorage.getItem(shownKey(id)) !== '1';
+    return localStorage.getItem(shownKey(id)) === '1';
   } catch {
-    return true;
+    return false;
   }
 }
 
-export function markHelpPageSeen(id: string): void {
-  const page = getHelpPage(id);
-  if (!page?.showOnceKey) {
-    return;
-  }
+function markSeen(id: string): void {
   try {
     localStorage.setItem(shownKey(id), '1');
   } catch {
@@ -64,16 +56,6 @@ function renderSidebar(activeId: string): string {
   }).join('');
 
   return `<ul class="menu menu-sm bg-base-200 rounded-box w-52 shrink-0">${groups}</ul>`;
-}
-
-function renderCheckbox(page: { id: string; showOnceKey?: string }): string {
-  if (!page.showOnceKey) {
-    return '';
-  }
-  return `<label class="label cursor-pointer gap-2">
-    <input type="checkbox" class="checkbox checkbox-sm" data-help-dont-show>
-    Don't show this again
-  </label>`;
 }
 
 // Open state, so F1 (and a second click on Guide) cannot stack a duplicate
@@ -107,24 +89,6 @@ export async function showHelpModal(
     }
     sidebarEl.innerHTML = renderSidebar(activePage.id);
     paneEl.innerHTML = `<h4 class="font-semibold text-base mb-2">${escapeHtml(activePage.title)}</h4><div class="flex flex-col gap-3">${activePage.render()}</div>`;
-    const actionBar = document.getElementById('help-action-bar');
-    if (actionBar) {
-      actionBar.innerHTML = renderCheckbox(activePage);
-      const checkbox = actionBar.querySelector<HTMLInputElement>(
-        '[data-help-dont-show]'
-      );
-      checkbox?.addEventListener('change', () => {
-        if (checkbox.checked) {
-          markHelpPageSeen(activePage.id);
-        } else if (activePage.showOnceKey) {
-          try {
-            localStorage.removeItem(shownKey(activePage.id));
-          } catch {
-            // Nothing to do.
-          }
-        }
-      });
-    }
   };
 
   const body = `
@@ -142,7 +106,6 @@ export async function showHelpModal(
       actions: [
         { label: options?.continueLabel ?? 'Close', onClick: () => {} },
       ],
-      actionBarContent: '<div id="help-action-bar"></div>',
       escapeAction: 0,
       boxClassName: 'max-w-4xl w-11/12',
       onMount: () => {
@@ -170,6 +133,25 @@ export async function showHelpModal(
   } finally {
     helpModalOpen = false;
   }
+}
+
+/**
+ * Show a page the first time its trigger fires, then never again. Returns
+ * whether it was shown, so a caller gating another modal knows if it awaited.
+ *
+ * The page is marked seen before it opens, so a reload mid-modal still counts.
+ */
+export async function showHelpPageOnce(
+  pageId: string,
+  options?: HelpModalOptions
+): Promise<boolean> {
+  const page = getHelpPage(pageId);
+  if (!page?.showOnce || alreadySeen(pageId)) {
+    return false;
+  }
+  markSeen(pageId);
+  await showHelpModal(pageId, options);
+  return true;
 }
 
 // ─── Shared render helpers for page content ────────────────────────────────
