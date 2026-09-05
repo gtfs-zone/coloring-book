@@ -58,6 +58,11 @@ import {
   TIMETABLE_SERVICE_PICKER,
 } from './timetable-selectors.js';
 import { getRouteDisplay, getStopDisplay } from '../utils/entity-display.js';
+import {
+  formatDateRange,
+  formatDaysOfWeek,
+} from '../utils/entity-references.js';
+import { showNewServiceModal } from './new-service-modal.js';
 import { getZoneFeatures, zoneName } from './zone-store.js';
 import { validateFlexStopTimeRow } from '../utils/flex-rules.js';
 import { renderSpecDescriptionPlain } from '../utils/spec-markup.js';
@@ -2973,11 +2978,17 @@ export class ScheduleController {
       return null;
     }
 
+    // A requested service the route has no trips for is a timetable being
+    // started, not a bad id: honour it as long as the feed defines the service.
+    // Only a missing or unknown id falls back to what the route already runs.
     const services = this.servicesForRoute(route_id);
+    const requested = partial.service_id;
     const service_id =
-      partial.service_id !== undefined && services.includes(partial.service_id)
-        ? partial.service_id
-        : (services[0] ?? partial.service_id);
+      requested !== undefined &&
+      requested !== '' &&
+      (services.includes(requested) || this.allServices().has(requested))
+        ? requested
+        : (services[0] ?? requested);
     if (service_id === undefined || service_id === '') {
       console.warn(
         `[ScheduleController] route ${route_id} runs no service, no timetable to open`
@@ -2992,6 +3003,39 @@ export class ScheduleController {
         direction_id: partial.direction_id,
       }),
     };
+  }
+
+  /**
+   * Every service the feed defines, keyed by service_id.
+   *
+   * `calendar.txt` rows plus the service_ids that only ever appear in
+   * `calendar_dates.txt`, which carry no row of their own and so map to an
+   * id-only record. This is the feed's real service roster;
+   * `servicesForRoute` is narrower by construction, since it reads trips.
+   */
+  private allServices(): Map<string, Record<string, unknown>> {
+    const services = new Map<string, Record<string, unknown>>();
+    const calendar =
+      this.gtfsParser.getFileDataSyncTyped<Record<string, unknown>>(
+        GTFS_TABLES.CALENDAR
+      ) ?? [];
+    for (const row of calendar) {
+      const service_id = String(row.service_id ?? '');
+      if (service_id !== '') {
+        services.set(service_id, row);
+      }
+    }
+    const exceptions =
+      this.gtfsParser.getFileDataSyncTyped<Record<string, unknown>>(
+        GTFS_TABLES.CALENDAR_DATES
+      ) ?? [];
+    for (const row of exceptions) {
+      const service_id = String(row.service_id ?? '');
+      if (service_id !== '' && !services.has(service_id)) {
+        services.set(service_id, { service_id });
+      }
+    }
+    return services;
   }
 
   /** Distinct service_ids this route runs, in the order trips.txt lists them. */
@@ -3050,21 +3094,69 @@ export class ScheduleController {
     await openTimetable(target.route_id, target.service_id);
   }
 
-  /** Repoint the timetable at another of this route's services. */
+  /**
+   * Repoint the timetable at another service, or create one.
+   *
+   * Lists every service the feed defines, not just the ones this route runs:
+   * picking one the route has no trips for is how a new timetable is started,
+   * and it lands on the empty "add the first trip" state. The footer action
+   * covers the case where the service does not exist yet either.
+   */
   private async openServicePicker(): Promise<void> {
     if (!this.currentRouteId) {
       return;
     }
-    const options: OptionPickerItem[] = this.servicesForRoute(
-      this.currentRouteId
-    ).map((service_id) => ({ value: service_id, primary: service_id }));
 
+    const services = this.allServices();
+    const onRoute = this.servicesForRoute(this.currentRouteId);
+    const onRouteSet = new Set(onRoute);
+    const ordered = [
+      ...onRoute,
+      ...[...services.keys()].filter((id) => !onRouteSet.has(id)),
+    ];
+
+    // The day pattern is the useful label either way; whether the route runs
+    // the service goes in the detail line, since that is what tells the user
+    // the pick will open an empty timetable rather than an existing one.
+    const options: OptionPickerItem[] = ordered.map((service_id) => {
+      const row = services.get(service_id) ?? { service_id };
+      const range = formatDateRange(row);
+      const detail = onRouteSet.has(service_id)
+        ? range
+        : ['Not on this route yet', range].filter(Boolean).join(' - ');
+      return {
+        value: service_id,
+        primary: service_id,
+        secondary: formatDaysOfWeek(row),
+        ...(detail !== '' && { detail }),
+      };
+    });
+
+    let createNew = false;
     const picked = await showOptionPickerModal({
       title: 'Timetable service',
       options,
       searchable: true,
+      footerAction: {
+        label: 'New service…',
+        onClick: () => {
+          createNew = true;
+        },
+      },
       ...(this.currentServiceId && { selectedValue: this.currentServiceId }),
     });
+
+    if (createNew) {
+      const service_id = await showNewServiceModal({
+        database: this.gtfsParser.gtfsDatabase,
+        patchManager: this.patchManager,
+      });
+      if (service_id !== null) {
+        await openTimetable(this.currentRouteId, service_id);
+      }
+      return;
+    }
+
     if (picked === null || picked === '' || picked === this.currentServiceId) {
       return;
     }

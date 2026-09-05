@@ -31,7 +31,7 @@ import {
 import { renderInlineEntityFields } from '../utils/inline-editable-field.js';
 
 // Days of the week in US format (Sunday first)
-const DAYS_OF_WEEK = [
+export const DAYS_OF_WEEK = [
   { key: 'sunday', label: 'Sun' },
   { key: 'monday', label: 'Mon' },
   { key: 'tuesday', label: 'Tue' },

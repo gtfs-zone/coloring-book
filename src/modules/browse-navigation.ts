@@ -21,7 +21,6 @@ import {
   openTimetable,
   addNavigationListener,
   getCurrentPageState,
-  consumePendingFocusSelector,
 } from './navigation-actions.js';
 import {
   PageContentRenderer,
@@ -395,11 +394,6 @@ export class BrowseNavigation {
           performance.now() - domStart
         )}ms`
       );
-
-      const focusSelector = consumePendingFocusSelector();
-      if (focusSelector) {
-        this.container.querySelector<HTMLElement>(focusSelector)?.focus();
-      }
 
       this.lastRenderedPageState = pageState;
       if (isSamePage) {
