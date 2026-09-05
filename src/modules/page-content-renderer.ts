@@ -63,6 +63,7 @@ import {
   renderOptionLabel,
 } from '../utils/entity-display.js';
 import { showModal, renderTrashIcon } from './modal-utils.js';
+import { showNewServiceModal } from './new-service-modal.js';
 import { specStoreName } from '../utils/spec-field-edit.js';
 import { showOptionPickerModal } from './option-picker-modal.js';
 import {
@@ -77,7 +78,6 @@ import {
   openModal,
   navigateToLocationGroup,
   navigateToZone,
-  focusAfterNextRender,
 } from './navigation-actions.js';
 import type { GTFSParser } from './gtfs-parser.js';
 import { renderRouteDiagram, ROUTE_DIAGRAM_ROW } from './route-diagram.js';
@@ -1527,13 +1527,12 @@ export class PageContentRenderer {
     // Add service selection dropdown listener
     this.addServiceSelectionListener(container);
 
-    // "No services found" empty state: jump to the Feed page and focus the
-    // new-service input so the user can create one.
+    // "No services found" empty state: create one here rather than sending the
+    // user to the Feed page's inline input.
     container
       .querySelector('.create-service-link')
       ?.addEventListener('click', () => {
-        focusAfterNextRender('[data-inline-create="service"]');
-        void navigateToHome();
+        void this.createServiceFromEmptyState();
       });
 
     // Route network field: same activation contract as the click-to-edit
@@ -1550,6 +1549,17 @@ export class PageContentRenderer {
         }
       });
     });
+  }
+
+  /** Create a service from the route page's "no services" empty state. */
+  private async createServiceFromEmptyState(): Promise<void> {
+    const service_id = await showNewServiceModal({
+      database: this.dependencies.gtfsDatabase,
+      patchManager: this.dependencies.patchManager ?? null,
+    });
+    if (service_id !== null) {
+      this.dependencies.onEntityCreated?.();
+    }
   }
 
   /**
