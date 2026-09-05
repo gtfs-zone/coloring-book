@@ -1579,7 +1579,9 @@ export class ScheduleController {
    * The insert and the trip update are recorded together by
    * `ShapesManager.uploadShapeForTrip`, so there is nothing left to record
    * here - only the DOM to catch up, mirroring what
-   * `openTripPropShapePicker` does after a pick.
+   * `openTripPropShapePicker` does after a pick. When the user chose to
+   * replace the trip's existing shape the id comes back unchanged, so the DOM
+   * writes below are no-ops.
    */
   private async handleUploadShapeForTrip(
     tripId: string,
@@ -1612,7 +1614,11 @@ export class ScheduleController {
       uploadBtn.dataset.shapeId = shapeId;
     }
 
-    notify.success(`Uploaded shape ${shapeId} for trip ${tripId}`);
+    notify.success(
+      shapeId === currentShapeId
+        ? `Replaced shape ${shapeId}`
+        : `Uploaded shape ${shapeId} for trip ${tripId}`
+    );
   }
 
   /**

@@ -68,7 +68,6 @@ export class BrowseNavigation {
   };
   private gtfsRelationshipsInstance: import('./gtfs-relationships.js').GTFSRelationships; // The actual GTFSRelationships instance for database access
   private mapController: {
-    highlightTrip: (trip_id: string) => void;
     highlightStop: (stop_id: string) => void;
     highlightPathway: (pathway_id: string) => void;
     highlightZone: (location_id: string) => void;
@@ -142,7 +141,6 @@ export class BrowseNavigation {
       ) => Promise<Record<string, unknown> | null>;
     },
     mapController: {
-      highlightTrip: (trip_id: string) => void;
       highlightStop: (stop_id: string) => void;
       highlightPathway: (pathway_id: string) => void;
       highlightZone: (location_id: string) => void;
@@ -547,12 +545,6 @@ export class BrowseNavigation {
     if (this.mapController && this.mapController.focusRoute) {
       // Use new focus method instead of old highlight method
       this.mapController.focusRoute(route_id);
-    }
-  }
-
-  highlightTripOnMap(trip_id: string) {
-    if (this.mapController && this.mapController.highlightTrip) {
-      this.mapController.highlightTrip(trip_id);
     }
   }
 

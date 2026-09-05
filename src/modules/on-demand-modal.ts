@@ -9,6 +9,7 @@
  */
 
 import { showModal } from './modal-utils.js';
+import { showHelpModal } from './help-modal.js';
 import {
   renderEditableTable,
   installEditableTableHandlers,
@@ -34,6 +35,11 @@ import { GTFS_TABLES } from '../types/gtfs.js';
 export interface OnDemandModalDeps extends EditableTableDeps {
   /** Opens a zone's browse page. The modal closes first. */
   onZoneClick: (location_id: string) => void;
+  /**
+   * Writes a new, empty-geometry zone into locations.geojson as one patch.
+   * Lives outside this module because it needs the parser, not the database.
+   */
+  onCreateZone: (location_id: string, stop_name: string) => Promise<void>;
 }
 
 /** Which pane to open on, and which row to draw attention to. */
@@ -46,6 +52,12 @@ const INSTANCE_ID = 'on-demand-table';
 
 /** locations.geojson is not a spec table; the Zones pane renders it by hand. */
 const ZONES_ENTRY_ID = GTFS_TABLES.LOCATIONS_GEOJSON;
+
+/** Footer of the Zones pane, shown whether or not the feed has any zones. */
+const NEW_ZONE_BUTTON = `<div class="mt-3 flex gap-2 items-center">
+  <button type="button" class="btn btn-sm btn-primary" data-new-zone>New zone</button>
+  <button type="button" class="btn btn-sm btn-ghost" data-open-guide="on-demand">Guide</button>
+</div>`;
 
 type OnDemandGroup = 'Booking' | 'Geography';
 
@@ -126,10 +138,10 @@ async function readZoneFeatures(
 async function renderZonesPane(deps: OnDemandModalDeps): Promise<string> {
   const features = await readZoneFeatures(deps);
   if (features.length === 0) {
-    return emptyState(
+    return `${emptyState(
       ZONES_ENTRY_ID,
-      'A zone is an area a rider can be picked up in or dropped off in. Zones are added by importing a feed with locations.geojson, or by pasting GeoJSON on a zone page.'
-    );
+      'A zone is an area a rider can be picked up in or dropped off in. Zones arrive by importing a feed with locations.geojson, or you can create an empty one here and draw it on its zone page.'
+    )}${NEW_ZONE_BUTTON}`;
   }
 
   const rows = features
@@ -151,7 +163,78 @@ async function renderZonesPane(deps: OnDemandModalDeps): Promise<string> {
   return `<table class="table table-sm">
     <thead><tr><th>location_id</th><th>Name</th><th>Geometry</th></tr></thead>
     <tbody>${rows}</tbody>
-  </table>`;
+  </table>${NEW_ZONE_BUTTON}`;
+}
+
+/**
+ * Ask for the new zone's id and name.
+ *
+ * Validation runs inside the action so a clash is reported in place rather
+ * than closing the modal and losing what was typed.
+ */
+async function promptNewZone(
+  taken: Set<string>
+): Promise<{ location_id: string; stop_name: string } | null> {
+  let created: { location_id: string; stop_name: string } | null = null;
+
+  await showModal({
+    title: 'New zone',
+    body: `
+      <div class="space-y-3">
+        <p class="text-base-content/60 text-sm">
+          The zone is created with no geometry. Draw it on its zone page, in
+          geojson.io or by pasting GeoJSON.
+        </p>
+        <fieldset class="fieldset">
+          <label class="label" for="new-zone-id">location_id</label>
+          <input id="new-zone-id" class="input w-full" type="text" placeholder="e.g. zone_north" />
+          <label class="label" for="new-zone-name">Name (optional)</label>
+          <input id="new-zone-name" class="input w-full" type="text" placeholder="e.g. North service area" />
+          <p id="new-zone-error" class="text-error text-sm hidden"></p>
+        </fieldset>
+      </div>
+    `,
+    escapeAction: 1,
+    enterAction: 0,
+    onMount: () => document.getElementById('new-zone-id')?.focus(),
+    actions: [
+      {
+        label: 'Create',
+        className: 'btn-primary',
+        onClick: () => {
+          const idEl = document.getElementById(
+            'new-zone-id'
+          ) as HTMLInputElement | null;
+          const nameEl = document.getElementById(
+            'new-zone-name'
+          ) as HTMLInputElement | null;
+          const errorEl = document.getElementById('new-zone-error');
+          const location_id = idEl?.value.trim() ?? '';
+
+          const showError = (msg: string) => {
+            if (errorEl) {
+              errorEl.textContent = msg;
+              errorEl.classList.remove('hidden');
+            }
+            return true as const;
+          };
+
+          if (location_id === '') {
+            return showError('location_id is required.');
+          }
+          if (taken.has(location_id)) {
+            return showError(`"${location_id}" is already taken.`);
+          }
+
+          created = { location_id, stop_name: nameEl?.value.trim() ?? '' };
+          return;
+        },
+      },
+      { label: 'Cancel', onClick: () => {} },
+    ],
+  });
+
+  return created;
 }
 
 // ─── Entries ──────────────────────────────────────────────────────────────────
@@ -201,7 +284,7 @@ const ON_DEMAND_ENTRIES: OnDemandEntry[] = [
     label: 'Zones',
     group: 'Geography',
     emptyMessage: '',
-    note: 'Zones are read-only here. Open one to see its geometry and edit it in geojson.io.',
+    note: 'The zone list is read-only here. Open a zone to see its geometry and edit it in geojson.io.',
     render: renderZonesPane,
   },
 ];
@@ -388,9 +471,30 @@ export async function showOnDemandModal(
       document
         .getElementById('on-demand-pane')
         ?.addEventListener('click', (e) => {
-          const btn = (e.target as HTMLElement).closest<HTMLButtonElement>(
-            '[data-zone-id]'
-          );
+          const target = e.target as HTMLElement;
+
+          if (target.closest('[data-open-guide]')) {
+            void showHelpModal('on-demand');
+            return;
+          }
+
+          if (target.closest('[data-new-zone]')) {
+            void (async () => {
+              const taken = new Set(
+                (await readZoneFeatures(deps)).map((f) => String(f.id ?? ''))
+              );
+              const created = await promptNewZone(taken);
+              if (!created) {
+                return;
+              }
+              await deps.onCreateZone(created.location_id, created.stop_name);
+              close();
+              deps.onZoneClick(created.location_id);
+            })();
+            return;
+          }
+
+          const btn = target.closest<HTMLButtonElement>('[data-zone-id]');
           const location_id = btn?.dataset.zoneId;
           if (!location_id) {
             return;

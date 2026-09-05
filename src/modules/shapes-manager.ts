@@ -4,6 +4,7 @@ import {
   renderTrashIcon,
   renderUploadIcon,
   renderSimplifyIcon,
+  renderRouteWaypointsIcon,
 } from './modal-utils.js';
 import JSZip from 'jszip';
 import Papa from 'papaparse';
@@ -14,23 +15,50 @@ import type { Shapes } from '../types/gtfs-entities.js';
 import { parseGPX } from '../utils/gpx-parser.js';
 import { generateCompositeKeyFromRecord } from '../utils/gtfs-primary-keys.js';
 import { escapeHtml } from '../utils/escape-html.js';
-import { getRouteDisplay, renderOptionLabel } from '../utils/entity-display.js';
+import {
+  getRouteDisplay,
+  getStopDisplay,
+  renderOptionLabel,
+} from '../utils/entity-display.js';
 import { renderEntityChip } from '../utils/entity-references.js';
 import { routeColor } from '../utils/route-colors.js';
 import { openTimetable } from './navigation-actions.js';
-import { simplifyIndices } from '../utils/simplify-path.js';
+import { deviationMetres, simplifyIndices } from '../utils/simplify-path.js';
+import { encodeGeojsonIoUrl } from '../utils/geojson-io.js';
+import {
+  attachGeojsonExchangeHandlers,
+  geojsonExchangeInput,
+  pickFeatureById,
+  pickLoneFeature,
+  readIncomingFeature,
+  renderGeojsonExchangeBlock,
+  showGeojsonExchangeError,
+} from './geojson-exchange.js';
+import {
+  shapeFeatureToPoints,
+  shapeRowsToFeature,
+} from '../utils/shape-geojson.js';
+import { notify } from './notification-system.js';
 
 /**
- * The three stops of the simplify slider, in metres of allowed deviation.
- * "Balanced" is the middle default: it strips the dense sampling a routing
- * engine emits without visibly moving the line.
+ * The stops of the simplify slider, in metres of allowed deviation. The
+ * tolerance is a real distance: no dropped point ends up further than this
+ * from the simplified line, so the stops are labelled with the distance
+ * itself rather than with a vibe. 5 m is the default: it strips the dense
+ * sampling a routing engine emits without visibly moving the line.
  */
-const SIMPLIFY_LEVELS = [
-  { label: 'Fewest points removed', toleranceMetres: 1 },
-  { label: 'Balanced', toleranceMetres: 5 },
-  { label: 'Most points removed', toleranceMetres: 25 },
-];
-const DEFAULT_SIMPLIFY_LEVEL = 1;
+const SIMPLIFY_LEVELS = [1, 2, 5, 10, 25];
+const DEFAULT_SIMPLIFY_LEVEL = 2;
+
+/** Metres as feet, which is how the distances here are read. */
+function formatDistance(metres: number): string {
+  return `${Math.round(metres * 3.28084).toLocaleString()} ft`;
+}
+
+/** "Within 16 ft (5 m) of the original line." for a slider stop. */
+function toleranceSentence(toleranceMetres: number): string {
+  return `Within ${formatDistance(toleranceMetres)} (${toleranceMetres} m) of the original line.`;
+}
 
 /** One route/service/direction combination that uses a shape. */
 interface TimetableUsage {
@@ -44,6 +72,9 @@ interface ShapeUsage {
   pointCount: number;
   tripCount: number;
   timetables: TimetableUsage[];
+  /** First and last stop of a representative trip. Absent when none is resolvable. */
+  origin?: string;
+  destination?: string;
 }
 
 function pickFile(accept: string): Promise<File | null> {
@@ -64,12 +95,8 @@ function pickFile(accept: string): Promise<File | null> {
   });
 }
 
-function pickGPXFile(): Promise<File | null> {
-  return pickFile('.gpx');
-}
-
 function pickShapeSourceFile(): Promise<File | null> {
-  return pickFile('.gpx,.zip');
+  return pickFile('.gpx,.zip,.geojson,.json');
 }
 
 /** One shape found in an uploaded GTFS feed, with the trips that reference it. */
@@ -245,6 +272,371 @@ function renumberPoints(points: Shapes[], shapeId: string): Shapes[] {
   }));
 }
 
+/** Turn `[lon, lat]` pairs into shape rows numbered 1..n. */
+function pointsToShapeRows(
+  shapeId: string,
+  points: Array<[number, number]>
+): Shapes[] {
+  return points.map(([lon, lat], i) => ({
+    shape_id: shapeId,
+    shape_pt_lat: lat,
+    shape_pt_lon: lon,
+    shape_pt_sequence: i + 1,
+  }));
+}
+
+/** A source the user picked, resolved down to "how do I get shape rows from it". */
+interface ShapeSource {
+  kind: 'gpx' | 'gtfs' | 'geojson';
+  /** Subheading for the naming modal: the filename, plus the source shape for a zip. */
+  label: string;
+  /** Suggested id: the source shape_id, or the filename without its extension. */
+  defaultId: string;
+  buildRows(shapeId: string): Promise<Shapes[]>;
+}
+
+/** Naming-modal title for a new shape, by where its points came from. */
+const NEW_SHAPE_TITLES: Record<ShapeSource['kind'], string> = {
+  gtfs: 'Import shape from GTFS feed',
+  gpx: 'New shape from GPX',
+  geojson: 'New shape from GeoJSON',
+};
+
+/** Title for the error modal shown when a source cannot be read. */
+function sourceErrorTitle(kind: ShapeSource['kind']): string {
+  if (kind === 'gtfs') {
+    return 'GTFS Error';
+  }
+  return kind === 'geojson' ? 'GeoJSON Error' : 'GPX Error';
+}
+
+async function showSourceError(title: string, error: unknown): Promise<void> {
+  await showModal({
+    title,
+    body: `<p>${escapeHtml(error instanceof Error ? error.message : String(error))}</p>`,
+    escapeAction: 0,
+    actions: [{ label: 'OK', onClick: () => {} }],
+  });
+}
+
+/** Ask whether the shape is coming from disk or from a paste. */
+async function pickShapeSourceKind(): Promise<'file' | 'paste' | null> {
+  let choice: 'file' | 'paste' | null = null;
+  await showModal({
+    title: 'Add a shape',
+    body: `
+      <p class="text-base-content/60 text-sm">
+        Load a GPX track, a GTFS feed or a GeoJSON file from disk, or paste a
+        GeoJSON line (or a geojson.io share link).
+      </p>
+    `,
+    escapeAction: 2,
+    actions: [
+      {
+        label: 'Choose a file',
+        className: 'btn-primary',
+        onClick: () => {
+          choice = 'file';
+        },
+      },
+      {
+        label: 'Paste GeoJSON or link',
+        onClick: () => {
+          choice = 'paste';
+        },
+      },
+      { label: 'Cancel', onClick: () => {} },
+    ],
+  });
+  return choice;
+}
+
+/**
+ * Ask whether an uploaded line replaces the trip's current shape or becomes a
+ * new one.
+ *
+ * Only shown when the trip already has a resolvable shape: with no shape there
+ * is nothing to replace, and the upload keeps its current click count. The
+ * trip count is spelled out because replacing in place changes every trip
+ * sharing the id, not just this one.
+ */
+async function pickShapeUploadTarget(
+  shapeId: string,
+  tripCount: number
+): Promise<'replace' | 'new' | null> {
+  let choice: 'replace' | 'new' | null = null;
+  const usage =
+    tripCount === 1
+      ? '1 trip uses this shape and will change.'
+      : `${tripCount} trips use this shape and will all change.`;
+
+  await showModal({
+    title: 'Replace or create',
+    body: `
+      <div class="space-y-2">
+        <p class="text-sm">
+          This trip already uses shape
+          <strong class="font-mono">${escapeHtml(shapeId)}</strong>.
+        </p>
+        <p class="text-base-content/60 text-sm">${escapeHtml(usage)}</p>
+        <p class="text-base-content/60 text-sm">
+          Creating a new shape leaves the old one in the feed, unused by this
+          trip.
+        </p>
+      </div>
+    `,
+    escapeAction: 2,
+    actions: [
+      {
+        label: `Replace shape ${escapeHtml(shapeId)} in place`,
+        className: 'btn-primary',
+        onClick: () => {
+          choice = 'replace';
+        },
+      },
+      {
+        label: 'Create a new shape',
+        onClick: () => {
+          choice = 'new';
+        },
+      },
+      { label: 'Cancel', onClick: () => {} },
+    ],
+  });
+  return choice;
+}
+
+/**
+ * Textarea and URL import for a pasted line, validated before the modal closes
+ * so a bad paste can be fixed in place rather than re-opened.
+ */
+async function pickPastedShapePoints(): Promise<{
+  points: Array<[number, number]>;
+  defaultId: string;
+} | null> {
+  const instanceId = 'shape-paste';
+  let result: { points: Array<[number, number]>; defaultId: string } | null =
+    null;
+
+  await showModal({
+    title: 'Paste GeoJSON or link',
+    body: renderGeojsonExchangeBlock({
+      instanceId,
+      featureJson: '',
+      placeholder:
+        '{ "type": "Feature", "geometry": { "type": "LineString", ... } }',
+      hint: 'A LineString Feature, a FeatureCollection holding one line, or a geojson.io share link.',
+      rows: 10,
+    }),
+    escapeAction: 1,
+    actions: [
+      {
+        label: 'Use this line',
+        className: 'btn-primary',
+        onClick: async () => {
+          const input = geojsonExchangeInput(document, instanceId);
+          try {
+            const feature = await readIncomingFeature(
+              input?.value ?? '',
+              pickLoneFeature
+            );
+            result = {
+              points: shapeFeatureToPoints(feature),
+              defaultId: String(feature.id ?? ''),
+            };
+          } catch (error) {
+            showGeojsonExchangeError(
+              document,
+              instanceId,
+              error instanceof Error ? error.message : String(error)
+            );
+            return true;
+          }
+          return;
+        },
+      },
+      { label: 'Cancel', onClick: () => {} },
+    ],
+    onMount: () => {
+      attachGeojsonExchangeHandlers(document, {
+        instanceId,
+        logPrefix: '[ShapesManager] pasted shape',
+        pick: pickLoneFeature,
+      });
+      geojsonExchangeInput(document, instanceId)?.focus();
+    },
+  });
+
+  return result;
+}
+
+/**
+ * Ask for a source and resolve it into a `ShapeSource`.
+ *
+ * A zip is a GTFS feed to import one shape out of, and needs a second pick to
+ * say which one; a .geojson/.json file and a paste are read as a single line;
+ * anything else is a GPX track. Every upload flow goes through here so all
+ * three accept every kind. Returns null on any cancel, and shows its own error
+ * modal when the source cannot be read.
+ */
+async function pickShapeSource(): Promise<ShapeSource | null> {
+  const kind = await pickShapeSourceKind();
+  if (!kind) {
+    return null;
+  }
+
+  if (kind === 'paste') {
+    const pasted = await pickPastedShapePoints();
+    if (!pasted) {
+      return null;
+    }
+    return {
+      kind: 'geojson',
+      label: `Pasted GeoJSON (${pasted.points.length} pts)`,
+      defaultId: pasted.defaultId,
+      buildRows: (shapeId) =>
+        Promise.resolve(pointsToShapeRows(shapeId, pasted.points)),
+    };
+  }
+
+  const file = await pickShapeSourceFile();
+  if (!file) {
+    return null;
+  }
+
+  if (/\.(geojson|json)$/i.test(file.name)) {
+    let points: Array<[number, number]>;
+    try {
+      points = shapeFeatureToPoints(
+        await readIncomingFeature(await file.text(), pickLoneFeature)
+      );
+    } catch (e) {
+      await showSourceError('GeoJSON Error', e);
+      return null;
+    }
+    return {
+      kind: 'geojson',
+      label: `${file.name} (${points.length} pts)`,
+      defaultId: file.name.replace(/\.(geojson|json)$/i, ''),
+      buildRows: (shapeId) =>
+        Promise.resolve(pointsToShapeRows(shapeId, points)),
+    };
+  }
+
+  if (!/\.zip$/i.test(file.name)) {
+    return {
+      kind: 'gpx',
+      label: file.name,
+      defaultId: file.name.replace(/\.gpx$/i, ''),
+      buildRows: (shapeId) => parseGPX(file, shapeId),
+    };
+  }
+
+  let picked: ZipShapeCandidate | null;
+  try {
+    picked = await pickShapeFromCandidates(await parseShapesFromZip(file));
+  } catch (e) {
+    await showSourceError('GTFS Error', e);
+    return null;
+  }
+  if (!picked) {
+    return null;
+  }
+
+  const source = picked;
+  return {
+    kind: 'gtfs',
+    label: `${file.name} - shape ${source.shapeId} (${source.points.length} pts)`,
+    defaultId: source.shapeId,
+    buildRows: (shapeId) =>
+      Promise.resolve(renumberPoints(source.points, shapeId)),
+  };
+}
+
+/**
+ * Name a new shape and commit it.
+ *
+ * Shared by the shapes manager's "Upload shape" and the timetable's per-trip
+ * upload: both show the same id input with the same validation, and differ
+ * only in the title and in what they write once the rows are built. `commit`
+ * owns the writes so each caller keeps its own patch shape.
+ *
+ * @returns the id that was created, or null if the user cancelled.
+ */
+async function promptNewShapeId(opts: {
+  title: string;
+  source: ShapeSource;
+  existing: Map<string, ShapeUsage>;
+  commit: (shapeId: string, rows: Shapes[]) => Promise<void>;
+}): Promise<string | null> {
+  let createdShapeId: string | null = null;
+
+  await showModal({
+    title: opts.title,
+    body: `
+      <div class="space-y-3">
+        <p class="text-base-content/60 text-sm">${escapeHtml(opts.source.label)}</p>
+        <fieldset class="fieldset">
+          <label class="label" for="new-shape-id">Shape ID</label>
+          <input id="new-shape-id" class="input w-full" type="text" placeholder="e.g. shape_1" value="${escapeHtml(opts.source.defaultId)}" />
+          <p id="new-shape-error" class="text-error text-sm hidden"></p>
+        </fieldset>
+      </div>
+    `,
+    escapeAction: 1,
+    enterAction: 0,
+    onMount: () => {
+      const inputEl = document.getElementById(
+        'new-shape-id'
+      ) as HTMLInputElement | null;
+      inputEl?.focus();
+      inputEl?.select();
+    },
+    actions: [
+      {
+        label: 'Create',
+        className: 'btn-primary',
+        onClick: async () => {
+          const inputEl = document.getElementById(
+            'new-shape-id'
+          ) as HTMLInputElement | null;
+          const errorEl = document.getElementById('new-shape-error');
+          const shapeId = inputEl?.value.trim() ?? '';
+
+          const showError = (msg: string) => {
+            if (errorEl) {
+              errorEl.textContent = msg;
+              errorEl.classList.remove('hidden');
+            }
+            return true as const;
+          };
+
+          if (!shapeId) {
+            return showError('Shape ID is required.');
+          }
+          if (opts.existing.has(shapeId)) {
+            return showError(`Shape "${shapeId}" already exists.`);
+          }
+
+          let newRows: Shapes[];
+          try {
+            newRows = await opts.source.buildRows(shapeId);
+          } catch (e) {
+            return showError(e instanceof Error ? e.message : String(e));
+          }
+
+          await opts.commit(shapeId, newRows);
+          createdShapeId = shapeId;
+          return;
+        },
+      },
+      { label: 'Cancel', onClick: () => {} },
+    ],
+  });
+
+  return createdShapeId;
+}
+
 /**
  * Drop the points a Douglas-Peucker pass at `toleranceMetres` finds redundant.
  *
@@ -252,27 +644,31 @@ function renumberPoints(points: Shapes[], shapeId: string): Shapes[] {
  * kept, survivors are renumbered 1..n, and `shape_dist_traveled` is dropped:
  * the cumulative distances no longer describe the shortened line.
  */
-function simplifyShapeRows(rows: Shapes[], toleranceMetres: number): Shapes[] {
-  const kept = simplifyIndices(
-    rows.map(
-      (r) =>
-        [Number(r.shape_pt_lon), Number(r.shape_pt_lat)] as [number, number]
-    ),
-    toleranceMetres
+function simplifyShapeRows(
+  rows: Shapes[],
+  toleranceMetres: number
+): { rows: Shapes[]; deviation: { max: number; mean: number } } {
+  const points = rows.map(
+    (r) => [Number(r.shape_pt_lon), Number(r.shape_pt_lat)] as [number, number]
   );
-  return kept.map((index, i) => {
-    const row: Shapes = { ...rows[index], shape_pt_sequence: i + 1 };
-    delete row.shape_dist_traveled;
-    return row;
-  });
+  const kept = simplifyIndices(points, toleranceMetres);
+  return {
+    rows: kept.map((index, i) => {
+      const row: Shapes = { ...rows[index], shape_pt_sequence: i + 1 };
+      delete row.shape_dist_traveled;
+      return row;
+    }),
+    deviation: deviationMetres(points, kept),
+  };
 }
 
 /**
  * Show the shared simplify tolerance slider and return the chosen level index,
  * or null if the user cancelled.
  *
- * No live map preview by design; `describe` supplies the point counts each
- * setting would leave behind, which is enough to choose between them.
+ * No live map preview by design; the headline states the guarantee for the
+ * current stop and `describe` supplies the point counts and the measured
+ * deviation, which is enough to choose between them.
  */
 async function pickSimplifyLevel(
   title: string,
@@ -290,10 +686,11 @@ async function pickSimplifyLevel(
         <fieldset class="fieldset">
           <input id="simplify-level" class="range range-primary w-full" type="range" min="0" max="${SIMPLIFY_LEVELS.length - 1}" step="1" value="${DEFAULT_SIMPLIFY_LEVEL}" />
           <div class="flex justify-between text-xs text-base-content/60 px-1">
-            ${SIMPLIFY_LEVELS.map((level) => `<span>${escapeHtml(level.label)}</span>`).join('')}
+            ${SIMPLIFY_LEVELS.map((toleranceMetres) => `<span>${escapeHtml(formatDistance(toleranceMetres))}</span>`).join('')}
           </div>
         </fieldset>
-        <p id="simplify-result" class="text-sm">${escapeHtml(describe(DEFAULT_SIMPLIFY_LEVEL))}</p>
+        <p id="simplify-headline" class="text-sm font-medium">${escapeHtml(toleranceSentence(SIMPLIFY_LEVELS[DEFAULT_SIMPLIFY_LEVEL]))}</p>
+        <p id="simplify-result" class="text-sm whitespace-pre-line text-base-content/70">${escapeHtml(describe(DEFAULT_SIMPLIFY_LEVEL))}</p>
       </div>
     `,
     escapeAction: 1,
@@ -302,9 +699,13 @@ async function pickSimplifyLevel(
       const slider = document.getElementById(
         'simplify-level'
       ) as HTMLInputElement | null;
+      const headline = document.getElementById('simplify-headline');
       const result = document.getElementById('simplify-result');
       slider?.addEventListener('input', () => {
         levelIndex = Number(slider.value);
+        if (headline) {
+          headline.textContent = toleranceSentence(SIMPLIFY_LEVELS[levelIndex]);
+        }
         if (result) {
           result.textContent = describe(levelIndex);
         }
@@ -349,6 +750,14 @@ function renderTimetableChip(usage: TimetableUsage): string {
   });
 }
 
+/** "Origin to Destination" for one shape, or a muted placeholder. */
+function renderEndpoints(usage: ShapeUsage): string {
+  if (!usage.origin || !usage.destination) {
+    return '<span class="text-base-content/40">Unknown</span>';
+  }
+  return `${escapeHtml(usage.origin)} to ${escapeHtml(usage.destination)}`;
+}
+
 function renderBody(shapes: Map<string, ShapeUsage>): string {
   const uploadBtn = `<button class="btn btn-sm btn-primary" data-action="new">${renderUploadIcon()} Upload shape</button>`;
   const helpText = `
@@ -374,12 +783,14 @@ function renderBody(shapes: Map<string, ShapeUsage>): string {
           <td class="font-mono text-sm break-all">${escapeHtml(shapeId)}</td>
           <td>${usage.pointCount}</td>
           <td>${usage.tripCount}</td>
+          <td class="text-sm">${renderEndpoints(usage)}</td>
           <td>
             <div class="flex flex-wrap gap-x-2 gap-y-1">${usage.timetables.map(renderTimetableChip).join('')}</div>
           </td>
           <td>
             <div class="flex gap-1">
-              <button class="btn btn-xs btn-ghost" data-action="replace" data-shape-id="${escapeHtml(shapeId)}" title="Replace with GPX">${renderUploadIcon()}</button>
+              <button class="btn btn-xs btn-ghost" data-action="replace" data-shape-id="${escapeHtml(shapeId)}" title="Replace from a file or a paste">${renderUploadIcon()}</button>
+              <button class="btn btn-xs btn-ghost" data-action="geojson-io" data-shape-id="${escapeHtml(shapeId)}" title="Edit in geojson.io">${renderRouteWaypointsIcon()}</button>
               <button class="btn btn-xs btn-ghost" data-action="simplify" data-shape-id="${escapeHtml(shapeId)}" title="Simplify shape">${renderSimplifyIcon()}</button>
               <button class="btn btn-xs btn-ghost text-error" data-action="delete" data-shape-id="${escapeHtml(shapeId)}" title="Delete shape">${renderTrashIcon()}</button>
             </div>
@@ -394,7 +805,10 @@ function renderBody(shapes: Map<string, ShapeUsage>): string {
 
   return `
     ${helpText}
-    ${renderScrollableTable(['Shape ID', 'Points', 'Trips', 'Timetables', 'Actions'], rows)}
+    ${renderScrollableTable(
+      ['Shape ID', 'Points', 'Trips', 'Runs', 'Timetables', 'Actions'],
+      rows
+    )}
     <div class="mt-4 flex gap-2">
       ${uploadBtn}
       ${simplifyAllBtn}
@@ -412,11 +826,11 @@ export class ShapesManager {
   }
 
   /**
-   * Point counts, trip counts and the distinct (route, service, direction)
-   * timetables using each shape.
+   * Point counts, trip counts, the distinct (route, service, direction)
+   * timetables using each shape, and where it runs from and to.
    *
-   * Recomputed on every panel refresh, so a new/replace/delete updates all
-   * three columns without reopening the modal.
+   * Recomputed on every panel refresh, so a new/replace/delete updates every
+   * column without reopening the modal.
    */
   private async getShapes(): Promise<Map<string, ShapeUsage>> {
     const rows = (await this.gtfsParser.gtfsDatabase.getAllRows(
@@ -439,6 +853,8 @@ export class ShapesManager {
     }
 
     const timetablesByShape = new Map<string, Map<string, TimetableUsage>>();
+    // One trip per shape is enough to name where the shape runs from and to.
+    const representativeTrip = new Map<string, string>();
     for (const trip of this.gtfsParser.getFileDataSync('trips.txt')) {
       const shapeId = String(trip.shape_id ?? '');
       const usage = map.get(shapeId);
@@ -446,6 +862,9 @@ export class ShapesManager {
         continue;
       }
       usage.tripCount++;
+      if (!representativeTrip.has(shapeId)) {
+        representativeTrip.set(shapeId, String(trip.trip_id ?? ''));
+      }
 
       const route_id = String(trip.route_id ?? '');
       const service_id = String(trip.service_id ?? '');
@@ -468,6 +887,36 @@ export class ShapesManager {
     for (const [shapeId, timetables] of timetablesByShape) {
       const usage = map.get(shapeId)!;
       usage.timetables = [...timetables.values()];
+    }
+
+    const stopById = new Map<string, Record<string, string>>();
+    for (const stop of this.gtfsParser.getFileDataSync('stops.txt')) {
+      stopById.set(String(stop.stop_id), stop as Record<string, string>);
+    }
+    // One indexed stop_times lookup per distinct shape, not per trip.
+    for (const [shapeId, tripId] of representativeTrip) {
+      const stopTimes = [...this.gtfsParser.getStopTimesByTripId(tripId)].sort(
+        (a, b) => Number(a.stop_sequence) - Number(b.stop_sequence)
+      );
+      if (stopTimes.length < 2) {
+        console.warn(
+          `[ShapesManager] shape ${shapeId}: trip ${tripId} has ${stopTimes.length} stop_times, cannot name an origin and destination`
+        );
+        continue;
+      }
+      const first = stopById.get(String(stopTimes[0].stop_id ?? ''));
+      const last = stopById.get(
+        String(stopTimes[stopTimes.length - 1].stop_id ?? '')
+      );
+      if (!first || !last) {
+        console.warn(
+          `[ShapesManager] shape ${shapeId}: trip ${tripId} references a stop that is not in stops.txt`
+        );
+        continue;
+      }
+      const usage = map.get(shapeId)!;
+      usage.origin = renderOptionLabel(getStopDisplay(first));
+      usage.destination = renderOptionLabel(getStopDisplay(last));
     }
 
     return map;
@@ -511,6 +960,8 @@ export class ShapesManager {
             ).then(refreshPanel);
           } else if (action === 'replace' && shapeId) {
             void this.replaceShape(shapeId).then(refreshPanel);
+          } else if (action === 'geojson-io' && shapeId) {
+            void this.editShapeGeojson(shapeId).then(refreshPanel);
           } else if (action === 'simplify' && shapeId) {
             void this.simplifyShape(shapeId).then(refreshPanel);
           } else if (action === 'simplify-all') {
@@ -574,62 +1025,144 @@ export class ShapesManager {
     );
   }
 
+  /** One shape's rows, in shape_pt_sequence order. */
+  private async getShapeRows(shapeId: string): Promise<Shapes[]> {
+    const allRows = (await this.gtfsParser.gtfsDatabase.getAllRows(
+      'shapes'
+    )) as Shapes[];
+    return allRows
+      .filter((r) => String(r.shape_id) === shapeId)
+      .sort(
+        (a, b) => Number(a.shape_pt_sequence) - Number(b.shape_pt_sequence)
+      );
+  }
+
+  /**
+   * Swap every row of `shapeId` for `newRows`, as one undo step.
+   *
+   * Recorded as a single mixed batch with the deletes ordered first: the
+   * renumbered points reuse the old composite keys, so neither replay
+   * direction may hold two rows on one key.
+   */
+  private async replaceShapeRows(
+    shapeId: string,
+    newRows: Shapes[],
+    label: string
+  ): Promise<void> {
+    const toDelete = await this.getShapeRows(shapeId);
+    const deleteKeys = toDelete.map((r) =>
+      generateCompositeKeyFromRecord('shapes', r)
+    );
+    const insertKeys = newRows.map((r) =>
+      generateCompositeKeyFromRecord('shapes', r)
+    );
+
+    if (deleteKeys.length > 0) {
+      await this.gtfsParser.deleteShapeRows(deleteKeys);
+    }
+    await this.gtfsParser.insertShapeRows(newRows);
+
+    await this.patchManager.recordBatchMixed(
+      [
+        ...toDelete.map((r, i) => ({
+          op: 'delete' as const,
+          table: 'shapes',
+          id: deleteKeys[i],
+          record: r,
+        })),
+        ...newRows.map((r, i) => ({
+          op: 'insert' as const,
+          table: 'shapes',
+          id: insertKeys[i],
+          record: r,
+        })),
+      ],
+      label
+    );
+    console.log(
+      `[ShapesManager] Replaced shape ${shapeId}: ${deleteKeys.length} -> ${newRows.length} points`
+    );
+  }
+
   private async replaceShape(shapeId: string): Promise<void> {
-    const file = await pickGPXFile();
-    if (!file) {
+    const source = await pickShapeSource();
+    if (!source) {
       return;
     }
 
+    // No naming modal: the id is fixed, and buildRows numbers the points onto
+    // it 1..n, so the replacement is a drop-in for the existing rows.
     let newRows: Shapes[];
     try {
-      newRows = await parseGPX(file, shapeId);
+      newRows = await source.buildRows(shapeId);
     } catch (e) {
+      await showSourceError(sourceErrorTitle(source.kind), e);
+      return;
+    }
+
+    await this.replaceShapeRows(
+      shapeId,
+      newRows,
+      `Replace shape ${shapeId} (${newRows.length} pts)`
+    );
+  }
+
+  /**
+   * Hand one shape to geojson.io as a LineString and take the edit back.
+   *
+   * The geojson.io link is built before the modal renders so the anchor is a
+   * real user-initiated click: awaiting and then calling `window.open` would
+   * trip the popup blocker.
+   */
+  private async editShapeGeojson(shapeId: string): Promise<void> {
+    const rows = await this.getShapeRows(shapeId);
+    if (rows.length === 0) {
       await showModal({
-        title: 'GPX Error',
-        body: `<p>${escapeHtml(e instanceof Error ? e.message : String(e))}</p>`,
+        title: 'Edit in geojson.io',
+        body: `<p>Shape <strong class="font-mono">${escapeHtml(shapeId)}</strong> has no points.</p>`,
         escapeAction: 0,
         actions: [{ label: 'OK', onClick: () => {} }],
       });
       return;
     }
 
-    // Delete old rows
-    const existing = (await this.gtfsParser.gtfsDatabase.getAllRows(
-      'shapes'
-    )) as Shapes[];
-    const toDelete = existing.filter((r) => String(r.shape_id) === shapeId);
-    const deleteKeys = toDelete.map((r) =>
-      generateCompositeKeyFromRecord('shapes', r)
-    );
+    const feature = shapeRowsToFeature(shapeId, rows);
+    const editUrl = await encodeGeojsonIoUrl({
+      type: 'FeatureCollection',
+      features: [feature],
+    });
+    const instanceId = `shape-${shapeId}`;
 
-    if (deleteKeys.length > 0) {
-      await this.gtfsParser.deleteShapeRows(deleteKeys);
-      await this.patchManager.recordBatchDelete(
-        toDelete.map((r, i) => ({
-          table: 'shapes',
-          id: deleteKeys[i],
-          record: r,
-        })),
-        `Replace shape ${shapeId} (delete old)`
-      );
-    }
-
-    // Insert new rows
-    const insertKeys = newRows.map((r) =>
-      generateCompositeKeyFromRecord('shapes', r)
-    );
-    await this.gtfsParser.insertShapeRows(newRows);
-    await this.patchManager.recordBatchInsert(
-      newRows.map((r, i) => ({
-        table: 'shapes',
-        id: insertKeys[i],
-        record: r,
-      })),
-      `Replace shape ${shapeId} (${newRows.length} pts)`
-    );
-    console.log(
-      `[ShapesManager] Replaced shape ${shapeId} with ${newRows.length} points`
-    );
+    await showModal({
+      title: `Edit shape ${escapeHtml(shapeId)}`,
+      body: renderGeojsonExchangeBlock({
+        instanceId,
+        featureJson: JSON.stringify(feature, null, 2),
+        editUrl,
+        title: 'Geometry',
+        saveLabel: 'Save geometry',
+      }),
+      escapeAction: 0,
+      actions: [{ label: 'Close', onClick: () => {} }],
+      onMount: (close) => {
+        attachGeojsonExchangeHandlers(document, {
+          instanceId,
+          logPrefix: `[ShapesManager] shape ${shapeId}`,
+          pick: (collection) => pickFeatureById(collection, shapeId),
+          prepare: (f) => ({ ...f, id: shapeId }),
+          onApply: async (edited) => {
+            const points = shapeFeatureToPoints(edited);
+            await this.replaceShapeRows(
+              shapeId,
+              pointsToShapeRows(shapeId, points),
+              `Edit shape ${shapeId} (${rows.length} -> ${points.length} pts)`
+            );
+            notify.success(`Updated shape ${shapeId}`);
+            close();
+          },
+        });
+      },
+    });
   }
 
   /**
@@ -661,15 +1194,18 @@ export class ShapesManager {
       return;
     }
 
-    // Three runs up front, so moving the slider only swaps the displayed count.
-    const previews = SIMPLIFY_LEVELS.map((level) =>
-      simplifyShapeRows(rows, level.toleranceMetres)
+    // One run per level up front, so moving the slider only swaps the readout.
+    const previews = SIMPLIFY_LEVELS.map((toleranceMetres) =>
+      simplifyShapeRows(rows, toleranceMetres)
     );
 
     const describe = (index: number) => {
-      const kept = previews[index].length;
-      const removed = rows.length - kept;
-      return `${SIMPLIFY_LEVELS[index].label}: keeps ${kept} of ${rows.length} points (${removed} removed).`;
+      const { rows: keptRows, deviation } = previews[index];
+      const removed = rows.length - keptRows.length;
+      return [
+        `keeps ${keptRows.length.toLocaleString()} of ${rows.length.toLocaleString()} points (${removed.toLocaleString()} removed)`,
+        `max deviation ${formatDistance(deviation.max)}, average ${formatDistance(deviation.mean)}`,
+      ].join('\n');
     };
 
     const levelIndex = await pickSimplifyLevel(
@@ -683,7 +1219,7 @@ export class ShapesManager {
       return;
     }
 
-    const newRows = previews[levelIndex];
+    const newRows = previews[levelIndex].rows;
     if (newRows.length === rows.length) {
       console.log(
         `[ShapesManager] Simplify left shape ${shapeId} unchanged (${rows.length} points)`
@@ -721,7 +1257,7 @@ export class ShapesManager {
       `Simplify shape ${shapeId} (${rows.length} -> ${newRows.length} pts)`
     );
     console.log(
-      `[ShapesManager] Simplified shape ${shapeId} from ${rows.length} to ${newRows.length} points at ${SIMPLIFY_LEVELS[levelIndex].toleranceMetres}m`
+      `[ShapesManager] Simplified shape ${shapeId} from ${rows.length} to ${newRows.length} points at ${SIMPLIFY_LEVELS[levelIndex]}m`
     );
   }
 
@@ -771,14 +1307,17 @@ export class ShapesManager {
     const totalPoints = targets.reduce((sum, t) => sum + t.rows.length, 0);
 
     // One run per level up front, so moving the slider only swaps the counts.
-    const previews = SIMPLIFY_LEVELS.map((level) =>
-      targets.map((t) => simplifyShapeRows(t.rows, level.toleranceMetres))
+    const previews = SIMPLIFY_LEVELS.map((toleranceMetres) =>
+      targets.map((t) => simplifyShapeRows(t.rows, toleranceMetres))
     );
 
     const describe = (index: number) => {
-      const kept = previews[index].reduce((sum, rows) => sum + rows.length, 0);
-      const removed = totalPoints - kept;
-      return `${SIMPLIFY_LEVELS[index].label}: keeps ${kept} of ${totalPoints} points (${removed} removed).`;
+      const kept = previews[index].reduce((sum, p) => sum + p.rows.length, 0);
+      const worst = previews[index].reduce(
+        (max, p) => Math.max(max, p.deviation.max),
+        0
+      );
+      return `keeps ${kept.toLocaleString()} of ${totalPoints.toLocaleString()} points across ${targets.length} shape${targets.length !== 1 ? 's' : ''}; worst deviation ${formatDistance(worst)}.`;
     };
 
     const levelIndex = await pickSimplifyLevel(
@@ -809,7 +1348,7 @@ export class ShapesManager {
     let changedShapes = 0;
 
     targets.forEach((target, i) => {
-      const newRows = previews[levelIndex][i];
+      const newRows = previews[levelIndex][i].rows;
       if (newRows.length === target.rows.length) {
         return;
       }
@@ -841,133 +1380,45 @@ export class ShapesManager {
       `Simplify ${changedShapes} shape${changedShapes !== 1 ? 's' : ''} (${deleteKeys.length} -> ${insertRows.length} pts)`
     );
     console.log(
-      `[ShapesManager] Simplified ${changedShapes} shapes from ${deleteKeys.length} to ${insertRows.length} points at ${SIMPLIFY_LEVELS[levelIndex].toleranceMetres}m`
+      `[ShapesManager] Simplified ${changedShapes} shapes from ${deleteKeys.length} to ${insertRows.length} points at ${SIMPLIFY_LEVELS[levelIndex]}m`
     );
   }
 
   private async newShape(
     existingShapes: Map<string, ShapeUsage>
   ): Promise<void> {
-    const file = await pickShapeSourceFile();
-    if (!file) {
+    const source = await pickShapeSource();
+    if (!source) {
       return;
     }
 
-    // A zip is a GTFS feed to import one shape out of; anything else is a GPX
-    // track. Both rejoin the same id-name modal below.
-    const isZip = /\.zip$/i.test(file.name);
-    let source: ZipShapeCandidate | null = null;
-    if (isZip) {
-      try {
-        source = await pickShapeFromCandidates(await parseShapesFromZip(file));
-      } catch (e) {
-        await showModal({
-          title: 'GTFS Error',
-          body: `<p>${escapeHtml(e instanceof Error ? e.message : String(e))}</p>`,
-          escapeAction: 0,
-          actions: [{ label: 'OK', onClick: () => {} }],
-        });
-        return;
-      }
-      if (!source) {
-        return;
-      }
-    }
-
-    const buildRows = (shapeId: string): Promise<Shapes[]> =>
-      source
-        ? Promise.resolve(renumberPoints(source.points, shapeId))
-        : parseGPX(file, shapeId);
-
-    // Default the id to the source shape's id, or the filename without its
-    // .gpx extension.
-    const defaultId = source
-      ? source.shapeId
-      : file.name.replace(/\.gpx$/i, '');
-    const sourceLabel = source
-      ? `${file.name} - shape ${source.shapeId} (${source.points.length} pts)`
-      : file.name;
-
-    await showModal({
-      title: source ? 'Import shape from GTFS feed' : 'New shape from GPX',
-      body: `
-        <div class="space-y-3">
-          <p class="text-base-content/60 text-sm">${escapeHtml(sourceLabel)}</p>
-          <fieldset class="fieldset">
-            <label class="label" for="new-shape-id">Shape ID</label>
-            <input id="new-shape-id" class="input w-full" type="text" placeholder="e.g. shape_1" value="${escapeHtml(defaultId)}" />
-            <p id="new-shape-error" class="text-error text-sm hidden"></p>
-          </fieldset>
-        </div>
-      `,
-      escapeAction: 1,
-      enterAction: 0,
-      onMount: () => {
-        const inputEl = document.getElementById(
-          'new-shape-id'
-        ) as HTMLInputElement | null;
-        inputEl?.focus();
-        inputEl?.select();
+    await promptNewShapeId({
+      title: NEW_SHAPE_TITLES[source.kind],
+      source,
+      existing: existingShapes,
+      commit: async (shapeId, newRows) => {
+        const insertKeys = newRows.map((r) =>
+          generateCompositeKeyFromRecord('shapes', r)
+        );
+        await this.gtfsParser.insertShapeRows(newRows);
+        await this.patchManager.recordBatchInsert(
+          newRows.map((r, i) => ({
+            table: 'shapes',
+            id: insertKeys[i],
+            record: r,
+          })),
+          `New shape ${shapeId} (${newRows.length} pts)`
+        );
+        console.log(
+          `[ShapesManager] Inserted new shape ${shapeId} (${newRows.length} points)`
+        );
       },
-      actions: [
-        {
-          label: 'Create',
-          className: 'btn-primary',
-          onClick: async () => {
-            const inputEl = document.getElementById(
-              'new-shape-id'
-            ) as HTMLInputElement | null;
-            const errorEl = document.getElementById('new-shape-error');
-            const shapeId = inputEl?.value.trim() ?? '';
-
-            const showError = (msg: string) => {
-              if (errorEl) {
-                errorEl.textContent = msg;
-                errorEl.classList.remove('hidden');
-              }
-              return true as const;
-            };
-
-            if (!shapeId) {
-              return showError('Shape ID is required.');
-            }
-            if (existingShapes.has(shapeId)) {
-              return showError(`Shape "${shapeId}" already exists.`);
-            }
-
-            let newRows: Shapes[];
-            try {
-              newRows = await buildRows(shapeId);
-            } catch (e) {
-              return showError(e instanceof Error ? e.message : String(e));
-            }
-
-            const insertKeys = newRows.map((r) =>
-              generateCompositeKeyFromRecord('shapes', r)
-            );
-            await this.gtfsParser.insertShapeRows(newRows);
-            await this.patchManager.recordBatchInsert(
-              newRows.map((r, i) => ({
-                table: 'shapes',
-                id: insertKeys[i],
-                record: r,
-              })),
-              `New shape ${shapeId} (${newRows.length} pts)`
-            );
-            console.log(
-              `[ShapesManager] Inserted new shape ${shapeId} (${newRows.length} points)`
-            );
-            return;
-          },
-        },
-        { label: 'Cancel', onClick: () => {} },
-      ],
     });
   }
 
   /**
-   * The timetable's "Upload shape" button: pick a GPX file, name a new shape,
-   * and assign it to one trip in the same step.
+   * The timetable's "Upload shape" button: pick a GPX file or a GTFS feed,
+   * name a new shape, and assign it to one trip in the same step.
    *
    * Mirrors `newShape()` but also points the trip's `shape_id` at the result,
    * so the shape insert and the trip update are recorded together as one
@@ -979,119 +1430,91 @@ export class ShapesManager {
     tripId: string,
     currentShapeId: string
   ): Promise<string | null> {
-    const file = await pickGPXFile();
-    if (!file) {
+    const source = await pickShapeSource();
+    if (!source) {
       return null;
     }
 
-    const existingShapes = await this.getShapes();
-    const defaultId = file.name.replace(/\.gpx$/i, '');
-    let createdShapeId: string | null = null;
+    const existing = await this.getShapes();
+    const currentUsage = currentShapeId
+      ? existing.get(currentShapeId)
+      : undefined;
 
-    await showModal({
+    if (currentUsage) {
+      const target = await pickShapeUploadTarget(
+        currentShapeId,
+        currentUsage.tripCount
+      );
+      if (!target) {
+        return null;
+      }
+      if (target === 'replace') {
+        let newRows: Shapes[];
+        try {
+          newRows = await source.buildRows(currentShapeId);
+        } catch (e) {
+          await showSourceError(sourceErrorTitle(source.kind), e);
+          return null;
+        }
+        // The id is unchanged, so no trips update: the delete-then-insert of
+        // the points is the whole edit, and one undo takes it back.
+        await this.replaceShapeRows(
+          currentShapeId,
+          newRows,
+          `Replace shape ${currentShapeId} (${newRows.length} pts)`
+        );
+        return currentShapeId;
+      }
+    }
+
+    return promptNewShapeId({
       title: 'Upload shape for this trip',
-      body: `
-        <div class="space-y-3">
-          <p class="text-base-content/60 text-sm">${escapeHtml(file.name)}</p>
-          <fieldset class="fieldset">
-            <label class="label" for="new-shape-id">Shape ID</label>
-            <input id="new-shape-id" class="input w-full" type="text" placeholder="e.g. shape_1" value="${escapeHtml(defaultId)}" />
-            <p id="new-shape-error" class="text-error text-sm hidden"></p>
-          </fieldset>
-        </div>
-      `,
-      escapeAction: 1,
-      enterAction: 0,
-      onMount: () => {
-        const inputEl = document.getElementById(
-          'new-shape-id'
-        ) as HTMLInputElement | null;
-        inputEl?.focus();
-        inputEl?.select();
+      source,
+      existing,
+      commit: async (shapeId, newRows) => {
+        const insertKeys = newRows.map((r) =>
+          generateCompositeKeyFromRecord('shapes', r)
+        );
+        await this.gtfsParser.insertShapeRows(newRows);
+
+        const trips = this.gtfsParser.getFileDataSync(
+          'trips.txt'
+        ) as unknown as Record<string, unknown>[];
+        const tripRow = trips.find((t) => t.trip_id === tripId);
+
+        const ops: Parameters<PatchManager['recordBatchMixed']>[0] =
+          newRows.map((r, i) => ({
+            op: 'insert' as const,
+            table: 'shapes',
+            id: insertKeys[i],
+            record: r,
+          }));
+
+        if (tripRow) {
+          await this.gtfsParser.gtfsDatabase.updateRow('trips', tripId, {
+            shape_id: shapeId,
+          });
+          ops.push({
+            op: 'update' as const,
+            table: 'trips',
+            id: tripId,
+            before: { shape_id: tripRow.shape_id ?? currentShapeId },
+            after: { shape_id: shapeId },
+          });
+        } else {
+          console.warn(
+            `[ShapesManager] trip ${tripId} not found; inserted shape ${shapeId} without assigning it`
+          );
+        }
+
+        await this.patchManager.recordBatchMixed(
+          ops,
+          `Upload shape ${shapeId} for trip ${tripId} (${newRows.length} pts)`
+        );
+        console.log(
+          `[ShapesManager] Inserted shape ${shapeId} (${newRows.length} points) and assigned it to trip ${tripId}`
+        );
       },
-      actions: [
-        {
-          label: 'Create',
-          className: 'btn-primary',
-          onClick: async () => {
-            const inputEl = document.getElementById(
-              'new-shape-id'
-            ) as HTMLInputElement | null;
-            const errorEl = document.getElementById('new-shape-error');
-            const shapeId = inputEl?.value.trim() ?? '';
-
-            const showError = (msg: string) => {
-              if (errorEl) {
-                errorEl.textContent = msg;
-                errorEl.classList.remove('hidden');
-              }
-              return true as const;
-            };
-
-            if (!shapeId) {
-              return showError('Shape ID is required.');
-            }
-            if (existingShapes.has(shapeId)) {
-              return showError(`Shape "${shapeId}" already exists.`);
-            }
-
-            let newRows: Shapes[];
-            try {
-              newRows = await parseGPX(file, shapeId);
-            } catch (e) {
-              return showError(e instanceof Error ? e.message : String(e));
-            }
-
-            const insertKeys = newRows.map((r) =>
-              generateCompositeKeyFromRecord('shapes', r)
-            );
-            await this.gtfsParser.insertShapeRows(newRows);
-
-            const trips = this.gtfsParser.getFileDataSync(
-              'trips.txt'
-            ) as unknown as Record<string, unknown>[];
-            const tripRow = trips.find((t) => t.trip_id === tripId);
-
-            const ops: Parameters<PatchManager['recordBatchMixed']>[0] =
-              newRows.map((r, i) => ({
-                op: 'insert' as const,
-                table: 'shapes',
-                id: insertKeys[i],
-                record: r,
-              }));
-
-            if (tripRow) {
-              await this.gtfsParser.gtfsDatabase.updateRow('trips', tripId, {
-                shape_id: shapeId,
-              });
-              ops.push({
-                op: 'update' as const,
-                table: 'trips',
-                id: tripId,
-                before: { shape_id: tripRow.shape_id ?? currentShapeId },
-                after: { shape_id: shapeId },
-              });
-            } else {
-              console.warn(
-                `[ShapesManager] trip ${tripId} not found; inserted shape ${shapeId} without assigning it`
-              );
-            }
-
-            await this.patchManager.recordBatchMixed(
-              ops,
-              `Upload shape ${shapeId} for trip ${tripId} (${newRows.length} pts)`
-            );
-            console.log(
-              `[ShapesManager] Inserted shape ${shapeId} (${newRows.length} points) and assigned it to trip ${tripId}`
-            );
-            createdShapeId = shapeId;
-            return;
-          },
-        },
-        { label: 'Cancel', onClick: () => {} },
-      ],
     });
-
-    return createdShapeId;
   }
 }

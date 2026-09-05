@@ -1,6 +1,6 @@
 import { Map as MapLibreMap, GeoJSONSource } from 'maplibre-gl';
 import type { FilterSpecification, ExpressionSpecification } from 'maplibre-gl';
-import { Stops, StopTimes, Pathways } from '../types/gtfs-entities.js';
+import { Stops, Pathways } from '../types/gtfs-entities.js';
 import type { GTFSParser } from './gtfs-parser.js';
 import { CONFIG } from '../config.js';
 import {
@@ -45,13 +45,6 @@ export interface StopLayerOptions {
   clickAreaRadius: number;
 }
 
-export interface HighlightLayerOptions {
-  color: string;
-  radius: number;
-  strokeColor: string;
-  strokeWidth: number;
-}
-
 /** On-demand zone polygons (locations.geojson). */
 const ZONE_SOURCE = 'zones';
 const ZONE_FILL_LAYER = 'zones-fill';
@@ -64,7 +57,7 @@ const ZONE_OUTLINE_OPACITY = 0.8;
 const ZONE_FILL_OPACITY_DIMMED = 0.03;
 const ZONE_OUTLINE_OPACITY_DIMMED = 0.2;
 
-/** Transfer edges of the focused stop. Ephemeral, like `trip-highlight`. */
+/** Transfer edges of the focused stop. Ephemeral, cleared with the focus. */
 const TRANSFER_SOURCE = 'transfer-edges';
 const TRANSFER_DASHED_LAYER = 'transfer-edges-dashed';
 const TRANSFER_SOLID_LAYER = 'transfer-edges-solid';
@@ -194,13 +187,6 @@ export class LayerManager {
     clickAreaRadius: 15,
   };
 
-  private defaultHighlightOptions: HighlightLayerOptions = {
-    color: this.accent(),
-    radius: 8,
-    strokeColor: '#ffffff',
-    strokeWidth: 3,
-  };
-
   constructor(map: MapLibreMap, gtfsParser: GTFSParser) {
     this.map = map;
     this.gtfsParser = gtfsParser;
@@ -221,11 +207,6 @@ export class LayerManager {
   public refreshAccentColor(): void {
     clearThemeColorCache();
     const accent = this.accent();
-    this.defaultHighlightOptions = {
-      ...this.defaultHighlightOptions,
-      color: accent,
-    };
-
     for (const layerId of [STOP_FOCUS_HALO_LAYER, STOP_FOCUS_RING_LAYER]) {
       if (this.map.getLayer(layerId)) {
         this.map.setPaintProperty(layerId, 'circle-color', accent);
@@ -259,8 +240,6 @@ export class LayerManager {
       'stops-focus-ring',
       'stops-focus-top',
       'stops-clickarea',
-      'stops-highlight',
-      'trip-highlight',
       ...TRANSFER_LAYER_IDS,
       ZONE_FILL_LAYER,
       ZONE_OUTLINE_LAYER,
@@ -274,8 +253,6 @@ export class LayerManager {
       'pathways',
       'station-ground',
       'stops',
-      'stops-highlight',
-      'trip-highlight',
       TRANSFER_SOURCE,
       ZONE_SOURCE,
     ];
@@ -1038,154 +1015,6 @@ export class LayerManager {
   }
 
   /**
-   * Highlight trip path
-   */
-  public highlightTrip(
-    trip_id: string,
-    options: Partial<HighlightLayerOptions> = {}
-  ): void {
-    const finalOptions = { ...this.defaultHighlightOptions, ...options };
-    const stopTimes =
-      this.gtfsParser.getFileDataSyncTyped<StopTimes>('stop_times.txt') || [];
-    const stops =
-      this.gtfsParser.getFileDataSyncTyped<Stops>('stops.txt') || [];
-
-    // Clear existing highlights
-    this.clearHighlights();
-
-    // Create stops lookup
-    const stopsLookup: {
-      [key: string]: { lat: number; lon: number; name: string };
-    } = {};
-    stops.forEach((stop) => {
-      if (stop.stop_lat !== null && stop.stop_lon !== null) {
-        stopsLookup[stop.stop_id] = {
-          lat: stop.stop_lat,
-          lon: stop.stop_lon,
-          name: stop.stop_name,
-        };
-      }
-    });
-
-    // Get stop times for this trip
-    const tripStopTimes = stopTimes
-      .filter((st) => st.trip_id === trip_id)
-      .sort((a, b) => a.stop_sequence - b.stop_sequence);
-
-    const tripPath: [number, number][] = [];
-    const tripStopsFeatures: GeoJSON.Feature[] = [];
-
-    tripStopTimes.forEach((st, index) => {
-      const stopCoords = stopsLookup[st.stop_id];
-      if (stopCoords) {
-        tripPath.push([stopCoords.lon, stopCoords.lat]);
-
-        const isFirst = index === 0;
-        const isLast = index === tripStopTimes.length - 1;
-
-        tripStopsFeatures.push({
-          type: 'Feature',
-          geometry: {
-            type: 'Point',
-            coordinates: [stopCoords.lon, stopCoords.lat],
-          },
-          properties: {
-            stop_name: stopCoords.name,
-            is_first: isFirst,
-            is_last: isLast,
-            stop_type: isFirst ? 'first' : isLast ? 'last' : 'middle',
-          },
-        });
-      }
-    });
-
-    if (tripPath.length >= 2) {
-      this.addTripHighlightLayers(tripPath, tripStopsFeatures, finalOptions);
-    }
-
-    console.log(`Highlighted trip: ${trip_id} with ${tripPath.length} stops`);
-  }
-
-  /**
-   * Add trip highlight layers (line and stops)
-   */
-  private addTripHighlightLayers(
-    tripPath: [number, number][],
-    tripStopsFeatures: GeoJSON.Feature[],
-    options: HighlightLayerOptions
-  ): void {
-    // Create trip line GeoJSON
-    const tripLineGeoJSON = {
-      type: 'FeatureCollection' as const,
-      features: [
-        {
-          type: 'Feature' as const,
-          geometry: {
-            type: 'LineString' as const,
-            coordinates: tripPath,
-          },
-          properties: {},
-        },
-      ],
-    };
-
-    // Add trip line
-    this.map.addSource('trip-highlight', {
-      type: 'geojson',
-      data: tripLineGeoJSON,
-    });
-
-    this.map.addLayer({
-      id: 'trip-highlight',
-      type: 'line',
-      source: 'trip-highlight',
-      paint: {
-        'line-color': options.color,
-        'line-width': 5,
-        'line-opacity': 0.9,
-      },
-      layout: {
-        'line-cap': 'round',
-        'line-join': 'round',
-      },
-    });
-
-    // Add trip stops if available
-    if (tripStopsFeatures.length > 0) {
-      const stopsGeoJSON = {
-        type: 'FeatureCollection' as const,
-        features: tripStopsFeatures,
-      };
-
-      this.map.addSource('stops-highlight', {
-        type: 'geojson',
-        data: stopsGeoJSON,
-      });
-
-      this.map.addLayer({
-        id: 'stops-highlight',
-        type: 'circle',
-        source: 'stops-highlight',
-        paint: {
-          'circle-radius': 8,
-          'circle-color': [
-            'case',
-            ['==', ['get', 'stop_type'], 'first'],
-            '#27ae60', // Green for first stop
-            ['==', ['get', 'stop_type'], 'last'],
-            '#e74c3c', // Red for last stop
-            options.color, // Default color for middle stops
-          ],
-          'circle-stroke-color': options.strokeColor,
-          'circle-stroke-width': 2,
-          'circle-opacity': 1,
-          'circle-stroke-opacity': 1,
-        },
-      });
-    }
-  }
-
-  /**
    * Draw the transfers of one stop as edges to the stops they connect to.
    *
    * Scoped to the focused stop rather than being a feed-wide layer: transfers
@@ -1525,16 +1354,6 @@ export class LayerManager {
     if (this.routeZoneIds.length > 0) {
       this.setRouteZones([]);
     }
-    const highlightLayers = ['trip-highlight', 'stops-highlight'];
-
-    highlightLayers.forEach((layerId) => {
-      if (this.map.getLayer(layerId)) {
-        this.map.removeLayer(layerId);
-      }
-      if (this.map.getSource(layerId)) {
-        this.map.removeSource(layerId);
-      }
-    });
   }
 
   public setFocusedStop(stop_id: string | null): void {

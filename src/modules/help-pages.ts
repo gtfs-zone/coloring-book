@@ -102,6 +102,16 @@ const ICON_BELL = icon(
   '<path d="M10 24c-3 0-4-1.5-4-3 2-2 2-4 2-8 0-4.5 3.5-8 8-8s8 3.5 8 8c0 4 0 6 2 8 0 1.5-1 3-4 3z"/><path d="M13 27a3 3 0 006 0"/>'
 );
 
+const ICON_ZONE = icon(
+  '<path d="M6 10l10-4 10 4v12l-10 4-10-4z" stroke-dasharray="3 2"/><circle cx="16" cy="16" r="2" fill="currentColor"/>'
+);
+const ICON_GROUP = icon(
+  '<circle cx="9" cy="10" r="2.5"/><circle cx="23" cy="12" r="2.5"/><circle cx="15" cy="23" r="2.5"/><path d="M11 11.5l10 1M21.5 14.5l-5 6.5M13 21l-3-8.5"/>'
+);
+const ICON_CLOCK = icon(
+  '<circle cx="16" cy="16" r="11"/><path d="M16 9v7l5 3"/>'
+);
+
 const welcomePage: HelpPage = {
   id: 'welcome',
   label: 'Welcome',
@@ -223,8 +233,9 @@ const shapesPage: HelpPage = {
         },
         {
           icon: ICON_LOAD,
-          term: 'Import the GPX',
-          description: 'Import that GPX file here in the Shapes manager.',
+          term: 'Import the shape',
+          description:
+            'Import that GPX file here in the Shapes manager. The same button also takes a GTFS feed, to copy one shape out of an existing feed.',
         },
         {
           icon: ICON_CONNECT,
@@ -270,6 +281,50 @@ const faresPage: HelpPage = {
       ]),
       lede(
         `Spec reference: ${specLink('fare_products.txt', 'Fare Products')}, ${specLink('fare_media.txt', 'Fare Media')}, ${specLink('fare_leg_rules.txt', 'Fare Leg Rules')}.`
+      ),
+      footnote('You can revisit this at any time from the Guide menu.'),
+    ].join(''),
+};
+
+const onDemandPage: HelpPage = {
+  id: 'on-demand',
+  label: 'On-Demand',
+  group: 'Getting Started',
+  title: 'Describing on-demand service (GTFS Flex)',
+  showOnceKey: 'help.on-demand.seen',
+  render: () =>
+    [
+      lede(
+        'On-demand service is service a rider books rather than catches at a fixed time. GTFS Flex describes it with a few pieces that plug into an ordinary trip.'
+      ),
+      glyphList([
+        {
+          icon: ICON_ZONE,
+          term: 'A zone is an area, not a stop',
+          description:
+            'A polygon drawn on the map that a rider can be picked up in or dropped off anywhere inside. Zones live in locations.geojson, not in stops.txt.',
+        },
+        {
+          icon: ICON_GROUP,
+          term: 'A location group is a set of stops',
+          description:
+            'When the service serves a handful of named stops rather than a whole area, group those stops instead of drawing a zone.',
+        },
+        {
+          icon: ICON_BELL,
+          term: 'A booking rule says how to book',
+          description:
+            'How far in advance a rider has to call or tap, and where. Real time, same day, or by a cutoff on a prior day.',
+        },
+        {
+          icon: ICON_CLOCK,
+          term: 'A stop_time ties them to a trip',
+          description:
+            'Give a stop_time a pickup and drop-off window instead of an arrival and departure, point it at a zone or location group, and name the booking rule it uses.',
+        },
+      ]),
+      lede(
+        `Spec reference: ${specLink('locations.geojson', 'Locations')}, ${specLink('booking_rules.txt', 'Booking Rules')}, ${specLink('location_groups.txt', 'Location Groups')}.`
       ),
       footnote('You can revisit this at any time from the Guide menu.'),
     ].join(''),
@@ -457,6 +512,7 @@ export const HELP_PAGES: HelpPage[] = [
   gettingStartedPage,
   shapesPage,
   faresPage,
+  onDemandPage,
   publishingPage,
   aboutPage,
   mapKeyPage,
