@@ -125,12 +125,19 @@ const DISPLAY_CAP = 200;
 let cachedAtlas: Promise<AtlasRow[]> | null = null;
 
 function loadAtlasRows(): Promise<AtlasRow[]> {
-  cachedAtlas ??= fetch('/atlas-feeds.json').then((res) => {
-    if (!res.ok) {
-      throw new Error(`HTTP ${res.status} ${res.statusText}`.trim());
-    }
-    return res.json() as Promise<AtlasRow[]>;
-  });
+  cachedAtlas ??= fetch('/atlas-feeds.json')
+    .then((res) => {
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status} ${res.statusText}`.trim());
+      }
+      return res.json() as Promise<AtlasRow[]>;
+    })
+    .catch((err) => {
+      // Not cached on failure, so reopening the modal retries rather than
+      // reporting the atlas as unavailable for the rest of the session.
+      cachedAtlas = null;
+      throw err;
+    });
   return cachedAtlas;
 }
 
@@ -216,54 +223,51 @@ function atlasRow(row: AtlasRow): FeedRow {
   };
 }
 
-/**
- * Every row, plus a note for each source that could not be reached.
- *
- * Neither remote source is allowed to keep the modal shut: the examples are
- * compiled in, so there is always something to load even with no network.
- */
-async function loadRows(
-  realtime: boolean
-): Promise<{ rows: FeedRow[]; notes: string[] }> {
-  const [catalog, atlas] = await Promise.allSettled([
-    loadCatalog(),
-    loadAtlasRows(),
-  ]);
+/** The feeds this stack serves. Rejects when the catalog is unreachable. */
+async function catalogRows(realtime: boolean): Promise<FeedRow[]> {
+  const feeds = await loadCatalog();
+  return feeds
+    .filter((f) => hasUsableData(f, realtime))
+    .map((f) => catalogRow(f, realtime));
+}
 
-  const notes: string[] = [];
-  const rows: FeedRow[] = [];
+/** The TransitLand corpus. Rejects when the file cannot be fetched. */
+async function atlasFeedRows(realtime: boolean): Promise<FeedRow[]> {
+  const atlas = await loadAtlasRows();
+  const usable = realtime ? atlas : atlas.filter((r) => r.kind === 'static');
+  return usable.map(atlasRow);
+}
 
-  if (catalog.status === 'fulfilled') {
-    rows.push(
-      ...catalog.value
-        .filter((f) => hasUsableData(f, realtime))
-        .map((f) => catalogRow(f, realtime))
-    );
-  } else if (isLocalUrl(RT_BASE)) {
+/** The banner a failed catalog fetch deserves, or null when it deserves none. */
+function catalogNote(err: unknown): string | null {
+  if (isLocalUrl(RT_BASE)) {
     // A dev machine with no feed server running is the overwhelmingly common
     // reason this fails locally, and it is not something the user can act on.
     // It is not an outage, so it does not get an outage banner.
-    console.warn(
-      '[LoadModal] feed catalog unreachable at',
-      RT_BASE,
-      catalog.reason
-    );
-  } else {
-    notes.push(`Feed catalog unavailable — ${reason(catalog.reason)}`);
+    console.warn('[LoadModal] feed catalog unreachable at', RT_BASE, err);
+    return null;
   }
+  return `Feed catalog unavailable — ${reason(err)}`;
+}
 
-  rows.push(...exampleRows(realtime));
+function atlasNote(err: unknown): string | null {
+  return `TransitLand atlas unavailable — ${reason(err)}`;
+}
 
-  if (atlas.status === 'fulfilled') {
-    const usable = realtime
-      ? atlas.value
-      : atlas.value.filter((r) => r.kind === 'static');
-    rows.push(...usable.map(atlasRow));
-  } else {
-    notes.push(`TransitLand atlas unavailable — ${reason(atlas.reason)}`);
-  }
-
-  return { rows, notes };
+/** What each row is matched against when the search box has a query. */
+function buildHaystack(rows: FeedRow[]): string[] {
+  return rows.map((r) =>
+    [
+      r.name,
+      r.subtitle,
+      r.scheduledUrl,
+      r.vehiclesUrl,
+      r.tripUpdatesUrl,
+      r.alertsUrl,
+    ]
+      .filter(Boolean)
+      .join(' ')
+  );
 }
 
 /**
@@ -330,10 +334,11 @@ function renderRow(row: FeedRow, inUse: boolean, realtime: boolean): string {
 function renderRows(
   rows: FeedRow[],
   inUse: Set<string>,
-  realtime: boolean
+  realtime: boolean,
+  emptyText: string
 ): string {
   if (rows.length === 0) {
-    return '<p class="text-sm opacity-40 text-center py-8">No results.</p>';
+    return `<p class="text-sm opacity-40 text-center py-8">${emptyText}</p>`;
   }
   let group: Group | null = null;
   const out: string[] = [];
@@ -444,23 +449,24 @@ export async function showLoadModal(
     return '';
   };
 
-  const { rows, notes } = await loadRows(realtime);
+  // Both remote sources are already in flight while the modal paints, and
+  // neither is allowed to keep it shut: the examples are compiled in, so there
+  // is always something to load, and the URL fields and upload need no list at
+  // all. Their rows fold in as they land.
+  const sources: Array<{
+    load: Promise<FeedRow[]>;
+    note: (err: unknown) => string | null;
+  }> = [
+    { load: catalogRows(realtime), note: catalogNote },
+    { load: atlasFeedRows(realtime), note: atlasNote },
+  ];
+  let pending = sources.length;
 
   const uf = new UFuzzy();
-  // Rows are already in group order, so a filtered view only has to keep that
+  // Rows are kept in group order, so a filtered view only has to keep that
   // order stable rather than re-derive it.
-  const haystack = rows.map((r) =>
-    [
-      r.name,
-      r.subtitle,
-      r.scheduledUrl,
-      r.vehiclesUrl,
-      r.tripUpdatesUrl,
-      r.alertsUrl,
-    ]
-      .filter(Boolean)
-      .join(' ')
-  );
+  let rows = exampleRows(realtime);
+  let haystack = buildHaystack(rows);
   const groupRank = new Map(GROUP_ORDER.map((g, i) => [g, i]));
 
   let visible = rows.slice(0, DISPLAY_CAP);
@@ -527,7 +533,10 @@ export async function showLoadModal(
       <input type="text" id="load-search" class="input input-bordered input-sm w-full shrink-0" placeholder="Search by agency, operator, source, or URL…" autofocus />
       <div id="load-results" class="min-h-0 flex-1 space-y-0.5 overflow-y-auto overflow-x-hidden"></div>
 
-      ${notes.map((n) => `<p class="shrink-0 text-xs text-warning">${escHtml(n)}</p>`).join('')}
+      <p id="load-status" class="shrink-0 text-xs opacity-60 flex items-center gap-2">
+        <span class="loading loading-spinner loading-xs"></span> Loading more feeds…
+      </p>
+      <div id="load-notes" class="shrink-0 space-y-1"></div>
 
       ${scheduledSection}
 
@@ -629,6 +638,8 @@ export async function showLoadModal(
       const fileRow = document.getElementById('load-file-row')!;
       const fileNameEl = document.getElementById('load-file-name')!;
       const hintEl = document.getElementById('load-hint')!;
+      const statusEl = document.getElementById('load-status')!;
+      const notesEl = document.getElementById('load-notes')!;
       const loadBtn = resultsEl
         .closest('.modal')!
         .querySelector<HTMLButtonElement>('button[data-idx="0"]')!;
@@ -637,7 +648,12 @@ export async function showLoadModal(
         const inUse = new Set(
           [scheduledRowId, rtRowId].filter(Boolean) as string[]
         );
-        resultsEl.innerHTML = renderRows(visible, inUse, realtime);
+        resultsEl.innerHTML = renderRows(
+          visible,
+          inUse,
+          realtime,
+          pending > 0 ? 'Loading…' : 'No results.'
+        );
       };
 
       /**
@@ -750,6 +766,43 @@ export async function showLoadModal(
         }
         renderResults();
       };
+
+      /** Fold a source's rows in, keeping group order and the current query. */
+      const addRows = (incoming: FeedRow[]) => {
+        rows = [...rows, ...incoming].sort(
+          (a, b) => groupRank.get(a.group)! - groupRank.get(b.group)!
+        );
+        haystack = buildHaystack(rows);
+        filterAndRender();
+      };
+
+      for (const source of sources) {
+        void (async () => {
+          let incoming: FeedRow[] = [];
+          let note: string | null = null;
+          try {
+            incoming = await source.load;
+          } catch (err) {
+            note = source.note(err);
+          }
+          pending--;
+          // A slow fetch can land after the modal is gone.
+          if (!resultsEl.isConnected) {
+            return;
+          }
+          if (note) {
+            notesEl.insertAdjacentHTML(
+              'beforeend',
+              `<p class="text-xs text-warning">${escHtml(note)}</p>`
+            );
+          }
+          // Both classes, like the file row: `hidden` and `flex` are the same
+          // specificity, so leaving `flex` on would keep the line visible.
+          statusEl.classList.toggle('hidden', pending === 0);
+          statusEl.classList.toggle('flex', pending > 0);
+          addRows(incoming);
+        })();
+      }
 
       // Delegated, so re-rendering the list never re-wires handlers.
       resultsEl.addEventListener('click', (e) => {

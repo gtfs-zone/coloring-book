@@ -32,7 +32,13 @@ export interface CatalogFeed {
 let cached: Promise<CatalogFeed[]> | null = null;
 
 export function loadCatalog(): Promise<CatalogFeed[]> {
-  cached ??= fetchCatalog();
+  cached ??= fetchCatalog().catch((err) => {
+    // A failure is not cached: the modal that asked is very often one opened on
+    // a bad connection, and reopening it should try again rather than report
+    // the catalog as unavailable for the rest of the session.
+    cached = null;
+    throw err;
+  });
   return cached;
 }
 
