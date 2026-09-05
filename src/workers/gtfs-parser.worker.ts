@@ -206,14 +206,18 @@ self.onmessage = async (
       }
     }
 
-    // Fill in header-only entries for files not in the ZIP
+    // Fill in empty entries for files not in the ZIP. isGeoJSON has to follow
+    // the extension even here: the main thread keys the whole storage shape off
+    // it, and a .geojson file marked as CSV gets a virtual table it must never
+    // have. A header-only CSV is meaningless for GeoJSON, so it gets no content.
     for (const filename of ALL_GTFS_FILES) {
       if (!resultFiles[filename]) {
+        const isGeoJSON = filename.endsWith('.geojson');
         resultFiles[filename] = {
           data: [],
-          rawContent: makeHeaderOnlyCSV(filename),
+          rawContent: isGeoJSON ? '' : makeHeaderOnlyCSV(filename),
           errors: [],
-          isGeoJSON: false,
+          isGeoJSON,
         };
       }
     }
