@@ -586,7 +586,13 @@ export class RouteRenderer {
     );
   }
 
+  /**
+   * The built route lines. Builds the index first if it has not been built
+   * yet: the map's feed-wide fit can run before renderRoutes has, and an empty
+   * answer there silently drops every shape from the viewport.
+   */
   public getRouteFeatures(): RouteFeature[] {
+    this.createRouteFeatures();
     return [...this.routeFeatures.values()];
   }
 

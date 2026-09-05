@@ -644,29 +644,6 @@ export class InteractionHandler {
         e.lngLat.lat,
       ];
       source.setData(data);
-
-      // Also move the highlight circle so it follows the dragged stop
-      const highlightSource = this.map.getSource('stops-highlight') as
-        | GeoJSONSource
-        | undefined;
-      if (highlightSource) {
-        const existingProps =
-          (highlightSource as unknown as { _data: GeoJSON.FeatureCollection })
-            ._data?.features?.[0]?.properties ?? {};
-        highlightSource.setData({
-          type: 'FeatureCollection',
-          features: [
-            {
-              type: 'Feature',
-              geometry: {
-                type: 'Point',
-                coordinates: [e.lngLat.lng, e.lngLat.lat],
-              },
-              properties: existingProps,
-            },
-          ],
-        });
-      }
     }
   }
 
@@ -765,28 +742,6 @@ export class InteractionHandler {
         e.lngLat.lat,
       ];
       source.setData(data);
-
-      const highlightSource = this.map.getSource('stops-highlight') as
-        | GeoJSONSource
-        | undefined;
-      if (highlightSource) {
-        const existingProps =
-          (highlightSource as unknown as { _data: GeoJSON.FeatureCollection })
-            ._data?.features?.[0]?.properties ?? {};
-        highlightSource.setData({
-          type: 'FeatureCollection',
-          features: [
-            {
-              type: 'Feature',
-              geometry: {
-                type: 'Point',
-                coordinates: [e.lngLat.lng, e.lngLat.lat],
-              },
-              properties: existingProps,
-            },
-          ],
-        });
-      }
     }
   }
 

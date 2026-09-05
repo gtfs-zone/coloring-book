@@ -448,8 +448,8 @@ export class TimetableRenderer {
    * The row beneath shape_id: per-trip actions on its shape, rather than on
    * its value. "Open in BRouter" used to live in the sticky header
    * (`renderTimetableHeader`); it moved here so it stops crowding the header
-   * and to sit next to "Upload shape", which does the same GPX parse as the
-   * Shapes manager but also assigns the result to this one trip.
+   * and to sit next to "Upload shape", which takes the same GPX or GTFS feed
+   * the Shapes manager does but also assigns the result to this one trip.
    */
   private renderShapeActionsRow(data: TimetableData): string {
     const trips = data.trips;
@@ -470,7 +470,7 @@ export class TimetableRenderer {
 
         const uploadTip =
           '<div>Upload shape for this trip</div>' +
-          '<div class="opacity-70">Parses a GPX file into new shapes.txt rows and points this trip\'s shape_id at them. Undoable from the Changes panel.</div>';
+          '<div class="opacity-70">Reads a GPX file, or one shape out of a GTFS feed, into new shapes.txt rows and points this trip\'s shape_id at them. Undoable from the Changes panel.</div>';
         const uploadBtn = `
           <button
             type="button"

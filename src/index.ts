@@ -40,6 +40,11 @@ import { showFaresModal } from './modules/fares-modal';
 import { showFeedDataModal } from './modules/feed-data-modal';
 import { showOnDemandModal } from './modules/on-demand-modal';
 import {
+  getZoneFeatures,
+  writeZoneFeatures,
+  type ZoneFeature,
+} from './modules/zone-store';
+import {
   showCalendarModal,
   type CalendarModalDeps,
 } from './modules/calendar-modal';
@@ -682,12 +687,20 @@ export class GTFSEditor {
       )
     );
 
-    router.register('on_demand', (modal, transient) =>
-      showOnDemandModal(this.onDemandModalDeps(), {
+    router.register('on_demand', async (modal, transient, cancelled) => {
+      if (shouldShowHelpPage('on-demand')) {
+        await showHelpModal('on-demand', {
+          continueLabel: 'Continue to On-Demand',
+        });
+        if (cancelled()) {
+          return;
+        }
+      }
+      await showOnDemandModal(this.onDemandModalDeps(), {
         table: modal.table,
         rowKey: transient.rowKey,
-      })
-    );
+      });
+    });
 
     router.register('calendar', () =>
       showCalendarModal({
@@ -733,6 +746,21 @@ export class GTFSEditor {
       patchManager: this.patchManager,
       onZoneClick: (location_id) => {
         void this.pageStateManager.setPageState({ type: 'zone', location_id });
+      },
+      onCreateZone: async (location_id, stop_name) => {
+        // Empty coordinates is a real intermediate state: the zone page shows a
+        // warning until geometry is drawn or pasted.
+        const feature: ZoneFeature = {
+          type: 'Feature',
+          id: location_id,
+          properties: stop_name ? { stop_name } : {},
+          geometry: { type: 'Polygon', coordinates: [] },
+        };
+        await writeZoneFeatures(this.gtfsParser, this.patchManager, [
+          ...getZoneFeatures(this.gtfsParser),
+          feature,
+        ]);
+        console.log(`[GTFSEditor] created zone ${location_id}`);
       },
     };
   }

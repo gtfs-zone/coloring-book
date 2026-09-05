@@ -31,6 +31,22 @@ function segmentDistance(
 }
 
 /**
+ * Project `[lon, lat]` degrees to a local metric plane, scaling longitude by
+ * the cosine of the path's mean latitude. Shared so the simplifier and the
+ * deviation measurement cannot drift apart.
+ */
+function projectToMetres(
+  points: Array<[number, number]>
+): Array<[number, number]> {
+  const meanLat = points.reduce((sum, p) => sum + p[1], 0) / points.length;
+  const lonScale = Math.cos((meanLat * Math.PI) / 180);
+  return points.map(([lon, lat]) => [
+    lon * lonScale * METRES_PER_DEGREE_LAT,
+    lat * METRES_PER_DEGREE_LAT,
+  ]);
+}
+
+/**
  * Indices of the points to keep, ascending, always including the first and
  * last. A path of two points or fewer is returned unchanged.
  *
@@ -46,12 +62,7 @@ export function simplifyIndices(
     return points.map((_, i) => i);
   }
 
-  const meanLat = points.reduce((sum, p) => sum + p[1], 0) / points.length;
-  const lonScale = Math.cos((meanLat * Math.PI) / 180);
-  const projected: Array<[number, number]> = points.map(([lon, lat]) => [
-    lon * lonScale * METRES_PER_DEGREE_LAT,
-    lat * METRES_PER_DEGREE_LAT,
-  ]);
+  const projected = projectToMetres(points);
 
   const keep = new Array<boolean>(points.length).fill(false);
   keep[0] = true;
@@ -88,4 +99,46 @@ export function simplifyIndices(
     }
   }
   return kept;
+}
+
+/**
+ * How far the dropped points actually sit from the simplified line, in metres.
+ *
+ * The tolerance is a ceiling; this is what a given simplification really cost.
+ * Each dropped point is measured against the segment joining its bracketing
+ * kept neighbours. Returns zeroes when nothing was dropped.
+ *
+ * @param points `[lon, lat]` pairs in degrees
+ * @param keptIndices ascending indices into `points`, as `simplifyIndices`
+ *   returns
+ */
+export function deviationMetres(
+  points: Array<[number, number]>,
+  keptIndices: number[]
+): { max: number; mean: number } {
+  if (points.length === 0 || keptIndices.length >= points.length) {
+    return { max: 0, mean: 0 };
+  }
+
+  const projected = projectToMetres(points);
+  let max = 0;
+  let total = 0;
+  let dropped = 0;
+
+  for (let k = 0; k < keptIndices.length - 1; k++) {
+    const first = keptIndices[k];
+    const last = keptIndices[k + 1];
+    for (let i = first + 1; i < last; i++) {
+      const distance = segmentDistance(
+        projected[i],
+        projected[first],
+        projected[last]
+      );
+      max = Math.max(max, distance);
+      total += distance;
+      dropped++;
+    }
+  }
+
+  return dropped === 0 ? { max: 0, mean: 0 } : { max, mean: total / dropped };
 }

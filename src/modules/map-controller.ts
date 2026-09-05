@@ -34,7 +34,6 @@ export type FocusedObject =
   | { type: 'stop'; id: string }
   | { type: 'pathway'; id: string }
   | { type: 'route'; id: string }
-  | { type: 'trip'; id: string }
   | { type: 'zone'; id: string }
   | { type: 'none' };
 
@@ -383,10 +382,6 @@ export class MapController {
               ...counterparts,
             ]);
           }
-          if (obj.type === 'trip') {
-            this.layerManager.highlightTrip(obj.id);
-          }
-
           console.log('GTFS layers re-added after basemap change');
         } catch (error) {
           console.error('Failed to re-add GTFS layers:', error);
@@ -477,8 +472,10 @@ export class MapController {
   /**
    * The one geometry collector every fit goes through. Extends over stop
    * coordinates, zone bounding boxes, the member stops of a location group and
-   * (when include_shapes) the route lines themselves. Returns null when nothing
-   * contributed a coordinate, so callers can leave the viewport alone.
+   * (when include_shapes) the route lines themselves. With include_shapes,
+   * route_ids narrows the shapes to those routes; omitting route_ids takes
+   * every shape in the feed. Returns null when nothing contributed a
+   * coordinate, so callers can leave the viewport alone.
    *
    * A flex feed can legally have an empty stops.txt, so nothing here may assume
    * stops are the only source of geometry.
@@ -493,7 +490,28 @@ export class MapController {
     if (!this.gtfsParser) {
       return null;
     }
-    const coordinates: [number, number][] = [];
+
+    // Running min/max rather than a collected array: a feed-wide fit walks
+    // every shape point (~395k on the MBTA feed) and materializing a tuple per
+    // point would allocate hundreds of thousands of throwaway arrays.
+    let west = Infinity;
+    let south = Infinity;
+    let east = -Infinity;
+    let north = -Infinity;
+    const extend = (lng: number, lat: number) => {
+      if (lng < west) {
+        west = lng;
+      }
+      if (lng > east) {
+        east = lng;
+      }
+      if (lat < south) {
+        south = lat;
+      }
+      if (lat > north) {
+        north = lat;
+      }
+    };
 
     const stop_ids = new Set(input.stop_ids ?? []);
     for (const location_group_id of input.location_group_ids ?? []) {
@@ -506,7 +524,7 @@ export class MapController {
         'stops.txt'
       ) || []) {
         if (stop_ids.has(stop.stop_id) && hasValidCoords(stop)) {
-          coordinates.push([stop.stop_lon, stop.stop_lat]);
+          extend(stop.stop_lon, stop.stop_lat);
         }
       }
     }
@@ -518,28 +536,28 @@ export class MapController {
         continue;
       }
       // zoneBounds is [west, south, east, north]: both corners, not the raw array
-      coordinates.push([bbox[0], bbox[1]], [bbox[2], bbox[3]]);
+      extend(bbox[0], bbox[1]);
+      extend(bbox[2], bbox[3]);
     }
 
     if (input.include_shapes) {
-      const wanted = new Set(input.route_ids ?? []);
+      // route_ids present means "the shapes of these routes"; absent means
+      // every shape in the feed, which is what a feed-wide fit wants.
+      const wanted = input.route_ids ? new Set(input.route_ids) : null;
       for (const feature of this.routeRenderer?.getRouteFeatures() ?? []) {
-        if (!wanted.has(feature.properties.route_id)) {
+        if (wanted && !wanted.has(feature.properties.route_id)) {
           continue;
         }
         for (const [lng, lat] of feature.geometry.coordinates) {
-          coordinates.push([lng, lat]);
+          extend(lng, lat);
         }
       }
     }
 
-    if (coordinates.length === 0) {
+    if (west === Infinity) {
       return null;
     }
-    return coordinates.reduce(
-      (bounds, coord) => bounds.extend(coord),
-      new LngLatBounds(coordinates[0], coordinates[0])
-    );
+    return new LngLatBounds([west, south], [east, north]);
   }
 
   /**
@@ -581,7 +599,11 @@ export class MapController {
     };
   }
 
-  /** Fit map to show all GTFS data: every stop and every on-demand zone. */
+  /**
+   * Fit map to show all GTFS data: every stop, every on-demand zone and every
+   * route line. The shapes matter because a feed's lines routinely run outside
+   * the hull of its stops, and a flex feed can have no stops at all.
+   */
   private fitMapToData(): void {
     const stops =
       this.gtfsParser!.getFileDataSyncTyped<Stops>('stops.txt') || [];
@@ -590,6 +612,7 @@ export class MapController {
     const bounds = this.boundsFor({
       stop_ids: stops.map((stop) => stop.stop_id),
       zone_ids: zones.map((feature) => String(feature.id)),
+      include_shapes: true,
     });
     if (!bounds) {
       return;
@@ -1174,65 +1197,6 @@ export class MapController {
       maxZoom: CONFIG.STOP_FOCUS_ZOOM,
       duration: 1000,
       essential: true,
-    });
-  }
-
-  /**
-   * Highlight trip path
-   */
-  public highlightTrip(trip_id: string, color = '#e74c3c'): void {
-    this.interactionHandler?.setHighlightedStop(null);
-    this.layerManager?.clearHighlights();
-    this.applySpotlight(null);
-
-    this.applyFocusedObject({ type: 'trip', id: trip_id });
-
-    this.layerManager?.highlightTrip(trip_id, { color });
-
-    // Fit map to trip if available
-    this.fitMapToTrip(trip_id);
-    console.log(`Highlighted trip: ${trip_id}`);
-  }
-
-  /**
-   * Fit map to show specific trip: its stops, its on-demand zones and the
-   * member stops of any location group it serves.
-   *
-   * The trip's shape is deliberately left out: route features are keyed by
-   * route_id, not shape_id, so resolving this trip's own shape would mean a
-   * second lookup for geometry the stops and zones already cover.
-   */
-  private fitMapToTrip(trip_id: string): void {
-    const stop_ids = new Set<string>();
-    const zone_ids = new Set<string>();
-    const location_group_ids = new Set<string>();
-
-    for (const st of this.gtfsParser?.getStopTimesByTripId(trip_id) ?? []) {
-      const ref = stopTimeRef(st);
-      if (!ref) {
-        continue;
-      }
-      if (ref.kind === 'stop') {
-        stop_ids.add(ref.id);
-      } else if (ref.kind === 'location') {
-        zone_ids.add(ref.id);
-      } else {
-        location_group_ids.add(ref.id);
-      }
-    }
-
-    const bounds = this.boundsFor({ stop_ids, zone_ids, location_group_ids });
-    if (!bounds) {
-      return;
-    }
-
-    this.map!.fitBounds(bounds, {
-      padding: {
-        top: 50,
-        bottom: 50 + this.bottomPadding,
-        left: 50,
-        right: 50,
-      },
     });
   }
 
