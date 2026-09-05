@@ -3,7 +3,6 @@ import { notify } from './notification-system.js';
 export class KeyboardShortcuts {
   private gtfsEditor: {
     uiController: {
-      createNewFeed: () => void;
       exportGTFS: () => void;
       openLoadModal: (initialUrl?: string) => Promise<void>;
     };
@@ -30,7 +29,6 @@ export class KeyboardShortcuts {
 
   constructor(gtfsEditor: {
     uiController: {
-      createNewFeed: () => void;
       exportGTFS: () => void;
       openLoadModal: (initialUrl?: string) => Promise<void>;
     };
@@ -65,15 +63,6 @@ export class KeyboardShortcuts {
 
   setupShortcuts() {
     // File operations
-    this.addShortcut(
-      'ctrl+n',
-      (e) => {
-        e?.preventDefault();
-        this.gtfsEditor.uiController.createNewFeed();
-      },
-      'Create new GTFS feed'
-    );
-
     this.addShortcut(
       'ctrl+o',
       (e) => {
