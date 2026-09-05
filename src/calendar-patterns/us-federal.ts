@@ -58,30 +58,44 @@ function nthWeekday(
   }
 }
 
-/** Observed dates of the eleven US federal holidays in one year, as YYYYMMDD. */
-export function getUsFederalDates(year: number): string[] {
+/** One observed federal holiday: the date it is observed and its name. */
+export interface UsFederalHoliday {
+  date: string;
+  name: string;
+}
+
+/** Observed dates and names of the eleven US federal holidays in one year. */
+export function getUsFederalHolidays(year: number): UsFederalHoliday[] {
   return [
     // New Year's Day: Jan 1
-    fixedObserved(year, 0, 1),
+    { date: fixedObserved(year, 0, 1), name: "New Year's Day" },
     // MLK Day: 3rd Monday in January
-    nthWeekday(year, 0, 1, 3),
+    {
+      date: nthWeekday(year, 0, 1, 3),
+      name: 'Martin Luther King, Jr. Day',
+    },
     // Presidents' Day: 3rd Monday in February
-    nthWeekday(year, 1, 1, 3),
+    { date: nthWeekday(year, 1, 1, 3), name: "Presidents' Day" },
     // Memorial Day: last Monday in May
-    nthWeekday(year, 4, 1, -1),
+    { date: nthWeekday(year, 4, 1, -1), name: 'Memorial Day' },
     // Juneteenth: Jun 19
-    fixedObserved(year, 5, 19),
+    { date: fixedObserved(year, 5, 19), name: 'Juneteenth' },
     // Independence Day: Jul 4
-    fixedObserved(year, 6, 4),
+    { date: fixedObserved(year, 6, 4), name: 'Independence Day' },
     // Labor Day: 1st Monday in September
-    nthWeekday(year, 8, 1, 1),
+    { date: nthWeekday(year, 8, 1, 1), name: 'Labor Day' },
     // Columbus Day: 2nd Monday in October
-    nthWeekday(year, 9, 1, 2),
+    { date: nthWeekday(year, 9, 1, 2), name: 'Columbus Day' },
     // Veterans Day: Nov 11
-    fixedObserved(year, 10, 11),
+    { date: fixedObserved(year, 10, 11), name: 'Veterans Day' },
     // Thanksgiving: 4th Thursday in November
-    nthWeekday(year, 10, 4, 4),
+    { date: nthWeekday(year, 10, 4, 4), name: 'Thanksgiving Day' },
     // Christmas Day: Dec 25
-    fixedObserved(year, 11, 25),
+    { date: fixedObserved(year, 11, 25), name: 'Christmas Day' },
   ];
+}
+
+/** Observed dates of the eleven US federal holidays in one year, as YYYYMMDD. */
+export function getUsFederalDates(year: number): string[] {
+  return getUsFederalHolidays(year).map((holiday) => holiday.date);
 }
