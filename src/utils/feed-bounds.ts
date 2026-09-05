@@ -1,8 +1,11 @@
 /**
  * Feed-wide date bounds, read from `feed_info.feed_start_date` /
- * `feed_end_date` (row 0). Both fields are optional per spec, so either can
- * come back undefined; callers disable whatever button needs the missing one
- * rather than falling back to a computed range.
+ * `feed_end_date`. Scans all rows independently for each field and takes the
+ * first non-blank value, since `initializeEmpty` seeds a header row with
+ * every field `''` and that blank row is not guaranteed to sort last. Both
+ * fields are optional per spec, so either can come back undefined; callers
+ * disable whatever button needs the missing one rather than falling back to
+ * a computed range.
  */
 
 export interface FeedBounds {
@@ -14,19 +17,40 @@ export interface FeedBoundsSource {
   getAllRows: (tableName: string) => Promise<unknown[]>;
 }
 
+function firstNonBlank(
+  rows: Record<string, unknown>[],
+  field: string
+): string | undefined {
+  for (const row of rows) {
+    const value = row[field];
+    if (value === null || value === undefined) {
+      continue;
+    }
+    const trimmed = String(value).trim();
+    if (trimmed !== '') {
+      return trimmed;
+    }
+  }
+  return undefined;
+}
+
 export async function feedBounds(db: FeedBoundsSource): Promise<FeedBounds> {
-  const rows = await db.getAllRows('feed_info');
-  const row = rows[0] as Record<string, unknown> | undefined;
-  const start = row?.feed_start_date;
-  const end = row?.feed_end_date;
-  return {
-    start:
-      start !== null && start !== undefined && start !== ''
-        ? String(start)
-        : undefined,
-    end:
-      end !== null && end !== undefined && end !== '' ? String(end) : undefined,
-  };
+  const rows = (await db.getAllRows('feed_info')) as Record<string, unknown>[];
+  const start = firstNonBlank(rows, 'feed_start_date');
+  const end = firstNonBlank(rows, 'feed_end_date');
+  if (rows.length > 0) {
+    if (start === undefined) {
+      console.warn(
+        `[FeedBounds] feed_info has ${rows.length} row(s) but no usable feed_start_date`
+      );
+    }
+    if (end === undefined) {
+      console.warn(
+        `[FeedBounds] feed_info has ${rows.length} row(s) but no usable feed_end_date`
+      );
+    }
+  }
+  return { start, end };
 }
 
 export interface FeedBoundsWriteDatabase extends FeedBoundsSource {

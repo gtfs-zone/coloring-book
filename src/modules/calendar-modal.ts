@@ -2,6 +2,7 @@ import { showModal, renderTriangleIcon } from './modal-utils.js';
 import { escapeHtml } from '../utils/escape-html.js';
 import { toGtfsDate as formatGTFS } from '../utils/gtfs-date.js';
 import {
+  feedBounds,
   trimOrExtendAllServices,
   type BatchMixedPatchManager,
   type FeedBoundsWriteDatabase,
@@ -152,18 +153,14 @@ function renderMonthGrid(
 export async function showCalendarModal(
   deps: CalendarModalDeps
 ): Promise<void> {
-  const [data, feedInfoRows, tripCounts] = await Promise.all([
+  const [data, bounds, tripCounts] = await Promise.all([
     loadServiceData(deps.gtfsDatabase),
-    deps.gtfsDatabase.getAllRows('feed_info'),
+    feedBounds(deps.gtfsDatabase),
     loadTripCounts(deps.gtfsDatabase),
   ]);
 
-  const feedStart = feedInfoRows[0]?.feed_start_date;
-  const feedEnd = feedInfoRows[0]?.feed_end_date;
-  const feedStartDate: string | null =
-    feedStart !== null && feedStart !== undefined ? String(feedStart) : null;
-  const feedEndDate: string | null =
-    feedEnd !== null && feedEnd !== undefined ? String(feedEnd) : null;
+  const feedStartDate = bounds.start ?? null;
+  const feedEndDate = bounds.end ?? null;
 
   const now = new Date();
   let year = now.getFullYear();

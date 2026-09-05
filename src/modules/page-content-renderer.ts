@@ -91,6 +91,7 @@ import {
   type ServiceTimelineSource,
 } from './service-timeline.js';
 import { normalizeAgencyId } from '../utils/agency-helpers.js';
+import { feedBounds, trimOrExtendAllServices } from '../utils/feed-bounds.js';
 import {
   STOP_REF_ROW,
   PATHWAY_REF_ROW,
@@ -568,6 +569,20 @@ export class PageContentRenderer {
     const tServices = performance.now();
     const tripCounts = await loadTripCounts(timelineSource);
     const tTripCounts = performance.now();
+    const bounds = await feedBounds(this.dependencies.gtfsDatabase);
+    const canBulkTrimExtend = Boolean(
+      this.dependencies.gtfsDatabase.updateRow && this.dependencies.patchManager
+    );
+    const bulkTrimTitle = !canBulkTrimExtend
+      ? 'No patch manager available'
+      : bounds.start
+        ? `Set every service's start_date to ${bounds.start}`
+        : 'feed_info has no feed_start_date';
+    const bulkExtendTitle = !canBulkTrimExtend
+      ? 'No patch manager available'
+      : bounds.end
+        ? `Set every service's end_date to ${bounds.end}`
+        : 'feed_info has no feed_end_date';
 
     const agencyItems = agencies
       .map((agency: unknown) => {
@@ -649,6 +664,20 @@ export class PageContentRenderer {
           <div class="flex items-center justify-between gap-4">
             <h2 class="text-lg font-semibold">Services</h2>
             <div class="flex items-center gap-2">
+              <button
+                type="button"
+                class="btn btn-xs btn-outline"
+                id="bulk-trim-all-btn"
+                title="${escapeHtml(bulkTrimTitle)}"
+                ${bounds.start && canBulkTrimExtend ? '' : 'disabled'}
+              >Trim all to feed start</button>
+              <button
+                type="button"
+                class="btn btn-xs btn-outline"
+                id="bulk-extend-all-btn"
+                title="${escapeHtml(bulkExtendTitle)}"
+                ${bounds.end && canBulkTrimExtend ? '' : 'disabled'}
+              >Extend all to feed end</button>
               <input
                 type="text"
                 class="input input-sm input-bordered"
@@ -1467,6 +1496,18 @@ export class PageContentRenderer {
     // It will only attach to service-related elements
     this.serviceViewController.addEventListeners(container);
 
+    // Bulk trim/extend all services to feed_info bounds
+    container
+      .querySelector('#bulk-trim-all-btn')
+      ?.addEventListener('click', () => {
+        void this.handleBulkTrimOrExtend('start_date');
+      });
+    container
+      .querySelector('#bulk-extend-all-btn')
+      ?.addEventListener('click', () => {
+        void this.handleBulkTrimOrExtend('end_date');
+      });
+
     // Add inline entity creation event listeners
     this.addInlineCreationListeners(container);
 
@@ -1550,6 +1591,39 @@ export class PageContentRenderer {
         }
       });
     });
+  }
+
+  /**
+   * Trim or extend every `calendar` row's bound to the matching `feed_info`
+   * value, as one undoable batch. Mirrors the Service Calendar modal's bulk
+   * buttons so the feed page has the same action.
+   */
+  private async handleBulkTrimOrExtend(
+    field: 'start_date' | 'end_date'
+  ): Promise<void> {
+    const db = this.dependencies.gtfsDatabase;
+    const patchManager = this.dependencies.patchManager;
+    if (!db.updateRow || !patchManager) {
+      return;
+    }
+    const bounds = await feedBounds(db);
+    const value = field === 'start_date' ? bounds.start : bounds.end;
+    if (!value) {
+      return;
+    }
+    const count = await trimOrExtendAllServices(
+      db as Parameters<typeof trimOrExtendAllServices>[0],
+      patchManager,
+      field,
+      value
+    );
+    if (count === 0) {
+      notify.info('Every service is already at that bound');
+    } else {
+      const verb = field === 'start_date' ? 'Trimmed' : 'Extended';
+      notify.success(`${verb} ${count} service${count === 1 ? '' : 's'}`);
+    }
+    this.dependencies.onEntityCreated?.();
   }
 
   /**
