@@ -1,6 +1,6 @@
 import { showModal, renderTriangleIcon } from './modal-utils.js';
 import { escapeHtml } from '../utils/escape-html.js';
-import { toGtfsDate as formatGTFS } from '../utils/gtfs-date.js';
+import { toGtfsDate as formatGTFS, todayGtfsDate } from '../utils/gtfs-date.js';
 import {
   feedBounds,
   trimOrExtendAllServices,
@@ -40,10 +40,20 @@ function renderMonthNav(year: number, month1: number): string {
     'November',
     'December',
   ];
+  const now = new Date();
+  const onCurrentMonth =
+    year === now.getFullYear() && month1 === now.getMonth() + 1;
   return `
     <div class="flex items-center justify-between mb-2" id="cal-month-nav">
       <button class="btn btn-sm btn-ghost" data-action="prev-month">&#8249;</button>
-      <span class="font-semibold">${MONTH_NAMES[month1 - 1]} ${year}</span>
+      <div class="flex items-center gap-2">
+        <span class="font-semibold">${MONTH_NAMES[month1 - 1]} ${year}</span>
+        <button
+          class="btn btn-xs btn-ghost"
+          data-action="today"
+          ${onCurrentMonth ? 'disabled' : ''}
+        >Today</button>
+      </div>
       <button class="btn btn-sm btn-ghost" data-action="next-month">&#8250;</button>
     </div>
   `;
@@ -67,6 +77,7 @@ function renderMonthGrid(
       `<div class="text-center text-xs font-semibold text-base-content/50 pb-1">${h}</div>`
   ).join('');
 
+  const today = todayGtfsDate();
   const cells: string[] = [];
 
   // Leading empty cells
@@ -118,9 +129,15 @@ function renderMonthGrid(
         ? `<span class="badge badge-xs badge-error ml-1 field-tooltip-trigger" tabindex="0" data-tooltip-content="Feed end date">${renderTriangleIcon('h-2 w-2 rotate-180')}</span>`
         : '';
 
+    const isToday = gtfsDate === today;
+    const todayCellClass = isToday ? ' ring-1 ring-primary bg-primary/5' : '';
+    const todayLabel = isToday
+      ? '<span class="text-primary font-semibold">Today</span>'
+      : '';
+
     cells.push(`
-      <div class="min-h-16 p-1 rounded bg-base-200/20 border border-base-300/30 overflow-hidden">
-        <div class="text-xs text-base-content/60 mb-0.5 flex items-center gap-0.5">${day}${feedStartBadge}${feedEndBadge}</div>
+      <div class="min-h-16 p-1 rounded bg-base-200/20 border border-base-300/30 overflow-hidden${todayCellClass}">
+        <div class="text-xs text-base-content/60 mb-0.5 flex items-center gap-0.5">${day}${todayLabel}${feedStartBadge}${feedEndBadge}</div>
         <div class="max-h-24 overflow-y-auto">
           <div class="flex flex-col gap-0.5">
             ${chipsHtml}
@@ -272,6 +289,15 @@ export async function showCalendarModal(
               month1 = 1;
               year++;
             }
+            rerenderGrid();
+          });
+
+        panelEl
+          .querySelector<HTMLButtonElement>('[data-action="today"]')
+          ?.addEventListener('click', () => {
+            const now = new Date();
+            year = now.getFullYear();
+            month1 = now.getMonth() + 1;
             rerenderGrid();
           });
 
