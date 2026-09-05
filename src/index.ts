@@ -34,7 +34,7 @@ import { HistoryController } from './modules/history-controller';
 import { TabLockController } from './modules/tab-lock';
 import { humanLabel } from './utils/patch-label';
 import { loadExtensionColumns } from './utils/extension-fields';
-import { showHelpModal, shouldShowHelpPage } from './modules/help-modal';
+import { showHelpModal, showHelpPageOnce } from './modules/help-modal';
 import { setHelpRuntimeData } from './modules/help-pages';
 import { showFaresModal } from './modules/fares-modal';
 import { showFeedDataModal } from './modules/feed-data-modal';
@@ -577,9 +577,7 @@ export class GTFSEditor {
     // The modal is the boot screen, not an interruption of a load in progress,
     // so the progress bar comes down while both it and the welcome page are up.
     feedProgressIndicator.finishLoading('boot');
-    if (shouldShowHelpPage('welcome')) {
-      await showHelpModal('welcome');
-    }
+    await showHelpPageOnce('welcome');
     const choice = await this.uiController.openBootLoadModal(
       summary ? { ...summary, edits: versions.currentVersion } : undefined
     );
@@ -591,9 +589,7 @@ export class GTFSEditor {
     } else if (choice === 'empty') {
       await this.gtfsParser.initializeEmpty();
       feedProgressIndicator.finishLoading('boot');
-      if (shouldShowHelpPage('getting-started')) {
-        await showHelpModal('getting-started');
-      }
+      await showHelpPageOnce('getting-started');
       feedProgressIndicator.startLoading('boot', 'Opening feed...');
     }
     // 'loaded' has already parsed the chosen feed into place.
@@ -651,21 +647,25 @@ export class GTFSEditor {
     );
 
     router.register('shapes', async (_modal, _transient, cancelled) => {
-      if (shouldShowHelpPage('shapes')) {
-        await showHelpModal('shapes', { continueLabel: 'Continue to Shapes' });
-        if (cancelled()) {
-          return;
-        }
+      if (
+        (await showHelpPageOnce('shapes', {
+          continueLabel: 'Continue to Shapes',
+        })) &&
+        cancelled()
+      ) {
+        return;
       }
       await shapesManager.open();
     });
 
     router.register('fares', async (_modal, _transient, cancelled) => {
-      if (shouldShowHelpPage('fares')) {
-        await showHelpModal('fares', { continueLabel: 'Continue to Fares' });
-        if (cancelled()) {
-          return;
-        }
+      if (
+        (await showHelpPageOnce('fares', {
+          continueLabel: 'Continue to Fares',
+        })) &&
+        cancelled()
+      ) {
+        return;
       }
       await showFaresModal({
         gtfsDatabase: this.gtfsParser.gtfsDatabase as Parameters<
@@ -688,13 +688,13 @@ export class GTFSEditor {
     );
 
     router.register('on_demand', async (modal, transient, cancelled) => {
-      if (shouldShowHelpPage('on-demand')) {
-        await showHelpModal('on-demand', {
+      if (
+        (await showHelpPageOnce('on-demand', {
           continueLabel: 'Continue to On-Demand',
-        });
-        if (cancelled()) {
-          return;
-        }
+        })) &&
+        cancelled()
+      ) {
+        return;
       }
       await showOnDemandModal(this.onDemandModalDeps(), {
         table: modal.table,
