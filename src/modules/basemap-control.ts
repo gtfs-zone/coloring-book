@@ -5,38 +5,46 @@
 import { Map as MapLibreMap, StyleSpecification } from 'maplibre-gl';
 import { basemapStyles, getBasemapStyle } from './basemap-styles.js';
 
+const GLOBE_PROJECTION = { type: 'globe' };
+
+const GLOBE_SKY = {
+  'sky-color': '#199EF3',
+  'sky-horizon-blend': 0.5,
+  'horizon-color': '#ffffff',
+  'horizon-fog-blend': 0.5,
+  'fog-color': '#0000ff',
+  'fog-ground-blend': 0.5,
+  'atmosphere-blend': ['interpolate', ['linear'], ['zoom'], 0, 1, 10, 1, 12, 0],
+};
+
 export class BasemapControl {
   private map: MapLibreMap;
   private container: HTMLElement | null = null;
   private currentBasemap: string = 'standard';
-  private currentProjection: 'mercator' | 'globe' = 'globe';
 
   constructor(map: MapLibreMap) {
     this.map = map;
     this.createControl();
-
-    // Apply initial globe projection
-    this.applyInitialProjection();
+    this.applyGlobeProjection();
   }
 
   /**
-   * Apply initial globe projection to the map
+   * Set the globe projection and sky on the current style, once it is loaded
    */
-  private applyInitialProjection(): void {
-    // Wait for map to be ready
+  private applyGlobeProjection(): void {
     if (this.map.isStyleLoaded()) {
-      this.applyProjectionToStyle();
+      this.setGlobeStyle();
     } else {
       this.map.once('load', () => {
-        this.applyProjectionToStyle();
+        this.setGlobeStyle();
       });
     }
   }
 
   /**
-   * Apply current projection to the map style
+   * Re-set the current style with the globe projection and sky applied
    */
-  private applyProjectionToStyle(): void {
+  private setGlobeStyle(): void {
     const currentStyle = this.map.getStyle();
     if (!currentStyle) {
       return;
@@ -44,32 +52,8 @@ export class BasemapControl {
 
     const newStyle = {
       ...currentStyle,
-      projection:
-        this.currentProjection === 'globe'
-          ? { type: 'globe' }
-          : { type: 'mercator' },
-      sky:
-        this.currentProjection === 'globe'
-          ? {
-              'sky-color': '#199EF3',
-              'sky-horizon-blend': 0.5,
-              'horizon-color': '#ffffff',
-              'horizon-fog-blend': 0.5,
-              'fog-color': '#0000ff',
-              'fog-ground-blend': 0.5,
-              'atmosphere-blend': [
-                'interpolate',
-                ['linear'],
-                ['zoom'],
-                0,
-                1,
-                10,
-                1,
-                12,
-                0,
-              ],
-            }
-          : undefined,
+      projection: GLOBE_PROJECTION,
+      sky: GLOBE_SKY,
     };
 
     this.map.setStyle(newStyle as unknown as StyleSpecification);
@@ -86,10 +70,6 @@ export class BasemapControl {
       position: absolute;
       bottom: 40px;
       right: 10px;
-      display: flex;
-      gap: 12px;
-      align-items: flex-end;
-      flex-direction: row;
       pointer-events: none;
     `;
 
@@ -128,22 +108,6 @@ export class BasemapControl {
           )
           .join('')}
       </div>
-
-      <!-- Globe/flat projection toggle -->
-      <label class="swap swap-rotate btn btn-lg btn-circle btn-neutral projection-swap" title="Toggle globe / flat projection" aria-label="Toggle globe / flat projection">
-        <input type="checkbox" class="projection-toggle" ${this.currentProjection === 'globe' ? 'checked' : ''} />
-        <!-- Globe icon (when checked) -->
-        <svg class="swap-on w-6 h-6" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
-          <circle cx="12" cy="12" r="9" />
-          <path stroke-linecap="round" d="M3 12h18" />
-          <path d="M12 3a4.5 9 0 010 18a4.5 9 0 010-18" />
-        </svg>
-        <!-- Flat graticule icon (when unchecked) -->
-        <svg class="swap-off w-6 h-6" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
-          <rect x="3" y="5" width="18" height="14" rx="2" />
-          <path stroke-linecap="round" d="M9 5v14M15 5v14M3 9.667h18M3 14.333h18" />
-        </svg>
-      </label>
     `;
 
     // Add minimal custom styles
@@ -159,11 +123,6 @@ export class BasemapControl {
       .basemap-control .fab button,
       .basemap-control .fab [role="button"],
       .basemap-control .fab label {
-        pointer-events: auto;
-      }
-
-      .basemap-control .projection-swap {
-        flex-shrink: 0;
         pointer-events: auto;
       }
     `;
@@ -185,7 +144,7 @@ export class BasemapControl {
   }
 
   /**
-   * Attach event listeners for basemap selection and projection toggle
+   * Attach event listeners for basemap selection
    */
   private attachEventListeners(): void {
     if (!this.container) {
@@ -213,15 +172,6 @@ export class BasemapControl {
         if (basemapId) {
           this.changeBasemap(basemapId);
         }
-      });
-    }
-
-    // Projection toggle
-    const projectionToggle = this.container.querySelector('.projection-toggle');
-    if (projectionToggle) {
-      projectionToggle.addEventListener('change', (e) => {
-        const isGlobe = (e.target as HTMLInputElement).checked;
-        this.changeProjection(isGlobe ? 'globe' : 'mercator');
       });
     }
 
@@ -264,32 +214,8 @@ export class BasemapControl {
     // Apply projection and sky to the new basemap style
     const styleWithProjection = {
       ...basemapStyle.style,
-      projection:
-        this.currentProjection === 'globe'
-          ? { type: 'globe' }
-          : { type: 'mercator' },
-      sky:
-        this.currentProjection === 'globe'
-          ? {
-              'sky-color': '#199EF3',
-              'sky-horizon-blend': 0.5,
-              'horizon-color': '#ffffff',
-              'horizon-fog-blend': 0.5,
-              'fog-color': '#0000ff',
-              'fog-ground-blend': 0.5,
-              'atmosphere-blend': [
-                'interpolate',
-                ['linear'],
-                ['zoom'],
-                0,
-                1,
-                10,
-                1,
-                12,
-                0,
-              ],
-            }
-          : undefined,
+      projection: GLOBE_PROJECTION,
+      sky: GLOBE_SKY,
     };
 
     // Set new style with projection
@@ -335,71 +261,6 @@ export class BasemapControl {
 
     // Create new control
     this.createControl();
-  }
-
-  /**
-   * Change map projection (globe vs mercator)
-   */
-  private changeProjection(projection: 'mercator' | 'globe'): void {
-    this.currentProjection = projection;
-
-    // Store current view
-    const center = this.map.getCenter();
-    const zoom = this.map.getZoom();
-    const bearing = this.map.getBearing();
-    const pitch = this.map.getPitch();
-
-    // Get current style
-    const currentStyle = this.map.getStyle();
-    if (!currentStyle) {
-      return;
-    }
-
-    // Update projection and sky in style
-    const newStyle = {
-      ...currentStyle,
-      projection:
-        projection === 'globe' ? { type: 'globe' } : { type: 'mercator' },
-      sky:
-        projection === 'globe'
-          ? {
-              'sky-color': '#199EF3',
-              'sky-horizon-blend': 0.5,
-              'horizon-color': '#ffffff',
-              'horizon-fog-blend': 0.5,
-              'fog-color': '#0000ff',
-              'fog-ground-blend': 0.5,
-              'atmosphere-blend': [
-                'interpolate',
-                ['linear'],
-                ['zoom'],
-                0,
-                1,
-                10,
-                1,
-                12,
-                0,
-              ],
-            }
-          : undefined,
-    };
-
-    // Set new style with projection
-    this.map.setStyle(newStyle as unknown as StyleSpecification);
-
-    // Wait for style to load, then restore view
-    this.map.once('styledata', () => {
-      // Restore view
-      this.map.setCenter(center);
-      this.map.setZoom(zoom);
-      this.map.setBearing(bearing);
-      this.map.setPitch(pitch);
-
-      console.log(`Projection changed to: ${projection}`);
-
-      // Trigger event to re-add layers
-      this.map.fire('basemap:changed', { projection });
-    });
   }
 
   /**
