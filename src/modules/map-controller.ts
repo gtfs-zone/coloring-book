@@ -1,4 +1,9 @@
-import { Map as MapLibreMap, LngLatBounds } from 'maplibre-gl';
+import {
+  Map as MapLibreMap,
+  LngLatBounds,
+  type FitBoundsOptions,
+  type FlyToOptions,
+} from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 
 import { RouteRenderer } from './route-renderer.js';
@@ -36,6 +41,25 @@ export type FocusedObject =
   | { type: 'route'; id: string }
   | { type: 'zone'; id: string }
   | { type: 'none' };
+
+// Persisted user preference: whether navigation moves the camera.
+const AUTO_ZOOM_KEY = 'map.autoZoom';
+
+function readAutoZoomPref(): boolean {
+  try {
+    return localStorage.getItem(AUTO_ZOOM_KEY) !== '0';
+  } catch {
+    return true;
+  }
+}
+
+function writeAutoZoomPref(enabled: boolean): void {
+  try {
+    localStorage.setItem(AUTO_ZOOM_KEY, enabled ? '1' : '0');
+  } catch {
+    console.warn('[MapController] could not persist the auto-zoom preference');
+  }
+}
 
 // Callback interfaces
 interface MapControllerCallbacks {
@@ -87,12 +111,78 @@ export class MapController {
 
   private bottomPadding = 0;
 
+  // Navigation-driven camera moves are suppressed while this is off. Feed
+  // loads, resize restores and the add-stop zoom nudge bypass it.
+  private autoZoomEnabled = readAutoZoomPref();
+
   constructor(mapElementId = 'map') {
     this.mapElementId = mapElementId;
   }
 
   public setBottomPadding(px: number): void {
     this.bottomPadding = px;
+  }
+
+  public isAutoZoomEnabled(): boolean {
+    return this.autoZoomEnabled;
+  }
+
+  /**
+   * Turn navigation-driven camera movement on or off. Turning it on refits to
+   * whatever is currently focused, so the button has an immediate effect
+   * instead of waiting for the next navigation.
+   */
+  public setAutoZoom(enabled: boolean): void {
+    this.autoZoomEnabled = enabled;
+    writeAutoZoomPref(enabled);
+    console.log(`[MapController] auto-zoom ${enabled ? 'on' : 'off'}`);
+    if (enabled && this.isMapReady()) {
+      this.refitFocusedObject();
+    }
+  }
+
+  /** Re-run the camera move for the currently focused object. */
+  private refitFocusedObject(): void {
+    const station = this.getExpandedStationId();
+    if (station) {
+      this.flyToStation(station);
+      return;
+    }
+    switch (this.focusedObject.type) {
+      case 'route':
+        this.flyToRoute(this.focusedObject.id);
+        break;
+      case 'stop':
+      case 'pathway':
+        this.flyToStop(this.focusedObject.id);
+        break;
+      case 'zone':
+        this.fitToZone(this.focusedObject.id);
+        break;
+      default:
+        this.fitMapToData();
+        break;
+    }
+  }
+
+  /**
+   * Camera move driven by navigation. Suppressed while auto-zoom is off, so
+   * the highlight side effects around the call still run.
+   */
+  private autoFit(bounds: LngLatBounds, options: FitBoundsOptions): void {
+    if (!this.autoZoomEnabled) {
+      console.log('[MapController] auto-zoom off, skipping fit');
+      return;
+    }
+    this.map!.fitBounds(bounds, options);
+  }
+
+  private autoFlyTo(options: FlyToOptions): void {
+    if (!this.autoZoomEnabled) {
+      console.log('[MapController] auto-zoom off, skipping flyTo');
+      return;
+    }
+    this.map!.flyTo(options);
   }
 
   /**
@@ -444,8 +534,9 @@ export class MapController {
     // After the route and stop layers exist: zones insert themselves below both.
     this.layerManager!.updateZonesLayer();
 
-    // Fit map to show all data
-    this.fitMapToData();
+    // Fit map to show all data. Forced: a newly loaded feed must be framed
+    // even when auto-zoom is off, or it opens on the previous feed's area.
+    this.fitMapToData(true);
 
     console.log('Map update completed');
   }
@@ -604,7 +695,7 @@ export class MapController {
    * route line. The shapes matter because a feed's lines routinely run outside
    * the hull of its stops, and a flex feed can have no stops at all.
    */
-  private fitMapToData(): void {
+  private fitMapToData(force = false): void {
     const stops =
       this.gtfsParser!.getFileDataSyncTyped<Stops>('stops.txt') || [];
     const zones = listZones(this.gtfsParser!);
@@ -618,14 +709,19 @@ export class MapController {
       return;
     }
 
-    this.map!.fitBounds(bounds, {
+    const options: FitBoundsOptions = {
       padding: {
         top: 50,
         bottom: 50 + this.bottomPadding,
         left: 50,
         right: 50,
       },
-    });
+    };
+    if (force) {
+      this.map!.fitBounds(bounds, options);
+    } else {
+      this.autoFit(bounds, options);
+    }
   }
 
   // ========================================
@@ -705,7 +801,7 @@ export class MapController {
     }
 
     if (coords.length === 1) {
-      this.map!.flyTo({
+      this.autoFlyTo({
         center: coords[0],
         zoom: CONFIG.STOP_FOCUS_ZOOM,
         duration: 1000,
@@ -724,7 +820,7 @@ export class MapController {
           (b, coord) => b.extend(coord),
           new LngLatBounds(coords[0], coords[0])
         );
-      this.map!.fitBounds(bounds, {
+      this.autoFit(bounds, {
         padding: {
           top: 80,
           bottom: 80 + this.bottomPadding,
@@ -1069,27 +1165,7 @@ export class MapController {
     // it doesn't override the station fit. Only fly to the stop directly when
     // no station is expanded (i.e. standalone stops).
     if (this.getExpandedStationId() === null) {
-      const stops =
-        this.gtfsParser!.getFileDataSyncTyped<Stops>('stops.txt') || [];
-      const stop = stops.find((s) => s.stop_id === stop_id);
-
-      if (stop && hasValidCoords(stop)) {
-        const lat = stop.stop_lat;
-        const lon = stop.stop_lon;
-
-        this.map!.flyTo({
-          center: [lon, lat],
-          zoom: CONFIG.STOP_FOCUS_ZOOM,
-          duration: 1500,
-          essential: true,
-          padding: {
-            top: 50,
-            bottom: 50 + this.bottomPadding,
-            left: 50,
-            right: 50,
-          },
-        });
-      }
+      this.flyToStop(stop_id);
     }
     console.log(`Highlighted stop: ${stop_id}`);
   }
@@ -1157,6 +1233,29 @@ export class MapController {
       .filter((stop_id) => stop_id !== '');
   }
 
+  /** Fly to a single stop. No-op when it has no coordinates. */
+  private flyToStop(stop_id: string): void {
+    const stops =
+      this.gtfsParser!.getFileDataSyncTyped<Stops>('stops.txt') || [];
+    const stop = stops.find((s) => s.stop_id === stop_id);
+    if (!stop || !hasValidCoords(stop)) {
+      return;
+    }
+
+    this.autoFlyTo({
+      center: [stop.stop_lon, stop.stop_lat],
+      zoom: CONFIG.STOP_FOCUS_ZOOM,
+      duration: 1500,
+      essential: true,
+      padding: {
+        top: 50,
+        bottom: 50 + this.bottomPadding,
+        left: 50,
+        right: 50,
+      },
+    });
+  }
+
   /** Fit the viewport to a set of stops. No-op when none have coordinates. */
   private fitToStops(stop_ids: string[]): void {
     if (!this.map || stop_ids.length === 0) {
@@ -1166,7 +1265,7 @@ export class MapController {
     if (!bounds) {
       return;
     }
-    this.map.fitBounds(bounds, {
+    this.autoFit(bounds, {
       padding: {
         top: 80,
         bottom: 80 + this.bottomPadding,
@@ -1187,7 +1286,7 @@ export class MapController {
       console.warn(`[MapController] No bounds for zone ${location_id}`);
       return;
     }
-    this.map.fitBounds(bounds, {
+    this.autoFit(bounds, {
       padding: {
         top: 80,
         bottom: 80 + this.bottomPadding,
@@ -1254,7 +1353,7 @@ export class MapController {
       return;
     }
 
-    this.map!.fitBounds(bounds, {
+    this.autoFit(bounds, {
       padding: {
         top: 80,
         bottom: 80 + this.bottomPadding,
@@ -1291,7 +1390,7 @@ export class MapController {
       return;
     }
 
-    this.map!.fitBounds(bounds, {
+    this.autoFit(bounds, {
       padding: {
         top: 50,
         bottom: 50 + this.bottomPadding,
