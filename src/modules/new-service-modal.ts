@@ -10,8 +10,7 @@
  * new service_id it resolves with.
  */
 
-import { showModal } from './modal-utils.js';
-import { escapeHtml } from '../utils/escape-html.js';
+import { promptNewEntity } from './entity-form-modal.js';
 import { notify } from './notification-system.js';
 import { createDefaultService } from '../utils/default-values.js';
 import { feedBounds, type FeedBoundsSource } from '../utils/feed-bounds.js';
@@ -40,9 +39,8 @@ export interface NewServiceModalDeps {
   } | null;
 }
 
-const ERROR_ID = 'new-service-error';
-
-function renderBody(startInput: string, endInput: string): string {
+/** The weekly pattern, which has no single field of its own to render into. */
+function renderDayToggles(): string {
   const dayToggles = DAYS_OF_WEEK.map(
     ({ key, label }) => `
       <button
@@ -55,57 +53,20 @@ function renderBody(startInput: string, endInput: string): string {
   ).join('');
 
   return `
-    <div class="flex flex-col gap-4">
-      <label class="flex flex-col gap-1">
-        <span class="text-sm opacity-60">Service ID</span>
-        <input
-          id="new-service-id"
-          type="text"
-          class="input input-bordered w-full"
-          placeholder="e.g. WEEKDAY"
-          autocomplete="off"
-        />
-      </label>
-
-      <div class="flex flex-col gap-1">
-        <span class="text-sm opacity-60">Runs on</span>
-        <div class="flex gap-1">${dayToggles}</div>
-      </div>
-
-      <div class="flex gap-4">
-        <label class="flex flex-1 flex-col gap-1">
-          <span class="text-sm opacity-60">Start date</span>
-          <input
-            id="new-service-start"
-            type="date"
-            class="input input-bordered w-full"
-            value="${escapeHtml(startInput)}"
-          />
-          <button
-            type="button"
-            class="btn btn-xs btn-ghost self-start"
-            data-today-for="new-service-start"
-          >Today</button>
-        </label>
-        <label class="flex flex-1 flex-col gap-1">
-          <span class="text-sm opacity-60">End date</span>
-          <input
-            id="new-service-end"
-            type="date"
-            class="input input-bordered w-full"
-            value="${escapeHtml(endInput)}"
-          />
-          <button
-            type="button"
-            class="btn btn-xs btn-ghost self-start"
-            data-today-for="new-service-end"
-          >Today</button>
-        </label>
-      </div>
-
-      <div id="${ERROR_ID}" class="text-sm text-error"></div>
+    <div class="flex flex-col gap-1">
+      <span class="text-sm opacity-60">Runs on</span>
+      <div class="flex gap-1">${dayToggles}</div>
     </div>
   `;
+}
+
+/** A "Today" shortcut under a date input. */
+function todayButton(inputField: string): string {
+  return `<button
+    type="button"
+    class="btn btn-xs btn-ghost self-start"
+    data-today-for="entity-form-${inputField}"
+  >Today</button>`;
 }
 
 /**
@@ -124,98 +85,34 @@ export async function showNewServiceModal(
   const endDate = bounds.end ?? defaults.end_date;
 
   const days = new Set<string>();
-  let created: string | null = null;
 
-  const setError = (message: string): void => {
-    const el = document.getElementById(ERROR_ID);
-    if (el) {
-      el.textContent = message;
-    }
-  };
-
-  const create = async (): Promise<boolean> => {
-    const idInput = document.getElementById(
-      'new-service-id'
-    ) as HTMLInputElement | null;
-    const startInput = document.getElementById(
-      'new-service-start'
-    ) as HTMLInputElement | null;
-    const endInput = document.getElementById(
-      'new-service-end'
-    ) as HTMLInputElement | null;
-    if (!idInput || !startInput || !endInput) {
-      return true;
-    }
-
-    const service_id = idInput.value.trim();
-    if (service_id === '') {
-      setError('A service needs an ID.');
-      return true;
-    }
-
-    const existingCalendar = await deps.database.getRow('calendar', service_id);
-    if (existingCalendar) {
-      setError(`Service "${service_id}" already exists.`);
-      return true;
-    }
-    const exceptions = (await deps.database.getAllRows(
-      'calendar_dates'
-    )) as Record<string, unknown>[];
-    if (exceptions.some((row) => String(row.service_id ?? '') === service_id)) {
-      setError(
-        `Service "${service_id}" already exists in calendar_dates.txt. Open it to give it a weekly pattern.`
-      );
-      return true;
-    }
-
-    const start_date = fromInputValue(startInput.value);
-    const end_date = fromInputValue(endInput.value);
-    if (start_date === '' || end_date === '') {
-      setError('A service needs both a start and an end date.');
-      return true;
-    }
-    if (end_date < start_date) {
-      setError('The end date is before the start date.');
-      return true;
-    }
-
-    const row: Record<string, unknown> = {
-      ...createDefaultService(service_id),
-      ...Object.fromEntries(
-        DAYS_OF_WEEK.map(({ key }) => [key, days.has(key) ? 1 : 0])
-      ),
-      start_date,
-      end_date,
-    };
-
-    console.log('[NewServiceModal] creating service', service_id, row);
-    await deps.database.insertRows('calendar', [row]);
-    if (deps.patchManager) {
-      await deps.patchManager.recordInsert('calendar', service_id, row);
-    } else {
-      console.warn(
-        '[NewServiceModal] no patchManager wired, the insert is not undoable'
-      );
-    }
-
-    notify.success(`Created service ${service_id}`);
-    created = service_id;
-    return false;
-  };
-
-  await showModal({
+  const values = await promptNewEntity({
     title: 'New service',
-    body: renderBody(toInputValue(startDate), toInputValue(endDate)),
-    actions: [
-      { label: 'Create', className: 'btn-primary', onClick: create },
-      { label: 'Cancel', className: 'btn-ghost', onClick: () => {} },
-    ],
-    enterAction: 0,
-    escapeAction: 1,
     boxClassName: 'max-w-lg',
+    fields: [
+      {
+        field: 'service_id',
+        tableName: 'calendar',
+        mono: true,
+        placeholder: 'weekday',
+      },
+      {
+        field: 'start_date',
+        tableName: 'calendar',
+        type: 'date',
+        value: toInputValue(startDate),
+        note: todayButton('start_date'),
+      },
+      {
+        field: 'end_date',
+        tableName: 'calendar',
+        type: 'date',
+        value: toInputValue(endDate),
+        note: todayButton('end_date'),
+      },
+    ],
+    extraBody: renderDayToggles(),
     onMount: () => {
-      document.getElementById('new-service-id')?.focus();
-
       document
         .querySelectorAll<HTMLButtonElement>('[data-today-for]')
         .forEach((btn) => {
@@ -249,7 +146,62 @@ export async function showNewServiceModal(
           });
         });
     },
+    validate: async (v) => {
+      const service_id = v.service_id;
+      if (service_id === '') {
+        return 'A service needs an ID.';
+      }
+
+      const existingCalendar = await deps.database.getRow(
+        'calendar',
+        service_id
+      );
+      if (existingCalendar) {
+        return `Service "${service_id}" already exists.`;
+      }
+      const exceptions = (await deps.database.getAllRows(
+        'calendar_dates'
+      )) as Record<string, unknown>[];
+      if (
+        exceptions.some((row) => String(row.service_id ?? '') === service_id)
+      ) {
+        return `Service "${service_id}" already exists in calendar_dates.txt. Open it to give it a weekly pattern.`;
+      }
+
+      const start_date = fromInputValue(v.start_date);
+      const end_date = fromInputValue(v.end_date);
+      if (start_date === '' || end_date === '') {
+        return 'A service needs both a start and an end date.';
+      }
+      if (end_date < start_date) {
+        return 'The end date is before the start date.';
+      }
+      return null;
+    },
+    onCreate: async (v) => {
+      const service_id = v.service_id;
+      const row: Record<string, unknown> = {
+        ...createDefaultService(service_id),
+        ...Object.fromEntries(
+          DAYS_OF_WEEK.map(({ key }) => [key, days.has(key) ? 1 : 0])
+        ),
+        start_date: fromInputValue(v.start_date),
+        end_date: fromInputValue(v.end_date),
+      };
+
+      console.log('[NewServiceModal] creating service', service_id, row);
+      await deps.database.insertRows('calendar', [row]);
+      if (deps.patchManager) {
+        await deps.patchManager.recordInsert('calendar', service_id, row);
+      } else {
+        console.warn(
+          '[NewServiceModal] no patchManager wired, the insert is not undoable'
+        );
+      }
+
+      notify.success(`Created service ${service_id}`);
+    },
   });
 
-  return created;
+  return values ? values.service_id : null;
 }

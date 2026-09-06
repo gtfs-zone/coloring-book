@@ -112,40 +112,6 @@ export const GTFS_TABLES = {
 
 // ─── Utility functions ─────────────────────────────────────────────────────────
 
-export function getFieldDescription(
-  filename: string,
-  fieldName: string
-): string | undefined {
-  const schema = GTFSSchemas[filename];
-  if (!schema) {
-    return undefined;
-  }
-  const shape = (schema as z.ZodObject<z.ZodRawShape>).shape;
-  if (!shape || !shape[fieldName]) {
-    return undefined;
-  }
-  return (shape[fieldName] as unknown as { description?: string })?.description;
-}
-
 export function getFileSchema(filename: string): z.ZodSchema | undefined {
   return GTFSSchemas[filename];
-}
-
-export function getAllFieldDescriptions(
-  filename: string
-): Record<string, string> {
-  const schema = GTFSSchemas[filename];
-  if (!schema) {
-    return {};
-  }
-  const shape = (schema as z.ZodObject<z.ZodRawShape>).shape;
-  const descriptions: Record<string, string> = {};
-  for (const [fieldName, fieldSchema] of Object.entries(shape || {})) {
-    const desc = (fieldSchema as z.ZodSchema & { description?: string })
-      ?.description;
-    if (desc) {
-      descriptions[fieldName] = desc;
-    }
-  }
-  return descriptions;
 }

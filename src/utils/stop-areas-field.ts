@@ -12,8 +12,9 @@
  */
 
 import { showOptionPickerModal } from '../modules/option-picker-modal.js';
-import { showModal } from '../modules/modal-utils.js';
+import { promptNewEntity } from '../modules/entity-form-modal.js';
 import { notify } from '../modules/notification-system.js';
+import { GTFS_TABLES } from '../types/gtfs.js';
 import { escapeHtml } from './escape-html.js';
 import { generateCompositeKeyFromRecord } from './gtfs-primary-keys.js';
 import { getEntityDisplay, renderOptionLabel } from './entity-display.js';
@@ -333,55 +334,28 @@ async function removeArea(stop_id: string, area_id: string): Promise<void> {
 
 /** Ask for a new area's id and name, and write it. Returns its id. */
 async function createArea(existingIds: string[]): Promise<string | null> {
-  let area_id: string | null = null;
-
-  await showModal({
+  const values = await promptNewEntity({
     title: 'New area',
-    body: `
-      <div class="space-y-3">
-        <fieldset class="fieldset">
-          <legend class="fieldset-legend">area_id</legend>
-          <input id="new-area-id" type="text" class="input input-bordered w-full" autocomplete="off" />
-        </fieldset>
-        <fieldset class="fieldset">
-          <legend class="fieldset-legend">area_name</legend>
-          <input id="new-area-name" type="text" class="input input-bordered w-full" autocomplete="off" />
-        </fieldset>
-      </div>
-    `,
-    actions: [
-      {
-        label: 'Create',
-        className: 'btn-primary',
-        onClick: async () => {
-          const id = (
-            document.getElementById('new-area-id') as HTMLInputElement
-          ).value.trim();
-          const name = (
-            document.getElementById('new-area-name') as HTMLInputElement
-          ).value.trim();
-          if (id === '') {
-            notify.error('area_id cannot be empty');
-            return true;
-          }
-          if (existingIds.includes(id)) {
-            notify.error(`Area "${id}" already exists`);
-            return true;
-          }
-          const record = { area_id: id, area_name: name };
-          await deps?.gtfsDatabase.insertRows('areas', [record]);
-          await deps?.patchManager?.recordInsert('areas', id, record);
-          console.log(`[Areas] created ${id}`);
-          area_id = id;
-          return false;
-        },
-      },
-      { label: 'Cancel', className: 'btn-ghost', onClick: () => {} },
+    fields: [
+      { field: 'area_id', tableName: GTFS_TABLES.AREAS, mono: true },
+      { field: 'area_name', tableName: GTFS_TABLES.AREAS },
     ],
-    enterAction: 0,
-    escapeAction: 1,
-    onMount: () => document.getElementById('new-area-id')?.focus(),
+    validate: (v) => {
+      if (v.area_id === '') {
+        return 'area_id cannot be empty';
+      }
+      if (existingIds.includes(v.area_id)) {
+        return `Area "${v.area_id}" already exists`;
+      }
+      return null;
+    },
+    onCreate: async (v) => {
+      const record = { area_id: v.area_id, area_name: v.area_name };
+      await deps?.gtfsDatabase.insertRows('areas', [record]);
+      await deps?.patchManager?.recordInsert('areas', v.area_id, record);
+      console.log(`[Areas] created ${v.area_id}`);
+    },
   });
 
-  return area_id;
+  return values?.area_id ?? null;
 }

@@ -15,7 +15,6 @@ import {
   setFeedIssueRevalidator,
 } from './modules/feed-issues';
 import { KeyboardShortcuts } from './modules/keyboard-shortcuts';
-import { FieldDescriptionsDisplay } from './modules/field-descriptions';
 import { ScheduleController } from './modules/schedule-controller';
 import { ServiceDaysController } from './modules/service-days-controller';
 import { ThemeController } from './modules/theme-controller';
@@ -85,7 +84,6 @@ export class GTFSEditor {
   public searchController: SearchController<PageState>;
   public validator: GTFSValidator;
   public keyboardShortcuts: KeyboardShortcuts;
-  public fieldDescriptions: FieldDescriptionsDisplay;
   public scheduleController: ScheduleController;
   public serviceDaysController: ServiceDaysController;
   public themeController: ThemeController;
@@ -122,7 +120,6 @@ export class GTFSEditor {
     });
     this.validator = new GTFSValidator(this.gtfsParser);
     this.keyboardShortcuts = new KeyboardShortcuts(this);
-    this.fieldDescriptions = FieldDescriptionsDisplay.integrate();
     this.themeController = new ThemeController();
 
     // Initialize PageStateManager (will be fully set up after GTFS parser initialization)
@@ -747,14 +744,12 @@ export class GTFSEditor {
       onZoneClick: (location_id) => {
         void this.pageStateManager.setPageState({ type: 'zone', location_id });
       },
-      onCreateZone: async (location_id, stop_name) => {
-        // Empty coordinates is a real intermediate state: the zone page shows a
-        // warning until geometry is drawn or pasted.
+      onCreateZone: async ({ location_id, stop_name, geometry }) => {
         const feature: ZoneFeature = {
           type: 'Feature',
           id: location_id,
           properties: stop_name ? { stop_name } : {},
-          geometry: { type: 'Polygon', coordinates: [] },
+          geometry,
         };
         await writeZoneFeatures(this.gtfsParser, this.patchManager, [
           ...getZoneFeatures(this.gtfsParser),

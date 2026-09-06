@@ -34,6 +34,13 @@ export function renderSimplifyIcon(sizeClass = 'h-4 w-4'): string {
   return `<svg xmlns="http://www.w3.org/2000/svg" class="${sizeClass}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9l4-4 4 4 4-4 6 4" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 17h18" /></svg>`;
 }
 
+/**
+ * Question mark in a circle, for the button that opens a guide page.
+ */
+export function renderHelpIcon(sizeClass = 'h-4 w-4'): string {
+  return `<svg xmlns="http://www.w3.org/2000/svg" class="${sizeClass}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><circle cx="12" cy="12" r="9" stroke-width="2" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.5 9.5a2.5 2.5 0 114 2c-.9.7-1.5 1.2-1.5 2.5" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 17.5h.01" /></svg>`;
+}
+
 export function renderCloseIcon(sizeClass = 'h-4 w-4'): string {
   return `<svg xmlns="http://www.w3.org/2000/svg" class="${sizeClass}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 6l12 12M18 6L6 18" /></svg>`;
 }

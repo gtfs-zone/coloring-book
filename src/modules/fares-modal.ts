@@ -7,7 +7,7 @@
  * an entry in `FARES_ENTRIES` rather than a renderer plus an add/edit modal.
  */
 
-import { showModal } from './modal-utils.js';
+import { showSidebarModal } from './sidebar-modal.js';
 import {
   renderEditableTable,
   installEditableTableHandlers,
@@ -533,126 +533,59 @@ const FARES_ENTRIES: FaresEntry[] = [
 
 const GROUP_ORDER: FaresGroup[] = ['Definitions', 'Rules', 'Geography'];
 
-function renderSidebar(
-  activeTable: string,
-  counts: Map<string, number>
-): string {
-  const groups = GROUP_ORDER.map((group) => {
-    const items = FARES_ENTRIES.filter((entry) => entry.group === group)
-      .map((entry) => {
-        const count = counts.get(entry.table) ?? 0;
-        const badge = `<span class="badge badge-sm badge-ghost ml-auto">${count}</span>`;
-        return `<li>
-          <button
-            type="button"
-            data-fares-entry="${escapeHtml(entry.table)}"
-            class="${entry.table === activeTable ? 'menu-active' : ''}"
-          >${escapeHtml(entry.label)}${badge}</button>
-        </li>`;
-      })
-      .join('');
-    return `<li class="menu-title">${group}</li>${items}`;
-  }).join('');
-
-  return `<ul class="menu menu-sm bg-base-200 rounded-box w-52 shrink-0">${groups}</ul>`;
-}
+const INTRO = `Fares v2: the products a rider can buy, the rules that price a
+  journey out of them, and the geography those rules refer to. Fares v1
+  (<code>fare_attributes.txt</code>, <code>fare_rules.txt</code>) is not edited
+  here: open those tables in the file viewer.
+  <a href="https://gtfs.org/documentation/schedule/reference/#fare_productstxt"
+     target="_blank" rel="noopener noreferrer" class="link">GTFS reference</a>.`;
 
 export async function showFaresModal(deps: FaresModalDeps): Promise<void> {
-  let activeEntry = FARES_ENTRIES[0];
+  // Filled in by the scaffold; the table's own callbacks re-render through it.
+  const refreshRef = { refresh: async (): Promise<void> => {} };
 
   const tableConfig: EditableTableConfig = {
     instanceId: INSTANCE_ID,
-    tableName: activeEntry.table,
+    tableName: FARES_ENTRIES[0].table,
     rows: [],
     deps,
-    emptyMessage: activeEntry.emptyMessage,
-    columnOverrides: activeEntry.columnOverrides?.(deps),
-    validateRow: activeEntry.validateRow,
-    onInsert: () => void refresh(),
-    onRowsChanged: () => void refresh(),
-    onDelete: () => void refresh(),
+    emptyMessage: FARES_ENTRIES[0].emptyMessage,
+    onInsert: () => void refreshRef.refresh(),
+    onRowsChanged: () => void refreshRef.refresh(),
+    onDelete: () => void refreshRef.refresh(),
   };
 
-  const readCounts = async (): Promise<Map<string, number>> => {
-    const counts = new Map<string, number>();
-    for (const entry of FARES_ENTRIES) {
-      const rows = await deps.gtfsDatabase.getAllRows(
-        specStoreName(entry.table)
-      );
-      counts.set(entry.table, rows.length);
-    }
-    return counts;
-  };
-
-  const refresh = async (): Promise<void> => {
-    const counts = await readCounts();
-    tableConfig.tableName = activeEntry.table;
-    tableConfig.emptyMessage = activeEntry.emptyMessage;
-    tableConfig.columnOverrides = activeEntry.columnOverrides?.(deps);
-    tableConfig.validateRow = activeEntry.validateRow;
-    tableConfig.joinColumns = activeEntry.joinColumns
-      ? await activeEntry.joinColumns(deps)
+  const renderPane = async (entry: FaresEntry): Promise<string> => {
+    tableConfig.tableName = entry.table;
+    tableConfig.emptyMessage = entry.emptyMessage;
+    tableConfig.columnOverrides = entry.columnOverrides?.(deps);
+    tableConfig.validateRow = entry.validateRow;
+    tableConfig.joinColumns = entry.joinColumns
+      ? await entry.joinColumns(deps)
       : undefined;
     tableConfig.rows = await deps.gtfsDatabase.getAllRows(
-      specStoreName(activeEntry.table)
+      specStoreName(entry.table)
     );
-
-    const sidebarEl = document.getElementById('fares-sidebar');
-    const paneEl = document.getElementById('fares-pane');
-    if (!sidebarEl || !paneEl) {
-      return;
-    }
-    const note = activeEntry.note
-      ? `<p class="text-xs text-base-content/60 mb-2">${escapeHtml(activeEntry.note)}</p>`
-      : '';
-    sidebarEl.innerHTML = renderSidebar(activeEntry.table, counts);
-    paneEl.innerHTML = note + (await renderEditableTable(tableConfig));
+    return renderEditableTable(tableConfig);
   };
-
-  const body = `
-    <p class="text-xs text-base-content/60 mb-3">
-      Fares v2: the products a rider can buy, the rules that price a journey out
-      of them, and the geography those rules refer to. Fares v1
-      (<code>fare_attributes.txt</code>, <code>fare_rules.txt</code>) is not
-      edited here: open those tables in the file viewer.
-      <a href="https://gtfs.org/documentation/schedule/reference/#fare_productstxt"
-         target="_blank" rel="noopener noreferrer" class="link">GTFS reference</a>.
-    </p>
-    <div class="flex gap-4 items-start">
-      <div id="fares-sidebar" class="shrink-0"></div>
-      <div id="fares-pane" class="flex-1 min-w-0"></div>
-    </div>
-  `;
 
   installEditableTableHandlers(tableConfig);
 
-  await showModal({
+  await showSidebarModal({
     title: 'Fares',
-    body,
-    actions: [{ label: 'Close', onClick: () => {} }],
-    escapeAction: 0,
-    boxClassName: 'max-w-6xl w-11/12',
-    onMount: (_close) => {
-      void refresh();
-
-      document
-        .getElementById('fares-sidebar')
-        ?.addEventListener('click', (e) => {
-          const btn = (e.target as HTMLElement).closest<HTMLButtonElement>(
-            '[data-fares-entry]'
-          );
-          const table = btn?.dataset.faresEntry;
-          if (!table || table === activeEntry.table) {
-            return;
-          }
-          const entry = FARES_ENTRIES.find((c) => c.table === table);
-          if (!entry) {
-            return;
-          }
-          activeEntry = entry;
-          void refresh();
-        });
-    },
+    intro: INTRO,
+    groupOrder: GROUP_ORDER,
+    refreshRef,
+    entries: FARES_ENTRIES.map((entry) => ({
+      id: entry.table,
+      label: entry.label,
+      group: entry.group,
+      guidePage: 'fares',
+      note: entry.note ? escapeHtml(entry.note) : undefined,
+      count: async () =>
+        (await deps.gtfsDatabase.getAllRows(specStoreName(entry.table))).length,
+      renderPane: () => renderPane(entry),
+    })),
   });
 
   uninstallEditableTableHandlers(INSTANCE_ID);

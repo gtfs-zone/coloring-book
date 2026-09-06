@@ -41,7 +41,7 @@ import type {
   EditableTablePatchManager,
 } from './editable-table.js';
 import { renderIssueCard } from '../utils/issue-card.js';
-import { showHelpModal } from './help-modal.js';
+import { installGuideButtons } from './help-modal.js';
 import {
   getFeedIssueEntities,
   getFeedIssues,
@@ -63,6 +63,7 @@ import {
   renderOptionLabel,
 } from '../utils/entity-display.js';
 import { showModal, renderTrashIcon } from './modal-utils.js';
+import { promptNewEntity } from './entity-form-modal.js';
 import { showNewServiceModal } from './new-service-modal.js';
 import { specStoreName } from '../utils/spec-field-edit.js';
 import { showOptionPickerModal } from './option-picker-modal.js';
@@ -1222,74 +1223,46 @@ export class PageContentRenderer {
 
   /** Ask for a new network's id and name, and write it. Returns its id. */
   private async createNetwork(existingIds: string[]): Promise<string | null> {
-    let network_id: string | null = null;
-
-    await showModal({
+    const values = await promptNewEntity({
       title: 'New network',
-      body: `
-        <div class="space-y-3">
-          <fieldset class="fieldset">
-            <legend class="fieldset-legend">network_id</legend>
-            <input id="new-network-id" type="text" class="input input-bordered w-full" autocomplete="off" />
-          </fieldset>
-          <fieldset class="fieldset">
-            <legend class="fieldset-legend">network_name</legend>
-            <input id="new-network-name" type="text" class="input input-bordered w-full" autocomplete="off" />
-            <p class="text-xs opacity-60">Naming a network makes the feed export networks.txt and route_networks.txt rather than a network_id column on routes.txt.</p>
-          </fieldset>
-        </div>
-      `,
-      actions: [
+      fields: [
+        { field: 'network_id', tableName: GTFS_TABLES.NETWORKS, mono: true },
         {
-          label: 'Create',
-          className: 'btn-primary',
-          onClick: async () => {
-            const id = (
-              document.getElementById('new-network-id') as HTMLInputElement
-            ).value.trim();
-            const name = (
-              document.getElementById('new-network-name') as HTMLInputElement
-            ).value.trim();
-            if (id === '') {
-              notify.error('network_id cannot be empty');
-              return true;
-            }
-            if (existingIds.includes(id)) {
-              notify.error(`Network "${id}" already exists`);
-              return true;
-            }
-            const record = { network_id: id, network_name: name };
-            await this.dependencies.gtfsDatabase.insertRows('networks', [
-              record,
-            ]);
-            await this.dependencies.patchManager?.recordInsert(
-              'networks',
-              id,
-              record
-            );
-            console.log(`[Networks] created ${id}`);
-            network_id = id;
-            return false;
-          },
+          field: 'network_name',
+          tableName: GTFS_TABLES.NETWORKS,
+          note: 'Naming a network makes the feed export networks.txt and route_networks.txt rather than a network_id column on routes.txt.',
         },
-        { label: 'Cancel', className: 'btn-ghost', onClick: () => {} },
       ],
-      enterAction: 0,
-      escapeAction: 1,
-      onMount: () => document.getElementById('new-network-id')?.focus(),
+      validate: (v) => {
+        if (v.network_id === '') {
+          return 'network_id cannot be empty';
+        }
+        if (existingIds.includes(v.network_id)) {
+          return `Network "${v.network_id}" already exists`;
+        }
+        return null;
+      },
+      onCreate: async (v) => {
+        const record = {
+          network_id: v.network_id,
+          network_name: v.network_name,
+        };
+        await this.dependencies.gtfsDatabase.insertRows('networks', [record]);
+        await this.dependencies.patchManager?.recordInsert(
+          'networks',
+          v.network_id,
+          record
+        );
+        console.log(`[Networks] created ${v.network_id}`);
+      },
     });
 
-    return network_id;
+    return values?.network_id ?? null;
   }
 
   addEventListeners(container: HTMLElement): void {
     // Clean-feed encouragement's link into the publishing guide.
-    container.querySelectorAll('[data-open-guide]').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        const pageId = btn.getAttribute('data-open-guide') || undefined;
-        void showHelpModal(pageId);
-      });
-    });
+    installGuideButtons(container);
 
     // Agency card clicks
     const agencyCards = container.querySelectorAll('.agency-card');
