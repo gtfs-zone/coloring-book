@@ -48,7 +48,7 @@ import {
   type CalendarModalDeps,
 } from './modules/calendar-modal';
 import { ShapesManager } from './modules/shapes-manager';
-import { renderRouteWaypointsIcon } from './modules/modal-utils';
+import { renderDockIcons, renderNavbarActions } from './modules/navbar-actions';
 import { NavbarCounts } from './modules/navbar-counts';
 import { PanelResizer } from './modules/panel-resizer';
 import { LevelsController } from './modules/levels-controller';
@@ -215,6 +215,13 @@ export class GTFSEditor {
       if (CONFIG.DEBUG_BOOT) {
         console.time('[boot] total');
       }
+      // Build the navbar before anything looks up a button by id.
+      const navbarActions = document.getElementById('navbar-actions');
+      if (navbarActions) {
+        renderNavbarActions(navbarActions);
+      }
+      renderDockIcons();
+
       feedProgressIndicator.startLoading('boot', 'Opening database...');
 
       // Claim tab lock before any module initialization
@@ -351,12 +358,6 @@ export class GTFSEditor {
 
       // Initialize keyboard shortcuts
       this.keyboardShortcuts.initialize();
-
-      const shapesBtn = document.getElementById('shapes-btn');
-      if (shapesBtn) {
-        // Same icon as the "open in brouter" affordance, at navbar icon size.
-        shapesBtn.innerHTML = renderRouteWaypointsIcon('h-5 w-5');
-      }
 
       // Content modals live in the URL hash: the navbar buttons move page
       // state, and the router below opens the modal that state names. The guide
