@@ -80,6 +80,9 @@ export class UIController {
     this.browseNavigation = browseNavigation;
     this.setupEventListeners();
     this.setupMapCallbacks();
+    // Boot paths other than a fresh load never touch the tool buttons, so the
+    // persisted auto-zoom state has to be applied here.
+    this.updateMapToolButtonState();
   }
 
   setupEventListeners() {
