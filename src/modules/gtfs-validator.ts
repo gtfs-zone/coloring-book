@@ -915,12 +915,13 @@ export class GTFSValidator {
     const collection = this.gtfsParser.getFileDataSync(
       GTFS_TABLES.LOCATIONS_GEOJSON
     )[0] as unknown as Partial<GeoJSON.FeatureCollection> | undefined;
-    for (const feature of collection?.features ?? []) {
+    (collection?.features ?? []).forEach((feature, index: number) => {
       const id = String(feature.id ?? '').trim();
       if (id !== '') {
         zoneIds.add(id);
       }
-    }
+      this.validateZoneFeature(feature, id, index + 1);
+    });
 
     const locationGroups = this.gtfsParser.getFileDataSyncTyped(
       GTFS_TABLES.LOCATION_GROUPS
@@ -982,6 +983,57 @@ export class GTFSValidator {
     });
 
     this.validateFlexRowPairing(stopTimes);
+  }
+
+  /**
+   * The per-feature rules of locations.geojson: an id, and a polygon.
+   *
+   * The editor keeps a feature that breaks either rule rather than dropping it,
+   * so this is what tells the user it is there and needs fixing on the zone's
+   * page.
+   */
+  private validateZoneFeature(
+    feature: GeoJSON.Feature,
+    id: string,
+    featureNum: number
+  ) {
+    const where = id !== '' ? `Zone '${id}'` : `Feature ${featureNum}`;
+    const entity = {
+      file: GTFS_TABLES.LOCATIONS_GEOJSON,
+      id: id || String(featureNum),
+    };
+
+    if (id === '') {
+      this.addError(
+        `Feature ${featureNum}: every locations.geojson feature must have an id, unique across stops.stop_id, locations.geojson id and location_group_id`,
+        'MISSING_REQUIRED_FIELD',
+        GTFS_TABLES.LOCATIONS_GEOJSON,
+        featureNum,
+        { ...entity, field: 'id', value: '' }
+      );
+    }
+
+    const geometry = feature.geometry as GeoJSON.Geometry | null | undefined;
+    if (geometry?.type !== 'Polygon' && geometry?.type !== 'MultiPolygon') {
+      this.addError(
+        `${where}: geometry is ${String(geometry?.type)}, must be a Polygon or MultiPolygon`,
+        'INVALID_GEOMETRY',
+        GTFS_TABLES.LOCATIONS_GEOJSON,
+        featureNum,
+        { ...entity, field: 'geometry', value: String(geometry?.type) }
+      );
+      return;
+    }
+
+    if (geometry.coordinates.length === 0) {
+      this.addError(
+        `${where}: geometry has no coordinates`,
+        'INVALID_GEOMETRY',
+        GTFS_TABLES.LOCATIONS_GEOJSON,
+        featureNum,
+        { ...entity, field: 'geometry', value: '' }
+      );
+    }
   }
 
   /**

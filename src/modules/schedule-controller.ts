@@ -63,7 +63,7 @@ import {
   formatDaysOfWeek,
 } from '../utils/entity-references.js';
 import { showNewServiceModal } from './new-service-modal.js';
-import { getZoneFeatures, zoneName } from './zone-store.js';
+import { listZones, zoneName } from './zone-store.js';
 import { validateFlexStopTimeRow } from '../utils/flex-rules.js';
 import { renderSpecDescriptionPlain } from '../utils/spec-markup.js';
 import { escapeHtml } from '../utils/escape-html.js';
@@ -1712,7 +1712,7 @@ export class ScheduleController {
   private async getRefOptions(): Promise<OptionPickerItem[]> {
     if (this.refOptions === null) {
       const stops = await this.getStopOptions();
-      const zones = getZoneFeatures(this.gtfsParser).map((feature) => {
+      const zones = listZones(this.gtfsParser).map((feature) => {
         const location_id = String(feature.id);
         const name = zoneName(feature);
         return {
@@ -3459,7 +3459,7 @@ export class ScheduleController {
     }
 
     if (ref.kind === 'location') {
-      const feature = getZoneFeatures(this.gtfsParser).find(
+      const feature = listZones(this.gtfsParser).find(
         (f) => String(f.id) === ref.id
       );
       return feature ? zoneName(feature) || ref.id : null;

@@ -35,7 +35,19 @@ export interface ZonePatchRecorder {
   ) => Promise<void>;
 }
 
+/**
+ * A stored locations.geojson feature.
+ *
+ * The geometry is nullable because a feed can arrive carrying a feature the
+ * reference forbids, and dropping it on read would delete it on the next write.
+ * `listZones` is the filtered view for everything that draws or lists zones.
+ */
 export type ZoneFeature = GeoJSON.Feature<
+  GeoJSON.Polygon | GeoJSON.MultiPolygon | null
+>;
+
+/** A zone that passed `hasZoneGeometry`, so its geometry can be drawn. */
+export type DrawnZoneFeature = GeoJSON.Feature<
   GeoJSON.Polygon | GeoJSON.MultiPolygon
 >;
 
@@ -54,32 +66,62 @@ export function getZoneCollection(
   return stored as GeoJSON.FeatureCollection;
 }
 
-/** Every zone feature that has an id and a polygonal geometry. */
+/**
+ * Every stored feature, exactly as the file carries it.
+ *
+ * Unfiltered on purpose: a zone write rewrites the whole feature array from
+ * this list, so anything skipped here would be deleted from the file by the
+ * next unrelated edit. Use `listZones` to list or draw zones.
+ */
 export function getZoneFeatures(parser: GTFSParser): ZoneFeature[] {
-  const features: ZoneFeature[] = [];
-  for (const feature of getZoneCollection(parser).features) {
-    const type = feature.geometry?.type;
-    if (type !== 'Polygon' && type !== 'MultiPolygon') {
-      console.warn(
-        `[ZoneStore] Skipping locations.geojson feature ${String(feature.id)}: geometry is ${String(type)}, expected Polygon or MultiPolygon`
-      );
-      continue;
-    }
+  return getZoneCollection(parser).features as ZoneFeature[];
+}
+
+/** Whether the feature carries a polygonal geometry with coordinates. */
+export function hasZoneGeometry(feature: ZoneFeature): boolean {
+  const type = feature.geometry?.type;
+  if (type !== 'Polygon' && type !== 'MultiPolygon') {
+    return false;
+  }
+  return positionsOf(feature).length > 0;
+}
+
+/**
+ * The zones that are usable as zones: an id and a real geometry.
+ *
+ * For the map, search and the pickers. A feature that fails either test is
+ * reported by the validator and stays reachable from the On-Demand modal's
+ * Zones pane, which reads the raw collection.
+ */
+export function listZones(parser: GTFSParser): DrawnZoneFeature[] {
+  const features: DrawnZoneFeature[] = [];
+  for (const feature of getZoneFeatures(parser)) {
     if (feature.id === undefined || feature.id === null || feature.id === '') {
       console.warn('[ZoneStore] Skipping locations.geojson feature with no id');
       continue;
     }
-    features.push(feature as ZoneFeature);
+    if (!hasZoneGeometry(feature)) {
+      console.warn(
+        `[ZoneStore] Skipping locations.geojson feature ${String(feature.id)}: geometry is ${String(feature.geometry?.type)}, expected Polygon or MultiPolygon with coordinates`
+      );
+      continue;
+    }
+    features.push(feature as DrawnZoneFeature);
   }
   return features;
 }
 
+/**
+ * One feature by id, geometry or not, so a feature the validator flagged can
+ * be opened and repaired on its zone page.
+ */
 export function getZoneFeature(
   parser: GTFSParser,
   location_id: string
 ): ZoneFeature | null {
   return (
-    getZoneFeatures(parser).find((f) => String(f.id) === location_id) ?? null
+    getZoneFeatures(parser).find((f) => String(f.id ?? '') === location_id) ??
+    null
   );
 }
 
@@ -96,6 +138,9 @@ export function zoneDescription(feature: ZoneFeature): string {
 /** Every position in a polygon or multipolygon, rings included. */
 function positionsOf(feature: ZoneFeature): GeoJSON.Position[] {
   const geometry = feature.geometry;
+  if (!geometry) {
+    return [];
+  }
   if (geometry.type === 'Polygon') {
     return geometry.coordinates.flat();
   }
@@ -161,6 +206,14 @@ export function mergeZoneFeatures(
     if (incomingById.has(id)) {
       throw new Error(`Duplicate zone id in the pasted GeoJSON: ${id}`);
     }
+    // geojson.io returns a feature it could not draw with a null geometry.
+    // Storing that is how a zone loses its polygon, so refuse it here.
+    const type = feature.geometry?.type;
+    if (type !== 'Polygon' && type !== 'MultiPolygon') {
+      throw new Error(
+        `Zone ${id} came back with geometry ${String(type)}, expected a Polygon or MultiPolygon. Draw the zone in geojson.io first, then Share and paste the link.`
+      );
+    }
     incomingById.set(id, feature);
   }
 
@@ -169,7 +222,7 @@ export function mergeZoneFeatures(
   const removed: string[] = [];
 
   for (const feature of current) {
-    const id = String(feature.id);
+    const id = String(feature.id ?? '');
     const edited = incomingById.get(id);
     if (!edited) {
       if (removeMissing) {
@@ -310,7 +363,7 @@ export async function setZoneProperties(
   properties: Record<string, string>
 ): Promise<void> {
   const features = getZoneFeatures(parser);
-  const target = features.find((f) => String(f.id) === location_id);
+  const target = features.find((f) => String(f.id ?? '') === location_id);
   if (!target) {
     throw new Error(
       `Zone ${location_id} is no longer in locations.geojson. Reload the page.`
