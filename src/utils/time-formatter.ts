@@ -248,22 +248,55 @@ export class TimeFormatter {
   }
 
   /**
-   * Parse a signed offset the user typed, e.g. '-00:15:00', '+2:00' or '1:30'.
+   * Parse a signed duration the user typed. A bare number is minutes, two
+   * parts are MM:SS and three are HH:MM:SS.
    *
-   * @param input - Signed HH:MM:SS or HH:MM duration
-   * @returns The offset in seconds, or null when it cannot be parsed
+   * @param input - Signed MM, MM:SS or HH:MM:SS duration
+   * @returns The duration in seconds, or null when it cannot be parsed
+   * @example
+   * parseSignedDuration('-5') -> -300
+   * parseSignedDuration('1:30') -> 90
+   * parseSignedDuration('+01:00:00') -> 3600
    */
   static parseSignedDuration(input: string): number | null {
-    const trimmed = input.trim();
-    const match = /^([+-]?)(\d{1,3}):([0-5]\d)(?::([0-5]\d))?$/.exec(trimmed);
+    const match = /^([+-]?)(\d{1,3})(?::([0-5]\d))?(?::([0-5]\d))?$/.exec(
+      input.trim()
+    );
     if (!match) {
       return null;
     }
 
+    const [, sign, first, second, third] = match;
+    // How many parts matched decides what the leading number means.
     const magnitude =
-      parseInt(match[2], 10) * 3600 +
-      parseInt(match[3], 10) * 60 +
-      (match[4] ? parseInt(match[4], 10) : 0);
-    return match[1] === '-' ? -magnitude : magnitude;
+      third !== undefined
+        ? parseInt(first, 10) * 3600 +
+          parseInt(second, 10) * 60 +
+          parseInt(third, 10)
+        : second !== undefined
+          ? parseInt(first, 10) * 60 + parseInt(second, 10)
+          : parseInt(first, 10) * 60;
+    return sign === '-' ? -magnitude : magnitude;
+  }
+
+  /**
+   * Inverse of parseSignedDuration: the canonical form of a duration, always
+   * signed. MM:SS below an hour, H:MM:SS at or above one.
+   *
+   * @param seconds - Duration in seconds, may be negative
+   * @returns The duration as a string parseSignedDuration reads back
+   * @example
+   * formatSignedDuration(-300) -> '-05:00'
+   * formatSignedDuration(5400) -> '+1:30:00'
+   */
+  static formatSignedDuration(seconds: number): string {
+    const sign = seconds < 0 ? '-' : '+';
+    const abs = Math.abs(Math.round(seconds));
+    const ss = String(abs % 60).padStart(2, '0');
+    if (abs < 3600) {
+      return `${sign}${String(Math.floor(abs / 60)).padStart(2, '0')}:${ss}`;
+    }
+    const mm = String(Math.floor((abs % 3600) / 60)).padStart(2, '0');
+    return `${sign}${Math.floor(abs / 3600)}:${mm}:${ss}`;
   }
 }

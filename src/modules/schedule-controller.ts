@@ -118,7 +118,8 @@ export interface TimetableTarget {
   direction_id?: string;
 }
 
-const OFFSET_ERROR = 'Offset must be a signed duration, e.g. -00:15:00';
+const OFFSET_ERROR =
+  'Offset must be signed minutes, MM:SS or HH:MM:SS, e.g. -5';
 
 /** The signed time-offset input shared by the copy and shift dialogs. */
 function offsetField(): EntityFormField {
@@ -127,10 +128,10 @@ function offsetField(): EntityFormField {
     label: 'Time offset',
     type: 'text',
     presence: 'Optional',
-    value: '00:00:00',
-    placeholder: '+00:30:00',
+    value: '0',
+    placeholder: '+15',
     mono: true,
-    note: 'Signed HH:MM:SS added to every time, e.g. <code>-00:15:00</code>.',
+    note: 'Signed minutes added to every time, e.g. <code>-5</code>. <code>MM:SS</code> (<code>1:30</code>) and <code>HH:MM:SS</code> (<code>+01:00:00</code>) also work.',
   };
 }
 
@@ -3714,6 +3715,7 @@ export class ScheduleController {
     }
 
     const offsetSeconds = TimeFormatter.parseSignedDuration(values.offset) ?? 0;
+    const offsetLabel = TimeFormatter.formatSignedDuration(offsetSeconds);
     try {
       const plan = await this.database.planTripShift(trip_id, offsetSeconds);
       if (!plan) {
@@ -3721,14 +3723,14 @@ export class ScheduleController {
         return;
       }
 
-      const label = `Shift trip ${trip_id} by ${values.offset}`;
+      const label = `Shift trip ${trip_id} by ${offsetLabel}`;
       const wrote = await this.commitStopTimePlan(plan, label);
       if (!wrote) {
         console.log(`No stop_time change shifting ${trip_id}`);
         return;
       }
       console.log(`[ScheduleController] ${label}`);
-      notify.success(`Shifted trip ${trip_id} by ${values.offset}`, {
+      notify.success(`Shifted trip ${trip_id} by ${offsetLabel}`, {
         duration: 3000,
       });
     } catch (error) {
