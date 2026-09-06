@@ -14,6 +14,7 @@
 import { showOptionPickerModal } from '../modules/option-picker-modal.js';
 import { promptNewEntity } from '../modules/entity-form-modal.js';
 import { notify } from '../modules/notification-system.js';
+import { isOutsideTopModal } from '../modules/modal-utils.js';
 import { GTFS_TABLES } from '../types/gtfs.js';
 import { escapeHtml } from './escape-html.js';
 import { generateCompositeKeyFromRecord } from './gtfs-primary-keys.js';
@@ -76,6 +77,9 @@ export function installStopAreasField(newDeps: StopAreasFieldDeps): void {
   listenerInstalled = true;
 
   document.addEventListener('click', (e) => {
+    if (isOutsideTopModal(e.target)) {
+      return;
+    }
     const add = (e.target as Element)?.closest?.(`.${ADD_CLASS}`);
     if (add instanceof HTMLElement) {
       void addArea(add.dataset.stopId ?? '');
@@ -89,6 +93,9 @@ export function installStopAreasField(newDeps: StopAreasFieldDeps): void {
 
   document.addEventListener('keydown', (e) => {
     if (e.key !== 'Enter' && e.key !== ' ') {
+      return;
+    }
+    if (isOutsideTopModal(e.target)) {
       return;
     }
     const add = (e.target as Element)?.closest?.(`.${ADD_CLASS}`);

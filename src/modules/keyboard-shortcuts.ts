@@ -1,4 +1,5 @@
 import { notify } from './notification-system.js';
+import { isOutsideTopModal } from './modal-utils.js';
 
 export class KeyboardShortcuts {
   private gtfsEditor: {
@@ -147,6 +148,12 @@ export class KeyboardShortcuts {
   bindEventListeners() {
     document.addEventListener('keydown', (e: KeyboardEvent) => {
       if (this.gtfsEditor.tabLock && !this.gtfsEditor.tabLock.isActive()) {
+        return;
+      }
+      // A modal on top owns the keyboard. Keyed on the target rather than on
+      // "any modal is open" so the shortcuts still work inside a modal that
+      // hosts real content, like the timetable.
+      if (isOutsideTopModal(e.target)) {
         return;
       }
       const key = this.getKeyString(e);

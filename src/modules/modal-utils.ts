@@ -135,6 +135,25 @@ export function modalStackDepth(): number {
 }
 
 /**
+ * True when an event landed outside the topmost modal, i.e. on the page or on
+ * the modal it covers. Delegated document listeners use it to stay quiet while
+ * a modal owns the keyboard, without disabling the content that modal renders
+ * (the timetable is itself a modal).
+ */
+export function isOutsideTopModal(target: EventTarget | null): boolean {
+  const top = modalStack[modalStack.length - 1];
+  if (!top) {
+    return false;
+  }
+  return !(target instanceof Node) || !top.el.contains(target);
+}
+
+// Everything inside a modal that Tab can land on, used to wrap focus at the
+// ends rather than let it walk out onto the page behind.
+const FOCUSABLE_SELECTOR =
+  'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])';
+
+/**
  * Close every modal opened after the stack reached `depth`, topmost first.
  *
  * The modal router uses this to take down a routed modal, along with anything
@@ -178,7 +197,7 @@ export async function showModal(options: {
     const modal = document.createElement('div');
     modal.className = 'modal modal-open';
     modal.innerHTML = `
-      <div class="modal-box relative max-h-[80vh] max-w-4xl w-11/12 flex flex-col ${options.boxClassName ?? ''}">
+      <div class="modal-box relative max-h-[80vh] max-w-4xl w-11/12 flex flex-col outline-none focus:outline-none ${options.boxClassName ?? ''}" tabindex="-1">
         ${options.escapeAction !== undefined ? `<button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2" data-dismiss>${renderCloseIcon()}</button>` : ''}
         <h3 class="font-bold text-lg">${options.title}</h3>
         <div class="flex-1 overflow-y-auto py-4">${options.body}</div>
@@ -193,6 +212,9 @@ export async function showModal(options: {
         </div>
       </div>
     `;
+    // Focus moves into the modal below; remember where it came from so closing
+    // puts the user back on the control they opened it from.
+    const opener = document.activeElement as HTMLElement | null;
     document.body.appendChild(modal);
 
     const close = () => {
@@ -202,6 +224,9 @@ export async function showModal(options: {
         modalStack.splice(idx, 1);
       }
       document.body.removeChild(modal);
+      if (opener?.isConnected) {
+        opener.focus({ preventScroll: true });
+      }
       resolve();
     };
 
@@ -221,6 +246,33 @@ export async function showModal(options: {
       close();
     };
 
+    // Keep Tab inside the modal. Without this it walks onto the page behind,
+    // where Enter or Space would activate whatever it landed on - including the
+    // button that opened this modal.
+    const trapTab = (e: KeyboardEvent): void => {
+      const focusable = Array.from(
+        modal.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)
+      );
+      if (focusable.length === 0) {
+        e.preventDefault();
+        return;
+      }
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      const active = document.activeElement;
+      const inside = active instanceof Node && modal.contains(active);
+      if (!inside) {
+        e.preventDefault();
+        (e.shiftKey ? last : first).focus();
+      } else if (e.shiftKey && active === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && active === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+
     const onKeydown = (e: KeyboardEvent) => {
       // Let the modal stacked on top of this one handle the key instead.
       if (!isTopmostModal(modal)) {
@@ -237,6 +289,8 @@ export async function showModal(options: {
       ) {
         e.preventDefault();
         void triggerAction(options.enterAction);
+      } else if (e.key === 'Tab') {
+        trapTab(e);
       }
     };
 
@@ -264,6 +318,15 @@ export async function showModal(options: {
           void triggerAction(idx);
         });
       });
+
+    // Default focus is the box itself, not an action button: a focused div is
+    // neither a button nor a textarea, so `enterAction` still fires on Enter.
+    // `outline-none` on the box keeps this from painting a focus ring around
+    // the whole modal. Before onMount, so a caller that focuses a better
+    // target still wins.
+    modal
+      .querySelector<HTMLElement>('.modal-box')
+      ?.focus({ preventScroll: true });
 
     options.onMount?.(close);
   });
