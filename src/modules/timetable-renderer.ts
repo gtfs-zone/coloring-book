@@ -43,6 +43,9 @@ import {
   renderTrashIcon,
   renderRouteWaypointsIcon,
   renderSortByTimeIcon,
+  renderCopyIcon,
+  renderReverseIcon,
+  renderShiftTimeIcon,
   renderUploadIcon,
 } from './modal-utils.js';
 import { routeColor } from '../utils/route-colors.js';
@@ -856,14 +859,42 @@ export class TimetableRenderer {
         // Sorting is offered, never applied on its own: renumbering rows can
         // move them to different strip columns, so the user asks for it and
         // then looks at the result.
+        // A trip whose times do not ascend is flagged here rather than left to
+        // be discovered by pressing sort and seeing whether anything moves.
         const resortTip =
+          (trip.timesOutOfOrder
+            ? '<div class="font-semibold">This trip\'s stop_times are not in chronological order.</div>'
+            : '') +
           `<div>Sort trip <code>${escapeHtml(trip.trip_id)}</code> by time</div>` +
           '<div class="opacity-70">Renumbers this trip\'s stop_times into chronological order. Stops can change column on the strip. Undoable from the Changes panel.</div>';
+        const copyTip =
+          `<div>Copy trip <code>${escapeHtml(trip.trip_id)}</code></div>` +
+          '<div class="opacity-70">Asks for a new trip ID, a time offset and whether to reverse the stop order. Copies the stop_times and frequencies too.</div>';
         return `
           <td class="trip-header text-center p-2 text-xs" style="${columnStyle}">
             <div class="flex items-center justify-center gap-1">
               <button class="btn btn-xs btn-error btn-outline delete-trip-btn field-tooltip-trigger" data-trip-id="${escapeHtml(trip.trip_id)}" ${tooltipContentAttr(deleteTip)}>${renderTrashIcon('h-3 w-3')}</button>
-              <button class="btn btn-xs btn-outline resort-trip-btn field-tooltip-trigger" data-trip-id="${escapeHtml(trip.trip_id)}" ${tooltipContentAttr(resortTip)}>${renderSortByTimeIcon('h-3 w-3')}</button>
+              <button class="btn btn-xs btn-outline copy-trip-btn field-tooltip-trigger" data-trip-id="${escapeHtml(trip.trip_id)}" ${tooltipContentAttr(copyTip)}>${renderCopyIcon('h-3 w-3')}</button>
+              <button class="btn btn-xs ${trip.timesOutOfOrder ? 'btn-warning' : 'btn-outline'} resort-trip-btn field-tooltip-trigger" data-trip-id="${escapeHtml(trip.trip_id)}" ${tooltipContentAttr(resortTip)}>${renderSortByTimeIcon('h-3 w-3')}</button>
+            </div>
+          </td>
+        `;
+      })
+      .join('');
+
+    const stopOrderCells = trips
+      .map((trip) => {
+        const reverseTip =
+          `<div>Reverse trip <code>${escapeHtml(trip.trip_id)}</code></div>` +
+          '<div class="opacity-70">Reverses and renumbers the stop_times, mirroring the times so the trip still runs forward. Clears the shape. Undoable from the Changes panel.</div>';
+        const shiftTip =
+          `<div>Shift trip <code>${escapeHtml(trip.trip_id)}</code></div>` +
+          '<div class="opacity-70">Adds a signed offset to every time of this trip. Stop order is unchanged. Undoable from the Changes panel.</div>';
+        return `
+          <td class="trip-header text-center p-2 text-xs" style="${columnStyle}">
+            <div class="flex items-center justify-center gap-1">
+              <button class="btn btn-xs btn-outline reverse-trip-btn field-tooltip-trigger" data-trip-id="${escapeHtml(trip.trip_id)}" ${tooltipContentAttr(reverseTip)}>${renderReverseIcon('h-3 w-3')}</button>
+              <button class="btn btn-xs btn-outline shift-trip-btn field-tooltip-trigger" data-trip-id="${escapeHtml(trip.trip_id)}" ${tooltipContentAttr(shiftTip)}>${renderShiftTimeIcon('h-3 w-3')}</button>
             </div>
           </td>
         `;
@@ -906,6 +937,13 @@ export class TimetableRenderer {
             <div class="truncate">Trip actions</div>
           </th>
           ${tripActionCells}
+          <td class="trip-header text-center p-2 text-xs"></td>
+        </tr>
+        <tr class="trip-actions-row">
+          <th class="stop-header p-2 text-left bg-base-100">
+            <div class="truncate">Stop order</div>
+          </th>
+          ${stopOrderCells}
           <td class="trip-header text-center p-2 text-xs"></td>
         </tr>
       </thead>

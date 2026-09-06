@@ -4,7 +4,7 @@
  * Accessed via Objects tab -> Route -> Service ID
  */
 
-import { Stops, StopTimes } from '../types/gtfs-entities.js';
+import { Stops, StopTimes, Trips } from '../types/gtfs-entities.js';
 import type { StopTimeRef } from '../types/gtfs-flex.js';
 import { notify } from './notification-system';
 import {
@@ -63,6 +63,8 @@ import {
   formatDaysOfWeek,
 } from '../utils/entity-references.js';
 import { showNewServiceModal } from './new-service-modal.js';
+import { promptNewEntity, type EntityFormField } from './entity-form-modal.js';
+import { mirrorTripTimes, shiftRowTimes } from '../utils/stop-time-shift.js';
 import { listZones, zoneName } from './zone-store.js';
 import { validateFlexStopTimeRow } from '../utils/flex-rules.js';
 import { renderSpecDescriptionPlain } from '../utils/spec-markup.js';
@@ -114,6 +116,22 @@ export interface TimetableTarget {
   route_id: string;
   service_id: string;
   direction_id?: string;
+}
+
+const OFFSET_ERROR = 'Offset must be a signed duration, e.g. -00:15:00';
+
+/** The signed time-offset input shared by the copy and shift dialogs. */
+function offsetField(): EntityFormField {
+  return {
+    field: 'offset',
+    label: 'Time offset',
+    type: 'text',
+    presence: 'Optional',
+    value: '00:00:00',
+    placeholder: '+00:30:00',
+    mono: true,
+    note: 'Signed HH:MM:SS added to every time, e.g. <code>-00:15:00</code>.',
+  };
 }
 
 /** Is this sub-row one end of a pickup/drop-off window? */
@@ -169,6 +187,10 @@ interface PatchManagerInterface {
     label: string
   ): Promise<void>;
   recordBatchDelete(
+    ops: Array<{ table: string; id: string; record: Record<string, unknown> }>,
+    label: string
+  ): Promise<void>;
+  recordBatchInsert(
     ops: Array<{ table: string; id: string; record: Record<string, unknown> }>,
     label: string
   ): Promise<void>;
@@ -533,6 +555,33 @@ export class ScheduleController {
         const trip_id = resortBtn.dataset.tripId;
         if (trip_id) {
           void this.resortTrip(trip_id);
+        }
+        return;
+      }
+
+      const copyBtn = (e.target as Element)?.closest?.('.copy-trip-btn');
+      if (copyBtn instanceof HTMLElement) {
+        const trip_id = copyBtn.dataset.tripId;
+        if (trip_id) {
+          void this.copyTrip(trip_id);
+        }
+        return;
+      }
+
+      const reverseBtn = (e.target as Element)?.closest?.('.reverse-trip-btn');
+      if (reverseBtn instanceof HTMLElement) {
+        const trip_id = reverseBtn.dataset.tripId;
+        if (trip_id) {
+          void this.reverseTrip(trip_id);
+        }
+        return;
+      }
+
+      const shiftBtn = (e.target as Element)?.closest?.('.shift-trip-btn');
+      if (shiftBtn instanceof HTMLElement) {
+        const trip_id = shiftBtn.dataset.tripId;
+        if (trip_id) {
+          void this.shiftTrip(trip_id);
         }
         return;
       }
@@ -3605,6 +3654,263 @@ export class ScheduleController {
       console.error('Failed to sort trip by time:', error);
       notify.error(`Failed to sort trip ${trip_id}`);
     }
+  }
+
+  /**
+   * Reverse one trip's stop order, on request.
+   *
+   * Times are mirrored so the trip still runs forward, and the shape is cleared
+   * because it runs the other way. direction_id is left alone: it is one click
+   * away in the trip property rows, and a reversal is not always a change of
+   * direction.
+   *
+   * @param trip_id - Trip to reverse
+   */
+  public async reverseTrip(trip_id: string): Promise<void> {
+    try {
+      const plan = await this.database.planTripReverse(trip_id);
+      if (!plan) {
+        notify.info(`Trip ${trip_id} has too few stops to reverse`, {
+          duration: 2000,
+        });
+        return;
+      }
+
+      const label = `Reverse trip ${trip_id}`;
+      const wrote = await this.commitStopTimePlan(plan, label);
+      if (!wrote) {
+        console.log(`No stop_time change reversing ${trip_id}`);
+        return;
+      }
+      const clearedShape = await this.clearTripShape(trip_id);
+      console.log(`[ScheduleController] ${label}`);
+      notify.success(
+        `Reversed trip ${trip_id}${clearedShape ? ' and cleared its shape' : ''}`,
+        { duration: 3000 }
+      );
+    } catch (error) {
+      console.error('Failed to reverse trip:', error);
+      notify.error(`Failed to reverse trip ${trip_id}`);
+    }
+  }
+
+  /**
+   * Shift every time in one trip along the clock, on request.
+   *
+   * @param trip_id - Trip to shift
+   */
+  public async shiftTrip(trip_id: string): Promise<void> {
+    const values = await promptNewEntity({
+      title: `Shift trip ${trip_id}`,
+      createLabel: 'Shift times',
+      fields: [offsetField()],
+      validate: (v) =>
+        TimeFormatter.parseSignedDuration(v.offset) === null
+          ? OFFSET_ERROR
+          : null,
+    });
+    if (!values) {
+      return;
+    }
+
+    const offsetSeconds = TimeFormatter.parseSignedDuration(values.offset) ?? 0;
+    try {
+      const plan = await this.database.planTripShift(trip_id, offsetSeconds);
+      if (!plan) {
+        notify.info(`Nothing to shift on trip ${trip_id}`, { duration: 2000 });
+        return;
+      }
+
+      const label = `Shift trip ${trip_id} by ${values.offset}`;
+      const wrote = await this.commitStopTimePlan(plan, label);
+      if (!wrote) {
+        console.log(`No stop_time change shifting ${trip_id}`);
+        return;
+      }
+      console.log(`[ScheduleController] ${label}`);
+      notify.success(`Shifted trip ${trip_id} by ${values.offset}`, {
+        duration: 3000,
+      });
+    } catch (error) {
+      console.error('Failed to shift trip:', error);
+      notify.error(`Failed to shift trip ${trip_id}`);
+    }
+  }
+
+  /**
+   * Copy one trip, with an optional time offset and an optional reversal.
+   *
+   * The trip, its stop_times and its frequencies are written together and
+   * recorded as one patch, so the whole copy undoes in a single step.
+   *
+   * @param trip_id - Trip to copy
+   */
+  public async copyTrip(trip_id: string): Promise<void> {
+    const db = this.gtfsParser.gtfsDatabase;
+    const source = (await db.queryRows('trips', { trip_id }))[0];
+    if (!source) {
+      notify.error(`Trip ${trip_id} not found`);
+      return;
+    }
+
+    await promptNewEntity({
+      title: `Copy trip ${trip_id}`,
+      createLabel: 'Copy trip',
+      fields: [
+        {
+          field: 'trip_id',
+          label: 'New trip ID',
+          tableName: 'trips',
+          mono: true,
+          value: `${trip_id}-copy`,
+        },
+        offsetField(),
+        {
+          field: 'flip',
+          label: 'Reverse stop order and flip direction',
+          type: 'checkbox',
+          presence: 'Optional',
+          note: 'Mirrors the times so the copy still runs forward. Clears shape_id and shape_dist_traveled.',
+        },
+      ],
+      validate: async (values) => {
+        if (!values.trip_id) {
+          return 'Enter a trip ID';
+        }
+        if (TimeFormatter.parseSignedDuration(values.offset) === null) {
+          return OFFSET_ERROR;
+        }
+        const validation = await this.validateTripId(values.trip_id);
+        return validation.isValid
+          ? null
+          : (validation.errorMessage ?? 'Invalid trip ID');
+      },
+      onCreate: async (values) =>
+        this.writeTripCopy(
+          source,
+          values.trip_id,
+          TimeFormatter.parseSignedDuration(values.offset) ?? 0,
+          values.flip === 'true'
+        ),
+    });
+  }
+
+  /**
+   * Write a trip copy and record it as one batch insert.
+   *
+   * @param source - The trip row being copied
+   * @param newId - trip_id of the copy, already validated as unique
+   * @param offsetSeconds - Seconds added to every time of the copy
+   * @param flip - Whether to reverse the stop order and flip direction_id
+   */
+  private async writeTripCopy(
+    source: Trips,
+    newId: string,
+    offsetSeconds: number,
+    flip: boolean
+  ): Promise<void> {
+    const db = this.gtfsParser.gtfsDatabase;
+    const pm = this.patchManager;
+    const trip_id = source.trip_id;
+
+    const newTrip: Trips = { ...source, trip_id: newId };
+    if (flip) {
+      newTrip.shape_id = '';
+      // An absent direction_id stays absent: writing a 0 would move the copy
+      // into a direction the feed does not use.
+      if (source.direction_id !== undefined && String(source.direction_id)) {
+        newTrip.direction_id = Number(source.direction_id) === 1 ? 0 : 1;
+      }
+    }
+
+    const sourceRows = await db.queryRows('stop_times', { trip_id });
+    sourceRows.sort(
+      (a, b) => Number(a.stop_sequence) - Number(b.stop_sequence)
+    );
+    let rows = sourceRows.map((st) => shiftRowTimes(st, offsetSeconds));
+    if (flip && rows.length > 1) {
+      rows = mirrorTripTimes(rows).map((st, index) => ({
+        ...st,
+        stop_sequence: index,
+      }));
+    }
+    const newRows = rows.map((st) => ({ ...st, trip_id: newId }));
+
+    const newFrequencies = (await db.queryRows('frequencies', { trip_id })).map(
+      (f) => ({
+        ...f,
+        trip_id: newId,
+        start_time: TimeFormatter.addSecondsToTime(
+          String(f.start_time ?? ''),
+          offsetSeconds
+        ),
+        end_time: TimeFormatter.addSecondsToTime(
+          String(f.end_time ?? ''),
+          offsetSeconds
+        ),
+      })
+    );
+
+    await db.insertRows('trips', [newTrip]);
+    if (newRows.length > 0) {
+      await db.insertRows('stop_times', newRows);
+    }
+    if (newFrequencies.length > 0) {
+      await db.insertRows('frequencies', newFrequencies);
+    }
+    this.invalidateCaches();
+
+    const label = `Copy trip ${trip_id} to ${newId}`;
+    await pm?.recordBatchInsert(
+      [
+        { table: 'trips', id: newId, record: newTrip },
+        ...newRows.map((st) => ({
+          table: 'stop_times',
+          id: generateCompositeKeyFromRecord('stop_times', st),
+          record: st,
+        })),
+        ...newFrequencies.map((f) => ({
+          table: 'frequencies',
+          id: generateCompositeKeyFromRecord('frequencies', f),
+          record: f,
+        })),
+      ],
+      label
+    );
+
+    console.log(`[ScheduleController] ${label}`);
+    notify.success(
+      `Copied trip ${trip_id} to ${newId}${flip ? ' (reversed, shape cleared)' : ''}`,
+      { duration: 3000 }
+    );
+    await this.refreshCurrentTimetable();
+  }
+
+  /**
+   * Clear a trip's shape_id, which a reversal invalidates.
+   *
+   * @param trip_id - Trip to clear
+   * @returns Whether the trip had a shape to clear
+   */
+  private async clearTripShape(trip_id: string): Promise<boolean> {
+    const db = this.gtfsParser.gtfsDatabase;
+    const trip = (await db.queryRows('trips', { trip_id }))[0] as
+      | Record<string, unknown>
+      | undefined;
+    if (!trip?.shape_id) {
+      return false;
+    }
+
+    await patchUpdate(
+      db,
+      this.patchManager,
+      'trips',
+      trip_id,
+      { shape_id: trip.shape_id },
+      { shape_id: '' }
+    );
+    this.invalidateCaches();
+    return true;
   }
 
   async handleDeleteTrip(trip_id: string): Promise<void> {

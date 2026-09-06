@@ -27,6 +27,29 @@ export function renderSortByTimeIcon(sizeClass = 'h-4 w-4'): string {
 }
 
 /**
+ * Two overlapping sheets, for the action that copies a trip.
+ */
+export function renderCopyIcon(sizeClass = 'h-4 w-4'): string {
+  return `<svg xmlns="http://www.w3.org/2000/svg" class="${sizeClass}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><rect x="9" y="9" width="11" height="11" rx="2" stroke-width="2" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15H5a1 1 0 01-1-1V6a2 2 0 012-2h8a1 1 0 011 1v0" /></svg>`;
+}
+
+/**
+ * Two arrows pointing opposite ways, for the action that reverses a trip's
+ * stop order.
+ */
+export function renderReverseIcon(sizeClass = 'h-4 w-4'): string {
+  return `<svg xmlns="http://www.w3.org/2000/svg" class="${sizeClass}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5v14m0-14L5 8m3-3l3 3" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 19V5m0 14l3-3m-3 3l-3-3" /></svg>`;
+}
+
+/**
+ * Clock with a right-pointing arrow, for the action that shifts every time of
+ * a trip along the clock.
+ */
+export function renderShiftTimeIcon(sizeClass = 'h-4 w-4'): string {
+  return `<svg xmlns="http://www.w3.org/2000/svg" class="${sizeClass}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><circle cx="9" cy="12" r="6" stroke-width="2" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 9v3l2 1" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 12h5m0 0l-2.5-2.5M22 12l-2.5 2.5" /></svg>`;
+}
+
+/**
  * Simplify icon: a jagged line above the straight line it collapses to, for
  * the action that drops intermediate shape points.
  */
