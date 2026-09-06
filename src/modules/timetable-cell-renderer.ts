@@ -70,12 +70,7 @@ function offsetLabel(time: string, origin: string): string | null {
   if (at === null || from === null) {
     return null;
   }
-  const delta = at - from;
-  const sign = delta < 0 ? '-' : '+';
-  const abs = Math.abs(delta);
-  const mm = String(Math.floor(abs / 60)).padStart(2, '0');
-  const ss = String(abs % 60).padStart(2, '0');
-  return `${sign}${mm}:${ss} from first departure`;
+  return `${TimeFormatter.formatSignedDuration(at - from)} from first departure`;
 }
 
 /**
