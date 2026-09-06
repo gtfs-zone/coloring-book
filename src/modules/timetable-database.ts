@@ -9,6 +9,8 @@ import type { StopTimeRef } from '../types/gtfs-flex.js';
 import { StopTimesSchema } from '../types/gtfs.js';
 import type { CoupledTimes } from '../utils/stop-time-coupling.js';
 import { TimeFormatter } from '../utils/time-formatter.js';
+import { chronologicalOrder } from '../utils/stop-time-order.js';
+import { mirrorTripTimes, shiftRowTimes } from '../utils/stop-time-shift.js';
 import { notify } from './notification-system.js';
 
 /** The two ends of a stop_time's pickup/drop-off window. */
@@ -404,16 +406,10 @@ export class TimetableDatabase {
    * @param trip_id - GTFS trip identifier
    */
   async planTripResort(trip_id: string): Promise<StopTimeEditPlan | null> {
-    const beforeRows = await this.gtfsParser.gtfsDatabase.queryRows(
-      'stop_times',
-      { trip_id }
-    );
+    const beforeRows = await this.readTripRows(trip_id);
     if (beforeRows.length === 0) {
       return null;
     }
-    beforeRows.sort(
-      (a, b) => Number(a.stop_sequence) - Number(b.stop_sequence)
-    );
 
     const edited = beforeRows.map((st) => ({ ...st }));
     const reordered = this.reorderByTime(edited);
@@ -443,46 +439,88 @@ export class TimetableDatabase {
   }
 
   /**
-   * Sort a trip's rows into chronological order by their effective time.
+   * Plan a shift of every time in one trip, without writing.
    *
-   * A flex row's pickup/drop-off window is a real time, so it sorts on that:
-   * a deviation zone belongs between the timed stops its window falls between,
-   * whatever slot it happens to sit in.
+   * Rows keep their stop_sequence: a shift moves the whole trip along the clock
+   * and cannot change stop order.
    *
-   * A row with no time at all inherits the time of the row above it, so in
-   * feeds that only time their timepoints the untimed stops travel with the
-   * timepoint they follow instead of being flung to one end of the trip.
-   *
-   * Sorting whole rows rather than redistributing timed rows into the slots
-   * they already occupy is what makes this safe across an insert: the old
-   * scheme pinned untimed rows to an absolute index, so adding a row shifted
-   * every timed row one place across them and silently changed their relative
-   * order.
-   *
-   * Row objects are returned by identity, never copied: callers locate the row
-   * they edited with `indexOf` and detect movement by reference comparison.
+   * @param trip_id - GTFS trip identifier
+   * @param offsetSeconds - Seconds to add to every time, may be negative
    */
-  private reorderByTime(rows: StopTimes[]): StopTimes[] {
-    const timeOf = (st: StopTimes): string =>
-      st.arrival_time ||
-      st.departure_time ||
-      st.start_pickup_drop_off_window ||
-      st.end_pickup_drop_off_window ||
-      '';
+  async planTripShift(
+    trip_id: string,
+    offsetSeconds: number
+  ): Promise<StopTimeEditPlan | null> {
+    const beforeRows = await this.readTripRows(trip_id);
+    if (beforeRows.length === 0 || offsetSeconds === 0) {
+      return null;
+    }
 
-    // Leading rows with nothing above them to inherit from keep an empty key,
-    // which sorts them to the front - where they already are.
-    let anchor = '';
-    const keyed = rows.map((st, index) => {
-      anchor = timeOf(st) || anchor;
-      return { st, key: anchor, index };
-    });
+    const afterRows = beforeRows.map((st) => shiftRowTimes(st, offsetSeconds));
 
-    // Tie-break on the original index so equal times never churn.
-    keyed.sort((a, b) =>
-      a.key === b.key ? a.index - b.index : a.key.localeCompare(b.key)
+    console.log(
+      `[TimetableDatabase] planTripShift ${JSON.stringify({
+        trip_id,
+        offsetSeconds,
+        before: beforeRows.map(describeRow),
+        after: afterRows.map(describeRow),
+      })}`
     );
-    return keyed.map((entry) => entry.st);
+
+    return { beforeRows, afterRows, isInsert: false, moved: [] };
+  }
+
+  /**
+   * Plan a reversal of one trip's stop order, without writing.
+   *
+   * The rows are reversed and renumbered from 0, and the times are mirrored so
+   * the trip still runs forward: the reversed trip departs when the original
+   * did and its leg durations are the original's in reverse. shape_dist_traveled
+   * is cleared because it measures along a shape the trip no longer follows.
+   *
+   * Returns null for a trip with fewer than two rows, which has no order to
+   * reverse.
+   *
+   * @param trip_id - GTFS trip identifier
+   */
+  async planTripReverse(trip_id: string): Promise<StopTimeEditPlan | null> {
+    const beforeRows = await this.readTripRows(trip_id);
+    if (beforeRows.length < 2) {
+      return null;
+    }
+
+    const afterRows: StopTimes[] = mirrorTripTimes(beforeRows).map(
+      (st, index) => ({ ...st, stop_sequence: index })
+    );
+
+    const last = beforeRows.length - 1;
+    console.log(
+      `[TimetableDatabase] planTripReverse ${JSON.stringify({
+        trip_id,
+        before: beforeRows.map(describeRow),
+        after: afterRows.map(describeRow),
+      })}`
+    );
+
+    return {
+      beforeRows,
+      afterRows,
+      isInsert: false,
+      moved: beforeRows.map((_, index) => ({ from: index, to: last - index })),
+    };
+  }
+
+  /** One trip's stop_times, sorted by stop_sequence. */
+  private async readTripRows(trip_id: string): Promise<StopTimes[]> {
+    const rows = await this.gtfsParser.gtfsDatabase.queryRows('stop_times', {
+      trip_id,
+    });
+    rows.sort((a, b) => Number(a.stop_sequence) - Number(b.stop_sequence));
+    return rows;
+  }
+
+  private reorderByTime(rows: StopTimes[]): StopTimes[] {
+    return chronologicalOrder(rows);
   }
 
   /**

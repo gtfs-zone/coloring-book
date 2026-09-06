@@ -14,6 +14,7 @@ import {
 } from '../types/gtfs-entities.js';
 import { CalendarSchema, GTFS_TABLES } from '../types/gtfs.js';
 import { TimeFormatter } from '../utils/time-formatter.js';
+import { isChronological } from '../utils/stop-time-order.js';
 import type { StopTimeRef } from '../types/gtfs-flex.js';
 import { stopTimeRef } from '../types/gtfs-flex.js';
 import type { GTFSParser } from './gtfs-parser.js';
@@ -109,6 +110,8 @@ export interface AlignedTrip extends Trips {
    */
   firstStopSequence: string;
   lastStopSequence: string;
+  /** True when sorting the trip by time would move a row. */
+  timesOutOfOrder: boolean;
 }
 
 /**
@@ -347,6 +350,7 @@ export class TimetableDataProcessor {
         firstDepartureTime,
         firstStopSequence: first ? String(first.stop_sequence) : '',
         lastStopSequence: last ? String(last.stop_sequence) : '',
+        timesOutOfOrder: !isChronological(stopTimes),
       };
     });
 
@@ -371,6 +375,7 @@ export class TimetableDataProcessor {
       firstDepartureTime,
       firstStopSequence,
       lastStopSequence,
+      timesOutOfOrder,
     } of tripsWithStopTimes) {
       const stopTimeMap = new Map<number, string>();
       const arrival_timeMap = new Map<number, string>();
@@ -495,6 +500,7 @@ export class TimetableDataProcessor {
         firstDepartureTime,
         firstStopSequence,
         lastStopSequence,
+        timesOutOfOrder,
       });
     }
 

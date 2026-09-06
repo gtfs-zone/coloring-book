@@ -225,4 +225,45 @@ export class TimeFormatter {
 
     return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   }
+
+  /**
+   * Shift a time by a number of seconds, clamping at 00:00:00.
+   *
+   * Unlike addMinutesToTime, an empty input stays empty: shifting a whole trip
+   * must not invent a time on a row that has none.
+   *
+   * @param time - Time string in HH:MM:SS or HH:MM format
+   * @param seconds - Seconds to add, may be negative
+   * @returns The shifted time, or the input unchanged when it cannot be parsed
+   * @example
+   * addSecondsToTime('23:45:30', 1800) -> '24:15:30'
+   * addSecondsToTime('', 3600) -> ''
+   */
+  static addSecondsToTime(time: string, seconds: number): string {
+    const base = TimeFormatter.timeToSeconds(time);
+    if (base === null) {
+      return time;
+    }
+    return TimeFormatter.secondsToTime(base + seconds);
+  }
+
+  /**
+   * Parse a signed offset the user typed, e.g. '-00:15:00', '+2:00' or '1:30'.
+   *
+   * @param input - Signed HH:MM:SS or HH:MM duration
+   * @returns The offset in seconds, or null when it cannot be parsed
+   */
+  static parseSignedDuration(input: string): number | null {
+    const trimmed = input.trim();
+    const match = /^([+-]?)(\d{1,3}):([0-5]\d)(?::([0-5]\d))?$/.exec(trimmed);
+    if (!match) {
+      return null;
+    }
+
+    const magnitude =
+      parseInt(match[2], 10) * 3600 +
+      parseInt(match[3], 10) * 60 +
+      (match[4] ? parseInt(match[4], 10) : 0);
+    return match[1] === '-' ? -magnitude : magnitude;
+  }
 }

@@ -27,7 +27,7 @@ export interface EntityFormField {
   /** Presence for a field the spec layer has no entry for. */
   presence?: GTFSPresence;
   /** Defaults to `select` for enum fields, `text` otherwise. */
-  type?: 'text' | 'date' | 'select';
+  type?: 'text' | 'date' | 'select' | 'checkbox';
   /** Select options. Derived from the enum registry when omitted. */
   options?: Array<{ value: string; label: string }>;
   value?: string;
@@ -89,7 +89,8 @@ function fieldConfig(field: EntityFormField): FieldConfig {
   return {
     field: field.field,
     label: field.label ?? field.field,
-    type: field.type ?? 'text',
+    // A checkbox has no FieldConfig type of its own; its label renders the same.
+    type: field.type === 'checkbox' ? 'text' : (field.type ?? 'text'),
     tableName: field.tableName,
     presence: spec?.presence ?? field.presence,
     presenceCondition: spec?.presenceCondition,
@@ -114,6 +115,15 @@ function renderInput(field: EntityFormField): string {
       )
       .join('');
     return `<select id="${id}" class="select select-bordered w-full">${rendered}</select>`;
+  }
+
+  if (type === 'checkbox') {
+    return `<input
+      id="${id}"
+      type="checkbox"
+      class="checkbox"
+      ${field.value ? 'checked' : ''}
+    />`;
   }
 
   const mono = field.mono ? ' font-mono' : '';
@@ -150,7 +160,12 @@ function readValues(fields: EntityFormField[]): Record<string, string> {
         `[entity-form-modal] input for "${field.field}" is missing from the form`
       );
     }
-    values[field.field] = el.value.trim();
+    values[field.field] =
+      el instanceof HTMLInputElement && el.type === 'checkbox'
+        ? el.checked
+          ? 'true'
+          : ''
+        : el.value.trim();
   }
   return values;
 }
