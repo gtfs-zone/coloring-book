@@ -11,6 +11,7 @@ import type { GTFSParser } from './gtfs-parser.js';
 import type { PatchOp } from '../types/patch.js';
 import { CONFIG } from '../config.js';
 import { routeSortKey } from './route-sort.js';
+import { ensureMapIcons } from './map-icons.js';
 import {
   routeColor as deriveRouteColor,
   casingColor as deriveCasingColor,
@@ -66,6 +67,13 @@ function zoomWidth(
   }
   return expr as unknown as ExpressionSpecification;
 }
+
+/** Matches no feature: the direction layer's resting state. */
+const NO_ROUTE_FILTER = [
+  '==',
+  ['get', 'route_id'],
+  '',
+] as unknown as ExpressionSpecification;
 
 const ROUTE_LINE_WIDTH = zoomWidth(ROUTE_WIDTH_STOPS, null, 1);
 const ROUTE_CASING_WIDTH = zoomWidth(CASING_WIDTH_STOPS, null, 1);
@@ -175,6 +183,51 @@ export class RouteRenderer {
         'line-cap': 'round',
         'line-join': 'round',
         'line-sort-key': ['get', 'sortKey'],
+      },
+    });
+
+    // Direction chevrons for the single spotlighted route. Above the ribbon so
+    // it can never cover them, below every stop layer (LayerManager adds those
+    // later). Starts filtered to nothing; applySpotlight owns the filter.
+    ensureMapIcons(this.map);
+    this.map.addLayer({
+      id: 'routes-direction',
+      type: 'symbol',
+      source: 'routes',
+      filter: NO_ROUTE_FILTER,
+      layout: {
+        'symbol-placement': 'line',
+        'symbol-spacing': [
+          'interpolate',
+          ['linear'],
+          ['zoom'],
+          12,
+          80,
+          16,
+          140,
+        ],
+        'icon-image': 'route-arrow',
+        'icon-rotation-alignment': 'map',
+        // An upright flip would reverse the arrow, the one thing this layer
+        // must never do.
+        'icon-keep-upright': false,
+        'icon-size': ['interpolate', ['linear'], ['zoom'], 12, 0.5, 16, 1],
+        // Let collision detection interleave the arrows where two
+        // opposite-direction features share a corridor, rather than stacking
+        // them on top of each other.
+        'icon-allow-overlap': false,
+        'icon-ignore-placement': false,
+      },
+      paint: {
+        'icon-opacity': [
+          'interpolate',
+          ['linear'],
+          ['zoom'],
+          CONFIG.ROUTE_ARROW_FADE_ZOOM_MIN,
+          0,
+          CONFIG.ROUTE_ARROW_FADE_ZOOM_MAX,
+          CONFIG.ROUTE_ARROW_OPACITY,
+        ],
       },
     });
 
@@ -547,6 +600,22 @@ export class RouteRenderer {
       if (this.map.getLayer(id)) {
         this.map.setLayoutProperty(id, 'line-sort-key', sortKey);
       }
+    }
+
+    // Direction arrows only when exactly one route is spotlighted: a stop click
+    // spotlights every route serving the stop, and arrows on all of them are
+    // noise.
+    if (this.map.getLayer('routes-direction')) {
+      this.map.setFilter(
+        'routes-direction',
+        route_ids && route_ids.length === 1
+          ? ([
+              '==',
+              ['get', 'route_id'],
+              route_ids[0],
+            ] as unknown as ExpressionSpecification)
+          : NO_ROUTE_FILTER
+      );
     }
   }
 
@@ -1094,6 +1163,9 @@ export class RouteRenderer {
 
     if (this.map.getLayer('routes-clickarea')) {
       this.map.removeLayer('routes-clickarea');
+    }
+    if (this.map.getLayer('routes-direction')) {
+      this.map.removeLayer('routes-direction');
     }
     if (this.map.getLayer('routes-background')) {
       this.map.removeLayer('routes-background');
