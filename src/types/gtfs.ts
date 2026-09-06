@@ -109,9 +109,3 @@ export const GTFS_TABLES = {
   FEED_INFO: 'feed_info.txt',
   ATTRIBUTIONS: 'attributions.txt',
 } as const;
-
-// ─── Utility functions ─────────────────────────────────────────────────────────
-
-export function getFileSchema(filename: string): z.ZodSchema | undefined {
-  return GTFSSchemas[filename];
-}
