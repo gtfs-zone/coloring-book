@@ -20,7 +20,7 @@ import {
   type PathwayCategory,
 } from '../utils/pathway-modes.js';
 import { ensureMapIcons } from './map-icons.js';
-import { getZoneFeatures, zoneName } from './zone-store.js';
+import { listZones, zoneName } from './zone-store.js';
 import {
   STOP_FOCUS_HALO_LAYER,
   STOP_FOCUS_RING_LAYER,
@@ -278,7 +278,7 @@ export class LayerManager {
    * focus highlight) has to survive a string id like "zone-north".
    */
   public updateZonesLayer(): void {
-    const features: GeoJSON.Feature[] = getZoneFeatures(this.gtfsParser).map(
+    const features: GeoJSON.Feature[] = listZones(this.gtfsParser).map(
       (feature) => ({
         type: 'Feature',
         geometry: feature.geometry,

@@ -2209,7 +2209,7 @@ export class PageContentRenderer {
     }
 
     const features = getZoneFeatures(parser);
-    if (!features.some((f) => String(f.id) === location_id)) {
+    if (!features.some((f) => String(f.id ?? '') === location_id)) {
       console.warn(
         `[PageContentRenderer] handleDeleteZone: zone ${location_id} not in locations.geojson`
       );
@@ -2227,7 +2227,7 @@ export class PageContentRenderer {
       }
       const { before, after } = await applyZoneFeatures(
         parser,
-        features.filter((f) => String(f.id) !== location_id)
+        features.filter((f) => String(f.id ?? '') !== location_id)
       );
 
       await pm.recordBatchMixed(

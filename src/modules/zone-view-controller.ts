@@ -1,15 +1,22 @@
 /**
  * Browse page for one on-demand zone (a locations.geojson feature).
  *
- * A zone has no CSV row, so there are no spec-driven property fields here: its
- * name and description live in the feature's properties and are edited by the
- * details form below, and its geometry goes through the geojson.io round trip
- * in `zone-geometry-editor`.
+ * A zone has no CSV row, so `renderInlineEntityFields` cannot be used here: its
+ * name and description live in the feature's properties and commit through
+ * `setZoneProperties`, and its geometry goes through the geojson.io round trip
+ * in `zone-geometry-editor`. The fields still edit by click-to-edit, like every
+ * other entity page.
  */
 
 import type { GTFSParser } from './gtfs-parser.js';
+import { GTFS_TABLES } from '../types/gtfs.js';
 import { escapeHtml } from '../utils/escape-html.js';
 import { getRouteDisplay, renderCardLabel } from '../utils/entity-display.js';
+import {
+  renderFieldLabel,
+  type FieldConfig,
+} from '../utils/field-component.js';
+import { openInlineEditor } from '../utils/inline-edit.js';
 import { renderTrashIcon } from './modal-utils.js';
 import { notify } from './notification-system.js';
 import {
@@ -33,7 +40,49 @@ import {
 const ZONE_ROUTE_ROW = 'zone-route-row';
 
 const DETAILS_FORM = 'zone-details-form';
+const DETAILS_FIELD = 'zone-details-field';
 const DELETE_BTN = 'zone-delete-btn';
+
+/**
+ * The editable feature properties. `tableName` is stops.txt because the flex
+ * reference gives these two the same meaning as the stop fields of the same
+ * name, which is where the label's tooltip and spec link come from.
+ */
+const ZONE_PROPERTY_FIELDS: FieldConfig[] = [
+  {
+    field: 'stop_name',
+    label: 'Name',
+    type: 'text',
+    tableName: GTFS_TABLES.STOPS,
+  },
+  {
+    field: 'stop_desc',
+    label: 'Description',
+    type: 'text',
+    tableName: GTFS_TABLES.STOPS,
+  },
+];
+
+function zoneFieldDisplay(value: string, placeholder: string): string {
+  return value
+    ? escapeHtml(value)
+    : `<span class="opacity-40">${escapeHtml(placeholder)}</span>`;
+}
+
+/** One click-to-edit property row. Pair with `attachDetailsHandlers`. */
+function renderZoneField(config: FieldConfig, value: string): string {
+  const placeholder = config.placeholder ?? '-';
+  const boxClass = `${DETAILS_FIELD} w-full cursor-pointer rounded-field border border-base-300 px-3 py-1.5 text-sm hover:bg-base-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary`;
+  return `
+    <fieldset class="fieldset isolate">
+      ${renderFieldLabel(config)}
+      <span class="${boxClass} block truncate" tabindex="0" role="button"
+        data-field="${escapeHtml(config.field)}"
+        data-value="${escapeHtml(value)}"
+        data-placeholder="${escapeHtml(placeholder)}">${zoneFieldDisplay(value, placeholder)}</span>
+    </fieldset>
+  `;
+}
 
 export interface ZoneViewDependencies {
   gtfsParser?: GTFSParser;
@@ -116,27 +165,25 @@ export class ZoneViewController {
 
   /**
    * Name and description, the only two properties the flex reference gives a
-   * locations.geojson feature. Save stays disabled until a value changes, the
-   * same contract as the geometry block below it.
+   * locations.geojson feature, as click-to-edit rows.
+   *
+   * The markup mirrors `renderInlineEditableField` so a zone reads like every
+   * other entity page, but deliberately does not wear its class: that module's
+   * document-level listeners commit through the spec tables, and a zone
+   * property lives inside a GeoJSON feature with no row to write.
    */
   private renderDetails(location_id: string, feature: ZoneFeature): string {
-    const name = zoneName(feature);
-    const description = zoneDescription(feature);
+    const values: Record<string, string> = {
+      stop_name: zoneName(feature),
+      stop_desc: zoneDescription(feature),
+    };
+    const fields = ZONE_PROPERTY_FIELDS.map((field) =>
+      renderZoneField(field, values[field.field])
+    ).join('');
     return `
       <div class="space-y-3 ${DETAILS_FORM}" data-location-id="${escapeHtml(location_id)}">
         <h3 class="font-semibold">Details</h3>
-        <fieldset class="fieldset">
-          <label class="label" for="zone-name-input">Name</label>
-          <input id="zone-name-input" class="input w-full zone-name-input" type="text"
-            placeholder="e.g. North service area" value="${escapeHtml(name)}" />
-          <label class="label" for="zone-desc-input">Description</label>
-          <input id="zone-desc-input" class="input w-full zone-desc-input" type="text"
-            placeholder="Optional" value="${escapeHtml(description)}" />
-        </fieldset>
-        <div class="flex items-center gap-2">
-          <button type="button" class="btn btn-sm btn-primary zone-details-save" disabled>Save details</button>
-          <span class="text-xs text-error hidden zone-details-error"></span>
-        </div>
+        ${fields}
       </div>
     `;
   }
@@ -211,6 +258,10 @@ export class ZoneViewController {
     });
   }
 
+  /**
+   * Open the editor on click, Enter or Space, and commit on blur, which is the
+   * contract `utils/inline-edit` carries for every editable value in the app.
+   */
   private attachDetailsHandlers(
     container: HTMLElement,
     parser: GTFSParser
@@ -220,52 +271,59 @@ export class ZoneViewController {
       return;
     }
     const location_id = form.dataset.locationId ?? '';
-    const nameInput = form.querySelector<HTMLInputElement>('.zone-name-input');
-    const descInput = form.querySelector<HTMLInputElement>('.zone-desc-input');
-    const saveButton =
-      form.querySelector<HTMLButtonElement>('.zone-details-save');
-    const errorEl = form.querySelector<HTMLElement>('.zone-details-error');
-    if (!nameInput || !descInput || !saveButton) {
+
+    const open = (span: HTMLElement): void => {
+      openInlineEditor(span, {
+        value: span.dataset.value ?? '',
+        inputType: 'text',
+        sizeClass: 'input-sm',
+        className: 'w-full',
+        placeholder: span.dataset.placeholder,
+        onCommit: (value) =>
+          void this.commitProperty(parser, location_id, span, value.trim()),
+      });
+    };
+
+    form.querySelectorAll<HTMLElement>(`.${DETAILS_FIELD}`).forEach((span) => {
+      span.addEventListener('click', () => open(span));
+      span.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          open(span);
+        }
+      });
+    });
+  }
+
+  /** Write one edited property, leaving the span as it was on failure. */
+  private async commitProperty(
+    parser: GTFSParser,
+    location_id: string,
+    span: HTMLElement,
+    value: string
+  ): Promise<void> {
+    const field = span.dataset.field ?? '';
+    if (!field || value === (span.dataset.value ?? '')) {
       return;
     }
 
-    // defaultValue is what was rendered, so Save stays disabled until the user
-    // actually changes something.
-    const syncSaveState = (): void => {
-      saveButton.disabled =
-        nameInput.value === nameInput.defaultValue &&
-        descInput.value === descInput.defaultValue;
-    };
-    for (const input of [nameInput, descInput]) {
-      input.addEventListener('input', () => {
-        errorEl?.classList.add('hidden');
-        syncSaveState();
-      });
+    try {
+      await setZoneProperties(
+        parser,
+        this.dependencies.patchManager ?? null,
+        location_id,
+        { [field]: value }
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      notify.error(message);
+      console.warn(`[ZoneViewController] ${location_id}.${field}: ${message}`);
+      return;
     }
 
-    saveButton.addEventListener('click', async () => {
-      errorEl?.classList.add('hidden');
-      try {
-        await setZoneProperties(
-          parser,
-          this.dependencies.patchManager ?? null,
-          location_id,
-          {
-            stop_name: nameInput.value.trim(),
-            stop_desc: descInput.value.trim(),
-          }
-        );
-        notify.success(`Updated zone ${location_id}`);
-        this.dependencies.onPropertiesChanged?.(location_id);
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        if (errorEl) {
-          errorEl.textContent = message;
-          errorEl.classList.remove('hidden');
-        }
-        console.warn(`[ZoneViewController] ${location_id}: ${message}`);
-      }
-    });
+    span.dataset.value = value;
+    span.innerHTML = zoneFieldDisplay(value, span.dataset.placeholder ?? '-');
+    this.dependencies.onPropertiesChanged?.(location_id);
   }
 
   private renderError(message: string): string {

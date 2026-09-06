@@ -13,7 +13,7 @@ import {
   getStopDisplay,
 } from '../utils/entity-display.js';
 import type { GTFSParser } from './gtfs-parser.js';
-import { getZoneFeatures, zoneName } from './zone-store.js';
+import { listZones, zoneName } from './zone-store.js';
 import {
   neutralMarker,
   routeMarker,
@@ -102,7 +102,7 @@ export async function buildSearchEntries(
 
   // Flex objects rank below stops and routes: most feeds have none, and where
   // they exist they are far fewer than the scheduled objects above.
-  for (const feature of getZoneFeatures(parser)) {
+  for (const feature of listZones(parser)) {
     const location_id = String(feature.id);
     const name = zoneName(feature);
     entries.push({

@@ -20,7 +20,7 @@ import {
 import { BasemapControl } from './basemap-control.js';
 import { notify } from './notification-system.js';
 import type { PatchRecord, SingleGTFSPatch } from '../types/patch.js';
-import { getZoneFeature, getZoneFeatures, zoneBounds } from './zone-store.js';
+import { getZoneFeature, listZones, zoneBounds } from './zone-store.js';
 import { stopTimeRef } from '../types/gtfs-flex.js';
 
 // Map interaction modes
@@ -607,7 +607,7 @@ export class MapController {
   private fitMapToData(): void {
     const stops =
       this.gtfsParser!.getFileDataSyncTyped<Stops>('stops.txt') || [];
-    const zones = getZoneFeatures(this.gtfsParser!);
+    const zones = listZones(this.gtfsParser!);
 
     const bounds = this.boundsFor({
       stop_ids: stops.map((stop) => stop.stop_id),

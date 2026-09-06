@@ -13,12 +13,12 @@ import type { GTFSParser } from './gtfs-parser.js';
 import { encodeGeojsonIoUrl } from '../utils/geojson-io.js';
 import {
   attachGeojsonExchangeHandlers,
-  pickFeatureById,
   renderGeojsonExchangeBlock,
 } from './geojson-exchange.js';
 import {
   getZoneFeature,
   getZoneFeatures,
+  hasZoneGeometry,
   mergeZoneFeatures,
   writeZoneFeatures,
   zoneBounds,
@@ -40,6 +40,42 @@ function exchangeId(location_id: string): string {
   return `zone-${location_id}`;
 }
 
+/** A polygonal geometry, i.e. one this zone can actually take. */
+function isDrawn(feature: GeoJSON.Feature): boolean {
+  const type = feature.geometry?.type;
+  return type === 'Polygon' || type === 'MultiPolygon';
+}
+
+/**
+ * Choose which feature of a pasted collection is this zone's geometry.
+ *
+ * An id match wins, but only when it carries a polygon: geojson.io returns the
+ * feature it was handed with a null geometry and the shape the user drew as a
+ * separate, id-less feature, and preferring the id match there would throw the
+ * drawing away. So a lone drawn feature is adopted as this zone's geometry.
+ */
+export function pickZoneFeature(
+  collection: GeoJSON.FeatureCollection,
+  location_id: string
+): GeoJSON.Feature {
+  const byId = collection.features.find(
+    (f) => String(f.id ?? '') === location_id
+  );
+  if (byId && isDrawn(byId)) {
+    return byId;
+  }
+  const drawn = collection.features.filter(isDrawn);
+  if (drawn.length === 1) {
+    return drawn[0];
+  }
+  const described = collection.features
+    .map((f) => `${String(f.id ?? '(no id)')}: ${String(f.geometry?.type)}`)
+    .join(', ');
+  throw new Error(
+    `No polygon for zone "${location_id}" in the GeoJSON. Found: ${described || 'nothing'}.`
+  );
+}
+
 /** Summary, GeoJSON editor and geojson.io handoff for one zone. */
 export async function renderZoneGeometrySection(
   parser: GTFSParser,
@@ -58,25 +94,30 @@ export async function renderZoneGeometrySection(
   const boundsLabel = bounds
     ? `${bounds[1].toFixed(5)}, ${bounds[0].toFixed(5)} to ${bounds[3].toFixed(5)}, ${bounds[2].toFixed(5)}`
     : 'unknown';
+
+  // geojson.io cannot draw a feature with no geometry: it drops the geometry
+  // and hands back whatever was drawn as a new feature. Send it an empty
+  // collection instead, so the user gets a blank map to draw on.
+  const drawn = hasZoneGeometry(feature);
   const editUrl = await encodeGeojsonIoUrl({
     type: 'FeatureCollection',
-    features: [feature],
+    features: drawn ? [feature as GeoJSON.Feature] : [],
   });
 
-  // A zone created from the On-Demand modal starts with no coordinates. Say so
-  // loudly rather than showing an empty summary that reads as broken.
-  const emptyWarning =
-    zoneVertexCount(feature) === 0
-      ? `<div class="alert alert-warning">
-          <span>This zone has no geometry yet. Draw it in geojson.io or paste GeoJSON below.</span>
-        </div>`
-      : '';
+  // The reference requires a geometry, so this is a feed the editor is being
+  // used to repair. Say so loudly rather than showing an empty summary that
+  // reads as broken.
+  const emptyWarning = drawn
+    ? ''
+    : `<div class="alert alert-warning">
+          <span>This zone has no geometry. Draw it in geojson.io or paste GeoJSON below.</span>
+        </div>`;
 
   return `
     <div class="space-y-3 zone-geometry-section" data-location-id="${escapeHtml(location_id)}">
       ${emptyWarning}
       <dl class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm">
-        <dt class="opacity-60">Type</dt><dd class="font-mono">${escapeHtml(feature.geometry.type)}</dd>
+        <dt class="opacity-60">Type</dt><dd class="font-mono">${escapeHtml(feature.geometry?.type ?? 'none')}</dd>
         <dt class="opacity-60">Vertices</dt><dd class="font-mono">${zoneVertexCount(feature)}</dd>
         <dt class="opacity-60">Bounds</dt><dd class="font-mono text-xs">${escapeHtml(boundsLabel)}</dd>
       </dl>
@@ -107,11 +148,11 @@ export function attachZoneGeometryHandlers(
   attachGeojsonExchangeHandlers(section, {
     instanceId: exchangeId(location_id),
     logPrefix: `[ZoneGeometry] ${location_id}`,
-    pick: (collection) => pickFeatureById(collection, location_id),
+    pick: (collection) => pickZoneFeature(collection, location_id),
     prepare: (feature) => ({ ...feature, id: location_id }),
     onApply: async (edited) => {
       const current = getZoneFeatures(deps.gtfsParser);
-      if (!current.some((f) => String(f.id) === location_id)) {
+      if (!current.some((f) => String(f.id ?? '') === location_id)) {
         throw new Error(
           `Zone ${location_id} is no longer in locations.geojson. Reload the page.`
         );
