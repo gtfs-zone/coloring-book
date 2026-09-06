@@ -1,3 +1,41 @@
+## v0.30.0 (2026-09-06)
+
+### Feat
+
+- **timetable**: accept plain minutes in the trip time offset
+- **timetable**: add copy, reverse and shift trip actions
+- **map**: add an auto-zoom toggle to the map controls
+- **services**: prune out-of-range exceptions on trim and extend
+- **map**: draw direction arrows on the spotlighted route
+- **dates**: add a today shortcut to date pickers
+- **services**: create a service from the timetable and route pages
+- **help**: reorder publishing guide and add a realtime step
+- **help**: inline links in the publishing guide
+- **services**: readable dates and holiday names in exception lists
+- **shapes**: editable shapes and zones via geojson.io, guided on-demand setup
+- **timetable**: move the timetable into a hash-routed modal
+
+### Fix
+
+- **modal**: keep the keyboard inside an open modal
+- **timetable**: use the portal tooltip for the trip_id header
+- **map**: apply the persisted auto-zoom state on boot
+- **zones**: keep geometry-less features and validate them
+- **zones**: persist locations.geojson, edit zone name and description
+- **services**: read feed bounds from any feed_info row and surface bulk trim/extend
+
+### Refactor
+
+- **navbar**: render the action row from a descriptor list
+- **map**: always use the globe projection
+- **modals**: share the creation form and the sidebar modal
+- **help**: drop the "don't show again" checkbox
+- **shortcuts**: drop the Ctrl+N new-feed shortcut
+
+### Perf
+
+- **load-modal**: open the modal before the feed list loads
+
 ## v0.29.0 (2026-08-27)
 
 ### Feat
