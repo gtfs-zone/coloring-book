@@ -12,7 +12,8 @@ import type { GTFSParser } from './gtfs-parser.js';
 import { showModal } from './modal-utils.js';
 import { generateId } from '../utils/uuid.js';
 import { hasLiveEditor } from '../utils/inline-edit.js';
-import { renderSpecFieldLabelContent } from '../utils/field-component.js';
+import { promptNewEntity, type EntityFormField } from './entity-form-modal.js';
+import { GTFS_TABLES } from '../types/gtfs.js';
 
 export interface InteractionCallbacks {
   onRouteClick?: (route_id: string) => void;
@@ -319,116 +320,79 @@ export class InteractionHandler {
     }
 
     const { lng, lat } = e.lngLat;
-    const suggestedId = generateId();
     const expandedStationId = this.getExpandedStationId?.() ?? null;
 
-    const locationTypeSelect = expandedStationId
-      ? `
-        <label class="label mt-2"><span class="label-text">${renderSpecFieldLabelContent('stops.txt', 'location_type', 'Location Type')}</span></label>
-        <select id="new-stop-type-select" class="select select-bordered w-full">
-          <option value="0">0: Platform (stop within a station)</option>
-          <option value="2">2: Entrance / Exit</option>
-          <option value="3">3: Generic Node</option>
-          <option value="4">4: Boarding Area</option>
-        </select>`
-      : '';
+    // A child of an expanded station can be any of the non-station types; a
+    // standalone stop is always a platform, so the field is not offered.
+    const locationTypeField: EntityFormField[] = expandedStationId
+      ? [
+          {
+            field: 'location_type',
+            tableName: GTFS_TABLES.STOPS,
+            label: 'Location Type',
+            type: 'select',
+            options: [
+              { value: '0', label: '0: Platform (stop within a station)' },
+              { value: '2', label: '2: Entrance / Exit' },
+              { value: '3', label: '3: Generic Node' },
+              { value: '4', label: '4: Boarding Area' },
+            ],
+          },
+        ]
+      : [];
 
     const parentInfo = expandedStationId
-      ? `<p class="text-xs opacity-60 mt-2">Will be added as a child of station <code>${expandedStationId}</code>.</p>`
+      ? `<p class="text-xs opacity-60">Will be added as a child of station <code>${expandedStationId}</code>.</p>`
       : '';
 
-    const bodyHtml = `
-      <label class="label"><span class="label-text">${renderSpecFieldLabelContent('stops.txt', 'stop_id', 'Stop ID')}</span></label>
-      <input
-        id="new-stop-id-input"
-        type="text"
-        class="input input-bordered w-full font-mono"
-        value="${suggestedId}"
-      />
-      ${locationTypeSelect}
-      <p class="text-xs opacity-60 mt-2">The Stop ID cannot be changed after creation. Examples: <code>1234</code>, <code>STOP_1</code>, <code>place-gilman</code>.</p>
-      ${parentInfo}
-      <p id="stop-id-error" class="text-xs text-error mt-1 hidden"></p>
-    `;
-
-    const createStop = async (): Promise<boolean | void> => {
-      const input = document.getElementById(
-        'new-stop-id-input'
-      ) as HTMLInputElement;
-      const stopId = input.value.trim();
-      const errorEl = document.getElementById('stop-id-error') as HTMLElement;
-
-      if (!stopId) {
-        errorEl.textContent = 'Stop ID is required.';
-        errorEl.classList.remove('hidden');
-        return true;
-      }
-
-      const stops =
-        this.gtfsParser.getFileDataSyncTyped<Stops>('stops.txt') || [];
-      if (stops.some((s) => s.stop_id === stopId)) {
-        errorEl.textContent = 'Stop ID already exists.';
-        errorEl.classList.remove('hidden');
-        return true;
-      }
-
-      let locationType = 0;
-      if (expandedStationId) {
-        const typeSelect = document.getElementById(
-          'new-stop-type-select'
-        ) as HTMLSelectElement;
-        locationType = parseInt(typeSelect?.value ?? '0', 10);
-      }
-
-      const newStop: Stops = {
-        stop_id: stopId,
-        stop_name: '',
-        stop_lat: parseFloat(lat.toFixed(6)),
-        stop_lon: parseFloat(lng.toFixed(6)),
-        parent_station: expandedStationId ?? '',
-        location_type: locationType,
-      };
-
-      console.log('Creating new stop:', newStop);
-
-      try {
+    void promptNewEntity({
+      title: expandedStationId ? 'New Child Stop' : 'New Stop',
+      createLabel: 'Create Stop',
+      fields: [
+        {
+          field: 'stop_id',
+          tableName: GTFS_TABLES.STOPS,
+          label: 'Stop ID',
+          mono: true,
+          value: generateId(),
+          note: 'The Stop ID cannot be changed after creation. Examples: <code>1234</code>, <code>STOP_1</code>, <code>place-gilman</code>.',
+        },
+        ...locationTypeField,
+      ],
+      extraBody: parentInfo,
+      validate: (v) => {
+        if (!v.stop_id) {
+          return 'Stop ID is required.';
+        }
+        const stops =
+          this.gtfsParser.getFileDataSyncTyped<Stops>('stops.txt') || [];
+        if (stops.some((s) => s.stop_id === v.stop_id)) {
+          return 'Stop ID already exists.';
+        }
+        return null;
+      },
+      onCreate: async (v) => {
+        const newStop: Stops = {
+          stop_id: v.stop_id,
+          stop_name: '',
+          stop_lat: parseFloat(lat.toFixed(6)),
+          stop_lon: parseFloat(lng.toFixed(6)),
+          parent_station: expandedStationId ?? '',
+          location_type: parseInt(v.location_type ?? '0', 10),
+        };
+        console.log('Creating new stop:', newStop);
         await this.addStopToData(newStop);
         this.setMapMode(MapMode.NAVIGATE);
-        if (this.callbacks.onStopClick) {
-          this.callbacks.onStopClick(stopId);
-        }
+        this.callbacks.onStopClick?.(v.stop_id);
         console.log(
-          `Created stop ${stopId} at ${lat.toFixed(6)}, ${lng.toFixed(6)}`
+          `Created stop ${v.stop_id} at ${lat.toFixed(6)}, ${lng.toFixed(6)}`
         );
-      } catch (error) {
-        console.error('Failed to create stop:', error);
-        errorEl.textContent = 'Failed to create stop. See console for details.';
-        errorEl.classList.remove('hidden');
-        return true;
-      }
-    };
-
-    showModal({
-      title: expandedStationId ? 'New Child Stop' : 'New Stop',
-      body: bodyHtml,
-      enterAction: 1,
-      escapeAction: 0,
-      actions: [
-        {
-          label: 'Cancel',
-          onClick: () => {
-            this.setMapMode(MapMode.NAVIGATE);
-          },
-        },
-        { label: 'Create Stop', className: 'btn-primary', onClick: createStop },
-      ],
-      onMount: () => {
-        const input = document.getElementById(
-          'new-stop-id-input'
-        ) as HTMLInputElement;
-        input.focus();
-        input.select();
       },
+    }).then((values) => {
+      // Cancelling leaves add-stop mode, as the old Cancel action did.
+      if (!values) {
+        this.setMapMode(MapMode.NAVIGATE);
+      }
     });
   }
 
@@ -492,98 +456,73 @@ export class InteractionHandler {
     }
 
     const pathwayId = generateId();
-    const bodyHtml = `
-      <div class="space-y-2">
-        <div>
-          <div class="label-text text-sm opacity-70 mb-1">From Stop</div>
-          <div class="font-mono text-sm bg-base-200 px-3 py-2 rounded">${fromStopId}</div>
-        </div>
-        <div>
-          <div class="label-text text-sm opacity-70 mb-1">To Stop</div>
-          <div class="font-mono text-sm bg-base-200 px-3 py-2 rounded">${toStopId}</div>
-        </div>
-        <label class="form-control w-full">
-          <div class="label"><span class="label-text">${renderSpecFieldLabelContent('pathways.txt', 'pathway_mode', 'Pathway Mode')}</span></div>
-          <select id="new-pathway-mode" class="select select-bordered select-sm w-full">
-            <option value="1">1: Walkway</option>
-            <option value="2">2: Stairs</option>
-            <option value="3">3: Moving Sidewalk</option>
-            <option value="4">4: Escalator</option>
-            <option value="5">5: Elevator</option>
-            <option value="6">6: Fare Gate</option>
-            <option value="7">7: Exit Gate</option>
-          </select>
-        </label>
-        <label class="label cursor-pointer justify-start gap-3">
-          <input type="checkbox" id="new-pathway-bidirectional" class="checkbox checkbox-sm" checked />
-          <span class="label-text">${renderSpecFieldLabelContent('pathways.txt', 'is_bidirectional', 'Bidirectional')}</span>
-        </label>
-        <p id="pathway-error" class="text-xs text-error hidden"></p>
+    const endpoints = `
+      <div>
+        <div class="label-text text-sm opacity-70 mb-1">From Stop</div>
+        <div class="font-mono text-sm bg-base-200 px-3 py-2 rounded">${fromStopId}</div>
+      </div>
+      <div>
+        <div class="label-text text-sm opacity-70 mb-1">To Stop</div>
+        <div class="font-mono text-sm bg-base-200 px-3 py-2 rounded">${toStopId}</div>
       </div>
     `;
 
-    const createPathway = async (): Promise<boolean | void> => {
-      const modeSelect = document.getElementById(
-        'new-pathway-mode'
-      ) as HTMLSelectElement;
-      const bidirEl = document.getElementById(
-        'new-pathway-bidirectional'
-      ) as HTMLInputElement;
-      const errorEl = document.getElementById('pathway-error');
-
-      const pathway_mode = parseInt(modeSelect.value, 10);
-      const is_bidirectional = bidirEl.checked ? 1 : 0;
-
-      if (pathway_mode === 7 && is_bidirectional === 1) {
-        if (errorEl) {
-          errorEl.textContent =
-            'Exit gates (mode 7) must not be bidirectional.';
-          errorEl.classList.remove('hidden');
+    void promptNewEntity({
+      title: 'New Pathway',
+      createLabel: 'Create Pathway',
+      intro: endpoints,
+      fields: [
+        {
+          field: 'pathway_mode',
+          tableName: GTFS_TABLES.PATHWAYS,
+          label: 'Pathway Mode',
+          type: 'select',
+          value: '1',
+          options: [
+            { value: '1', label: '1: Walkway' },
+            { value: '2', label: '2: Stairs' },
+            { value: '3', label: '3: Moving Sidewalk' },
+            { value: '4', label: '4: Escalator' },
+            { value: '5', label: '5: Elevator' },
+            { value: '6', label: '6: Fare Gate' },
+            { value: '7', label: '7: Exit Gate' },
+          ],
+        },
+        {
+          field: 'is_bidirectional',
+          tableName: GTFS_TABLES.PATHWAYS,
+          label: 'Bidirectional',
+          type: 'select',
+          value: '1',
+          options: [
+            { value: '0', label: '0: One way' },
+            { value: '1', label: '1: Both ways' },
+          ],
+        },
+      ],
+      validate: (v) => {
+        if (v.pathway_mode === '7' && v.is_bidirectional === '1') {
+          return 'Exit gates (mode 7) must not be bidirectional.';
         }
-        return true;
-      }
-
-      const newPathway = {
-        pathway_id: pathwayId,
-        from_stop_id: fromStopId,
-        to_stop_id: toStopId,
-        pathway_mode,
-        is_bidirectional,
-      };
-
-      try {
-        await this.gtfsParser.createPathway(newPathway);
+        return null;
+      },
+      onCreate: async (v) => {
+        await this.gtfsParser.createPathway({
+          pathway_id: pathwayId,
+          from_stop_id: fromStopId,
+          to_stop_id: toStopId,
+          pathway_mode: parseInt(v.pathway_mode, 10),
+          is_bidirectional: parseInt(v.is_bidirectional, 10),
+        });
         this.setMapMode(MapMode.NAVIGATE);
         this.callbacks.onPathwayCreated?.(pathwayId);
         console.log(`Created pathway ${pathwayId}`);
-      } catch (error) {
-        console.error('Failed to create pathway:', error);
-        if (errorEl) {
-          errorEl.textContent = 'Failed to create pathway. See console.';
-          errorEl.classList.remove('hidden');
-        }
-        return true;
+      },
+    }).then((values) => {
+      // Cancelling leaves add-pathway mode, as the old Cancel action did.
+      if (!values) {
+        this.setMapMode(MapMode.NAVIGATE);
       }
-    };
-
-    showModal({
-      title: 'New Pathway',
-      body: bodyHtml,
-      enterAction: 1,
-      escapeAction: 0,
-      actions: [
-        {
-          label: 'Cancel',
-          onClick: () => {
-            this.setMapMode(MapMode.NAVIGATE);
-          },
-        },
-        {
-          label: 'Create Pathway',
-          className: 'btn-primary',
-          onClick: createPathway,
-        },
-      ],
     });
   }
 

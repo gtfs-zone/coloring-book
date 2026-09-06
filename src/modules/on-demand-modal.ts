@@ -8,8 +8,17 @@
  * and links through to the zone browse page where the geometry is edited.
  */
 
-import { showModal } from './modal-utils.js';
-import { showHelpModal } from './help-modal.js';
+import { showSidebarModal } from './sidebar-modal.js';
+import {
+  attachGeojsonExchangeHandlers,
+  geojsonExchangeInput,
+  pickLoneFeature,
+  readIncomingFeature,
+  renderGeojsonExchangeBlock,
+  showGeojsonExchangeError,
+} from './geojson-exchange.js';
+import { encodeGeojsonIoUrl } from '../utils/geojson-io.js';
+import { promptNewEntity } from './entity-form-modal.js';
 import {
   renderEditableTable,
   installEditableTableHandlers,
@@ -36,10 +45,17 @@ export interface OnDemandModalDeps extends EditableTableDeps {
   /** Opens a zone's browse page. The modal closes first. */
   onZoneClick: (location_id: string) => void;
   /**
-   * Writes a new, empty-geometry zone into locations.geojson as one patch.
-   * Lives outside this module because it needs the parser, not the database.
+   * Writes a new zone into locations.geojson as one patch. Lives outside this
+   * module because it needs the parser, not the database.
    */
-  onCreateZone: (location_id: string, stop_name: string) => Promise<void>;
+  onCreateZone: (zone: NewZone) => Promise<void>;
+}
+
+/** What the New zone modal collects. The geometry is required, as in the spec. */
+export interface NewZone {
+  location_id: string;
+  stop_name: string;
+  geometry: GeoJSON.Polygon | GeoJSON.MultiPolygon;
 }
 
 /** Which pane to open on, and which row to draw attention to. */
@@ -52,12 +68,6 @@ const INSTANCE_ID = 'on-demand-table';
 
 /** locations.geojson is not a spec table; the Zones pane renders it by hand. */
 const ZONES_ENTRY_ID = GTFS_TABLES.LOCATIONS_GEOJSON;
-
-/** Footer of the Zones pane, shown whether or not the feed has any zones. */
-const NEW_ZONE_BUTTON = `<div class="mt-3 flex gap-2 items-center">
-  <button type="button" class="btn btn-sm btn-primary" data-new-zone>New zone</button>
-  <button type="button" class="btn btn-sm btn-ghost" data-open-guide="on-demand">Guide</button>
-</div>`;
 
 type OnDemandGroup = 'Booking' | 'Geography';
 
@@ -138,10 +148,10 @@ async function readZoneFeatures(
 async function renderZonesPane(deps: OnDemandModalDeps): Promise<string> {
   const features = await readZoneFeatures(deps);
   if (features.length === 0) {
-    return `${emptyState(
+    return emptyState(
       ZONES_ENTRY_ID,
-      'A zone is an area a rider can be picked up in or dropped off in. Zones arrive by importing a feed with locations.geojson, or you can create an empty one here and draw it on its zone page.'
-    )}${NEW_ZONE_BUTTON}`;
+      'A zone is an area a rider can be picked up in or dropped off in. Zones arrive by importing a feed with locations.geojson, or you can draw one in geojson.io and create it here.'
+    );
   }
 
   const rows = features
@@ -163,11 +173,11 @@ async function renderZonesPane(deps: OnDemandModalDeps): Promise<string> {
   return `<table class="table table-sm">
     <thead><tr><th>location_id</th><th>Name</th><th>Geometry</th></tr></thead>
     <tbody>${rows}</tbody>
-  </table>${NEW_ZONE_BUTTON}`;
+  </table>`;
 }
 
 /**
- * Ask for the new zone's id and name.
+ * Ask for the new zone's id, name and geometry.
  *
  * Validation runs inside the action so a clash is reported in place rather
  * than closing the modal and losing what was typed. `taken` maps every id
@@ -176,70 +186,105 @@ async function renderZonesPane(deps: OnDemandModalDeps): Promise<string> {
  */
 async function promptNewZone(
   taken: Map<string, string>
-): Promise<{ location_id: string; stop_name: string } | null> {
-  let created: { location_id: string; stop_name: string } | null = null;
+): Promise<NewZone | null> {
+  const instanceId = 'new-zone-geometry';
+  const blankMapUrl = await encodeGeojsonIoUrl({
+    type: 'FeatureCollection',
+    features: [],
+  });
+  let geometry: GeoJSON.Polygon | GeoJSON.MultiPolygon | null = null;
 
-  await showModal({
+  // locations.geojson is a GeoJSON file the reference defines no field table
+  // for, so presence is stated here rather than read from the spec layer.
+  const values = await promptNewEntity({
     title: 'New zone',
-    body: `
-      <div class="space-y-3">
-        <p class="text-base-content/60 text-sm">
-          The zone is created with no geometry. Draw it on its zone page, in
-          geojson.io or by pasting GeoJSON.
-        </p>
-        <fieldset class="fieldset">
-          <label class="label" for="new-zone-id">location_id</label>
-          <input id="new-zone-id" class="input w-full" type="text" placeholder="e.g. zone_north" />
-          <label class="label" for="new-zone-name">Name (optional)</label>
-          <input id="new-zone-name" class="input w-full" type="text" placeholder="e.g. North service area" />
-          <p id="new-zone-error" class="text-error text-sm hidden"></p>
-        </fieldset>
-      </div>
-    `,
-    escapeAction: 1,
-    enterAction: 0,
-    onMount: () => document.getElementById('new-zone-id')?.focus(),
-    actions: [
+    fields: [
       {
-        label: 'Create',
-        className: 'btn-primary',
-        onClick: () => {
-          const idEl = document.getElementById(
-            'new-zone-id'
-          ) as HTMLInputElement | null;
-          const nameEl = document.getElementById(
-            'new-zone-name'
-          ) as HTMLInputElement | null;
-          const errorEl = document.getElementById('new-zone-error');
-          const location_id = idEl?.value.trim() ?? '';
-
-          const showError = (msg: string) => {
-            if (errorEl) {
-              errorEl.textContent = msg;
-              errorEl.classList.remove('hidden');
-            }
-            return true as const;
-          };
-
-          if (location_id === '') {
-            return showError('location_id is required.');
-          }
-          const owner = taken.get(location_id);
-          if (owner) {
-            return showError(
-              `"${location_id}" is already used as ${owner}; the ID must be unique across stops.txt, locations.geojson and location_groups.txt.`
-            );
-          }
-
-          created = { location_id, stop_name: nameEl?.value.trim() ?? '' };
-          return;
-        },
+        field: 'location_id',
+        presence: 'Required',
+        mono: true,
+        placeholder: 'e.g. zone_north',
       },
-      { label: 'Cancel', onClick: () => {} },
+      {
+        field: 'stop_name',
+        label: 'Name',
+        presence: 'Optional',
+        placeholder: 'e.g. North service area',
+      },
     ],
+    extraBody: renderGeojsonExchangeBlock({
+      instanceId,
+      featureJson: '',
+      editUrl: blankMapUrl,
+      title: 'Geometry',
+      rows: 8,
+      placeholder:
+        '{ "type": "Feature", "geometry": { "type": "Polygon", ... } }',
+      hint: 'Draw the zone in geojson.io, then Share and paste the link here. A Polygon or MultiPolygon Feature, or a FeatureCollection holding one, works too.',
+    }),
+    onMount: () => {
+      attachGeojsonExchangeHandlers(document, {
+        instanceId,
+        logPrefix: '[OnDemandModal] new zone',
+        pick: pickLoneFeature,
+      });
+    },
+    validate: async (v) => {
+      if (v.location_id === '') {
+        return 'location_id is required.';
+      }
+      const owner = taken.get(v.location_id);
+      if (owner) {
+        return `"${v.location_id}" is already used as ${owner}; the ID must be unique across stops.txt, locations.geojson and location_groups.txt.`;
+      }
+      geometry = await readNewZoneGeometry(instanceId);
+      // readNewZoneGeometry reports into the exchange block's own error slot.
+      return geometry ? null : '';
+    },
   });
 
-  return created;
+  if (!values || !geometry) {
+    return null;
+  }
+  return {
+    location_id: values.location_id,
+    stop_name: values.stop_name,
+    geometry,
+  };
+}
+
+/**
+ * The geometry typed into the New zone modal's exchange block.
+ *
+ * Reports its own failure in the block's error slot and returns null, so the
+ * modal stays open with what the user pasted still in it.
+ */
+async function readNewZoneGeometry(
+  instanceId: string
+): Promise<GeoJSON.Polygon | GeoJSON.MultiPolygon | null> {
+  const input = geojsonExchangeInput(document, instanceId);
+  const fail = (message: string): null => {
+    showGeojsonExchangeError(document, instanceId, message);
+    return null;
+  };
+  try {
+    const feature = await readIncomingFeature(
+      input?.value ?? '',
+      pickLoneFeature
+    );
+    const geometry = feature.geometry as GeoJSON.Geometry | null;
+    if (geometry?.type !== 'Polygon' && geometry?.type !== 'MultiPolygon') {
+      return fail(
+        `A zone needs a Polygon or MultiPolygon, got ${String(geometry?.type)}.`
+      );
+    }
+    if (geometry.coordinates.length === 0) {
+      return fail('That polygon has no coordinates. Draw the zone first.');
+    }
+    return geometry;
+  } catch (error) {
+    return fail(error instanceof Error ? error.message : String(error));
+  }
 }
 
 // ─── Entries ──────────────────────────────────────────────────────────────────
@@ -296,30 +341,6 @@ const ON_DEMAND_ENTRIES: OnDemandEntry[] = [
 
 const GROUP_ORDER: OnDemandGroup[] = ['Booking', 'Geography'];
 
-function renderSidebar(
-  activeTable: string,
-  counts: Map<string, number>
-): string {
-  const groups = GROUP_ORDER.map((group) => {
-    const items = ON_DEMAND_ENTRIES.filter((entry) => entry.group === group)
-      .map((entry) => {
-        const count = counts.get(entry.table) ?? 0;
-        const badge = `<span class="badge badge-sm badge-ghost ml-auto">${count}</span>`;
-        return `<li>
-          <button
-            type="button"
-            data-on-demand-entry="${escapeHtml(entry.table)}"
-            class="${entry.table === activeTable ? 'menu-active' : ''}"
-          >${escapeHtml(entry.label)}${badge}</button>
-        </li>`;
-      })
-      .join('');
-    return `<li class="menu-title">${group}</li>${items}`;
-  }).join('');
-
-  return `<ul class="menu menu-sm bg-base-200 rounded-box w-52 shrink-0">${groups}</ul>`;
-}
-
 /** Every id already claimed by stops.txt or locations.geojson, and by which. */
 async function readIdOwners(
   deps: OnDemandModalDeps
@@ -366,169 +387,120 @@ async function readNewZoneIdOwners(
   return owners;
 }
 
+const INTRO = `On-demand service (GTFS Flex): the rules a rider books under, the
+  groups of stops they can be served at, and the zones they can be served in. A
+  trip becomes on-demand in its timetable, by giving a stop_time a pickup and
+  drop-off window instead of an arrival and departure.
+  <a href="https://gtfs.org/documentation/schedule/reference/#booking_rulestxt"
+     target="_blank" rel="noopener noreferrer" class="link">GTFS reference</a>.`;
+
 export async function showOnDemandModal(
   deps: OnDemandModalDeps,
   target: OnDemandModalTarget = {}
 ): Promise<void> {
-  let activeEntry =
-    ON_DEMAND_ENTRIES.find((entry) => entry.table === target.table) ??
-    ON_DEMAND_ENTRIES[0];
-  // Consumed by the first refresh only: a later tab change must not re-scroll.
+  // Consumed by the first pane render only: a later tab change must not re-scroll.
   let pendingRowKey = target.rowKey;
+
+  // Filled in by the scaffold; the table's own callbacks re-render through it.
+  const refreshRef = { refresh: async (): Promise<void> => {} };
 
   const tableConfig: EditableTableConfig = {
     instanceId: INSTANCE_ID,
-    // A real spec table, not activeEntry.table: the Zones pane has no field
-    // specs, and refresh() sets this before anything is rendered anyway.
+    // A real spec table, not the active entry's: the Zones pane has no field
+    // specs, and renderPane sets this before anything is rendered anyway.
     tableName: GTFS_TABLES.BOOKING_RULES,
     rows: [],
     deps,
     emptyMessage: '',
-    onInsert: () => void refresh(),
-    onRowsChanged: () => void refresh(),
-    onDelete: () => void refresh(),
+    onInsert: () => void refreshRef.refresh(),
+    onRowsChanged: () => void refreshRef.refresh(),
+    onDelete: () => void refreshRef.refresh(),
   };
 
-  const readCounts = async (): Promise<Map<string, number>> => {
-    const counts = new Map<string, number>();
-    for (const entry of ON_DEMAND_ENTRIES) {
-      if (entry.table === ZONES_ENTRY_ID) {
-        counts.set(entry.table, (await readZoneFeatures(deps)).length);
-        continue;
-      }
-      const rows = await deps.gtfsDatabase.getAllRows(
-        specStoreName(entry.table)
-      );
-      counts.set(entry.table, rows.length);
+  const renderPane = async (entry: OnDemandEntry): Promise<string> => {
+    if (entry.render) {
+      return entry.render(deps);
     }
-    return counts;
+    const context: OnDemandContext = { idOwners: await readIdOwners(deps) };
+    tableConfig.tableName = entry.table;
+    tableConfig.emptyMessage = entry.emptyMessage;
+    tableConfig.columnOverrides = entry.columnOverrides?.(deps);
+    tableConfig.validateRow = entry.validateRow?.(context);
+    tableConfig.joinColumns = entry.joinColumns
+      ? await entry.joinColumns(deps)
+      : undefined;
+    tableConfig.rows = await deps.gtfsDatabase.getAllRows(
+      specStoreName(entry.table)
+    );
+    return renderEditableTable(tableConfig);
   };
 
-  const refresh = async (): Promise<void> => {
-    const counts = await readCounts();
-    const sidebarEl = document.getElementById('on-demand-sidebar');
-    const paneEl = document.getElementById('on-demand-pane');
-    if (!sidebarEl || !paneEl) {
+  const countEntry = async (entry: OnDemandEntry): Promise<number> => {
+    if (entry.table === ZONES_ENTRY_ID) {
+      return (await readZoneFeatures(deps)).length;
+    }
+    return (await deps.gtfsDatabase.getAllRows(specStoreName(entry.table)))
+      .length;
+  };
+
+  const createZone = async (close: () => void): Promise<void> => {
+    const created = await promptNewZone(await readNewZoneIdOwners(deps));
+    if (!created) {
       return;
     }
+    await deps.onCreateZone(created);
+    close();
+    deps.onZoneClick(created.location_id);
+  };
 
-    let paneHtml: string;
-    if (activeEntry.render) {
-      paneHtml = await activeEntry.render(deps);
-    } else {
-      const context: OnDemandContext = { idOwners: await readIdOwners(deps) };
-      tableConfig.tableName = activeEntry.table;
-      tableConfig.emptyMessage = activeEntry.emptyMessage;
-      tableConfig.columnOverrides = activeEntry.columnOverrides?.(deps);
-      tableConfig.validateRow = activeEntry.validateRow?.(context);
-      tableConfig.joinColumns = activeEntry.joinColumns
-        ? await activeEntry.joinColumns(deps)
-        : undefined;
-      tableConfig.rows = await deps.gtfsDatabase.getAllRows(
-        specStoreName(activeEntry.table)
-      );
-      paneHtml = await renderEditableTable(tableConfig);
-    }
+  installEditableTableHandlers(tableConfig);
 
-    const note = activeEntry.note
-      ? `<p class="text-xs text-base-content/60 mb-2">${escapeHtml(activeEntry.note)}</p>`
-      : '';
-    sidebarEl.innerHTML = renderSidebar(activeEntry.table, counts);
-    paneEl.innerHTML = note + paneHtml;
+  await showSidebarModal({
+    title: 'On-Demand',
+    intro: INTRO,
+    groupOrder: GROUP_ORDER,
+    initialId: target.table,
+    refreshRef,
+    entries: ON_DEMAND_ENTRIES.map((entry) => ({
+      id: entry.table,
+      label: entry.label,
+      group: entry.group,
+      note: entry.note ? escapeHtml(entry.note) : undefined,
+      guidePage: entry.table === ZONES_ENTRY_ID ? 'on-demand' : undefined,
+      primaryAction:
+        entry.table === ZONES_ENTRY_ID
+          ? { label: 'New zone', onClick: createZone }
+          : undefined,
+      count: () => countEntry(entry),
+      renderPane: () => renderPane(entry),
+    })),
+    onPaneRendered: (paneEl, close) => {
+      paneEl.addEventListener('click', (e) => {
+        const btn = (e.target as HTMLElement).closest<HTMLButtonElement>(
+          '[data-zone-id]'
+        );
+        const location_id = btn?.dataset.zoneId;
+        if (!location_id) {
+          return;
+        }
+        close();
+        deps.onZoneClick(location_id);
+      });
 
-    if (pendingRowKey) {
+      if (!pendingRowKey) {
+        return;
+      }
       const row = paneEl.querySelector(
         `[data-et-row="${CSS.escape(pendingRowKey)}"]`
       );
+      const rowKey = pendingRowKey;
       pendingRowKey = undefined;
       if (row instanceof HTMLElement) {
         row.scrollIntoView({ block: 'center' });
         row.classList.add('bg-primary/10');
       } else {
-        console.warn(
-          `[OnDemand] no ${activeEntry.table} row for ${target.rowKey}`
-        );
+        console.warn(`[OnDemand] no row for ${rowKey}`);
       }
-    }
-  };
-
-  const body = `
-    <p class="text-xs text-base-content/60 mb-3">
-      On-demand service (GTFS Flex): the rules a rider books under, the groups of
-      stops they can be served at, and the zones they can be served in. A trip
-      becomes on-demand in its timetable, by giving a stop_time a pickup and
-      drop-off window instead of an arrival and departure.
-      <a href="https://gtfs.org/documentation/schedule/reference/#booking_rulestxt"
-         target="_blank" rel="noopener noreferrer" class="link">GTFS reference</a>.
-    </p>
-    <div class="flex gap-4 items-start">
-      <div id="on-demand-sidebar" class="shrink-0"></div>
-      <div id="on-demand-pane" class="flex-1 min-w-0"></div>
-    </div>
-  `;
-
-  installEditableTableHandlers(tableConfig);
-
-  await showModal({
-    title: 'On-Demand',
-    body,
-    actions: [{ label: 'Close', onClick: () => {} }],
-    escapeAction: 0,
-    boxClassName: 'max-w-6xl w-11/12',
-    onMount: (close) => {
-      void refresh();
-
-      document
-        .getElementById('on-demand-sidebar')
-        ?.addEventListener('click', (e) => {
-          const btn = (e.target as HTMLElement).closest<HTMLButtonElement>(
-            '[data-on-demand-entry]'
-          );
-          const table = btn?.dataset.onDemandEntry;
-          if (!table || table === activeEntry.table) {
-            return;
-          }
-          const entry = ON_DEMAND_ENTRIES.find((c) => c.table === table);
-          if (!entry) {
-            return;
-          }
-          activeEntry = entry;
-          void refresh();
-        });
-
-      document
-        .getElementById('on-demand-pane')
-        ?.addEventListener('click', (e) => {
-          const target = e.target as HTMLElement;
-
-          if (target.closest('[data-open-guide]')) {
-            void showHelpModal('on-demand');
-            return;
-          }
-
-          if (target.closest('[data-new-zone]')) {
-            void (async () => {
-              const created = await promptNewZone(
-                await readNewZoneIdOwners(deps)
-              );
-              if (!created) {
-                return;
-              }
-              await deps.onCreateZone(created.location_id, created.stop_name);
-              close();
-              deps.onZoneClick(created.location_id);
-            })();
-            return;
-          }
-
-          const btn = target.closest<HTMLButtonElement>('[data-zone-id]');
-          const location_id = btn?.dataset.zoneId;
-          if (!location_id) {
-            return;
-          }
-          close();
-          deps.onZoneClick(location_id);
-        });
     },
   });
 

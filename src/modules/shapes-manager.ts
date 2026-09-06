@@ -39,6 +39,8 @@ import {
   shapeRowsToFeature,
 } from '../utils/shape-geojson.js';
 import { notify } from './notification-system.js';
+import { promptNewEntity } from './entity-form-modal.js';
+import { GTFS_TABLES } from '../types/gtfs.js';
 
 /**
  * The stops of the simplify slider, in metres of allowed deviation. The
@@ -569,72 +571,36 @@ async function promptNewShapeId(opts: {
   existing: Map<string, ShapeUsage>;
   commit: (shapeId: string, rows: Shapes[]) => Promise<void>;
 }): Promise<string | null> {
-  let createdShapeId: string | null = null;
-
-  await showModal({
+  const values = await promptNewEntity({
     title: opts.title,
-    body: `
-      <div class="space-y-3">
-        <p class="text-base-content/60 text-sm">${escapeHtml(opts.source.label)}</p>
-        <fieldset class="fieldset">
-          <label class="label" for="new-shape-id">Shape ID</label>
-          <input id="new-shape-id" class="input w-full" type="text" placeholder="e.g. shape_1" value="${escapeHtml(opts.source.defaultId)}" />
-          <p id="new-shape-error" class="text-error text-sm hidden"></p>
-        </fieldset>
-      </div>
-    `,
-    escapeAction: 1,
-    enterAction: 0,
-    onMount: () => {
-      const inputEl = document.getElementById(
-        'new-shape-id'
-      ) as HTMLInputElement | null;
-      inputEl?.focus();
-      inputEl?.select();
-    },
-    actions: [
+    intro: `<p class="text-base-content/60 text-sm">${escapeHtml(opts.source.label)}</p>`,
+    fields: [
       {
-        label: 'Create',
-        className: 'btn-primary',
-        onClick: async () => {
-          const inputEl = document.getElementById(
-            'new-shape-id'
-          ) as HTMLInputElement | null;
-          const errorEl = document.getElementById('new-shape-error');
-          const shapeId = inputEl?.value.trim() ?? '';
-
-          const showError = (msg: string) => {
-            if (errorEl) {
-              errorEl.textContent = msg;
-              errorEl.classList.remove('hidden');
-            }
-            return true as const;
-          };
-
-          if (!shapeId) {
-            return showError('Shape ID is required.');
-          }
-          if (opts.existing.has(shapeId)) {
-            return showError(`Shape "${shapeId}" already exists.`);
-          }
-
-          let newRows: Shapes[];
-          try {
-            newRows = await opts.source.buildRows(shapeId);
-          } catch (e) {
-            return showError(e instanceof Error ? e.message : String(e));
-          }
-
-          await opts.commit(shapeId, newRows);
-          createdShapeId = shapeId;
-          return;
-        },
+        field: 'shape_id',
+        tableName: GTFS_TABLES.SHAPES,
+        mono: true,
+        placeholder: 'e.g. shape_1',
+        value: opts.source.defaultId,
       },
-      { label: 'Cancel', onClick: () => {} },
     ],
+    validate: (v) => {
+      if (!v.shape_id) {
+        return 'Shape ID is required.';
+      }
+      if (opts.existing.has(v.shape_id)) {
+        return `Shape "${v.shape_id}" already exists.`;
+      }
+      return null;
+    },
+    onCreate: async (v) => {
+      // buildRows throws on a source the shape cannot be built from; the form
+      // catches it and shows the message inline.
+      const newRows = await opts.source.buildRows(v.shape_id);
+      await opts.commit(v.shape_id, newRows);
+    },
   });
 
-  return createdShapeId;
+  return values?.shape_id ?? null;
 }
 
 /**

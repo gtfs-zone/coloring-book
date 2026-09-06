@@ -4,7 +4,7 @@
  * adding a page is an entry in `help-pages.ts`, not a new renderer.
  */
 
-import { showModal } from './modal-utils.js';
+import { showSidebarModal } from './sidebar-modal.js';
 import { escapeHtml } from '../utils/escape-html.js';
 import { HELP_PAGES, getHelpPage, type HelpGroup } from './help-pages.js';
 
@@ -35,29 +35,6 @@ function markSeen(id: string): void {
   }
 }
 
-function renderSidebar(activeId: string): string {
-  const groups = GROUP_ORDER.map((group) => {
-    const pages = HELP_PAGES.filter((page) => page.group === group);
-    if (pages.length === 0) {
-      return '';
-    }
-    const items = pages
-      .map(
-        (page) => `<li>
-          <button
-            type="button"
-            data-help-entry="${escapeHtml(page.id)}"
-            class="${page.id === activeId ? 'menu-active' : ''}"
-          >${escapeHtml(page.label)}</button>
-        </li>`
-      )
-      .join('');
-    return `<li class="menu-title">${group}</li>${items}`;
-  }).join('');
-
-  return `<ul class="menu menu-sm bg-base-200 rounded-box w-52 shrink-0">${groups}</ul>`;
-}
-
 // Open state, so F1 (and a second click on Guide) cannot stack a duplicate
 // modal on top of the one already showing.
 let helpModalOpen = false;
@@ -79,60 +56,45 @@ export async function showHelpModal(
   if (HELP_PAGES.length === 0 || helpModalOpen) {
     return;
   }
-  let activePage = (pageId && getHelpPage(pageId)) || HELP_PAGES[0];
-
-  const render = (): void => {
-    const sidebarEl = document.getElementById('help-sidebar');
-    const paneEl = document.getElementById('help-pane');
-    if (!sidebarEl || !paneEl) {
-      return;
-    }
-    sidebarEl.innerHTML = renderSidebar(activePage.id);
-    paneEl.innerHTML = `<h4 class="font-semibold text-base mb-2">${escapeHtml(activePage.title)}</h4><div class="flex flex-col gap-3">${activePage.render()}</div>`;
-  };
-
-  const body = `
-    <div class="flex gap-4 items-start">
-      <div id="help-sidebar" class="shrink-0"></div>
-      <div id="help-pane" class="flex-1 min-w-0"></div>
-    </div>
-  `;
 
   helpModalOpen = true;
   try {
-    await showModal({
+    await showSidebarModal({
       title: 'Guide',
-      body,
-      actions: [
-        { label: options?.continueLabel ?? 'Close', onClick: () => {} },
-      ],
-      escapeAction: 0,
+      groupOrder: GROUP_ORDER,
+      initialId: pageId && getHelpPage(pageId) ? pageId : undefined,
       boxClassName: 'max-w-4xl w-11/12',
-      onMount: () => {
-        render();
-
-        document
-          .getElementById('help-sidebar')
-          ?.addEventListener('click', (e) => {
-            const btn = (e.target as HTMLElement).closest<HTMLButtonElement>(
-              '[data-help-entry]'
-            );
-            const id = btn?.dataset.helpEntry;
-            if (!id || id === activePage.id) {
-              return;
-            }
-            const page = getHelpPage(id);
-            if (!page) {
-              return;
-            }
-            activePage = page;
-            render();
-          });
-      },
+      closeLabel: options?.continueLabel,
+      entries: HELP_PAGES.map((page) => ({
+        id: page.id,
+        label: page.label,
+        group: page.group,
+        paneTitle: page.title,
+        renderPane: () =>
+          Promise.resolve(
+            `<div class="flex flex-col gap-3">${page.render()}</div>`
+          ),
+      })),
     });
   } finally {
     helpModalOpen = false;
   }
+}
+
+/**
+ * Wire every `[data-open-guide]` button inside `container` to open the help
+ * page its attribute names (empty attribute: the first page).
+ *
+ * One implementation of the convention, called by the sidebar-modal scaffold
+ * after each pane render and by page renderers after they build their markup.
+ */
+export function installGuideButtons(container: HTMLElement): void {
+  container.querySelectorAll('[data-open-guide]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const pageId = btn.getAttribute('data-open-guide') || undefined;
+      void showHelpModal(pageId);
+    });
+  });
 }
 
 /**

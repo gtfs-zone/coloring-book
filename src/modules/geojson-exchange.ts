@@ -122,8 +122,12 @@ export async function promptForGeojsonUrl(): Promise<{
           Paste a geojson.io share link, or the URL of a GeoJSON file to fetch.
           Nothing is saved until you press Save.
         </p>
-        <input type="text" class="input input-bordered w-full font-mono text-xs geojson-import-url"
-          placeholder="https://geojson.io/?data=gz:... or https://example.org/shape.geojson" />
+        <fieldset class="fieldset">
+          <label class="label" for="geojson-import-url">URL</label>
+          <input id="geojson-import-url" type="text"
+            class="input input-bordered w-full font-mono text-xs geojson-import-url"
+            placeholder="https://geojson.io/?data=gz:... or https://example.org/shape.geojson" />
+        </fieldset>
         <label class="label cursor-pointer justify-start gap-2">
           <input type="checkbox" class="checkbox checkbox-sm geojson-import-cors" checked />
           <span class="label-text">Use CORS proxy</span>

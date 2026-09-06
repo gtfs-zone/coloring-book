@@ -13,7 +13,7 @@
  * `utils/entity-display.ts`, which is its own piece of work.
  */
 
-import { showModal } from './modal-utils.js';
+import { showSidebarModal } from './sidebar-modal.js';
 import {
   renderEditableTable,
   installEditableTableHandlers,
@@ -211,139 +211,82 @@ const FEED_DATA_ENTRIES: FeedDataEntry[] = [
   },
 ];
 
-function renderSidebar(
-  activeTable: string,
-  counts: Map<string, number>
-): string {
-  const items = FEED_DATA_ENTRIES.map((entry) => {
-    const count = counts.get(entry.table) ?? 0;
-    const badge = `<span class="badge badge-sm badge-ghost ml-auto">${count}</span>`;
-    return `<li>
-      <button
-        type="button"
-        data-feed-data-entry="${escapeHtml(entry.table)}"
-        class="${entry.table === activeTable ? 'menu-active' : ''}"
-      >${escapeHtml(entry.label)}${badge}</button>
-    </li>`;
-  }).join('');
-
-  return `<ul class="menu menu-sm bg-base-200 rounded-box w-52 shrink-0">${items}</ul>`;
+/** The note plus its reference link, as the scaffold's raw-HTML note. */
+function entryNote(entry: FeedDataEntry): string | undefined {
+  if (!entry.note) {
+    return undefined;
+  }
+  return `${escapeHtml(entry.note)}
+    <a href="https://gtfs.org/documentation/schedule/reference/#${escapeHtml(entry.docAnchor)}"
+       target="_blank" rel="noopener noreferrer" class="link">GTFS reference</a>.`;
 }
+
+const INTRO = `Feed-level tables that describe the rest of the feed rather than
+  adding anything to the map: the connections between stops, who the data is
+  attributed to, and the translations of its text.`;
 
 export async function showFeedDataModal(
   deps: FeedDataModalDeps,
   target: FeedDataModalTarget = {}
 ): Promise<void> {
-  let activeEntry =
-    FEED_DATA_ENTRIES.find((entry) => entry.table === target.table) ??
-    FEED_DATA_ENTRIES[0];
-  // Consumed by the first refresh only: a later tab change must not re-scroll.
+  // Consumed by the first pane render only: a later tab change must not re-scroll.
   let pendingRowKey = target.rowKey;
+
+  // Filled in by the scaffold; the table's own callbacks re-render through it.
+  const refreshRef = { refresh: async (): Promise<void> => {} };
 
   const tableConfig: EditableTableConfig = {
     instanceId: INSTANCE_ID,
-    tableName: activeEntry.table,
+    tableName: FEED_DATA_ENTRIES[0].table,
     rows: [],
     deps,
-    emptyMessage: activeEntry.emptyMessage,
-    columnOverrides: activeEntry.columnOverrides?.(deps),
-    validateRow: activeEntry.validateRow,
-    onInsert: () => void refresh(),
-    onRowsChanged: () => void refresh(),
-    onDelete: () => void refresh(),
+    emptyMessage: FEED_DATA_ENTRIES[0].emptyMessage,
+    onInsert: () => void refreshRef.refresh(),
+    onRowsChanged: () => void refreshRef.refresh(),
+    onDelete: () => void refreshRef.refresh(),
   };
 
-  const readCounts = async (): Promise<Map<string, number>> => {
-    const counts = new Map<string, number>();
-    for (const entry of FEED_DATA_ENTRIES) {
-      const rows = await deps.gtfsDatabase.getAllRows(
-        specStoreName(entry.table)
-      );
-      counts.set(entry.table, rows.length);
-    }
-    return counts;
-  };
-
-  const refresh = async (): Promise<void> => {
-    const counts = await readCounts();
-    tableConfig.tableName = activeEntry.table;
-    tableConfig.emptyMessage = activeEntry.emptyMessage;
-    tableConfig.columnOverrides = activeEntry.columnOverrides?.(deps);
-    tableConfig.validateRow = activeEntry.validateRow;
+  const renderPane = async (entry: FeedDataEntry): Promise<string> => {
+    tableConfig.tableName = entry.table;
+    tableConfig.emptyMessage = entry.emptyMessage;
+    tableConfig.columnOverrides = entry.columnOverrides?.(deps);
+    tableConfig.validateRow = entry.validateRow;
     tableConfig.rows = await deps.gtfsDatabase.getAllRows(
-      specStoreName(activeEntry.table)
+      specStoreName(entry.table)
     );
+    return renderEditableTable(tableConfig);
+  };
 
-    const sidebarEl = document.getElementById('feed-data-sidebar');
-    const paneEl = document.getElementById('feed-data-pane');
-    if (!sidebarEl || !paneEl) {
-      return;
-    }
-    const note = activeEntry.note
-      ? `<p class="text-xs text-base-content/60 mb-2">${escapeHtml(activeEntry.note)}
-          <a href="https://gtfs.org/documentation/schedule/reference/#${escapeHtml(activeEntry.docAnchor)}"
-             target="_blank" rel="noopener noreferrer" class="link">GTFS reference</a>.
-        </p>`
-      : '';
-    sidebarEl.innerHTML = renderSidebar(activeEntry.table, counts);
-    paneEl.innerHTML = note + (await renderEditableTable(tableConfig));
+  installEditableTableHandlers(tableConfig);
 
-    if (pendingRowKey) {
+  await showSidebarModal({
+    title: 'Feed Data',
+    intro: INTRO,
+    initialId: target.table,
+    refreshRef,
+    entries: FEED_DATA_ENTRIES.map((entry) => ({
+      id: entry.table,
+      label: entry.label,
+      note: entryNote(entry),
+      count: async () =>
+        (await deps.gtfsDatabase.getAllRows(specStoreName(entry.table))).length,
+      renderPane: () => renderPane(entry),
+    })),
+    onPaneRendered: (paneEl) => {
+      if (!pendingRowKey) {
+        return;
+      }
       const row = paneEl.querySelector(
         `[data-et-row="${CSS.escape(pendingRowKey)}"]`
       );
+      const rowKey = pendingRowKey;
       pendingRowKey = undefined;
       if (row instanceof HTMLElement) {
         row.scrollIntoView({ block: 'center' });
         row.classList.add('bg-primary/10');
       } else {
-        console.warn(
-          `[FeedData] no ${activeEntry.table} row for ${target.rowKey}`
-        );
+        console.warn(`[FeedData] no row for ${rowKey}`);
       }
-    }
-  };
-
-  const body = `
-    <p class="text-xs text-base-content/60 mb-3">
-      Feed-level tables that describe the rest of the feed rather than adding
-      anything to the map: the connections between stops, who the data is
-      attributed to, and the translations of its text.
-    </p>
-    <div class="flex gap-4 items-start">
-      <div id="feed-data-sidebar" class="shrink-0"></div>
-      <div id="feed-data-pane" class="flex-1 min-w-0"></div>
-    </div>
-  `;
-
-  installEditableTableHandlers(tableConfig);
-
-  await showModal({
-    title: 'Feed Data',
-    body,
-    actions: [{ label: 'Close', onClick: () => {} }],
-    escapeAction: 0,
-    boxClassName: 'max-w-6xl w-11/12',
-    onMount: (_close) => {
-      void refresh();
-
-      document
-        .getElementById('feed-data-sidebar')
-        ?.addEventListener('click', (e) => {
-          const btn = (e.target as HTMLElement).closest<HTMLButtonElement>(
-            '[data-feed-data-entry]'
-          );
-          const table = btn?.dataset.feedDataEntry;
-          if (!table || table === activeEntry.table) {
-            return;
-          }
-          const entry = FEED_DATA_ENTRIES.find((c) => c.table === table);
-          if (!entry) {
-            return;
-          }
-          activeEntry = entry;
-          void refresh();
-        });
     },
   });
 
