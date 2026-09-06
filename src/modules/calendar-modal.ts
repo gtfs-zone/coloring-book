@@ -3,7 +3,7 @@ import { escapeHtml } from '../utils/escape-html.js';
 import { toGtfsDate as formatGTFS, todayGtfsDate } from '../utils/gtfs-date.js';
 import {
   feedBounds,
-  trimOrExtendAllServices,
+  trimOrExtendServices,
   type BatchMixedPatchManager,
   type FeedBoundsWriteDatabase,
 } from '../utils/feed-bounds.js';
@@ -186,10 +186,10 @@ export async function showCalendarModal(
   let currentTab: 'month' | 'timeline' = 'month';
 
   const trimTitle = feedStartDate
-    ? `Set every service's start_date to ${feedStartDate}`
+    ? `Set every service's start_date to ${feedStartDate}, and remove every exception before it`
     : 'feed_info has no feed_start_date';
   const extendTitle = feedEndDate
-    ? `Set every service's end_date to ${feedEndDate}`
+    ? `Set every service's end_date to ${feedEndDate}, and remove every exception after it`
     : 'feed_info has no feed_end_date';
 
   const toolbarHtml = `
@@ -339,17 +339,23 @@ export async function showCalendarModal(
         }
         btn.disabled = true;
         try {
-          const count = await trimOrExtendAllServices(
+          const { services, exceptions } = await trimOrExtendServices(
             deps.gtfsDatabase,
             deps.patchManager,
             field,
             value
           );
-          if (count === 0) {
+          if (services === 0 && exceptions === 0) {
             notify.info('Every service is already at that bound');
           } else {
             const verb = field === 'start_date' ? 'Trimmed' : 'Extended';
-            notify.success(`${verb} ${count} service${count === 1 ? '' : 's'}`);
+            const removed =
+              exceptions > 0
+                ? `, removed ${exceptions} exception${exceptions === 1 ? '' : 's'}`
+                : '';
+            notify.success(
+              `${verb} ${services} service${services === 1 ? '' : 's'}${removed}`
+            );
           }
           await refreshServiceData();
           rerenderPanel();

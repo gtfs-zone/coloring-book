@@ -97,7 +97,7 @@ import {
   type ServiceTimelineSource,
 } from './service-timeline.js';
 import { normalizeAgencyId } from '../utils/agency-helpers.js';
-import { feedBounds, trimOrExtendAllServices } from '../utils/feed-bounds.js';
+import { feedBounds, trimOrExtendServices } from '../utils/feed-bounds.js';
 import {
   STOP_REF_ROW,
   PATHWAY_REF_ROW,
@@ -589,12 +589,12 @@ export class PageContentRenderer {
     const bulkTrimTitle = !canBulkTrimExtend
       ? 'No patch manager available'
       : bounds.start
-        ? `Set every service's start_date to ${bounds.start}`
+        ? `Set every service's start_date to ${bounds.start}, and remove every exception before it`
         : 'feed_info has no feed_start_date';
     const bulkExtendTitle = !canBulkTrimExtend
       ? 'No patch manager available'
       : bounds.end
-        ? `Set every service's end_date to ${bounds.end}`
+        ? `Set every service's end_date to ${bounds.end}, and remove every exception after it`
         : 'feed_info has no feed_end_date';
 
     const agencyItems = agencies
@@ -1618,8 +1618,9 @@ export class PageContentRenderer {
 
   /**
    * Trim or extend every `calendar` row's bound to the matching `feed_info`
-   * value, as one undoable batch. Mirrors the Service Calendar modal's bulk
-   * buttons so the feed page has the same action.
+   * value and drop the exceptions past that edge, as one undoable batch.
+   * Mirrors the Service Calendar modal's bulk buttons so the feed page has the
+   * same action.
    */
   private async handleBulkTrimOrExtend(
     field: 'start_date' | 'end_date'
@@ -1634,17 +1635,23 @@ export class PageContentRenderer {
     if (!value) {
       return;
     }
-    const count = await trimOrExtendAllServices(
-      db as Parameters<typeof trimOrExtendAllServices>[0],
+    const { services, exceptions } = await trimOrExtendServices(
+      db as Parameters<typeof trimOrExtendServices>[0],
       patchManager,
       field,
       value
     );
-    if (count === 0) {
+    if (services === 0 && exceptions === 0) {
       notify.info('Every service is already at that bound');
     } else {
       const verb = field === 'start_date' ? 'Trimmed' : 'Extended';
-      notify.success(`${verb} ${count} service${count === 1 ? '' : 's'}`);
+      const removed =
+        exceptions > 0
+          ? `, removed ${exceptions} exception${exceptions === 1 ? '' : 's'}`
+          : '';
+      notify.success(
+        `${verb} ${services} service${services === 1 ? '' : 's'}${removed}`
+      );
     }
     this.dependencies.onEntityCreated?.();
   }

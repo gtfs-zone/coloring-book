@@ -15,8 +15,12 @@ import {
   VIEW_ROUTE_BTN,
 } from '../utils/entity-references.js';
 import { getRouteDisplay } from '../utils/entity-display.js';
-import { feedBounds, type FeedBounds } from '../utils/feed-bounds.js';
-import { patchUpdate } from '../utils/patch-utils.js';
+import {
+  feedBounds,
+  trimOrExtendServices,
+  type BatchMixedPatchManager,
+  type FeedBounds,
+} from '../utils/feed-bounds.js';
 import {
   showOptionPickerModal,
   type OptionPickerItem,
@@ -38,6 +42,7 @@ export interface ServiceViewDependencies {
       key: string,
       data: Record<string, unknown>
     ) => Promise<void>;
+    deleteRow?: (tableName: string, key: string) => Promise<void>;
   };
   gtfsRelationships?: {
     getRoutesForService?: (service_id: string) => Promise<unknown[]>;
@@ -46,14 +51,7 @@ export interface ServiceViewDependencies {
   serviceDaysController: {
     renderServiceEditor: (service_id: string) => Promise<string>;
   };
-  patchManager?: {
-    recordUpdate: (
-      table: string,
-      id: string,
-      before: Record<string, unknown>,
-      after: Record<string, unknown>
-    ) => Promise<void>;
-  } | null;
+  patchManager?: BatchMixedPatchManager | null;
   onAgencyClick?: (agency_id: string) => void;
   onRouteClick: (route_id: string) => void;
   onTimetableClick: (
@@ -114,7 +112,7 @@ export class ServiceViewController {
 
       const html = `
         <div class="p-4 space-y-4">
-          ${await this.renderServiceProperties(service_id, calendar, bounds)}
+          ${await this.renderServiceProperties(service_id, calendar, calendarDates, bounds)}
           ${this.renderTimetablesSection(service_id, routes, agencyNameByNormalizedId, tripCountByRoute, calendar, calendarDates)}
         </div>
       `;
@@ -243,6 +241,7 @@ export class ServiceViewController {
   private async renderServiceProperties(
     service_id: string,
     calendar: Record<string, unknown>,
+    calendarDates: Array<{ date: string; exception_type: string | number }>,
     bounds: FeedBounds
   ): Promise<string> {
     // Use the service days controller to render the weekly pattern editor
@@ -259,25 +258,34 @@ export class ServiceViewController {
     // all, so there is nothing for either button to trim or extend.
     const hasCalendarRow = startDate !== null || endDate !== null;
 
-    const trimDisabled =
-      !hasCalendarRow || !bounds.start || startDate === bounds.start;
-    const trimTitle = !hasCalendarRow
-      ? 'This service has no calendar.txt row'
-      : !bounds.start
-        ? 'feed_info has no feed_start_date'
-        : startDate === bounds.start
-          ? 'Already at feed start'
-          : `Set start_date to ${bounds.start}`;
+    // A service already at the bound can still carry exceptions past it, so the
+    // buttons stay live while there is anything to prune.
+    const strayBefore = bounds.start
+      ? calendarDates.filter((d) => String(d.date) < bounds.start!).length
+      : 0;
+    const strayAfter = bounds.end
+      ? calendarDates.filter((d) => String(d.date) > bounds.end!).length
+      : 0;
+    const canTrim = hasCalendarRow && startDate !== bounds.start;
+    const canExtend = hasCalendarRow && endDate !== bounds.end;
 
-    const extendDisabled =
-      !hasCalendarRow || !bounds.end || endDate === bounds.end;
-    const extendTitle = !hasCalendarRow
-      ? 'This service has no calendar.txt row'
-      : !bounds.end
-        ? 'feed_info has no feed_end_date'
-        : endDate === bounds.end
+    const trimDisabled = !bounds.start || (!canTrim && strayBefore === 0);
+    const trimTitle = !bounds.start
+      ? 'feed_info has no feed_start_date'
+      : !canTrim && strayBefore === 0
+        ? hasCalendarRow
+          ? 'Already at feed start'
+          : 'This service has no calendar.txt row and no early exceptions'
+        : `${canTrim ? `Set start_date to ${bounds.start}, and remove` : 'Remove'} every exception before it`;
+
+    const extendDisabled = !bounds.end || (!canExtend && strayAfter === 0);
+    const extendTitle = !bounds.end
+      ? 'feed_info has no feed_end_date'
+      : !canExtend && strayAfter === 0
+        ? hasCalendarRow
           ? 'Already at feed end'
-          : `Set end_date to ${bounds.end}`;
+          : 'This service has no calendar.txt row and no late exceptions'
+        : `${canExtend ? `Set end_date to ${bounds.end}, and remove` : 'Remove'} every exception after it`;
 
     return `
       <div class="space-y-4">
@@ -406,16 +414,18 @@ export class ServiceViewController {
 
   /**
    * Set the one service's `start_date` or `end_date` to the matching
-   * `feed_info` bound. A no-op call (bound missing or already equal) is
-   * prevented by disabling the button in the markup, but is also harmless
-   * here since `patchUpdate` -> `recordUpdate` drops a no-change patch.
+   * `feed_info` bound and drop its exceptions past that edge, as one batch so
+   * a single undo reverts both. Same write as the bulk buttons, scoped to this
+   * service.
    */
   private async trimOrExtendService(
     service_id: string,
     field: 'start_date' | 'end_date'
   ): Promise<void> {
     const db = this.dependencies.gtfsDatabase;
-    if (!db?.updateRow) {
+    const patchManager = this.dependencies.patchManager;
+    if (!db?.updateRow || !db.deleteRow || !patchManager) {
+      console.warn('[ServiceView] No writable database, cannot trim/extend');
       return;
     }
     const bounds = await feedBounds(db);
@@ -423,25 +433,16 @@ export class ServiceViewController {
     if (!value) {
       return;
     }
-    const rows = await db.queryRows('calendar', { service_id });
-    const calendar = rows[0] as Record<string, unknown> | undefined;
-    if (!calendar || calendar[field] === value) {
+    const { services, exceptions } = await trimOrExtendServices(
+      db as Parameters<typeof trimOrExtendServices>[0],
+      patchManager,
+      field,
+      value,
+      new Set([service_id])
+    );
+    if (services === 0 && exceptions === 0) {
       return;
     }
-    await patchUpdate(
-      db as {
-        updateRow: (
-          table: string,
-          key: string,
-          data: Record<string, unknown>
-        ) => Promise<void>;
-      },
-      this.dependencies.patchManager ?? null,
-      'calendar',
-      service_id,
-      { [field]: calendar[field] },
-      { [field]: value }
-    );
     this.dependencies.onServiceChanged?.(service_id);
   }
 
