@@ -845,7 +845,11 @@ export class TimetableRenderer {
             : '';
         return `
           <td class="trip-header text-center p-2 text-xs font-mono" style="${columnStyle}">
-            <span class="inline-block max-w-full truncate align-middle" title="${escapeHtml(trip.trip_id)}">${escapeHtml(trip.trip_id)}</span>${badge}
+            <span
+              class="inline-block max-w-full truncate align-middle field-tooltip-trigger"
+              tabindex="0"
+              ${tooltipContentAttr(`<div><code>${escapeHtml(trip.trip_id)}</code></div>`)}
+            >${escapeHtml(trip.trip_id)}</span>${badge}
           </td>
         `;
       })
@@ -886,7 +890,7 @@ export class TimetableRenderer {
       .map((trip) => {
         const reverseTip =
           `<div>Reverse trip <code>${escapeHtml(trip.trip_id)}</code></div>` +
-          '<div class="opacity-70">Reverses and renumbers the stop_times, mirroring the times so the trip still runs forward. Clears the shape. Undoable from the Changes panel.</div>';
+          '<div class="opacity-70">Reverses and renumbers the stop_times, mirroring the times so the trip still runs forward. Clears the shape. Leaves direction_id alone, so you likely want to update it on the trip afterwards. Undoable from the Changes panel.</div>';
         const shiftTip =
           `<div>Shift trip <code>${escapeHtml(trip.trip_id)}</code></div>` +
           '<div class="opacity-70">Adds a signed offset to every time of this trip. Stop order is unchanged. Undoable from the Changes panel.</div>';
