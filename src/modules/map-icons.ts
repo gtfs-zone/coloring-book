@@ -14,7 +14,13 @@ const PIXEL_RATIO = 2.4;
 
 type Draw = (ctx: CanvasRenderingContext2D, s: number) => void;
 
-const GLYPHS: Record<string, Draw> = {
+interface Glyph {
+  draw: Draw;
+  /** Draw the dark chip disc behind the glyph. */
+  chip: boolean;
+}
+
+const PATHWAY_DRAWS: Record<string, Draw> = {
   'pathway-walk': (ctx, s) => {
     ctx.beginPath();
     ctx.arc(s * 0.5, s * 0.32, s * 0.07, 0, Math.PI * 2);
@@ -115,7 +121,37 @@ const GLYPHS: Record<string, Draw> = {
   },
 };
 
-function render(draw: Draw): ImageData | null {
+/** Chevron pointing +x, which MapLibre aligns with the line's travel direction. */
+const drawChevron: Draw = (ctx, s) => {
+  ctx.beginPath();
+  ctx.moveTo(s * 0.36, s * 0.24);
+  ctx.lineTo(s * 0.66, s * 0.5);
+  ctx.lineTo(s * 0.36, s * 0.76);
+  ctx.stroke();
+};
+
+const GLYPHS: Record<string, Glyph> = {
+  ...Object.fromEntries(
+    Object.entries(PATHWAY_DRAWS).map(([name, draw]) => [
+      name,
+      { draw, chip: true },
+    ])
+  ),
+  'route-arrow': {
+    chip: false,
+    draw: (ctx, s) => {
+      // Dark outline underneath so the chevron survives a light route color.
+      ctx.strokeStyle = 'rgba(15,23,42,0.55)';
+      ctx.lineWidth = 5;
+      drawChevron(ctx, s);
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 3;
+      drawChevron(ctx, s);
+    },
+  },
+};
+
+function render(draw: Draw, chip: boolean): ImageData | null {
   const canvas = document.createElement('canvas');
   canvas.width = SIZE;
   canvas.height = SIZE;
@@ -124,15 +160,17 @@ function render(draw: Draw): ImageData | null {
     return null;
   }
 
-  // Dark chip behind every glyph so it stays legible over any basemap and
-  // matches the dark casing under the pathway lines.
-  ctx.fillStyle = 'rgba(15,23,42,0.92)';
-  ctx.beginPath();
-  ctx.arc(SIZE / 2, SIZE / 2, SIZE / 2 - 1, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.strokeStyle = 'rgba(255,255,255,0.5)';
-  ctx.lineWidth = 1.4;
-  ctx.stroke();
+  // Dark chip behind the pathway glyphs so they stay legible over any basemap
+  // and match the dark casing under the pathway lines.
+  if (chip) {
+    ctx.fillStyle = 'rgba(15,23,42,0.92)';
+    ctx.beginPath();
+    ctx.arc(SIZE / 2, SIZE / 2, SIZE / 2 - 1, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+    ctx.lineWidth = 1.4;
+    ctx.stroke();
+  }
 
   ctx.strokeStyle = '#ffffff';
   ctx.fillStyle = '#ffffff';
@@ -145,11 +183,11 @@ function render(draw: Draw): ImageData | null {
 }
 
 export function ensureMapIcons(map: MapLibreMap): void {
-  for (const [name, draw] of Object.entries(GLYPHS)) {
+  for (const [name, glyph] of Object.entries(GLYPHS)) {
     if (map.hasImage(name)) {
       continue;
     }
-    const image = render(draw);
+    const image = render(glyph.draw, glyph.chip);
     if (!image) {
       console.warn(`[map-icons] Could not render ${name}`);
       continue;
