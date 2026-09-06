@@ -40,7 +40,7 @@ import {
   arrowToGridDirection,
   type GridDirection,
 } from '../utils/grid-navigation.js';
-import { showModal } from './modal-utils.js';
+import { showModal, isOutsideTopModal } from './modal-utils.js';
 import {
   showOptionPickerModal,
   OptionPickerItem,
@@ -389,6 +389,13 @@ export class ScheduleController {
    */
   private installTimetablePickers(): void {
     document.addEventListener('click', (e) => {
+      // A modal on top owns the keyboard and the pointer: ignore anything
+      // dispatched at the page underneath it, including the click the browser
+      // synthesises for Enter on a still-focused background button.
+      if (isOutsideTopModal(e.target)) {
+        return;
+      }
+
       const stopDot = (e.target as Element)?.closest?.('.strip-stop-dot');
       if (stopDot instanceof HTMLElement) {
         const stop_id = stopDot.dataset.stopId;
@@ -638,6 +645,9 @@ export class ScheduleController {
    * grid, which is the only way out of a few thousand cells.
    */
   private handleTimeCellKeydown(e: KeyboardEvent): void {
+    if (isOutsideTopModal(e.target)) {
+      return;
+    }
     const span = (e.target as Element)?.closest?.('.time-span');
     if (!(span instanceof HTMLElement)) {
       return;

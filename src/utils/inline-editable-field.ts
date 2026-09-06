@@ -18,6 +18,7 @@ import {
   type OptionPickerItem,
 } from '../modules/option-picker-modal.js';
 import { notify } from '../modules/notification-system.js';
+import { isOutsideTopModal } from '../modules/modal-utils.js';
 import {
   formatIssueValue,
   isDanglingReference,
@@ -122,6 +123,9 @@ export function installInlineEditableFields(
   listenerInstalled = true;
 
   document.addEventListener('click', (e) => {
+    if (isOutsideTopModal(e.target)) {
+      return;
+    }
     const span = (e.target as Element)?.closest?.(`.${FIELD_CLASS}`);
     if (span instanceof HTMLElement) {
       openFieldEditor(span);
@@ -133,6 +137,9 @@ export function installInlineEditableFields(
   // re-open the field the user is already typing in.
   document.addEventListener('keydown', (e) => {
     if (e.key !== 'Enter' && e.key !== ' ') {
+      return;
+    }
+    if (isOutsideTopModal(e.target)) {
       return;
     }
     const span = (e.target as Element)?.closest?.(`.${FIELD_CLASS}`);

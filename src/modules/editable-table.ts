@@ -16,7 +16,11 @@
  * same object, so they always see the rows the user is looking at.
  */
 
-import { showModal, renderTrashIcon } from './modal-utils.js';
+import {
+  showModal,
+  renderTrashIcon,
+  isOutsideTopModal,
+} from './modal-utils.js';
 import {
   showMultiOptionPickerModal,
   showOptionPickerModal,
@@ -814,6 +818,9 @@ export function installEditableTableHandlers(
   listenerInstalled = true;
 
   document.addEventListener('click', (e) => {
+    if (isOutsideTopModal(e.target)) {
+      return;
+    }
     const cell = (e.target as Element)?.closest?.('.editable-cell');
     if (cell instanceof HTMLElement) {
       openCellEditor(cell);
@@ -838,6 +845,9 @@ export function installEditableTableHandlers(
   // on a click.
   document.addEventListener('keydown', (e) => {
     if (e.key !== 'Enter' && e.key !== ' ') {
+      return;
+    }
+    if (isOutsideTopModal(e.target)) {
       return;
     }
     const cell = (e.target as Element)?.closest?.('.editable-cell');
