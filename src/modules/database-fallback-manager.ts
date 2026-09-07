@@ -5,6 +5,7 @@
 import { feedProgressIndicator } from './feed-progress-indicator.js';
 import { notify } from './notification-system.js';
 import { showModal } from './modal-utils.js';
+import { deleteDatabaseWithTimeout } from '../utils/idb-request.js';
 import { buildExportFilename } from '../utils/export-filename.js';
 
 export interface BrowserCapabilities {
@@ -21,19 +22,38 @@ export interface BrowserCapabilities {
 
 export class DatabaseFallbackManager {
   private capabilities: BrowserCapabilities | null = null;
+  // Memoizes the in-flight run, not just the result: the constructor starts
+  // one and boot asks for another before it settles, and two concurrent runs
+  // race each other over the private-mode probe database.
+  private detection: Promise<BrowserCapabilities> | null = null;
+  private closeConnection: (() => void) | null = null;
 
   constructor() {
-    this.detectCapabilities();
+    void this.detectCapabilities();
+  }
+
+  /**
+   * Register how to close the app's own database connection, so the reset path
+   * can release it instead of blocking the delete on it.
+   */
+  setConnectionCloser(close: () => void): void {
+    this.closeConnection = close;
   }
 
   /**
    * Detect browser capabilities and limitations
    */
-  async detectCapabilities(): Promise<BrowserCapabilities> {
+  detectCapabilities(): Promise<BrowserCapabilities> {
     if (this.capabilities) {
-      return this.capabilities;
+      return Promise.resolve(this.capabilities);
     }
+    if (!this.detection) {
+      this.detection = this.runDetection();
+    }
+    return this.detection;
+  }
 
+  private async runDetection(): Promise<BrowserCapabilities> {
     const capabilities: BrowserCapabilities = {
       indexedDB: this.checkIndexedDBSupport(),
       serviceWorker: 'serviceWorker' in navigator,
@@ -250,24 +270,50 @@ export class DatabaseFallbackManager {
   }
 
   /**
-   * Reset the database completely
+   * Reset the database completely.
+   *
+   * Deleting is blocked while any connection to the database is open, and a
+   * blocked delete stays queued: until it runs, every later request on that
+   * database, including the version probe on the next page load, waits behind
+   * it without firing a single event. So this closes our own connection first,
+   * and never reports success or reloads on a delete that has not happened.
    */
   private async resetDatabase(): Promise<void> {
     feedProgressIndicator.startLoading('reset', 'Resetting database...');
     try {
-      await new Promise<void>((resolve, reject) => {
-        const deleteReq = indexedDB.deleteDatabase('GTFSZoneDB');
-        deleteReq.onsuccess = () => resolve();
-        deleteReq.onerror = () => reject(deleteReq.error);
-        deleteReq.onblocked = () => {
-          console.warn('Database deletion blocked - other tabs may be open');
-          resolve();
-        };
-      });
+      this.closeConnection?.();
 
-      notify.success('Database reset successfully. Reloading page...');
+      const outcome = await deleteDatabaseWithTimeout('GTFSZoneDB');
 
-      setTimeout(() => window.location.reload(), 1500);
+      if (outcome === 'deleted') {
+        notify.success('Database reset successfully. Reloading page...');
+        setTimeout(() => window.location.reload(), 1500);
+        return;
+      }
+
+      if (outcome === 'blocked') {
+        // The delete runs on its own the moment the last connection closes, so
+        // the reload is held until it does rather than landing on a wedge.
+        void showModal({
+          title: 'Close the other tabs',
+          body: 'Another GTFS.zone tab still has the database open, so it cannot be reset. Close every other GTFS.zone tab, then reload this page to finish the reset.',
+          enterAction: 0,
+          actions: [
+            {
+              label: 'Reload',
+              className: 'btn-primary',
+              onClick: async () => {
+                window.location.reload();
+              },
+            },
+          ],
+        });
+        return;
+      }
+
+      notify.error(
+        'Failed to reset database. Please clear browser data manually.'
+      );
     } catch (error) {
       notify.error(
         'Failed to reset database. Please clear browser data manually.'

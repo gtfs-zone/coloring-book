@@ -13,6 +13,11 @@ import { GTFS_FILES } from '../types/gtfs.js';
 import { CONFIG } from '../config.js';
 import { databaseFallbackManager } from './database-fallback-manager.js';
 import { showModal } from './modal-utils.js';
+import { notify } from './notification-system.js';
+import {
+  withTimeout,
+  deleteDatabaseWithTimeout,
+} from '../utils/idb-request.js';
 import { PatchRecord, SnapshotRecord } from '../types/patch.js';
 import {
   Agency,
@@ -291,8 +296,33 @@ export class GTFSDatabase {
         return;
       }
 
+      // Let the reset path close this connection instead of blocking on it.
+      databaseFallbackManager.setConnectionCloser(() => this.close());
+
       // If the stored schema version is older than ours, offer an export before wiping.
       const currentVersion = await this.peekVersion();
+
+      // A database newer than this build means an older bundle is running
+      // against a database a newer deploy already upgraded. openDB would throw
+      // VersionError, so say what actually happened instead.
+      if (currentVersion > this.dbVersion) {
+        await showModal({
+          title: 'App is out of date',
+          body: `The saved database is at version ${currentVersion}, but this version of GTFS.zone only understands version ${this.dbVersion}. Reload the page to pick up the current version of the app.`,
+          enterAction: 0,
+          actions: [
+            {
+              label: 'Reload',
+              className: 'btn-primary',
+              onClick: async () => {
+                window.location.reload();
+              },
+            },
+          ],
+        });
+        return;
+      }
+
       if (currentVersion > 0 && currentVersion < this.dbVersion) {
         await showModal({
           title: 'Database update required',
@@ -324,56 +354,36 @@ export class GTFSDatabase {
         });
       }
 
-      // Try to initialize IndexedDB
-      this.db = await openDB<GTFSDBSchema>(this.dbName, this.dbVersion, {
-        upgrade: (db, oldVersion, newVersion, _transaction) => {
-          console.log(
-            `Upgrading database from version ${oldVersion} to ${newVersion}`
-          );
+      this.db = await this.openWithRecovery();
+      if (!this.db) {
+        // The user was shown why and chose not to continue.
+        return;
+      }
 
-          // Clean-slate: wipe all stores and recreate from scratch.
-          Array.from(db.objectStoreNames).forEach((s) =>
-            db.deleteObjectStore(s)
-          );
-
-          db.createObjectStore('patches', {
-            keyPath: 'version',
-            autoIncrement: true,
-          });
-          db.createObjectStore('snapshots', { keyPath: 'version' });
-          db.createObjectStore('meta', { keyPath: 'key' });
-          const blobStore = db.createObjectStore('file_blobs', {
-            keyPath: ['gen', 'tableName', 'chunk'],
-          });
-          blobStore.createIndex('gen', 'gen');
-          const passthroughStore = db.createObjectStore('passthrough_files', {
-            keyPath: ['gen', 'fileName'],
-          });
-          passthroughStore.createIndex('gen', 'gen');
-
-          GTFS_FILES.map((f) => f.filename).forEach((fileName) => {
-            const tableName = this.getTableName(fileName);
-            const keyPath = this.getNaturalKeyPath(tableName);
-            const store = db.createObjectStore(tableName as GTFSStoreName, {
-              keyPath,
-              autoIncrement: false,
-            });
-            this.addIndexesForTable(
-              store as unknown as IDBObjectStore,
-              tableName
-            );
-          });
-
-          console.log('Database schema created');
-        },
-        blocked: () => {
+      // A version-change transaction that aborted part-way leaves the version
+      // bumped but stores missing, and every later read fails on a
+      // NotFoundError far from here. Rebuild from scratch instead.
+      const missing = this.missingStores(this.db);
+      if (missing.length > 0) {
+        console.warn(
+          `[GTFSDatabase] schema incomplete (missing ${missing.join(', ')}), rebuilding`
+        );
+        this.close();
+        const outcome = await deleteDatabaseWithTimeout(this.dbName);
+        if (outcome !== 'deleted') {
           databaseFallbackManager.showDatabaseError(
-            new Error('Database blocked by another tab'),
-            'initialization',
-            () => this.exportCurrentBlobsAsZip()
+            new Error(
+              `The saved database is missing ${missing.length} table(s) and could not be cleared (${outcome}). Close any other GTFS.zone tabs and reload.`
+            ),
+            'initialization'
           );
-        },
-      });
+          return;
+        }
+        this.db = await this.openWithRecovery();
+        if (!this.db) {
+          return;
+        }
+      }
 
       console.log('GTFSDatabase initialized successfully');
 
@@ -384,6 +394,145 @@ export class GTFSDatabase {
       databaseFallbackManager.showDatabaseError(error, 'initialization', () =>
         this.exportCurrentBlobsAsZip()
       );
+    }
+  }
+
+  /** Every object store this build's schema expects to exist. */
+  private expectedStores(): string[] {
+    return [
+      'patches',
+      'snapshots',
+      'meta',
+      'file_blobs',
+      'passthrough_files',
+      ...GTFS_FILES.map((f) => this.getTableName(f.filename)),
+    ];
+  }
+
+  private missingStores(db: IDBPDatabase<GTFSDBSchema>): string[] {
+    const present = new Set(
+      Array.from(db.objectStoreNames as Iterable<string>)
+    );
+    return this.expectedStores().filter((name) => !present.has(name));
+  }
+
+  /**
+   * Wipe every store and recreate the schema from scratch.
+   *
+   * Clean-slate on purpose: the pre-upgrade modal has already offered an
+   * export, so no migration path is carried here.
+   */
+  private createSchema(
+    db: IDBPDatabase<GTFSDBSchema>,
+    oldVersion: number,
+    newVersion: number | null
+  ): void {
+    console.log(
+      `Upgrading database from version ${oldVersion} to ${newVersion}`
+    );
+
+    Array.from(db.objectStoreNames).forEach((s) => db.deleteObjectStore(s));
+
+    db.createObjectStore('patches', {
+      keyPath: 'version',
+      autoIncrement: true,
+    });
+    db.createObjectStore('snapshots', { keyPath: 'version' });
+    db.createObjectStore('meta', { keyPath: 'key' });
+    const blobStore = db.createObjectStore('file_blobs', {
+      keyPath: ['gen', 'tableName', 'chunk'],
+    });
+    blobStore.createIndex('gen', 'gen');
+    const passthroughStore = db.createObjectStore('passthrough_files', {
+      keyPath: ['gen', 'fileName'],
+    });
+    passthroughStore.createIndex('gen', 'gen');
+
+    GTFS_FILES.map((f) => f.filename).forEach((fileName) => {
+      const tableName = this.getTableName(fileName);
+      const keyPath = this.getNaturalKeyPath(tableName);
+      const store = db.createObjectStore(tableName as GTFSStoreName, {
+        keyPath,
+        autoIncrement: false,
+      });
+      this.addIndexesForTable(store as unknown as IDBObjectStore, tableName);
+    });
+
+    console.log('Database schema created');
+  }
+
+  /**
+   * Open the database, surfacing a stalled request rather than hanging on it.
+   *
+   * An open queued behind a blocked version-change operation fires no event at
+   * all, not even `blocked`, so it is raced against a timeout and the user is
+   * given a way out. Returns null if they chose not to continue.
+   */
+  private async openWithRecovery(): Promise<IDBPDatabase<GTFSDBSchema> | null> {
+    for (;;) {
+      let blockedByOtherTab = false;
+      const attempt = openDB<GTFSDBSchema>(this.dbName, this.dbVersion, {
+        upgrade: (db, oldVersion, newVersion, _transaction) => {
+          this.createSchema(db, oldVersion, newVersion);
+        },
+        blocked: () => {
+          blockedByOtherTab = true;
+          console.warn(
+            '[GTFSDatabase] upgrade blocked: another connection is still open'
+          );
+        },
+        // Another tab wants to upgrade or delete the database. Close this
+        // connection so it can, instead of wedging that tab (and every later
+        // request on this database) for the rest of the session.
+        blocking: () => {
+          console.warn(
+            '[GTFSDatabase] another tab needs this connection closed'
+          );
+          this.close();
+          notify.warning(
+            'Another GTFS.zone tab is updating the database. Reload this tab to keep editing.'
+          );
+        },
+        terminated: () => {
+          console.warn('[GTFSDatabase] connection closed unexpectedly');
+          this.db = null;
+        },
+      });
+
+      const db = await withTimeout(attempt, CONFIG.DB_REQUEST_TIMEOUT_MS);
+      if (db) {
+        return db;
+      }
+
+      const reason = blockedByOtherTab
+        ? 'Another GTFS.zone tab still has the old database open, so it cannot be updated.'
+        : 'The browser is not answering the request to open the database. This usually means an earlier reset is still waiting on a tab that was never closed.';
+      let retry = false;
+      await showModal({
+        title: 'Database is not responding',
+        body: `<p class="mb-2">${reason}</p><p>Close any other GTFS.zone tabs and retry. If that does not help, restarting the browser clears the stuck request.</p>`,
+        enterAction: 0,
+        actions: [
+          {
+            label: 'Retry',
+            className: 'btn-primary',
+            onClick: async () => {
+              retry = true;
+            },
+          },
+          {
+            label: 'Continue without saving',
+            className: 'btn-outline',
+            onClick: async () => {},
+          },
+        ],
+      });
+      if (!retry) {
+        notify.error(
+          'Running without a database: edits will not be saved to this browser.'
+        );
+        return null;
+      }
     }
   }
 
@@ -426,11 +575,33 @@ export class GTFSDatabase {
   }
 
   /**
-   * Peek at the current IDB version without triggering an upgrade.
-   * Returns 0 if the database does not yet exist (fresh install).
+   * Read the stored schema version without opening a connection.
+   * Returns 0 if the database does not exist yet, or if the version cannot be
+   * determined - the caller then just tries to open it.
+   *
+   * `databases()` is used where available because it answers from the browser's
+   * bookkeeping: it neither joins the per-database request queue (where a
+   * blocked version-change operation would strand it) nor creates the database
+   * as a side effect of asking.
    */
-  private peekVersion(): Promise<number> {
-    return new Promise((resolve) => {
+  private async peekVersion(): Promise<number> {
+    if (typeof indexedDB.databases === 'function') {
+      try {
+        const entries = await withTimeout(
+          indexedDB.databases(),
+          CONFIG.DB_REQUEST_TIMEOUT_MS
+        );
+        if (entries) {
+          return entries.find((e) => e.name === this.dbName)?.version ?? 0;
+        }
+      } catch (error) {
+        console.warn('[GTFSDatabase] indexedDB.databases() failed:', error);
+      }
+    }
+
+    // Fallback for browsers without databases(): a versionless open, which
+    // creates the database when it is absent, so the creation is aborted.
+    const probe = new Promise<number>((resolve) => {
       const req = indexedDB.open(this.dbName);
       req.onsuccess = () => {
         const v = req.result.version;
@@ -442,7 +613,16 @@ export class GTFSDatabase {
         (e.target as IDBOpenDBRequest).transaction?.abort();
       };
       req.onerror = () => resolve(0);
+      req.onblocked = () => resolve(0);
     });
+    const version = await withTimeout(probe, CONFIG.DB_REQUEST_TIMEOUT_MS);
+    if (version === null) {
+      console.warn(
+        '[GTFSDatabase] version probe timed out; opening without it'
+      );
+      return 0;
+    }
+    return version;
   }
 
   /**
@@ -455,12 +635,23 @@ export class GTFSDatabase {
    */
   exportCurrentBlobsAsZip(): Promise<Blob | null> {
     return new Promise((resolve) => {
+      // The button that awaits this one is disabled while it runs, so a stalled
+      // request would strand the modal it sits in.
+      const giveUp = setTimeout(() => {
+        console.warn('[GTFSDatabase] recovery export timed out');
+        resolve(null);
+      }, CONFIG.DB_REQUEST_TIMEOUT_MS);
+      const done = (blob: Blob | null) => {
+        clearTimeout(giveUp);
+        resolve(blob);
+      };
       const req = indexedDB.open(this.dbName);
+      req.onblocked = () => done(null);
       req.onsuccess = () => {
         const db = req.result;
         if (!db.objectStoreNames.contains('file_blobs')) {
           db.close();
-          resolve(null);
+          done(null);
           return;
         }
         const storeReq = db
@@ -477,7 +668,7 @@ export class GTFSDatabase {
           }[];
           if (!entries?.length) {
             db.close();
-            resolve(null);
+            done(null);
             return;
           }
 
@@ -557,7 +748,7 @@ export class GTFSDatabase {
             });
           }
           db.close();
-          resolve(
+          done(
             await zip.generateAsync({
               type: 'blob',
               compression: 'DEFLATE',
@@ -567,13 +758,13 @@ export class GTFSDatabase {
         };
         storeReq.onerror = () => {
           db.close();
-          resolve(null);
+          done(null);
         };
       };
       req.onupgradeneeded = (e) => {
         (e.target as IDBOpenDBRequest).transaction?.abort();
       };
-      req.onerror = () => resolve(null);
+      req.onerror = () => done(null);
     });
   }
 
