@@ -100,8 +100,8 @@ async function confirmLargeFeed(
   await showModal({
     title: 'Large feed',
     body: `
-      <p><strong>${escapeHtml(label)}</strong> is larger than this browser
-      comfortably handles.</p>
+      <p><strong>${escapeHtml(label)}</strong> is large and may crash the
+      browser on computers with less memory available.</p>
       <p class="mt-2">Roughly ${estimate.totalRows.toLocaleString()} rows across
       ${formatBytes(estimate.totalBytes)} of uncompressed data, needing about
       ${formatBytes(estimate.memoryBytes)} of memory once loaded. Row counts are
