@@ -1,3 +1,9 @@
+## v0.31.0 (2026-09-07)
+
+### Feat
+
+- **load**: stage feed imports in a generation and cut over atomically
+
 ## v0.30.0 (2026-09-06)
 
 ### Feat
