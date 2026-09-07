@@ -63,6 +63,7 @@ import {
   renderOptionLabel,
 } from '../utils/entity-display.js';
 import { showModal, renderTrashIcon } from './modal-utils.js';
+import { renderNavIcon } from './nav-icons.js';
 import { promptNewEntity } from './entity-form-modal.js';
 import { showNewServiceModal } from './new-service-modal.js';
 import { specStoreName } from '../utils/spec-field-edit.js';
@@ -957,24 +958,6 @@ export class PageContentRenderer {
     );
     const networkFieldHtml = await this.renderRouteNetworkField(route_id);
 
-    // Render route properties section
-    const routePropertiesHTML = `
-      <div class="space-y-4">
-        <div class="flex items-center justify-between gap-2 min-w-0">
-          <h2 class="text-lg font-semibold truncate">${renderCardLabel(getRouteDisplay(routeData))}</h2>
-          <button class="btn btn-sm btn-error btn-outline delete-route-btn shrink-0" data-route-id="${route_id}" title="Delete">${renderTrashIcon()}</button>
-        </div>
-        <div class="card bg-base-100 shadow-lg">
-          <div class="card-body p-4">
-            <div class="max-w-md space-y-3">
-              ${fieldsHtml}
-              ${networkFieldHtml}
-            </div>
-          </div>
-        </div>
-      </div>
-    `;
-
     // Get all available services from calendar, then merge in calendar_dates-only services
     const allServices = (await this.dependencies.gtfsDatabase.getAllRows(
       'calendar'
@@ -992,6 +975,34 @@ export class PageContentRenderer {
         allServices.push({ service_id: sid });
       }
     }
+
+    // Which timetable the header button opens: the first service this route
+    // runs, falling back to the feed's first service for a route with no trips
+    // yet, which opens the empty "add the first trip" timetable.
+    const timetableServiceId =
+      Object.keys(serviceGroups)[0] ??
+      (allServices[0]?.service_id as string | undefined);
+
+    // Render route properties section
+    const routePropertiesHTML = `
+      <div class="space-y-4">
+        <div class="flex items-center justify-between gap-2 min-w-0">
+          <h2 class="text-lg font-semibold truncate">${renderCardLabel(getRouteDisplay(routeData))}</h2>
+          <div class="flex items-center gap-2 shrink-0">
+            <button class="btn btn-sm btn-outline open-timetable-btn" data-route-id="${route_id}" data-service-id="${escapeHtml(timetableServiceId ?? '')}" title="Timetable"${timetableServiceId ? '' : ' disabled'}>${renderNavIcon('timetable', { sizeClass: 'h-4 w-4' })}</button>
+            <button class="btn btn-sm btn-error btn-outline delete-route-btn" data-route-id="${route_id}" title="Delete">${renderTrashIcon()}</button>
+          </div>
+        </div>
+        <div class="card bg-base-100 shadow-lg">
+          <div class="card-body p-4">
+            <div class="max-w-md space-y-3">
+              ${fieldsHtml}
+              ${networkFieldHtml}
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
 
     // Render new service selector
     const newServiceSelectorHTML =
@@ -1449,6 +1460,18 @@ export class PageContentRenderer {
             onClosed: () => this.dependencies.onEntityCreated?.(),
           }
         );
+      });
+    }
+
+    // Route header timetable button
+    const openTimetableBtn = container.querySelector('.open-timetable-btn');
+    if (openTimetableBtn) {
+      openTimetableBtn.addEventListener('click', () => {
+        const route_id = openTimetableBtn.getAttribute('data-route-id');
+        const service_id = openTimetableBtn.getAttribute('data-service-id');
+        if (route_id && service_id) {
+          this.dependencies.onTimetableClick(route_id, service_id);
+        }
       });
     }
 

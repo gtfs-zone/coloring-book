@@ -3016,17 +3016,20 @@ export class ScheduleController {
    * opens on a real timetable.
    *
    * Defaults are the first route that runs trips, the first service that route
-   * runs, and (left to `renderSchedule`) the busiest direction. Returns null
-   * when the feed has no trips at all, which is the one case the modal cannot
-   * show anything for.
+   * runs, and (left to `renderSchedule`) the busiest direction. A named route
+   * with no trips falls back to the first service the feed defines, so the
+   * modal opens on the empty "add the first trip" state. Returns null when
+   * nothing can be resolved: no route to default to, or no service at all.
    */
   async resolveTimetableTarget(
     partial: Partial<TimetableTarget> = {}
   ): Promise<TimetableTarget | null> {
-    const trips = this.gtfsParser.getFileDataSyncTyped<Record<string, unknown>>(
-      GTFS_TABLES.TRIPS
-    );
-    if (!trips || trips.length === 0) {
+    const trips =
+      this.gtfsParser.getFileDataSyncTyped<Record<string, unknown>>(
+        GTFS_TABLES.TRIPS
+      ) ?? [];
+    // Only fatal without a named route: there is then nothing to default to.
+    if (trips.length === 0 && partial.route_id === undefined) {
       console.warn(
         '[ScheduleController] no trips in feed, no timetable to open'
       );
@@ -3040,15 +3043,17 @@ export class ScheduleController {
 
     // A requested service the route has no trips for is a timetable being
     // started, not a bad id: honour it as long as the feed defines the service.
-    // Only a missing or unknown id falls back to what the route already runs.
+    // Only a missing or unknown id falls back to what the route already runs,
+    // then to the feed's first service for a route that runs nothing yet.
     const services = this.servicesForRoute(route_id);
+    const allServices = this.allServices();
     const requested = partial.service_id;
     const service_id =
       requested !== undefined &&
       requested !== '' &&
-      (services.includes(requested) || this.allServices().has(requested))
+      (services.includes(requested) || allServices.has(requested))
         ? requested
-        : (services[0] ?? requested);
+        : (services[0] ?? requested ?? allServices.keys().next().value);
     if (service_id === undefined || service_id === '') {
       console.warn(
         `[ScheduleController] route ${route_id} runs no service, no timetable to open`
