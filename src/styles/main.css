@@ -72,7 +72,7 @@ body {
 @layer components {
   /* File list styles using DaisyUI menu */
   .file-required {
-    border-left: 3px solid oklch(var(--p));
+    border-left: 3px solid var(--color-primary);
     padding-left: 0.75rem;
   }
 }

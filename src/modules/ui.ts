@@ -1,6 +1,7 @@
 import { notify } from './notification-system';
 import { showModal, renderChevronIcon } from './modal-utils.js';
 import { showLoadModal } from './load-modal.js';
+import { showFilesModal } from './files-modal.js';
 import type { ContinueOffer } from './load-modal.js';
 import type { FeedSelection } from './feed-selection.js';
 import { resolvedScheduledUrl } from './feed-selection.js';
@@ -134,14 +135,6 @@ export class UIController {
         this.updateMapToolButtonState();
       });
 
-    // Back to files button
-    const backToFilesBtn = document.getElementById('back-to-files');
-    if (backToFilesBtn) {
-      backToFilesBtn.addEventListener('click', () => {
-        this.showFileList();
-      });
-    }
-
     // Breadcrumb navigation is now handled dynamically in renderBreadcrumbs()
 
     // Panel toggle buttons
@@ -168,12 +161,7 @@ export class UIController {
 
     // Files modal button
     document.getElementById('files-btn')?.addEventListener('click', () => {
-      this.updateFileList();
-      // Always open on the list, never a stale editor view from last time
-      this.showFileList();
-      (
-        document.getElementById('files-modal') as HTMLDialogElement
-      )?.showModal();
+      void this.openFilesModal();
     });
 
     // Drag and drop
@@ -451,8 +439,42 @@ export class UIController {
     }
   }
 
+  /**
+   * Open the Files modal on the list, optionally jumping straight to a file.
+   *
+   * The body is rebuilt on every open, so everything that hangs off it - the
+   * list, the back button - is wired here rather than once at startup.
+   */
+  async openFilesModal(initialFile?: string): Promise<void> {
+    await showFilesModal({
+      onMount: () => {
+        this.updateFileList();
+        // Always open on the list, never a stale editor view from last time
+        this.showFileList();
+
+        document
+          .getElementById('back-to-files')
+          ?.addEventListener('click', () => {
+            this.showFileList();
+          });
+
+        if (initialFile) {
+          void this.openFile(initialFile);
+        }
+      },
+      // The DOM the editor points at is gone by now: flush pending row writes
+      // and drop the Clusterize instance.
+      onClose: () => this.editor!.closeEditor(),
+    });
+  }
+
   updateFileList() {
-    const fileList = document.getElementById('file-list')!;
+    // Skipped while the Files modal is closed: a feed swap refreshes the list
+    // too, and the list only exists inside the open modal.
+    const fileList = document.getElementById('file-list');
+    if (!fileList) {
+      return;
+    }
     fileList.innerHTML = '';
 
     // Get categorized files
@@ -579,11 +601,7 @@ export class UIController {
 
   // Method expected by Objects Navigation interface
   showFileInEditor(filename: string, rowId?: string): void {
-    // Open the Files modal
-    (document.getElementById('files-modal') as HTMLDialogElement)?.showModal();
-
-    // Open the file in the editor
-    this.openFile(filename);
+    void this.openFilesModal(filename);
 
     console.log(
       `Opened ${filename} in editor${rowId ? ` for row ${rowId}` : ''}`

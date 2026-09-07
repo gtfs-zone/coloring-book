@@ -15,7 +15,8 @@ export class BottomSheetController {
   constructor(
     panel: HTMLElement,
     tabManager: TabManager,
-    openHistoryModal?: () => void
+    openHistoryModal?: () => void,
+    openFilesModal?: () => void
   ) {
     this.panel = panel;
 
@@ -26,7 +27,11 @@ export class BottomSheetController {
 
     this.active = true;
     this.setupDragHandle();
-    this.setupDock(tabManager, openHistoryModal ?? null);
+    this.setupDock(
+      tabManager,
+      openHistoryModal ?? null,
+      openFilesModal ?? null
+    );
     this.setSnap('closed', false);
 
     const dock = document.getElementById('mobile-dock');
@@ -195,7 +200,8 @@ export class BottomSheetController {
 
   private setupDock(
     tabManager: TabManager,
-    openHistoryModal: (() => void) | null
+    openHistoryModal: (() => void) | null,
+    openFilesModal: (() => void) | null
   ): void {
     const dockBrowse = document.getElementById('dock-browse');
     const dockFiles = document.getElementById('dock-files');
@@ -215,9 +221,7 @@ export class BottomSheetController {
     dockFiles?.addEventListener('click', () => {
       updateDockActive('files');
       this.open('half');
-      (
-        document.getElementById('files-modal') as HTMLDialogElement
-      )?.showModal();
+      openFilesModal?.();
     });
 
     dockChanges?.addEventListener('click', () => {
