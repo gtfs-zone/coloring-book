@@ -6,6 +6,41 @@ export const CONFIG = {
   // IndexedDB
   DB_NAME: 'GTFSZoneDB',
 
+  // Feed blobs: rows per file_blobs chunk. Keeps every serialized JSON string
+  // far below the engine's max string length (SpiderMonkey: ~1.07 GB, which a
+  // 4.5M-row stop_times.txt exceeds as a single string) and small enough to
+  // parse inside one frame budget.
+  BLOB_CHUNK_ROWS: 50_000,
+
+  // Feed loading: rows hydrated between awaits of a macrotask, so the event
+  // loop drains and the progress bar keeps painting during a large import.
+  HYDRATE_YIELD_ROWS: 25_000,
+
+  // Route rendering: trips built between yields to the event loop. Lower than
+  // HYDRATE_YIELD_ROWS because a trip costs far more than a row: each one
+  // walks its stop_times and joins them into a geometry key.
+  ROUTE_BUILD_TRIP_CHUNK: 2_000,
+
+  // Feed loading: how long to wait for a message from the parse worker before
+  // treating the load as dead, terminating the worker and failing loudly.
+  LOAD_WATCHDOG_MS: 60_000,
+
+  // Feed loading: thresholds above which the user is warned and offered a
+  // bailout before the expensive work starts. Bytes are the zip's uncompressed
+  // size; rows are the estimated total across all tables.
+  LARGE_FEED_WARN_BYTES: 250_000_000,
+  LARGE_FEED_WARN_ROWS: 2_000_000,
+
+  // Feed loading: bytes of CSV per row, used to turn a zip entry's uncompressed
+  // size into a row estimate without inflating it. Measured on MBTA's
+  // stop_times.txt (210 MB, 4,494,139 rows).
+  FEED_CSV_BYTES_PER_ROW: 48,
+
+  // Feed loading: in-memory cost of one parsed row (the object, its keys and
+  // its string values). Measured against the same table, whose 4.5M rows hold
+  // roughly 1.8 GB. Only used to size the large-feed warning.
+  FEED_ROW_MEMORY_BYTES: 400,
+
   // Editor (table view)
   DEBOUNCE_DELAY: 500, // ms before flushing pending cell updates to IndexedDB
   CLUSTERIZE_ROWS_IN_BLOCK: 50,

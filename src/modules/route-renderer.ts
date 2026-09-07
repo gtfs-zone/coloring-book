@@ -11,11 +11,25 @@ import type { GTFSParser } from './gtfs-parser.js';
 import type { PatchOp } from '../types/patch.js';
 import { CONFIG } from '../config.js';
 import { routeSortKey } from './route-sort.js';
+import { yieldToEventLoop } from '../utils/async-yield.js';
 import { ensureMapIcons } from './map-icons.js';
 import {
   routeColor as deriveRouteColor,
   casingColor as deriveCasingColor,
 } from '../utils/route-colors.js';
+
+/**
+ * Thrown by an async feature build that a newer one has replaced.
+ *
+ * A superseded build must not return normally: its caller would then hand a
+ * half-built feature map to setData and draw a mix of two feeds.
+ */
+export class BuildSupersededError extends Error {
+  constructor() {
+    super('Route feature build superseded by a newer feed');
+    this.name = 'BuildSupersededError';
+  }
+}
 
 export interface RouteFeature extends GeoJSON.Feature {
   id: string;
@@ -101,6 +115,10 @@ export class RouteRenderer {
   private routeToFeatureKeys: Map<string, Set<string>> | null = null;
   private stopToGeomKeys: Map<string, Set<string>> | null = null;
   private stopsLookupCache: Map<string, [number, number]> | null = null;
+
+  // The index build in flight, if any. Shared so a synchronous reader finishes
+  // the same pass rather than starting a second one over the same rows.
+  private buildIterator: Iterator<void> | null = null;
 
   // RAF-based coalescing
   private dirtyFlag = false;
@@ -254,6 +272,9 @@ export class RouteRenderer {
   }
 
   private invalidateAll(): void {
+    // Drops any build in flight: its drain loop sees the swap and stops rather
+    // than writing rows of the old feed into the fresh maps.
+    this.buildIterator = null;
     this.shapeIndex = null;
     this.stopSeqIndex = null;
     this.tripsByGeomKey = null;
@@ -291,10 +312,60 @@ export class RouteRenderer {
   }
 
   /**
-   * Build all cached indexes and populate routeFeatures, deduplicating by (route_id, geometry_key).
-   * Lazily called, noop if caches are already warm.
+   * Run the index build to completion in one task.
+   *
+   * Only for the synchronous readers (getRouteFeatures). A build already in
+   * flight is finished here rather than restarted, so a caller never reads a
+   * half-built index.
    */
   private createRouteFeatures(): void {
+    const iterator = this.startFeatureBuild();
+    while (this.buildIterator === iterator && !iterator.next().done) {
+      // Drain without yielding.
+    }
+    this.finishFeatureBuild(iterator);
+  }
+
+  /** The same build, yielding to the event loop between chunks. */
+  private async createRouteFeaturesAsync(): Promise<void> {
+    const iterator = this.startFeatureBuild();
+    for (;;) {
+      // A feed swap during a yield replaces the iterator. Throwing rather than
+      // returning is the point: the caller must not draw what was built.
+      if (this.buildIterator !== iterator) {
+        throw new BuildSupersededError();
+      }
+      if (iterator.next().done) {
+        break;
+      }
+      await yieldToEventLoop();
+    }
+    this.finishFeatureBuild(iterator);
+  }
+
+  /** The in-flight build, or a fresh one. */
+  private startFeatureBuild(): Iterator<void> {
+    this.buildIterator ??= this.buildRouteFeatures();
+    return this.buildIterator;
+  }
+
+  /** Clear the in-flight build unless invalidateAll already replaced it. */
+  private finishFeatureBuild(iterator: Iterator<void>): void {
+    if (this.buildIterator === iterator) {
+      this.buildIterator = null;
+    }
+  }
+
+  /**
+   * Build all cached indexes and populate routeFeatures, deduplicating by (route_id, geometry_key).
+   * Lazily called, noop if caches are already warm.
+   *
+   * A generator so one body serves both drainers above: it yields at chunk
+   * boundaries, and whether that yield reaches the event loop is the caller's
+   * choice. On the MBTA feed this loop walks 4.5M stop_times and ~70k trips,
+   * which is seconds of frozen page if it runs in one task.
+   */
+  private *buildRouteFeatures(): Generator<void> {
     if (this.shapeIndex !== null) {
       return; // Already built
     }
@@ -325,7 +396,11 @@ export class RouteRenderer {
     this.shapeIndex = new Map();
     if (shapes.length > 0) {
       const buckets = new Map<string, Shapes[]>();
+      let bucketed = 0;
       for (const pt of shapes) {
+        if (++bucketed % CONFIG.HYDRATE_YIELD_ROWS === 0) {
+          yield;
+        }
         const arr = buckets.get(pt.shape_id);
         if (arr) {
           arr.push(pt);
@@ -352,7 +427,11 @@ export class RouteRenderer {
 
     // Build tripStopTimesIndex: trip_id -> stop_times sorted by stop_sequence
     const tripStopTimesIndex = new Map<string, StopTimes[]>();
+    let bucketedStopTimes = 0;
     for (const st of stopTimes) {
+      if (++bucketedStopTimes % CONFIG.HYDRATE_YIELD_ROWS === 0) {
+        yield;
+      }
       const arr = tripStopTimesIndex.get(st.trip_id);
       if (arr) {
         arr.push(st);
@@ -396,7 +475,9 @@ export class RouteRenderer {
       const sortKey = routeSortKey(route.route_type, routeTrips.length);
 
       for (const trip of routeTrips) {
-        tripsProcessed++;
+        if (++tripsProcessed % CONFIG.ROUTE_BUILD_TRIP_CHUNK === 0) {
+          yield;
+        }
         let geometryKey: string;
         let coords: [number, number][] | null = null;
 
@@ -513,7 +594,15 @@ export class RouteRenderer {
     await this.ensureInitialized();
 
     this.invalidateAll();
-    this.createRouteFeatures();
+    try {
+      await this.createRouteFeaturesAsync();
+    } catch (error) {
+      if (error instanceof BuildSupersededError) {
+        console.log('[RouteRenderer] Render superseded by a newer feed');
+        return;
+      }
+      throw error;
+    }
 
     const featureCount = this.routeFeatures.size;
     if (featureCount === 0) {

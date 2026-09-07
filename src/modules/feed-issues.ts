@@ -30,7 +30,7 @@ export interface FeedIssueRowSource {
  * has moved since the last pass.
  */
 export interface FeedIssueRevalidator {
-  validate(): ValidationResults;
+  validate(): Promise<ValidationResults>;
   source: FeedIssueRowSource;
   getStalenessKey(): string;
 }
@@ -118,6 +118,10 @@ export function getFeedIssueEntities(code: string): ValidationEntity[] {
  */
 let revalidator: FeedIssueRevalidator | null = null;
 let validatedKey: string | null = null;
+
+/** The pass currently running, and the staleness key it is validating. */
+let pending: Promise<void> | null = null;
+let pendingKey: string | null = null;
 
 /**
  * Groups messages by file, code and field. Field is part of the key because a
@@ -389,8 +393,11 @@ export function setFeedIssueRevalidator(next: FeedIssueRevalidator): void {
  * the patch version resets to 0 on a feed swap, so a fresh unedited feed and
  * the empty boot scaffold both read 0 and the version alone would report "not
  * stale" while these issues describe a feed that is no longer loaded.
+ *
+ * The pass yields to the event loop, so two callers can overlap. A pass
+ * already running for the same key is awaited rather than started again.
  */
-export function refreshFeedIssuesIfStale(): void {
+export async function refreshFeedIssuesIfStale(): Promise<void> {
   if (!revalidator) {
     return;
   }
@@ -398,14 +405,29 @@ export function refreshFeedIssuesIfStale(): void {
   if (key === validatedKey) {
     return;
   }
+  if (pendingKey === key && pending) {
+    await pending;
+    return;
+  }
   console.log(
     `[FeedIssues] revalidating: issues are from ${validatedKey}, feed is at ${key}`
   );
   const start = performance.now();
-  publishFeedIssues(revalidator.validate(), revalidator.source);
-  console.log(
-    `[FeedIssues] revalidated in ${Math.round(performance.now() - start)}ms`
-  );
+  const active = revalidator;
+  pendingKey = key;
+  pending = active
+    .validate()
+    .then((results) => {
+      publishFeedIssues(results, active.source);
+      console.log(
+        `[FeedIssues] revalidated in ${Math.round(performance.now() - start)}ms`
+      );
+    })
+    .finally(() => {
+      pending = null;
+      pendingKey = null;
+    });
+  await pending;
 }
 
 export function isDanglingReference(

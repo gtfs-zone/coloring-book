@@ -253,9 +253,8 @@ export class DatabaseFallbackManager {
    * Reset the database completely
    */
   private async resetDatabase(): Promise<void> {
+    feedProgressIndicator.startLoading('reset', 'Resetting database...');
     try {
-      feedProgressIndicator.startLoading('reset', 'Resetting database...');
-
       await new Promise<void>((resolve, reject) => {
         const deleteReq = indexedDB.deleteDatabase('GTFSZoneDB');
         deleteReq.onsuccess = () => resolve();
@@ -266,17 +265,17 @@ export class DatabaseFallbackManager {
         };
       });
 
-      feedProgressIndicator.finishLoading('reset');
       notify.success('Database reset successfully. Reloading page...');
 
       setTimeout(() => window.location.reload(), 1500);
     } catch (error) {
-      feedProgressIndicator.finishLoading('reset');
       notify.error(
         'Failed to reset database. Please clear browser data manually.'
       );
 
       console.error('Database reset failed:', error);
+    } finally {
+      feedProgressIndicator.finishLoading('reset');
     }
   }
 }

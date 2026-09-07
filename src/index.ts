@@ -33,6 +33,7 @@ import { HistoryController } from './modules/history-controller';
 import { TabLockController } from './modules/tab-lock';
 import { humanLabel } from './utils/patch-label';
 import { loadExtensionColumns } from './utils/extension-fields';
+import { runWhenIdle } from './utils/run-when-idle';
 import { showHelpModal, showHelpPageOnce } from './modules/help-modal';
 import { setHelpRuntimeData } from './modules/help-pages';
 import { showFaresModal } from './modules/fares-modal';
@@ -53,6 +54,8 @@ import { NavbarCounts } from './modules/navbar-counts';
 import { PanelResizer } from './modules/panel-resizer';
 import { LevelsController } from './modules/levels-controller';
 import { feedProgressIndicator } from './modules/feed-progress-indicator';
+import { databaseFallbackManager } from './modules/database-fallback-manager';
+import { LoadCancelledError } from './modules/feed-download';
 import { CONFIG } from './config';
 import { initFieldTooltipPortal } from './utils/tooltip-position';
 import './styles/main.css';
@@ -64,13 +67,18 @@ declare global {
   const __APP_VERSION__: string;
 }
 
-function runWhenIdle(fn: () => void): void {
-  if (typeof requestIdleCallback !== 'undefined') {
-    requestIdleCallback(fn);
-  } else {
-    setTimeout(fn, 0);
-  }
-}
+/**
+ * What boot did about a feed. Explicit because only 'nothing-stored' may be
+ * followed by creating an empty feed: that commits a new generation and clears
+ * the patch log, so guessing from a row count destroys a stored feed whenever a
+ * restore or a load failed.
+ */
+type BootOutcome =
+  | 'restored'
+  | 'created-empty'
+  | 'loaded'
+  | 'nothing-stored'
+  | 'failed';
 
 export class GTFSEditor {
   public gtfsParser: GTFSParser;
@@ -344,12 +352,23 @@ export class GTFSEditor {
         // Timetable data and picker options are keyed by ids that collide
         // across feeds, so stale entries redisplay the previous feed's rows.
         this.scheduleController.resetForNewFeed();
+        // The previous feed's routes, stops and zones come off the map here
+        // rather than at the start of the next render, which on a large feed is
+        // seconds later: until then the map would still be showing a feed that
+        // is no longer loaded.
+        this.mapController.clearForNewFeed();
         // Issues and the navbar count badges: import writes rows directly,
-        // bypassing the patch events these otherwise listen to.
-        this.validateAndUpdateInfo();
+        // bypassing the patch events these otherwise listen to. Validation is
+        // a full sweep of every table, so it runs off the critical path: the
+        // feed is usable, and the issues populate when they are ready.
+        runWhenIdle(() => {
+          this.validateAndUpdateInfo().catch((e: unknown) =>
+            console.error('[GTFSEditor] validation failed:', e)
+          );
+        });
         // Async, and nothing renders a column list synchronously inside the
         // swap, so it is fire-and-forget. User-added columns live in the meta
-        // store, which clearDatabase() wipes; without this the in-memory list
+        // store, which the feed commit clears; without this the in-memory list
         // keeps the previous feed's columns.
         loadExtensionColumns(this.gtfsParser.gtfsDatabase).catch((e: unknown) =>
           console.error('[GTFSEditor] failed to reload extension columns:', e)
@@ -457,77 +476,54 @@ export class GTFSEditor {
       this.setupNavigationTabSwitching(bottomSheet);
 
       // Decide which feed this session is about, and hydrate it.
-      await this.bootFeed();
+      const outcome = await this.bootFeed();
 
       // Initialize PageStateManager from URL. After the feed, so a deep-linked
       // object is validated against the rows that are actually loaded.
       await this.pageStateManager.initializeFromURL();
 
-      // If no existing data, initialize an empty feed so the invariant "there is always a feed" holds.
-      const hasExistingRows = this.gtfsParser
-        .getAllFileNames()
-        .some((f) => (this.gtfsParser.getFileDataSync(f)?.length ?? 0) > 0);
-
-      if (!hasExistingRows) {
-        console.log('[boot] no rows after load, falling back to an empty feed');
+      // Only when the database holds no feed at all: creating one commits a new
+      // generation and clears the patch log, so a failed restore or a failed
+      // load must never land here. The user keeps whatever is stored and can
+      // load again from the modal.
+      if (outcome === 'nothing-stored') {
+        console.log('[boot] nothing stored, creating an empty feed');
         await this.gtfsParser.initializeEmpty();
       }
 
       this.updateUndoRedoState();
 
       if (CONFIG.DEBUG_BOOT) {
-        console.time('[boot] browse-navigation.refresh');
+        console.time('[boot] refresh after feed swap');
       }
-      this.uiController.updateFileList();
-      this.browseNavigation
-        .refresh()
+      // The same post-swap refresh a user load runs, minus the navigation home:
+      // boot's page state comes from the URL. The map update it schedules also
+      // refreshes navigation once it lands, so a deep-linked stop keeps its
+      // selection through the focus reset inside updateMap.
+      await this.uiController
+        .refreshAfterFeedSwap()
         .catch((e: unknown) =>
           notify.error(
             `Failed to refresh navigation: ${e instanceof Error ? e.message : String(e)}`
           )
         );
       if (CONFIG.DEBUG_BOOT) {
-        console.timeEnd('[boot] browse-navigation.refresh');
+        console.timeEnd('[boot] refresh after feed swap');
       }
-      feedProgressIndicator.finishLoading('boot');
-      if (CONFIG.DEBUG_BOOT) {
-        console.timeEnd('[boot] total');
-      }
-
       // initializeFromURL sets the state without dispatching a navigation, so
       // a modal named by the boot URL is opened here, once the feed it reads
       // is in place.
       getModalRouter().sync(this.pageStateManager.getPageState());
-
-      runWhenIdle(() => {
-        if (CONFIG.DEBUG_BOOT) {
-          console.time('[boot] map-controller.updateMap');
-        }
-        this.mapController
-          .updateMap()
-          .then(async () => {
-            // updateMap clears map focus. Render the URL-restored state only
-            // after it completes so a refreshed stop page keeps its selection.
-            await this.browseNavigation.refresh();
-            if (CONFIG.DEBUG_BOOT) {
-              console.timeEnd('[boot] map-controller.updateMap');
-            }
-          })
-          .catch((e: unknown) =>
-            notify.error(
-              `Failed to update map: ${e instanceof Error ? e.message : String(e)}`
-            )
-          );
-      });
     } catch (error) {
-      feedProgressIndicator.finishLoading('boot');
-      if (CONFIG.DEBUG_BOOT) {
-        console.timeEnd('[boot] total');
-      }
       console.error('Failed to initialize application:', error);
       notify.error(
         'Failed to initialize application. Please refresh the page and try again.'
       );
+    } finally {
+      feedProgressIndicator.finishLoading('boot');
+      if (CONFIG.DEBUG_BOOT) {
+        console.timeEnd('[boot] total');
+      }
     }
   }
 
@@ -540,7 +536,7 @@ export class GTFSEditor {
    * offers. A `#load=` command and a deep link into an object both already
    * state which feed is wanted, so neither shows the modal.
    */
-  private async bootFeed(): Promise<void> {
+  private async bootFeed(): Promise<BootOutcome> {
     const loadUrl = takeLoadCommand();
     if (loadUrl) {
       console.log('[boot] skipped modal: #load', loadUrl);
@@ -553,7 +549,7 @@ export class GTFSEditor {
         },
         realtime: null,
       });
-      return;
+      return 'loaded';
     }
 
     const deepLink = this.pageStateManager.peekURLPageState();
@@ -561,8 +557,7 @@ export class GTFSEditor {
       console.log(
         `[boot] skipped modal: deep link to ${deepLink.modal?.type ?? deepLink.type}`
       );
-      await this.restoreStoredFeed();
-      return;
+      return this.restoreStoredFeed();
     }
 
     // Both reads are single meta records: the stored feed is described without
@@ -583,43 +578,74 @@ export class GTFSEditor {
     console.log(`[boot] load modal: user chose ${choice}`);
 
     if (choice === 'continue') {
-      await this.restoreStoredFeed();
-    } else if (choice === 'empty') {
+      return this.restoreStoredFeed();
+    }
+    if (choice === 'empty') {
       await this.gtfsParser.initializeEmpty();
       feedProgressIndicator.finishLoading('boot');
       await showHelpPageOnce('getting-started');
       feedProgressIndicator.startLoading('boot', 'Opening feed...');
+      return 'created-empty';
     }
     // 'loaded' has already parsed the chosen feed into place.
+    return 'loaded';
   }
 
   /** Hydrate the feed sitting in IndexedDB: rows first, then the patch log. */
-  private async restoreStoredFeed(): Promise<void> {
+  private async restoreStoredFeed(): Promise<BootOutcome> {
     if (CONFIG.DEBUG_BOOT) {
       console.time('[boot] restore stored feed');
     }
-    await this.gtfsParser.restoreDataFromDatabase();
-    // Paired with the restore, never run on a feed the user declined: replaying
-    // patches over the wrong rows is how a feed gets corrupted.
-    await this.patchManager.initialize();
-    // Only now are the rows final: the snapshot branch of patchManager.initialize
-    // rebinds tables and replays the patch log on top of what the restore read.
-    this.gtfsParser.markFeedReplaced();
-    if (CONFIG.DEBUG_BOOT) {
-      console.timeEnd('[boot] restore stored feed');
+    try {
+      const restored = await this.gtfsParser.restoreDataFromDatabase();
+      if (!restored) {
+        console.log('[boot] no stored feed to continue from');
+        return 'nothing-stored';
+      }
+      // Paired with the restore, never run on a feed the user declined: replaying
+      // patches over the wrong rows is how a feed gets corrupted.
+      await this.patchManager.initialize();
+      // Only now are the rows final: the snapshot branch of patchManager.initialize
+      // rebinds tables and replays the patch log on top of what the restore read.
+      this.gtfsParser.markFeedReplaced();
+      const routes = this.gtfsParser.getFileDataSync('routes.txt')?.length ?? 0;
+      console.log(`[boot] continue with stored feed (${routes} routes)`);
+      return 'restored';
+    } catch (error) {
+      // A cancelled restore is a clean state, not a failure: nothing was
+      // installed, so the session lands on the same empty screen as declining
+      // the boot modal and the stored feed is untouched.
+      if (error instanceof LoadCancelledError) {
+        console.log('[boot] restore cancelled by the user');
+        notify.info('Load cancelled');
+        return 'failed';
+      }
+      // The patch log is deliberately not replayed: a half-restored feed with
+      // patches applied on top of it is worse than no feed at all. The modal
+      // offers an export of what is still on disk before clearing.
+      console.error('[boot] failed to restore the stored feed:', error);
+      databaseFallbackManager.showDatabaseError(
+        error,
+        'restoring the stored feed',
+        () => this.gtfsParser.gtfsDatabase.exportCurrentBlobsAsZip()
+      );
+      return 'failed';
+    } finally {
+      if (CONFIG.DEBUG_BOOT) {
+        console.timeEnd('[boot] restore stored feed');
+      }
     }
-    const routes = this.gtfsParser.getFileDataSync('routes.txt')?.length ?? 0;
-    console.log(`[boot] continue with stored feed (${routes} routes)`);
   }
 
   // Runs on every whole-feed swap, via the parser's feed-replaced signal.
-  // Publishes the grouped issues the home panel renders.
-  public validateAndUpdateInfo(): void {
+  // Publishes the grouped issues the home panel renders. Scheduled rather than
+  // awaited by that signal, so a large feed is usable before it finishes.
+  public async validateAndUpdateInfo(): Promise<void> {
     // Feed import writes rows directly, bypassing the patch events the count
     // badges otherwise listen to.
     this.navbarCounts.refresh();
 
-    const validationResults = this.validator.validateFeed();
+    const validationResults = await this.validator.validateFeed();
     const issues = publishFeedIssues(validationResults, this.gtfsParser);
     console.log(
       `[GTFSEditor] validation: ${validationResults.errors.length} error(s), ${validationResults.warnings.length} warning(s), ${issues.length} issue group(s)`

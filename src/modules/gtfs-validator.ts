@@ -36,6 +36,8 @@ import {
   frequencyRowProblem,
 } from '../utils/frequency-rules.js';
 import { TimeFormatter } from '../utils/time-formatter.js';
+import { yieldToEventLoop } from '../utils/async-yield.js';
+import { CONFIG } from '../config.js';
 
 /** The offending row, so a message can be traced back to an editable object. */
 export interface ValidationEntity {
@@ -115,7 +117,24 @@ export class GTFSValidator {
     };
   }
 
-  validateFeed() {
+  /**
+   * Walk rows, awaiting a macrotask every CONFIG.HYDRATE_YIELD_ROWS rows so the
+   * event loop drains. A pass over a 4.5M-row stop_times.txt would otherwise
+   * freeze the page for seconds.
+   */
+  private async eachRow<T>(
+    rows: T[],
+    fn: (row: T, index: number) => void
+  ): Promise<void> {
+    for (let index = 0; index < rows.length; index++) {
+      if (index > 0 && index % CONFIG.HYDRATE_YIELD_ROWS === 0) {
+        await yieldToEventLoop();
+      }
+      fn(rows[index], index);
+    }
+  }
+
+  async validateFeed(): Promise<ValidationResults> {
     this.validationResults = {
       errors: [],
       warnings: [],
@@ -128,26 +147,33 @@ export class GTFSValidator {
       },
     };
 
-    // Run all validation checks
-    this.validateRequiredFiles();
-    this.validateAgencies();
-    this.validateRoutes();
-    this.validateTrips();
-    this.validateStops();
-    this.validateStopTimes();
-    this.validateCalendar();
-    this.validateShapes();
-    this.validateNetworks();
-    this.validateStopAreas();
-    this.validateFlexLocations();
-    this.validateTransfers();
-    this.validateFrequencies();
-    this.validateConditionalPresence();
-    this.validateRiderCategoryDefaults();
-    this.validateForeignKeys();
-    this.validateFieldWhitespace();
-    this.validateConstrainedCodes();
-    this.validateReferences();
+    // Run all validation checks, yielding between passes so the page keeps
+    // painting while a large feed is swept.
+    const passes = [
+      () => this.validateRequiredFiles(),
+      () => this.validateAgencies(),
+      () => this.validateRoutes(),
+      () => this.validateTrips(),
+      () => this.validateStops(),
+      () => this.validateStopTimes(),
+      () => this.validateCalendar(),
+      () => this.validateShapes(),
+      () => this.validateNetworks(),
+      () => this.validateStopAreas(),
+      () => this.validateFlexLocations(),
+      () => this.validateTransfers(),
+      () => this.validateFrequencies(),
+      () => this.validateConditionalPresence(),
+      () => this.validateRiderCategoryDefaults(),
+      () => this.validateForeignKeys(),
+      () => this.validateFieldWhitespace(),
+      () => this.validateConstrainedCodes(),
+      () => this.validateReferences(),
+    ];
+    for (const pass of passes) {
+      await pass();
+      await yieldToEventLoop();
+    }
 
     // Update summary
     this.validationResults.summary.errorCount =
@@ -364,7 +390,7 @@ export class GTFSValidator {
     this.addInfo(`Found ${routes.length} routes`, 'ROUTE_COUNT');
   }
 
-  validateStops() {
+  async validateStops() {
     const stops = this.gtfsParser.getFileDataSyncTyped(GTFS_TABLES.STOPS);
     if (stops.length === 0) {
       // A zone-only demand-responsive feed legitimately has no stops.
@@ -387,7 +413,7 @@ export class GTFSValidator {
       pathways as Pathways[]
     );
 
-    stops.forEach((stop, index: number) => {
+    await this.eachRow(stops, (stop, index) => {
       const rowNum = index + 1;
 
       // Required fields
@@ -502,7 +528,7 @@ export class GTFSValidator {
     this.addInfo(`Found ${stops.length} stops`, 'STOP_COUNT');
   }
 
-  validateTrips() {
+  async validateTrips() {
     const trips = this.gtfsParser.getFileDataSyncTyped(GTFS_TABLES.TRIPS);
 
     if (trips.length === 0) {
@@ -512,7 +538,7 @@ export class GTFSValidator {
 
     const trip_ids = new Set();
 
-    trips.forEach((trip, index: number) => {
+    await this.eachRow(trips, (trip, index) => {
       const rowNum = index + 1;
 
       // Required fields
@@ -557,7 +583,7 @@ export class GTFSValidator {
     this.addInfo(`Found ${trips.length} trips`, 'TRIP_COUNT');
   }
 
-  validateStopTimes() {
+  async validateStopTimes() {
     const stopTimes = this.gtfsParser.getFileDataSyncTyped(
       GTFS_TABLES.STOP_TIMES
     );
@@ -571,7 +597,7 @@ export class GTFSValidator {
       return;
     }
 
-    stopTimes.forEach((stopTime, index: number) => {
+    await this.eachRow(stopTimes, (stopTime, index) => {
       const rowNum = index + 1;
 
       // Required fields
@@ -737,13 +763,13 @@ export class GTFSValidator {
     }
   }
 
-  validateShapes() {
+  async validateShapes() {
     const shapes = this.gtfsParser.getFileDataSyncTyped(GTFS_TABLES.SHAPES);
     if (shapes.length === 0) {
       return;
     }
 
-    shapes.forEach((shape, index: number) => {
+    await this.eachRow(shapes, (shape, index) => {
       const rowNum = index + 1;
 
       if (!shape.shape_id || String(shape.shape_id).trim() === '') {
@@ -810,7 +836,7 @@ export class GTFSValidator {
     this.addInfo(`Found ${shapes.length} shape points`, 'SHAPE_POINT_COUNT');
   }
 
-  validateReferences() {
+  async validateReferences() {
     // Additional cross-reference validation
     const trips = this.gtfsParser.getFileDataSyncTyped(GTFS_TABLES.TRIPS);
     const stopTimes = this.gtfsParser.getFileDataSyncTyped(
@@ -819,7 +845,12 @@ export class GTFSValidator {
 
     if (trips && stopTimes) {
       const trip_ids = new Set(trips.map((t) => t.trip_id));
-      const tripsWithStopTimes = new Set(stopTimes.map((st) => st.trip_id));
+      // Built row by row rather than from stopTimes.map: the intermediate
+      // array would be one throwaway entry per stop time.
+      const tripsWithStopTimes = new Set<unknown>();
+      await this.eachRow(stopTimes, (st) => {
+        tripsWithStopTimes.add(st.trip_id);
+      });
 
       // Check for trips without stop times
       trip_ids.forEach((trip_id) => {
@@ -910,7 +941,7 @@ export class GTFSValidator {
    * validateForeignKeys skips it and the ids are collected from the features
    * here instead.
    */
-  validateFlexLocations() {
+  async validateFlexLocations() {
     const zoneIds = new Set<string>();
     const collection = this.gtfsParser.getFileDataSync(
       GTFS_TABLES.LOCATIONS_GEOJSON
@@ -963,7 +994,7 @@ export class GTFSValidator {
     const stopTimes = this.gtfsParser.getFileDataSyncTyped(
       GTFS_TABLES.STOP_TIMES
     );
-    stopTimes.forEach((row, index: number) => {
+    await this.eachRow(stopTimes, (row, index) => {
       const location_id = String(row.location_id ?? '').trim();
       if (location_id === '' || zoneIds.has(location_id)) {
         return;
@@ -982,7 +1013,7 @@ export class GTFSValidator {
       );
     });
 
-    this.validateFlexRowPairing(stopTimes);
+    await this.validateFlexRowPairing(stopTimes);
   }
 
   /**
@@ -1044,7 +1075,7 @@ export class GTFSValidator {
    * pairs that same ref up on some other trip, which is what makes a lone half
    * look like an omission rather than a decision. Nothing is auto-created.
    */
-  private validateFlexRowPairing(stopTimes: GTFSDatabaseRecord[]) {
+  private async validateFlexRowPairing(stopTimes: GTFSDatabaseRecord[]) {
     const PAIRS = ['2:1', '1:2'];
     const refOf = (row: GTFSDatabaseRecord): string | null => {
       const group = String(row.location_group_id ?? '').trim();
@@ -1069,10 +1100,10 @@ export class GTFSValidator {
     // `route_id|ref` -> which halves of the pair the route uses anywhere.
     const halvesPerRoute = new Map<string, Set<string>>();
 
-    for (const row of stopTimes) {
+    await this.eachRow(stopTimes, (row) => {
       const ref = refOf(row);
       if (ref === null) {
-        continue;
+        return;
       }
       const trip_id = String(row.trip_id ?? '');
       const counts = refsPerTrip.get(trip_id) ?? new Map<string, number>();
@@ -1086,9 +1117,9 @@ export class GTFSValidator {
         halves.add(pair);
         halvesPerRoute.set(key, halves);
       }
-    }
+    });
 
-    stopTimes.forEach((row, index: number) => {
+    await this.eachRow(stopTimes, (row, index) => {
       const ref = refOf(row);
       const pair = pairOf(row);
       if (ref === null || !PAIRS.includes(pair)) {
@@ -1122,7 +1153,7 @@ export class GTFSValidator {
    * The row-level conditional-presence rules the fares and on-demand editors
    * enforce on every edit, applied to whatever the feed arrived with.
    */
-  validateConditionalPresence() {
+  async validateConditionalPresence() {
     const checks: [string, (row: Record<string, unknown>) => string | null][] =
       [
         [GTFS_TABLES.TIMEFRAMES, validateTimeframeRow],
@@ -1134,7 +1165,7 @@ export class GTFSValidator {
 
     for (const [table, check] of checks) {
       const rows = this.gtfsParser.getFileDataSyncTyped(table);
-      rows.forEach((row, index: number) => {
+      await this.eachRow(rows, (row, index) => {
         const problem = check(row as Record<string, unknown>);
         if (problem) {
           this.addError(
@@ -1338,7 +1369,7 @@ export class GTFSValidator {
    * to resolve it. validateFieldWhitespace names the whitespace separately so
    * the cause is legible rather than an id that looks correct.
    */
-  validateForeignKeys() {
+  async validateForeignKeys() {
     const valueCache = new Map<string, Set<string>>();
 
     // Group the declarations by file so each table is walked once.
@@ -1358,10 +1389,15 @@ export class GTFSValidator {
         continue;
       }
 
-      const checks = refs.map((ref) => {
+      const checks: {
+        field: string;
+        known: Set<string>;
+        targetNames: string;
+      }[] = [];
+      for (const ref of refs) {
         const known = new Set<string>();
         for (const target of ref.targets) {
-          for (const value of this.collectValues(
+          for (const value of await this.collectValues(
             target.file,
             target.field,
             valueCache
@@ -1374,11 +1410,11 @@ export class GTFSValidator {
             (target) => `${target.file.replace(/\.txt$/, '')}.${target.field}`
           )
           .join(' or ');
-        return { field: ref.field, known, targetNames };
-      });
+        checks.push({ field: ref.field, known, targetNames });
+      }
 
       const tableName = file.replace(/\.txt$/, '');
-      rows.forEach((row, index: number) => {
+      await this.eachRow(rows, (row, index) => {
         for (const check of checks) {
           const value = String(row[check.field] ?? '');
           if (value === '' || check.known.has(value)) {
@@ -1411,7 +1447,7 @@ export class GTFSValidator {
    * how the last row of each file ends up with a trailing newline. Reported as
    * its own issue so the reference error it causes has a stated cause.
    */
-  validateFieldWhitespace() {
+  async validateFieldWhitespace() {
     for (const file of Object.values(GTFS_TABLES)) {
       if (!file.endsWith('.txt')) {
         continue;
@@ -1422,7 +1458,7 @@ export class GTFSValidator {
       }
 
       const tableName = file.replace(/\.txt$/, '');
-      rows.forEach((row, index: number) => {
+      await this.eachRow(rows, (row, index) => {
         for (const [field, raw] of Object.entries(row)) {
           // Numeric fields are already numbers by now, so only strings can
           // still be carrying the whitespace they arrived with.
@@ -1449,7 +1485,7 @@ export class GTFSValidator {
    * types as one of the three is swept, in every table, rather than naming the
    * handful of fields by hand.
    */
-  validateConstrainedCodes() {
+  async validateConstrainedCodes() {
     const checks: Record<
       string,
       { label: string; valid: (v: string) => boolean }
@@ -1484,9 +1520,9 @@ export class GTFSValidator {
       }
 
       const tableName = file.replace(/\.txt$/, '');
-      this.gtfsParser
-        .getFileDataSyncTyped(file)
-        .forEach((row, index: number) => {
+      await this.eachRow(
+        this.gtfsParser.getFileDataSyncTyped(file),
+        (row, index) => {
           for (const { field, check } of constrained) {
             const value = String(row[field] ?? '').trim();
             if (value === '' || check.valid(value)) {
@@ -1500,7 +1536,8 @@ export class GTFSValidator {
               { file, id: this.rowId(tableName, row), field, value }
             );
           }
-        });
+        }
+      );
     }
   }
 
@@ -1517,23 +1554,23 @@ export class GTFSValidator {
   }
 
   /** Distinct non-empty values of one column, memoized across foreign keys. */
-  private collectValues(
+  private async collectValues(
     file: string,
     field: string,
     cache: Map<string, Set<string>>
-  ): Set<string> {
+  ): Promise<Set<string>> {
     const key = `${file}:${field}`;
     const cached = cache.get(key);
     if (cached) {
       return cached;
     }
     const values = new Set<string>();
-    for (const row of this.gtfsParser.getFileDataSyncTyped(file)) {
+    await this.eachRow(this.gtfsParser.getFileDataSyncTyped(file), (row) => {
       const value = String(row[field] ?? '');
       if (value !== '') {
         values.add(value);
       }
-    }
+    });
     cache.set(key, values);
     return values;
   }

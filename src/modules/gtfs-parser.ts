@@ -1,7 +1,12 @@
 import JSZip from 'jszip';
 import Papa from 'papaparse';
 import { CONFIG } from '../config.js';
-import { GTFSDatabase, GTFSDatabaseRecord } from './gtfs-database.js';
+import {
+  GTFSDatabase,
+  GTFSDatabaseRecord,
+  type FeedSummary,
+  type NetworksMode,
+} from './gtfs-database.js';
 import { GTFS_FILES, GTFS_TABLES } from '../types/gtfs.js';
 import { feedProgressIndicator } from './feed-progress-indicator.js';
 import { notify } from './notification-system.js';
@@ -11,19 +16,38 @@ import {
   getFileHeaders,
 } from './gtfs-file-registry.js';
 import type {
+  ImportSource,
   WorkerDoneMessage,
-  WorkerDoneRestoreMessage,
   WorkerOutbound,
+  WorkerOversizeMessage,
 } from '../workers/gtfs-parser.worker.js';
+import { showModal } from './modal-utils.js';
+import { escapeHtml } from '../utils/escape-html.js';
 import { GTFSTableMap, StopTimes } from '../types/gtfs-entities.js';
 import { generateCompositeKeyFromRecord } from '../utils/gtfs-primary-keys.js';
 import { splitInnerZipPath } from './feed-url-resolve.js';
-import {
-  downloadWithProgress,
-  downloadPercent,
-  formatBytes,
-  LoadCancelledError,
-} from './feed-download.js';
+import { yieldToEventLoop } from '../utils/async-yield.js';
+import { processParsedData } from '../utils/gtfs-field-values.js';
+import { LoadCancelledError, formatBytes } from './feed-download.js';
+
+/**
+ * The shell one feed-producing operation runs inside: its progress key, its
+ * watchdog, and the single point a cancel or a failure enters from outside the
+ * body's own await chain.
+ */
+interface FeedOperation {
+  /** Progress key, unique per operation. */
+  readonly key: string;
+  /** Fail the operation from outside. Idempotent. */
+  fail(error: Error): void;
+  /** Unwind at the next checkpoint if the operation has been failed. */
+  throwIfAborted(): void;
+  /** Re-arm the no-progress deadline. Called on every sign of life. */
+  armWatchdog(): void;
+  clearWatchdog(): void;
+  /** Run on failure, to unwind whatever is producing chunks. */
+  onAbort(handler: (error: Error) => void): void;
+}
 
 /** Store names backed by a .geojson file rather than a CSV table. */
 const GEOJSON_TABLES = new Set(
@@ -33,28 +57,201 @@ const GEOJSON_TABLES = new Set(
 );
 
 /**
- * One nested archive out of another. Fails loudly with the entries that *are*
- * there: a wrong `#inner.zip` is a typo the user can fix, and the list is the
- * only thing that tells them what to fix it to.
+ * Serialize a table's rows as `BLOB_CHUNK_ROWS`-row JSON strings.
+ *
+ * No chunk approaches the engine's max string length (a 4.5M-row stop_times
+ * serializes to ~1.09 GB as one string, over SpiderMonkey's 1.07 GB limit).
+ * A table with no rows still gets exactly one `[]` chunk, so an intentionally
+ * empty table reads back as empty rather than as a table that was never
+ * written.
  */
-async function extractInnerZip(outer: Blob, innerPath: string): Promise<Blob> {
-  const zip = await JSZip.loadAsync(await outer.arrayBuffer());
-  const entry = zip.file(innerPath);
-  if (!entry) {
-    const found = Object.keys(zip.files)
-      .filter((name) => name.toLowerCase().endsWith('.zip'))
-      .join(', ');
-    throw new Error(
-      `The archive has no entry "${innerPath}"${found ? ` — it contains ${found}` : ''}.`
-    );
+function serializeRowChunks(rows: GTFSDatabaseRecord[]): string[] {
+  if (rows.length === 0) {
+    return ['[]'];
   }
-  return entry.async('blob');
+  const chunks: string[] = [];
+  for (let i = 0; i < rows.length; i += CONFIG.BLOB_CHUNK_ROWS) {
+    chunks.push(JSON.stringify(rows.slice(i, i + CONFIG.BLOB_CHUNK_ROWS)));
+  }
+  return chunks;
+}
+
+/**
+ * Ask before loading a feed the browser may not survive. Answered while the
+ * worker is parked before its first inflation, so declining costs nothing and
+ * leaves the currently loaded feed untouched.
+ */
+async function confirmLargeFeed(
+  label: string,
+  estimate: WorkerOversizeMessage,
+  // Lets the caller take the prompt down if the load is cancelled or dies
+  // while it is open.
+  onOpen: (close: () => void) => void
+): Promise<boolean> {
+  const biggest = estimate.tables
+    .slice(0, 3)
+    .map(
+      (t) =>
+        `<li>${escapeHtml(t.fileName)}: ~${t.rows.toLocaleString()} rows (${formatBytes(t.bytes)})</li>`
+    )
+    .join('');
+
+  let accepted = false;
+  await showModal({
+    title: 'Large feed',
+    body: `
+      <p><strong>${escapeHtml(label)}</strong> is larger than this browser
+      comfortably handles.</p>
+      <p class="mt-2">Roughly ${estimate.totalRows.toLocaleString()} rows across
+      ${formatBytes(estimate.totalBytes)} of uncompressed data, needing about
+      ${formatBytes(estimate.memoryBytes)} of memory once loaded. Row counts are
+      estimated from file sizes.</p>
+      <ul class="list-disc list-inside mt-2">${biggest}</ul>
+      <p class="mt-2">Loading it may take several minutes or run the tab out of
+      memory. Cancelling leaves the feed you have loaded now exactly as it is.</p>
+    `,
+    escapeAction: 1,
+    onMount: onOpen,
+    actions: [
+      {
+        label: 'Load anyway',
+        className: 'btn-warning',
+        onClick: () => {
+          accepted = true;
+        },
+      },
+      { label: 'Cancel', className: 'btn-outline', onClick: () => {} },
+    ],
+  });
+  return accepted;
 }
 
 interface GTFSFileData<T = GTFSDatabaseRecord> {
   content: string;
   data: T[];
   errors: Papa.ParseError[];
+}
+
+/**
+ * The chunks a worker posts, as something the hydration can `for await` over.
+ *
+ * The worker pushes on its own schedule and never blocks; the hydration pulls
+ * one chunk at a time and yields between them, which is what keeps the page
+ * painting through a large import.
+ */
+class ChunkQueue implements AsyncIterable<HydrationChunk> {
+  private items: HydrationChunk[] = [];
+  private wake: (() => void) | null = null;
+  private ended = false;
+  private failure: Error | null = null;
+
+  push(chunk: HydrationChunk): void {
+    this.items.push(chunk);
+    this.signal();
+  }
+
+  /** No more chunks: the iteration ends once the queued ones are drained. */
+  end(): void {
+    this.ended = true;
+    this.signal();
+  }
+
+  /** Unwind the hydration when the worker dies or the load is cancelled. */
+  fail(error: Error): void {
+    this.failure = error;
+    this.ended = true;
+    this.signal();
+  }
+
+  private signal(): void {
+    const wake = this.wake;
+    this.wake = null;
+    wake?.();
+  }
+
+  async *[Symbol.asyncIterator](): AsyncGenerator<HydrationChunk> {
+    for (;;) {
+      while (this.items.length > 0) {
+        yield this.items.shift()!;
+      }
+      if (this.failure) {
+        throw this.failure;
+      }
+      if (this.ended) {
+        return;
+      }
+      await new Promise<void>((resolve) => {
+        this.wake = resolve;
+      });
+    }
+  }
+}
+
+/** The lookup structures a virtual table answers queries from. */
+interface TableIndex {
+  byId: Map<string, GTFSDatabaseRecord>;
+  fieldMaps: Map<string, Map<string, GTFSDatabaseRecord[]>>;
+}
+
+/** One table's rows plus the index built over them as they arrived. */
+interface HydratedFeed {
+  data: { [fileName: string]: GTFSFileData };
+  indexes: Map<string, TableIndex>;
+}
+
+/** A serialized slice of one table, as written to (or read from) `file_blobs`. */
+interface HydrationChunk {
+  tableName: string;
+  json: string;
+}
+
+/**
+ * Every GTFS file present and empty, each with its header-only CSV.
+ * The invariant the rest of the app reads against: a file is always in
+ * `gtfsData`, whether or not the feed carried it.
+ */
+function createFeedScaffold(): { [fileName: string]: GTFSFileData } {
+  const data: { [fileName: string]: GTFSFileData } = {};
+  for (const fileName of ALL_GTFS_FILES) {
+    data[fileName] = {
+      content: makeHeaderOnlyCSV(fileName),
+      data: [],
+      errors: [],
+    };
+  }
+  return data;
+}
+
+function addToBucket(
+  map: Map<string, GTFSDatabaseRecord[]>,
+  val: string,
+  row: GTFSDatabaseRecord
+): void {
+  let bucket = map.get(val);
+  if (!bucket) {
+    bucket = [];
+    map.set(val, bucket);
+  }
+  if (!bucket.includes(row)) {
+    bucket.push(row);
+  }
+}
+
+function removeFromBucket(
+  map: Map<string, GTFSDatabaseRecord[]>,
+  val: string,
+  row: GTFSDatabaseRecord
+): void {
+  const bucket = map.get(val);
+  if (bucket) {
+    const i = bucket.indexOf(row);
+    if (i !== -1) {
+      bucket.splice(i, 1);
+    }
+    if (bucket.length === 0) {
+      map.delete(val);
+    }
+  }
 }
 
 // Type-safe table name to entity type mapping
@@ -91,6 +288,16 @@ export class GTFSParser {
   // Dirty-blob tracking for deferred persistence
   private blobDirty = new Set<string>();
   private blobPersistTimer: ReturnType<typeof setTimeout> | null = null;
+  // One feed-producing operation at a time, import or boot restore: the file
+  // input is wired before the boot restore is awaited, so a user load can
+  // otherwise start mid-restore and have the restore install its rows over it.
+  // Also gates the visibilitychange flush: that write stamps blobVersion from
+  // patchManager.version, which is meaningless while a staging generation is
+  // mid-import and shares the flush chain with it.
+  private feedOperationInFlight = false;
+  // Progress keys have to be unique per operation: two loads sharing one key
+  // would delete each other's entry and strand every later updateProgress.
+  private operationSeq = 0;
 
   constructor() {
     this.gtfsData = {};
@@ -99,10 +306,17 @@ export class GTFSParser {
     // A reload can outrun the 3-second debounce. Flush when the page is
     // hidden, which fires before a refresh or a tab close.
     document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'hidden' && this.blobDirty.size > 0) {
-        console.log('[GTFSParser] Page hidden with dirty blobs, flushing');
-        void this.persistDirtyBlobs();
+      if (document.visibilityState !== 'hidden' || this.blobDirty.size === 0) {
+        return;
       }
+      if (this.feedOperationInFlight) {
+        console.log(
+          '[GTFSParser] Page hidden with dirty blobs, but a feed operation is in flight: skipping the flush'
+        );
+        return;
+      }
+      console.log('[GTFSParser] Page hidden with dirty blobs, flushing');
+      void this.persistDirtyBlobs();
     });
   }
 
@@ -110,90 +324,13 @@ export class GTFSParser {
     this.patchManager = pm;
   }
 
-  /**
-   * Parse and coerce field values based on GTFS field types
-   */
-  private parseFieldValue(fieldName: string, value: string): string | number {
-    // Handle empty values
-    if (value === null || value === undefined || value === '') {
-      return '';
-    }
-
-    const stringValue = String(value);
-
-    // Detect field type from field name
-    let shouldBeNumeric = false;
-
-    // Numeric fields
-    if (
-      fieldName.includes('_lat') ||
-      fieldName.includes('_lon') ||
-      fieldName === 'stop_lat' ||
-      fieldName === 'stop_lon' ||
-      fieldName === 'shape_pt_lat' ||
-      fieldName === 'shape_pt_lon' ||
-      fieldName === 'shape_dist_traveled' ||
-      fieldName.includes('_sequence') ||
-      fieldName === 'direction_id' ||
-      fieldName === 'location_type' ||
-      fieldName === 'wheelchair_boarding' ||
-      fieldName === 'wheelchair_accessible' ||
-      fieldName === 'bikes_allowed' ||
-      fieldName === 'pickup_type' ||
-      fieldName === 'drop_off_type' ||
-      fieldName === 'payment_method' ||
-      fieldName === 'transfers' ||
-      fieldName === 'transfer_duration' ||
-      fieldName === 'route_type' ||
-      fieldName === 'route_sort_order' ||
-      fieldName === 'continuous_pickup' ||
-      fieldName === 'continuous_drop_off' ||
-      fieldName === 'exception_type' ||
-      fieldName.includes('_type')
-    ) {
-      shouldBeNumeric = true;
-    }
-
-    // Parse numeric values
-    if (shouldBeNumeric && stringValue !== '') {
-      const num = parseFloat(stringValue);
-      if (!isNaN(num)) {
-        // For integers, remove decimal part
-        if (Number.isInteger(num)) {
-          return parseInt(stringValue, 10);
-        }
-        return num;
-      }
-    }
-
-    return stringValue;
-  }
-
-  /**
-   * Process parsed CSV data to apply type coercion
-   */
-  private processParsedData(
-    data: Record<string, unknown>[]
-  ): GTFSDatabaseRecord[] {
-    return data.map((row) => {
-      const processedRow: GTFSDatabaseRecord = {};
-      for (const [fieldName, value] of Object.entries(row)) {
-        processedRow[fieldName] = this.parseFieldValue(
-          fieldName,
-          value as string
-        );
-      }
-      return processedRow;
-    });
-  }
-
   // ===== Blob-backed virtual table infrastructure =====
 
   /**
-   * Build and register a virtual table handler for any GTFS table.
+   * Register a virtual table handler over rows that are already indexed.
    * All mutations maintain the byId Map and any provided field-level Maps.
-   * For stop_times: pass this.stopTimesByStopId as the 'stop_id' fieldMap so it
-   * stays accessible for the synchronous getRoutesForStop path.
+   * For stop_times and trips, the class fields the synchronous lookup paths
+   * read are repointed at this index here.
    *
    * COPY-ON-READ INVARIANT: All query methods (getAll, getById, query) return
    * shallow copies of the stored rows, never live references. This prevents
@@ -207,56 +344,30 @@ export class GTFSParser {
    * clear). Direct pushes or splices on the array bypass the byId index and
    * fieldMaps, corrupting them silently.
    */
-  private buildAndRegisterVirtual(
+  private registerVirtual(
     tableName: string,
     flat: GTFSDatabaseRecord[],
-    fieldMaps: Map<string, Map<string, GTFSDatabaseRecord[]>> = new Map()
+    index: TableIndex
   ): void {
-    const byId = new Map<string, GTFSDatabaseRecord>();
+    const { byId, fieldMaps } = index;
 
-    const addToBucket = (
-      map: Map<string, GTFSDatabaseRecord[]>,
-      val: string,
-      row: GTFSDatabaseRecord
-    ): void => {
-      let bucket = map.get(val);
-      if (!bucket) {
-        bucket = [];
-        map.set(val, bucket);
-      }
-      if (!bucket.includes(row)) {
-        bucket.push(row);
-      }
-    };
+    // Rebinding a table's rows invalidates anything memoized off them. Boot
+    // reads the shape ids for the navbar badge before the feed is restored,
+    // and an empty cached array is truthy, so without this the ids stay empty
+    // for the whole session.
+    if (tableName === 'shapes') {
+      this.shapeIdsCache = null;
+    }
 
-    const removeFromBucket = (
-      map: Map<string, GTFSDatabaseRecord[]>,
-      val: string,
-      row: GTFSDatabaseRecord
-    ): void => {
-      const bucket = map.get(val);
-      if (bucket) {
-        const i = bucket.indexOf(row);
-        if (i !== -1) {
-          bucket.splice(i, 1);
-        }
-        if (bucket.length === 0) {
-          map.delete(val);
-        }
-      }
-    };
-
-    // Single-pass: populate byId and all fieldMaps
-    for (const row of flat) {
-      const key = generateCompositeKeyFromRecord(
-        tableName,
-        row as Record<string, unknown>
-      );
-      byId.set(key, row);
-      for (const [field, map] of fieldMaps) {
-        const val = String((row as Record<string, unknown>)[field] ?? '');
-        addToBucket(map, val, row);
-      }
+    // The synchronous lookup paths read these directly, so they must point at
+    // the maps this table was indexed with. Assigned here rather than in
+    // createTableIndex so a hydration that never commits leaves the live
+    // feed's indexes alone.
+    if (tableName === 'stop_times') {
+      this.stopTimesByTripId = fieldMaps.get('trip_id')!;
+      this.stopTimesByStopId = fieldMaps.get('stop_id')!;
+    } else if (tableName === 'trips') {
+      this.tripsByRouteId = fieldMaps.get('route_id')!;
     }
 
     this.gtfsDatabase.registerVirtualTable(tableName, {
@@ -419,10 +530,11 @@ export class GTFSParser {
   }
 
   /**
-   * Set up fieldMaps for tables that need indexed queries, then call buildAndRegisterVirtual.
-   * For stop_times, the stop_id Map is kept as a class field for synchronous lookups.
+   * Empty lookup structures for one table, with a fieldMap per field that needs
+   * an indexed query. The maps are fresh: nothing here touches live state, so a
+   * hydration that is later discarded costs the loaded feed nothing.
    */
-  private setupVirtual(tableName: string, data: GTFSDatabaseRecord[]): void {
+  private createTableIndex(tableName: string): TableIndex {
     // Only CSV tables get a virtual table. locations.geojson is one row holding
     // a whole FeatureCollection: a virtual table would intercept every db.*
     // call on it, so the rows never reach IndexedDB and the zones are lost on
@@ -434,24 +546,13 @@ export class GTFSParser {
       );
     }
 
-    // Rebinding a table's rows invalidates anything memoized off them. Boot
-    // reads the shape ids for the navbar badge before the feed is restored,
-    // and an empty cached array is truthy, so without this the ids stay empty
-    // for the whole session.
-    if (tableName === 'shapes') {
-      this.shapeIdsCache = null;
-    }
-
     const fieldMaps = new Map<string, Map<string, GTFSDatabaseRecord[]>>();
 
     if (tableName === 'stop_times') {
-      this.stopTimesByStopId.clear();
-      this.stopTimesByTripId.clear();
-      fieldMaps.set('trip_id', this.stopTimesByTripId);
-      fieldMaps.set('stop_id', this.stopTimesByStopId);
+      fieldMaps.set('trip_id', new Map());
+      fieldMaps.set('stop_id', new Map());
     } else if (tableName === 'trips') {
-      this.tripsByRouteId.clear();
-      fieldMaps.set('route_id', this.tripsByRouteId);
+      fieldMaps.set('route_id', new Map());
       fieldMaps.set('service_id', new Map());
     } else if (tableName === 'stops') {
       // Without this, every queryRows('stops', { stop_id }) is a linear scan
@@ -464,7 +565,43 @@ export class GTFSParser {
       fieldMaps.set('agency_id', new Map());
     }
 
-    this.buildAndRegisterVirtual(tableName, data, fieldMaps);
+    return { byId: new Map(), fieldMaps };
+  }
+
+  /**
+   * Index one batch of rows into an existing table index.
+   *
+   * Called per hydrated chunk so the byId map and the fieldMaps are built in
+   * the same yielding pass as the rows, rather than in one synchronous sweep
+   * over the whole table afterwards.
+   */
+  private indexRowsInto(
+    tableName: string,
+    rows: GTFSDatabaseRecord[],
+    index: TableIndex
+  ): void {
+    for (const row of rows) {
+      const key = generateCompositeKeyFromRecord(
+        tableName,
+        row as Record<string, unknown>
+      );
+      index.byId.set(key, row);
+      for (const [field, map] of index.fieldMaps) {
+        const val = String((row as Record<string, unknown>)[field] ?? '');
+        addToBucket(map, val, row);
+      }
+    }
+  }
+
+  /**
+   * Index a table's rows in one sweep and register its virtual table.
+   * The incremental path (import and boot restore) indexes as it hydrates and
+   * calls `registerVirtual` directly instead.
+   */
+  private setupVirtual(tableName: string, data: GTFSDatabaseRecord[]): void {
+    const index = this.createTableIndex(tableName);
+    this.indexRowsInto(tableName, data, index);
+    this.registerVirtual(tableName, data, index);
   }
 
   /** Mark a table's blob as needing re-persistence and schedule a debounced flush. */
@@ -516,8 +653,10 @@ export class GTFSParser {
     const pending = Array.from(this.blobDirty);
     this.blobDirty.clear();
     const v = version ?? this.patchManager?.version;
+    const gen = await this.gtfsDatabase.getActiveFeedGen();
 
-    for (const tableName of pending) {
+    for (let i = 0; i < pending.length; i++) {
+      const tableName = pending[i];
       const fileName = `${tableName}.txt`;
       // Only CSV tables are blob-backed. A dirty mark on anything else means a
       // caller wrote through the wrong path; persisting `[]` for it would stamp
@@ -532,51 +671,68 @@ export class GTFSParser {
       try {
         // An emptied table is written as `[]` rather than skipped: skipping
         // leaves the pre-delete blob on disk and the rows come back on reload.
-        await this.gtfsDatabase.saveTableBlob(tableName, JSON.stringify(rows));
+        await this.gtfsDatabase.putTableChunks(
+          gen,
+          tableName,
+          serializeRowChunks(rows)
+        );
       } catch (error) {
-        // Keep it dirty so the next flush retries, and do not stamp a version
-        // that claims this table was written.
-        this.blobDirty.add(tableName);
+        // Re-mark every table this run has not written yet, not only the one
+        // that threw: the tables queued behind it were cleared from the dirty
+        // set and would never be retried. And do not stamp a version that
+        // claims they were written.
+        for (const unwritten of pending.slice(i)) {
+          this.blobDirty.add(unwritten);
+        }
         console.error(
           `[GTFSParser] Failed to persist ${tableName} blob:`,
           error
         );
         throw error;
       }
+      // Serialization is synchronous, so a many-table flush is one long task
+      // without this.
+      await yieldToEventLoop();
     }
 
-    // Record the version at which blobs were last fully flushed.
+    // Record the version at which blobs were last fully flushed, together with
+    // the summary describing those rows.
+    const summary = this.computeFeedSummary(this.gtfsData, this.feedLabel);
     if (v !== undefined) {
-      await this.gtfsDatabase.setBlobVersion(v);
+      await this.gtfsDatabase.setBlobStamp(v, summary);
+    } else {
+      await this.gtfsDatabase.setFeedSummary(summary);
     }
-    await this.writeFeedSummary();
+    console.log(`[GTFSParser] feed summary written: ${summary.name}`);
   }
 
   /**
-   * Describe the stored feed in the meta store, next to the blobs it describes.
+   * Describe a feed from its rows alone, so an import can compute the summary
+   * for a pending feed and fold the write into its commit transaction.
    *
-   * Written on every flush rather than on import, so an edited feed's counts
-   * never drift from the rows the boot screen would restore.
+   * Recomputed on every flush rather than only on import, so an edited feed's
+   * counts never drift from the rows the boot screen would restore.
    */
-  private async writeFeedSummary(): Promise<void> {
-    const rows = (fileName: string) => this.gtfsData[fileName]?.data ?? [];
+  private computeFeedSummary(
+    data: { [fileName: string]: GTFSFileData },
+    label: string
+  ): FeedSummary {
+    const rows = (fileName: string) => data[fileName]?.data ?? [];
     const firstValue = (fileName: string, field: string): string => {
       const value = rows(fileName)[0]?.[field];
       return typeof value === 'string' ? value.trim() : '';
     };
-    const name =
-      firstValue('feed_info.txt', 'feed_publisher_name') ||
-      firstValue('agency.txt', 'agency_name') ||
-      this.feedLabel ||
-      'Untitled feed';
-    await this.gtfsDatabase.setFeedSummary({
-      name,
+    return {
+      name:
+        firstValue('feed_info.txt', 'feed_publisher_name') ||
+        firstValue('agency.txt', 'agency_name') ||
+        label ||
+        'Untitled feed',
       routes: rows('routes.txt').length,
       stops: rows('stops.txt').length,
       trips: rows('trips.txt').length,
       updatedAt: Date.now(),
-    });
-    console.log(`[GTFSParser] feed summary written: ${name}`);
+    };
   }
 
   /**
@@ -812,12 +968,8 @@ export class GTFSParser {
     await this.gtfsDatabase.initialize();
 
     // Invariant: all GTFS files are always in gtfsData from this point forward.
+    this.gtfsData = createFeedScaffold();
     for (const filename of ALL_GTFS_FILES) {
-      this.gtfsData[filename] = {
-        content: makeHeaderOnlyCSV(filename),
-        data: [],
-        errors: [],
-      };
       if (filename.endsWith('.txt')) {
         const tableName = this.getTableName(filename);
         this.setupVirtual(tableName, []);
@@ -826,128 +978,271 @@ export class GTFSParser {
   }
 
   /**
-   * Restore GTFS data from blobs stored in IndexedDB.
-   * All .txt tables are blob-backed; .geojson files fall back to IDB rows.
-   * Blob reads are parallelized; JSON parsing runs in a worker to stay off the main thread.
+   * Turn a stream of serialized chunks into a feed, one chunk at a time.
+   *
+   * The single hydration path: an import consumes the chunks the worker posts
+   * as it writes them, a boot restore consumes the chunks it reads back out of
+   * IndexedDB, and both end up with the same structure. Each chunk is parsed,
+   * appended and indexed, and the event loop is drained every
+   * `HYDRATE_YIELD_ROWS` rows so the page keeps painting.
+   *
+   * Nothing here touches live state: the caller installs the result only once
+   * the feed it belongs to has been committed.
    */
-  async restoreDataFromDatabase(): Promise<void> {
-    try {
-      const txtFiles = ALL_GTFS_FILES.filter((f) => f.endsWith('.txt'));
-      const geojsonFiles = ALL_GTFS_FILES.filter((f) => f.endsWith('.geojson'));
+  private async hydrateFeed(
+    chunks: AsyncIterable<HydrationChunk>
+  ): Promise<HydratedFeed> {
+    const data = createFeedScaffold();
+    const indexes = new Map<string, TableIndex>();
+    let rowsSinceYield = 0;
 
-      // Parallel IDB reads for all .txt blob tables
-      const blobEntries = await Promise.all(
-        txtFiles.map(async (filename) => {
-          const tableName = this.getTableName(filename);
-          const json = await this.gtfsDatabase.getTableBlob(tableName);
-          return { filename, tableName, json };
-        })
-      );
-
-      // GeoJSON tables fall back to per-row IDB reads (they're tiny)
-      for (const filename of geojsonFiles) {
-        try {
-          const tableName = this.getTableName(filename);
-          const rows = await this.gtfsDatabase.getAllRows(tableName);
-          if (rows.length > 0) {
-            this.gtfsData[filename] = { content: '', data: rows, errors: [] };
-          }
-        } catch (err) {
-          console.warn(`[GTFSParser] Failed to restore ${filename}:`, err);
-        }
-      }
-
-      const populated = blobEntries.filter(
-        (e): e is { filename: string; tableName: string; json: string } =>
-          e.json !== null && e.json.length > 0
-      );
-
-      if (populated.length === 0) {
-        return;
-      }
-
-      // Parse JSON blobs in the worker to keep main thread free
-      const worker = new Worker(
-        new URL('../workers/gtfs-parser.worker.ts', import.meta.url),
-        { type: 'module' }
-      );
-
-      const tables = await new Promise<WorkerDoneRestoreMessage['tables']>(
-        (resolve, reject) => {
-          worker.onmessage = (event: MessageEvent<WorkerOutbound>) => {
-            const msg = event.data;
-            if (msg.type === 'progress') {
-              feedProgressIndicator.updateProgress(
-                'boot',
-                5 + (msg.progress / 100) * 50,
-                msg.status
-              );
-            } else if (msg.type === 'done-restore') {
-              worker.terminate();
-              resolve(msg.tables);
-            } else if (msg.type === 'error') {
-              worker.terminate();
-              reject(new Error(msg.message));
-            }
-          };
-          worker.onerror = (err) => {
-            worker.terminate();
-            reject(new Error(err.message));
-          };
-          worker.postMessage({
-            type: 'restore',
-            blobs: populated.map(({ tableName, json }) => ({
-              tableName,
-              json,
-            })),
-          });
-        }
-      );
-
-      // Apply results on the main thread: set gtfsData and re-register virtual tables.
-      // The shared-array invariant requires that gtfsData[filename].data and the flat
-      // array passed to setupVirtual are the same reference.
-      for (const { filename, tableName, json } of populated) {
-        const rows = tables[tableName];
-        if (rows) {
-          const isLarge = json.length > 1_000_000;
-          if (CONFIG.DEBUG_BOOT && isLarge) {
-            console.time(`[boot] setupVirtual ${tableName}`);
-          }
-          this.gtfsData[filename] = { content: '', data: rows, errors: [] };
-          this.setupVirtual(tableName, rows);
-          if (CONFIG.DEBUG_BOOT && isLarge) {
-            console.timeEnd(`[boot] setupVirtual ${tableName}`);
-          }
-          console.log(
-            `[GTFSParser] Restored ${tableName} from blob: ${rows.length} rows${isLarge ? ` (${(json.length / 1_000_000).toFixed(1)} MB)` : ''}`
-          );
-        }
-      }
-      // Restore passthrough files into the in-memory map.
-      const ptFiles = await this.gtfsDatabase.getAllPassthroughFiles();
-      this.passthroughFiles.clear();
-      for (const [fileName, rawContent] of Object.entries(ptFiles)) {
-        this.passthroughFiles.set(fileName, rawContent);
-      }
-      if (this.passthroughFiles.size > 0) {
-        console.log(
-          `[GTFSParser] Restored ${this.passthroughFiles.size} passthrough file(s)`
+    for await (const { tableName, json } of chunks) {
+      const entry = data[`${tableName}.txt`];
+      if (!entry) {
+        throw new Error(
+          `[GTFSParser] hydration got an unknown table: ${tableName}`
         );
       }
-    } catch (error) {
-      console.error('[GTFSParser] Failed to restore data:', error);
+      let index = indexes.get(tableName);
+      if (!index) {
+        index = this.createTableIndex(tableName);
+        indexes.set(tableName, index);
+      }
+
+      const rows = JSON.parse(json) as GTFSDatabaseRecord[];
+      for (const row of rows) {
+        entry.data.push(row);
+      }
+      this.indexRowsInto(tableName, rows, index);
+
+      rowsSinceYield += rows.length;
+      if (rowsSinceYield >= CONFIG.HYDRATE_YIELD_ROWS) {
+        rowsSinceYield = 0;
+        await yieldToEventLoop();
+      }
+    }
+
+    // A populated table regenerates its CSV from the rows on demand, so its
+    // cached content must be empty rather than the header-only scaffold that
+    // getFileContent would return in preference to the rows.
+    for (const fileData of Object.values(data)) {
+      if (fileData.data.length > 0) {
+        fileData.content = '';
+      }
+    }
+
+    return { data, indexes };
+  }
+
+  /**
+   * Run one feed-producing operation: an import or a boot restore.
+   *
+   * Both produce the feed the app will be looking at, so both get the same
+   * shell: one operation at a time, a progress key nothing else can collide
+   * with, a Cancel button, a watchdog the body re-arms on every sign of
+   * progress, and a `finally` that always takes the bar down. The only thing
+   * that differs is what produces the chunk stream inside.
+   */
+  private async runFeedOperation<T>(
+    kind: 'load' | 'restore',
+    initialStatus: string,
+    body: (op: FeedOperation) => Promise<T>
+  ): Promise<T> {
+    if (this.feedOperationInFlight) {
+      throw new Error(
+        'Another feed is already loading. Wait for it to finish, or cancel it first.'
+      );
+    }
+    this.feedOperationInFlight = true;
+
+    const key = `${kind}:${++this.operationSeq}`;
+    const abortHandlers: ((error: Error) => void)[] = [];
+    let watchdog: ReturnType<typeof setTimeout> | null = null;
+    let abortError: Error | null = null;
+
+    const clearWatchdog = (): void => {
+      if (watchdog) {
+        clearTimeout(watchdog);
+        watchdog = null;
+      }
+    };
+    const op: FeedOperation = {
+      key,
+      fail: (error: Error): void => {
+        // Idempotent: a cancel that lands while a watchdog is firing, or an
+        // error from a worker that is already being torn down, must not run
+        // the unwinding twice.
+        if (abortError) {
+          return;
+        }
+        abortError = error;
+        clearWatchdog();
+        for (const handler of abortHandlers) {
+          handler(error);
+        }
+      },
+      throwIfAborted: (): void => {
+        if (abortError) {
+          throw abortError;
+        }
+      },
+      // Work can die without throwing (an OOM-killed worker is the case that
+      // matters), which leaves the operation pending and the bar up forever.
+      // Every sign of progress resets the deadline; silence past it fails it.
+      armWatchdog: (): void => {
+        clearWatchdog();
+        watchdog = setTimeout(() => {
+          watchdog = null;
+          op.fail(
+            new Error(
+              `The feed loader stopped responding (no progress for ${Math.round(CONFIG.LOAD_WATCHDOG_MS / 1000)}s). The feed may be too large for this browser.`
+            )
+          );
+        }, CONFIG.LOAD_WATCHDOG_MS);
+      },
+      clearWatchdog,
+      onAbort: (handler: (error: Error) => void): void => {
+        abortHandlers.push(handler);
+      },
+    };
+
+    console.time(`[GTFS] ${key}`);
+    feedProgressIndicator.startLoading(key, initialStatus, {
+      onCancel: () => op.fail(new LoadCancelledError()),
+    });
+    try {
+      return await body(op);
+    } finally {
+      clearWatchdog();
+      this.feedOperationInFlight = false;
+      feedProgressIndicator.finishLoading(key);
+      console.timeEnd(`[GTFS] ${key}`);
     }
   }
 
   /**
-   * Reset all in-memory feed state before wiping IndexedDB for a new/replacement feed.
+   * Read a stored generation's chunks back out of IndexedDB, one at a time.
    *
-   * Cancels any pending debounced blob write first: without this, a write scheduled
-   * by an edit to the *previous* feed can fire after clearDatabase() empties
-   * file_blobs, re-writing stale rows for whichever table it targeted (since it
-   * reads gtfsData, which at that point still holds the old feed's rows). This is
-   * a real bug fixed here, not just defensive cleanup.
+   * Sequential and lazy on purpose: the hydration parses and drops each JSON
+   * string before the next is read, so a 200 MB table is never held twice.
+   */
+  private async *readStoredChunks(
+    gen: number,
+    counts: Map<string, number>,
+    op: FeedOperation
+  ): AsyncGenerator<HydrationChunk> {
+    const totalChunks = [...counts.values()].reduce((sum, n) => sum + n, 0);
+    let read = 0;
+    for (const [tableName, count] of counts) {
+      for (let chunk = 0; chunk < count; chunk++) {
+        // A cancel or a watchdog fire unwinds the hydration here, at the one
+        // point of the restore that runs often enough to be responsive.
+        op.throwIfAborted();
+        const json = await this.gtfsDatabase.getBlobChunk(
+          gen,
+          tableName,
+          chunk
+        );
+        if (json === undefined) {
+          throw new Error(
+            `[GTFSParser] stored feed is missing ${tableName} chunk ${chunk} of generation ${gen}`
+          );
+        }
+        read++;
+        op.armWatchdog();
+        // 5-90: the same span the import gives its producer, so the bar does
+        // not jump to 100 with the index build and the map still to come.
+        feedProgressIndicator.updateProgress(
+          op.key,
+          5 + (read / totalChunks) * 85,
+          `Restoring ${tableName}...`
+        );
+        yield { tableName, json };
+      }
+    }
+  }
+
+  /**
+   * Restore the stored feed from the active generation's blob chunks.
+   *
+   * Returns false when that generation holds no table at all, which is the one
+   * "nothing stored" case; every other failure throws, because a half-restored
+   * feed that the caller then replays the patch log over is exactly how a feed
+   * gets corrupted.
+   */
+  async restoreDataFromDatabase(): Promise<boolean> {
+    return this.runFeedOperation('restore', 'Opening stored feed...', (op) =>
+      this.restoreActiveGeneration(op)
+    );
+  }
+
+  private async restoreActiveGeneration(op: FeedOperation): Promise<boolean> {
+    op.armWatchdog();
+    const gen = await this.gtfsDatabase.getActiveFeedGen();
+
+    // A table written as empty still has one `[]` chunk, so a table with no
+    // chunks at all was never written and keeps its header-only scaffold.
+    const counts = await this.gtfsDatabase.listBlobChunkCounts(gen);
+    if (counts.size === 0) {
+      console.log(`[GTFSParser] No stored feed under generation ${gen}`);
+      return false;
+    }
+    op.throwIfAborted();
+    feedProgressIndicator.updateProgress(op.key, 5, 'Reading stored feed...');
+
+    const { data, indexes } = await this.hydrateFeed(
+      this.readStoredChunks(gen, counts, op)
+    );
+
+    // GeoJSON tables are per-row IDB reads (they're tiny) and get no chunks.
+    for (const fileName of ALL_GTFS_FILES.filter((f) =>
+      f.endsWith('.geojson')
+    )) {
+      const rows = await this.gtfsDatabase.getAllRows(
+        this.getTableName(fileName)
+      );
+      if (rows.length > 0) {
+        data[fileName] = { content: '', data: rows, errors: [] };
+      }
+    }
+
+    // Last chance to bail: installFeed swaps the rows into live memory, and
+    // from there a cancel would leave a half-adopted feed behind.
+    op.throwIfAborted();
+    op.clearWatchdog();
+    feedProgressIndicator.updateProgress(op.key, 92, 'Building indexes...');
+    this.installFeed(data, indexes);
+
+    feedProgressIndicator.updateProgress(op.key, 96, 'Restoring files...');
+    const ptFiles = await this.gtfsDatabase.getAllPassthroughFiles(gen);
+    for (const [fileName, rawContent] of Object.entries(ptFiles)) {
+      this.passthroughFiles.set(fileName, rawContent);
+    }
+    if (this.passthroughFiles.size > 0) {
+      console.log(
+        `[GTFSParser] Restored ${this.passthroughFiles.size} passthrough file(s)`
+      );
+    }
+
+    for (const [tableName, count] of counts) {
+      const rows = data[`${tableName}.txt`]?.data.length ?? 0;
+      if (rows > 0) {
+        console.log(
+          `[GTFSParser] Restored ${tableName} from blob: ${rows} rows in ${count} chunk(s)`
+        );
+      }
+    }
+    feedProgressIndicator.updateProgress(op.key, 100, 'Complete!');
+    return true;
+  }
+
+  /**
+   * Reset all in-memory feed state, immediately before a new feed is installed.
+   *
+   * Cancels any pending debounced blob write first: a write scheduled by an edit
+   * to the *previous* feed would otherwise fire after the generation pointer has
+   * moved and re-write the old feed's rows under the new generation (it reads
+   * gtfsData, which at that point still holds the old rows).
    */
   private resetInMemoryFeedState(): void {
     if (this.blobPersistTimer) {
@@ -964,179 +1259,398 @@ export class GTFSParser {
     this.patchManager?.resetState?.();
   }
 
-  async initializeEmpty(): Promise<void> {
-    this.resetInMemoryFeedState();
-    this.feedLabel = 'New feed';
-    await this.gtfsDatabase.clearDatabase();
-    this.gtfsDatabase.clearVirtualTables();
-
-    for (const filename of ALL_GTFS_FILES) {
-      const content = makeHeaderOnlyCSV(filename);
-      // Use the same array for gtfsData.data and the virtual table's flat array.
-      // If they diverge, persistDirtyBlobs reads a stale empty array and never
-      // saves blobs, so edits are lost on refresh.
-      const data: GTFSDatabaseRecord[] = [];
-      this.gtfsData[filename] = { content, data, errors: [] };
-      if (filename.endsWith('.txt')) {
-        this.setupVirtual(this.getTableName(filename), data);
+  /**
+   * Persist a pending feed's CSV tables under one generation.
+   */
+  private async writeFeedBlobs(
+    gen: number,
+    data: { [fileName: string]: GTFSFileData }
+  ): Promise<void> {
+    for (const [fileName, fileData] of Object.entries(data)) {
+      if (!fileName.endsWith('.txt')) {
+        continue;
       }
+      await this.gtfsDatabase.putTableChunks(
+        gen,
+        this.getTableName(fileName),
+        serializeRowChunks(fileData.data)
+      );
+      await yieldToEventLoop();
     }
-
-    // Seed feed_info with a row whose keys match the schema so vt.update can
-    // find it. Without a row, every field edit silently does nothing (the virtual
-    // table update handler returns early when byId has no entry). On reload the
-    // patch replay would also fail, hasExistingRows would be false, and
-    // initializeEmpty would clear the patches, losing all edits.
-    const seedRow = Object.fromEntries(
-      getFileHeaders('feed_info.txt').map((h) => [h, ''])
-    ) as GTFSDatabaseRecord;
-    await this.gtfsDatabase.insertRows('feed_info', [seedRow]);
-    // Flush immediately so the seed blob is in IDB before any patch is recorded.
-    // This guarantees that a quick refresh (before the 3-second debounce) still
-    // has a row for patch replay to land on. Fresh DB has no patches yet, version 0.
-    await this.persistDirtyBlobs(0);
-
-    this.markFeedReplaced();
   }
 
-  async parseFile(
-    file: File | Blob,
-    alreadyStarted = false
+  /**
+   * Swap a committed feed into live memory.
+   *
+   * Called only after `commitFeedGeneration` has succeeded: everything before
+   * that point must be reachable by a rollback that leaves the old feed intact.
+   */
+  private installFeed(
+    data: { [fileName: string]: GTFSFileData },
+    indexes?: Map<string, TableIndex>
+  ): void {
+    this.resetInMemoryFeedState();
+    this.gtfsData = data;
+    this.gtfsDatabase.clearVirtualTables();
+    for (const [fileName, fileData] of Object.entries(data)) {
+      if (!fileName.endsWith('.txt')) {
+        continue;
+      }
+      const tableName = this.getTableName(fileName);
+      // The virtual table holds the same array as gtfsData[fileName].data. If
+      // they diverge, persistDirtyBlobs reads a stale array and edits are lost.
+      const index = indexes?.get(tableName);
+      if (index) {
+        // Hydration already indexed these rows as they arrived; re-sweeping a
+        // 4.5M-row table here is the freeze this path exists to avoid.
+        this.registerVirtual(tableName, fileData.data, index);
+      } else {
+        this.setupVirtual(tableName, fileData.data);
+      }
+    }
+  }
+
+  /**
+   * Retire the generation the previous feed lived in.
+   *
+   * Best-effort by design: the pointer has already moved, so a failure here
+   * costs disk space and nothing else, and the boot sweep collects it later.
+   */
+  private retireGeneration(gen: number): void {
+    void this.gtfsDatabase
+      .deleteGeneration(gen)
+      .catch((error: unknown) =>
+        console.error(
+          `[GTFSParser] Failed to retire feed generation ${gen}:`,
+          error
+        )
+      );
+  }
+
+  /**
+   * Discard a staged generation after a failed or cancelled import.
+   */
+  private async discardStagingGeneration(gen: number): Promise<void> {
+    try {
+      await this.gtfsDatabase.deleteGeneration(gen);
+    } catch (error) {
+      console.error(
+        `[GTFSParser] Failed to discard staging generation ${gen}:`,
+        error
+      );
+    }
+  }
+
+  async initializeEmpty(): Promise<void> {
+    const activeGen = await this.gtfsDatabase.getActiveFeedGen();
+    const stagingGen = activeGen + 1;
+    const previousLabel = this.feedLabel;
+
+    try {
+      const pendingFeed: { [fileName: string]: GTFSFileData } = {};
+      for (const filename of ALL_GTFS_FILES) {
+        pendingFeed[filename] = {
+          content: makeHeaderOnlyCSV(filename),
+          data: [],
+          errors: [],
+        };
+      }
+
+      // Seed feed_info with a row whose keys match the schema so vt.update can
+      // find it. Without a row, every field edit silently does nothing (the
+      // virtual table update handler returns early when byId has no entry), and
+      // on reload the patch replay has nothing to land on.
+      pendingFeed['feed_info.txt'].data.push(
+        Object.fromEntries(
+          getFileHeaders('feed_info.txt').map((h) => [h, ''])
+        ) as GTFSDatabaseRecord
+      );
+
+      this.feedLabel = 'New feed';
+      await this.writeFeedBlobs(stagingGen, pendingFeed);
+      // A fresh feed has no patches, so its blobs are current at version 0.
+      await this.gtfsDatabase.commitFeedGeneration(stagingGen, {
+        blobVersion: 0,
+        networksMode: 'inline',
+        feedSummary: this.computeFeedSummary(pendingFeed, this.feedLabel),
+        locationsRow: null,
+      });
+
+      this.installFeed(pendingFeed);
+      this.markFeedReplaced();
+      this.retireGeneration(activeGen);
+    } catch (error) {
+      this.feedLabel = previousLabel;
+      await this.discardStagingGeneration(stagingGen);
+      console.error('[GTFSParser] Failed to create an empty feed:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Run one whole import: worker-side download/unzip/parse/write, main-thread
+   * hydration, then an atomic commit.
+   *
+   * The import stages under the next generation and only flips the pointer once
+   * every row is written. Until then the live feed is untouched, so any throw
+   * below rolls back to it by doing nothing to it.
+   */
+  private async importFeed(
+    source: ImportSource,
+    transfer: Transferable[],
+    label: string
   ): Promise<{
     data: { [fileName: string]: GTFSFileData };
     unknownFiles: string[];
   }> {
-    const operation = 'parseFile';
+    return this.runFeedOperation('load', 'Preparing...', (op) =>
+      this.runImport(op, source, transfer, label)
+    );
+  }
+
+  private async runImport(
+    op: FeedOperation,
+    source: ImportSource,
+    transfer: Transferable[],
+    label: string
+  ): Promise<{
+    data: { [fileName: string]: GTFSFileData };
+    unknownFiles: string[];
+  }> {
+    const operation = op.key;
+    const previousLabel = this.feedLabel;
+    const activeGen = await this.gtfsDatabase.getActiveFeedGen();
+    const stagingGen = activeGen + 1;
+    let worker: Worker | null = null;
 
     try {
-      console.log('Loading GTFS file:', (file as File).name || 'blob');
-      console.time('[GTFS] parseFile total');
+      this.feedLabel = label;
 
-      const fileName = (file as File).name;
-      if (fileName) {
-        this.feedLabel = fileName.replace(/\.zip$/i, '');
+      // Settle the outgoing feed's pending edits before staging begins. They
+      // belong to the generation being replaced, and a debounced flush that
+      // fired after the commit would write the old rows under the new one.
+      if (this.blobDirty.size > 0) {
+        await this.persistDirtyBlobs();
       }
 
-      if (!alreadyStarted) {
-        feedProgressIndicator.startLoading(operation, 'Reading file...');
-      }
+      // An import that died between its staging writes and its commit can have
+      // left records under this generation. The worker writes chunk by chunk
+      // rather than replacing a table wholesale, so clear the generation before
+      // it starts instead of reading the leftovers back.
+      await this.gtfsDatabase.deleteGeneration(stagingGen);
+      // A cancel during the flush and the sweep above lands here: nothing has
+      // been staged and the worker does not exist yet.
+      op.throwIfAborted();
 
-      // Convert File/Blob to ArrayBuffer for zero-copy transfer to worker
-      const buffer = await file.arrayBuffer();
+      const chunks = new ChunkQueue();
 
-      feedProgressIndicator.updateProgress(
-        operation,
-        10,
-        'Clearing existing data...'
-      );
-
-      console.time('[GTFS] clearDatabase');
-      this.resetInMemoryFeedState();
-      await this.gtfsDatabase.clearDatabase();
-      this.gtfsDatabase.clearVirtualTables();
-      console.timeEnd('[GTFS] clearDatabase');
-
-      // Spawn worker and transfer the buffer (zero-copy)
-      const worker = new Worker(
+      worker = new Worker(
         new URL('../workers/gtfs-parser.worker.ts', import.meta.url),
         { type: 'module' }
       );
+      const activeWorker = worker;
 
-      const {
-        files: workerFiles,
-        unknownFiles,
-        passthroughFiles,
-      } = await new Promise<WorkerDoneMessage>((resolve, reject) => {
-        worker.onmessage = (event: MessageEvent<WorkerOutbound>) => {
+      // Set once the import has failed or been cancelled, so a prompt the user
+      // answers afterwards cannot restart a terminated worker's watchdog.
+      let aborted = false;
+      let closeLargeFeedPrompt: (() => void) | null = null;
+
+      // Nothing here touches live state: gtfsData, the virtual tables and the
+      // active generation stay as they are until the commit below succeeds.
+      const done = new Promise<WorkerDoneMessage>((resolve, reject) => {
+        op.onAbort((error) => {
+          aborted = true;
+          closeLargeFeedPrompt?.();
+          closeLargeFeedPrompt = null;
+          activeWorker.terminate();
+          // Both halves have to unwind: the hydration is waiting on the queue
+          // and would otherwise never settle.
+          chunks.fail(error);
+          reject(error);
+        });
+        activeWorker.onmessage = (event: MessageEvent<WorkerOutbound>) => {
           const msg = event.data;
+          op.armWatchdog();
           if (msg.type === 'progress') {
             feedProgressIndicator.updateProgress(
               operation,
               msg.progress,
               msg.status
             );
+          } else if (msg.type === 'oversize') {
+            // The worker is parked before its first inflation. No deadline
+            // while the prompt is open: the user takes as long as they take.
+            op.clearWatchdog();
+            feedProgressIndicator.updateProgress(
+              operation,
+              25,
+              'Waiting for confirmation...'
+            );
+            void confirmLargeFeed(label, msg, (close) => {
+              closeLargeFeedPrompt = close;
+            }).then((accept) => {
+              closeLargeFeedPrompt = null;
+              if (aborted) {
+                return;
+              }
+              if (!accept) {
+                op.fail(new LoadCancelledError());
+                return;
+              }
+              op.armWatchdog();
+              activeWorker.postMessage({ type: 'proceed' });
+            });
+          } else if (msg.type === 'chunk') {
+            chunks.push({ tableName: msg.tableName, json: msg.json });
           } else if (msg.type === 'done') {
-            worker.terminate();
+            op.clearWatchdog();
+            activeWorker.terminate();
+            chunks.end();
             resolve(msg);
           } else if (msg.type === 'error') {
-            worker.terminate();
-            reject(new Error(msg.message));
+            op.fail(new Error(msg.message));
           }
         };
-        worker.onerror = (err) => {
-          worker.terminate();
-          reject(new Error(err.message));
+        activeWorker.onerror = (err) => {
+          op.fail(new Error(err.message));
         };
-        worker.postMessage({ type: 'parse', buffer }, [buffer]);
       });
 
-      // Apply worker results on the main thread: set up virtual tables and persist blobs
-      this.gtfsData = {};
-      for (const [fileName, fileResult] of Object.entries(workerFiles)) {
-        // Branch on the extension, not on the worker's flag: a GeoJSON file
-        // stored as a CSV table gets a virtual table, and every later write to
-        // it then stops at memory instead of reaching IndexedDB.
-        if (fileName.endsWith('.geojson')) {
-          this.gtfsData[fileName] = {
-            content: fileResult.rawContent,
-            data: fileResult.data,
-            errors: [],
-          };
-          // A file the ZIP did not carry has no row to store. Inserting a
-          // placeholder here would make an empty collection indistinguishable
-          // from one the feed actually shipped.
-          const geoJsonData = fileResult.data[0];
-          if (geoJsonData) {
-            await this.gtfsDatabase.insertRows(this.getTableName(fileName), [
-              geoJsonData,
-            ]);
-          }
-        } else {
-          this.gtfsData[fileName] = {
-            content: '',
-            data: fileResult.data,
-            errors: fileResult.errors,
-          };
-          const tableName = this.getTableName(fileName);
-          if (fileResult.data.length > 0) {
-            await this.gtfsDatabase.saveTableBlob(
-              tableName,
-              JSON.stringify(fileResult.data)
-            );
-          }
-          this.setupVirtual(tableName, fileResult.data);
+      feedProgressIndicator.updateProgress(
+        operation,
+        0,
+        source.kind === 'url' ? 'Downloading feed...' : 'Reading file...'
+      );
+      op.armWatchdog();
+      activeWorker.postMessage(
+        {
+          type: 'parse',
+          gen: stagingGen,
+          chunkRows: CONFIG.BLOB_CHUNK_ROWS,
+          source,
+        },
+        transfer
+      );
+
+      // Hydration runs alongside the worker, consuming each chunk as it lands
+      // and yielding between them. Nothing it builds touches live state.
+      const [{ data: pendingFeed, indexes }, result] = await Promise.all([
+        this.hydrateFeed(chunks),
+        done,
+      ]);
+
+      // A GeoJSON file is one row holding a whole FeatureCollection. It gets no
+      // blob chunks and no virtual table: it swaps inside the commit instead.
+      for (const [fileName, rawContent] of Object.entries(
+        result.locationsJson
+      )) {
+        pendingFeed[fileName] = {
+          content: rawContent,
+          data: [JSON.parse(rawContent) as GTFSDatabaseRecord],
+          errors: [],
+        };
+      }
+      for (const [fileName, errors] of Object.entries(result.tableErrors)) {
+        if (pendingFeed[fileName]) {
+          pendingFeed[fileName].errors = errors;
         }
       }
 
-      // Save and cache passthrough files (unrecognized .txt files from the ZIP).
-      this.passthroughFiles.clear();
-      if (Object.keys(passthroughFiles).length > 0) {
-        await this.gtfsDatabase.savePassthroughFiles(passthroughFiles);
-        for (const [fileName, rawContent] of Object.entries(passthroughFiles)) {
-          this.passthroughFiles.set(fileName, rawContent);
+      // The worker's counts are what reached IndexedDB. A mismatch means a
+      // chunk message was lost, which would commit a feed whose blobs and
+      // memory disagree, so fail before the pointer moves.
+      for (const [tableName, expected] of Object.entries(result.tableCounts)) {
+        const hydrated = pendingFeed[`${tableName}.txt`]?.data.length ?? -1;
+        if (hydrated !== expected) {
+          throw new Error(
+            `[GTFSParser] hydration lost rows for ${tableName}: wrote ${expected}, hydrated ${hydrated}`
+          );
         }
       }
 
-      await this.normalizeNetworks();
+      const networksMode = this.normalizeNetworks(pendingFeed);
+      // normalizeNetworks appends rows the hydration never saw, so their
+      // incremental indexes are stale. Both tables are small: drop them and let
+      // installFeed rebuild in one sweep.
+      indexes.delete(this.getTableName(GTFS_TABLES.NETWORKS));
+      indexes.delete(this.getTableName(GTFS_TABLES.ROUTE_NETWORKS));
 
-      // A fresh import has no patches yet: blobs are current at version 0.
-      // Flushing here also persists whatever normalizeNetworks synthesized.
-      await this.persistDirtyBlobs(0);
+      feedProgressIndicator.updateProgress(operation, 95, 'Saving feed...');
+      // normalizeNetworks appends synthesized rows after the worker has already
+      // written both tables, so their chunks are rewritten from the pending rows.
+      for (const fileName of [
+        GTFS_TABLES.NETWORKS,
+        GTFS_TABLES.ROUTE_NETWORKS,
+      ]) {
+        await this.gtfsDatabase.putTableChunks(
+          stagingGen,
+          this.getTableName(fileName),
+          serializeRowChunks(pendingFeed[fileName].data)
+        );
+      }
+      if (Object.keys(result.passthroughFiles).length > 0) {
+        await this.gtfsDatabase.savePassthroughFiles(
+          stagingGen,
+          result.passthroughFiles
+        );
+      }
+
+      // A file the ZIP did not carry has no row to store. Committing a
+      // placeholder would make an empty collection indistinguishable from one
+      // the feed actually shipped.
+      const locationsRow =
+        pendingFeed[GTFS_TABLES.LOCATIONS_GEOJSON]?.data[0] ?? null;
+
+      // A fresh import has no patches yet: its blobs are current at version 0.
+      await this.gtfsDatabase.commitFeedGeneration(stagingGen, {
+        blobVersion: 0,
+        networksMode,
+        feedSummary: this.computeFeedSummary(pendingFeed, this.feedLabel),
+        locationsRow,
+      });
+
+      // Past the point of no return: the new feed is the stored feed.
+      this.installFeed(pendingFeed, indexes);
+      for (const [name, rawContent] of Object.entries(
+        result.passthroughFiles
+      )) {
+        this.passthroughFiles.set(name, rawContent);
+      }
+      this.markFeedReplaced();
+      this.retireGeneration(activeGen);
 
       feedProgressIndicator.updateProgress(operation, 100, 'Complete!');
-      feedProgressIndicator.finishLoading(operation);
 
       console.log('Loaded GTFS data to IndexedDB and memory:', this.gtfsData);
-      console.timeEnd('[GTFS] parseFile total');
-      // Success path only: a throw leaves the previous feed's caches invalid
-      // but there is no new feed to announce, and boot's fallback re-announces.
-      this.markFeedReplaced();
-      return { data: this.gtfsData, unknownFiles };
+      return { data: this.gtfsData, unknownFiles: result.unknownFiles };
     } catch (error) {
-      console.error('Error loading GTFS file:', error);
-      feedProgressIndicator.finishLoading(operation);
+      if (!(error instanceof LoadCancelledError)) {
+        console.error('Error loading GTFS feed:', error);
+      }
+      this.feedLabel = previousLabel;
+      await this.discardStagingGeneration(stagingGen);
       throw error;
+    } finally {
+      // Terminating twice is harmless; this covers the paths that threw before
+      // or after the worker resolved its own promise.
+      worker?.terminate();
     }
+  }
+
+  async parseFile(file: File | Blob): Promise<{
+    data: { [fileName: string]: GTFSFileData };
+    unknownFiles: string[];
+  }> {
+    const fileName = (file as File).name ?? '';
+    console.log('Loading GTFS file:', fileName || 'blob');
+    // Read here rather than in the worker: a File handle is transferable only
+    // as its bytes, and this is the one main-thread read the import still does.
+    const buffer = await file.arrayBuffer();
+    return this.importFeed(
+      { kind: 'buffer', buffer },
+      [buffer],
+      fileName ? fileName.replace(/\.zip$/i, '') : this.feedLabel
+    );
   }
 
   /**
@@ -1150,11 +1664,26 @@ export class GTFSParser {
    *
    * These are derived import state, not user edits, so they are written
    * directly rather than recorded as patches.
+   *
+   * Pure in the rows it touches: it appends into the pending feed's own arrays
+   * and returns the mode instead of writing through virtual tables, so it can
+   * run before the feed is live and its mode write can fold into the commit.
    */
-  private async normalizeNetworks(): Promise<void> {
-    const networks = this.gtfsData[GTFS_TABLES.NETWORKS]?.data ?? [];
-    const routeNetworks = this.gtfsData[GTFS_TABLES.ROUTE_NETWORKS]?.data ?? [];
-    const routes = this.gtfsData[GTFS_TABLES.ROUTES]?.data ?? [];
+  private normalizeNetworks(data: {
+    [fileName: string]: GTFSFileData;
+  }): NetworksMode {
+    // Rows are appended in place, so a missing entry would silently swallow the
+    // synthesized networks instead of expanding the feed's inline form.
+    const rowsOf = (fileName: string): GTFSDatabaseRecord[] => {
+      const entry = data[fileName];
+      if (!entry) {
+        throw new Error(`[Networks] pending feed has no ${fileName}`);
+      }
+      return entry.data;
+    };
+    const networks = rowsOf(GTFS_TABLES.NETWORKS);
+    const routeNetworks = rowsOf(GTFS_TABLES.ROUTE_NETWORKS);
+    const routes = rowsOf(GTFS_TABLES.ROUTES);
 
     if (networks.length > 0 || routeNetworks.length > 0) {
       console.log(
@@ -1179,9 +1708,11 @@ export class GTFSParser {
         console.warn(
           `[Networks] ${undefinedIds.size} network(s) referenced by route_networks.txt are missing from networks.txt, synthesizing them`
         );
-        await this.gtfsDatabase.insertRows(
-          'networks',
-          [...undefinedIds].map((id) => ({ network_id: id, network_name: '' }))
+        networks.push(
+          ...[...undefinedIds].map((id) => ({
+            network_id: id,
+            network_name: '',
+          }))
         );
       }
 
@@ -1198,8 +1729,7 @@ export class GTFSParser {
         );
       }
 
-      await this.gtfsDatabase.setNetworksMode('files');
-      return;
+      return 'files';
     }
 
     const ids = new Set<string>();
@@ -1218,16 +1748,15 @@ export class GTFSParser {
       console.log(
         `[Networks] expanding routes.network_id into ${ids.size} network(s) and ${assignments.length} assignment(s)`
       );
-      await this.gtfsDatabase.insertRows(
-        'networks',
-        [...ids].map((id) => ({ network_id: id, network_name: '' }))
+      networks.push(
+        ...[...ids].map((id) => ({ network_id: id, network_name: '' }))
       );
-      await this.gtfsDatabase.insertRows('route_networks', assignments);
+      routeNetworks.push(...assignments);
     } else {
       console.log('[Networks] feed defines no networks');
     }
 
-    await this.gtfsDatabase.setNetworksMode('inline');
+    return 'inline';
   }
 
   private getTableName(fileName: string): string {
@@ -1235,64 +1764,23 @@ export class GTFSParser {
   }
 
   async parseFromURL(rawUrl: string): Promise<{ unknownFiles: string[] }> {
-    const operation = 'parseFile';
     // `…/outer.zip#inner.zip` names a feed nested inside another archive (SEPTA
     // ships google_bus.zip and google_rail.zip in one release asset). The
     // fragment is never sent to the server, so it is stripped before fetching
-    // and replayed as a descent once the outer archive is in hand.
+    // and replayed as a descent once the outer archive is in hand. Both happen
+    // in the worker: the main thread does no feed I/O.
     const { url, innerPaths } = splitInnerZipPath(rawUrl);
     console.log('[GTFSParser] Fetching GTFS from URL:', url, innerPaths);
-    this.feedLabel =
+    const label =
       url
         .split('/')
         .pop()
         ?.replace(/\.zip$/i, '') || url;
-    // Cancel aborts the fetch only. Once the bytes are in hand the parse runs
-    // to completion, since ingestion into the database has no rollback path.
-    const controller = new AbortController();
-    feedProgressIndicator.startLoading(operation, 'Downloading feed...', {
-      onCancel: () => controller.abort(),
-    });
-
-    let blob: Blob;
-    try {
-      blob = await downloadWithProgress(url, {
-        signal: controller.signal,
-        onProgress: (loaded, total) => {
-          const percent = downloadPercent(loaded, total);
-          feedProgressIndicator.updateProgress(
-            operation,
-            percent ?? 0,
-            total
-              ? `Downloading feed, ${formatBytes(loaded)} of ${formatBytes(total)}`
-              : `Downloading feed, ${formatBytes(loaded)}`
-          );
-        },
-      });
-    } catch (error) {
-      feedProgressIndicator.finishLoading(operation);
-      if (!(error instanceof LoadCancelledError)) {
-        console.error('[GTFSParser] Download failed:', error);
-      }
-      throw error;
-    }
-    // The same operation key covers the parse, which cannot be aborted.
-    feedProgressIndicator.clearCancel(operation);
-
-    feedProgressIndicator.updateProgress(operation, 100, 'Preparing...');
-
-    for (const innerPath of innerPaths) {
-      console.log('[GTFSParser] Descending into nested archive:', innerPath);
-      try {
-        blob = await extractInnerZip(blob, innerPath);
-      } catch (error) {
-        feedProgressIndicator.finishLoading(operation);
-        throw error;
-      }
-    }
-
-    console.log('[GTFSParser] Download complete, parsing ZIP...');
-    const { unknownFiles } = await this.parseFile(blob, true);
+    const { unknownFiles } = await this.importFeed(
+      { kind: 'url', url, innerPaths },
+      [],
+      label
+    );
     return { unknownFiles };
   }
 
@@ -1306,7 +1794,7 @@ export class GTFSParser {
           header: true,
           skipEmptyLines: true,
         });
-        const rows = this.processParsedData(
+        const rows = processParsedData<GTFSDatabaseRecord>(
           parsed.data as Record<string, unknown>[]
         );
         this.gtfsData[fileName].data = rows;
@@ -1362,7 +1850,7 @@ export class GTFSParser {
           header: true,
           skipEmptyLines: true,
         });
-        const data = this.processParsedData(
+        const data = processParsedData<GTFSDatabaseRecord>(
           parsed.data as Record<string, unknown>[]
         );
         this.gtfsData[fileName].data = data;
@@ -1488,7 +1976,10 @@ export class GTFSParser {
     rawContent: string
   ): Promise<void> {
     this.passthroughFiles.set(fileName, rawContent);
-    await this.gtfsDatabase.savePassthroughFiles({ [fileName]: rawContent });
+    await this.gtfsDatabase.savePassthroughFiles(
+      await this.gtfsDatabase.getActiveFeedGen(),
+      { [fileName]: rawContent }
+    );
     console.log(
       '[GTFSParser] passthrough file edited (not patched):',
       fileName

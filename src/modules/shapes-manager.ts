@@ -145,8 +145,8 @@ function toNumber(value: unknown): number {
 /**
  * Parse shapes out of an uploaded GTFS zip without touching the current feed.
  *
- * `GTFSParser.parseFile` clears the database, so this reads the three files it
- * needs directly. `trips.txt` and `routes.txt` are only read to label the
+ * `GTFSParser.parseFile` replaces the whole feed, so this reads the three files
+ * it needs directly. `trips.txt` and `routes.txt` are only read to label the
  * shapes; nothing from them is inserted.
  */
 async function parseShapesFromZip(file: File): Promise<ZipShapeCandidate[]> {

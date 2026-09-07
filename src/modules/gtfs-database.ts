@@ -198,8 +198,8 @@ export interface GTFSDBSchema extends DBSchema {
     key: number; // last patch version included in this snapshot
     value: SnapshotRecord;
   };
-  // Version pointer store: supports 'versions', 'blobVersion',
-  // 'networksMode', 'extensionColumns' and 'feedSummary' keys
+  // Version pointer store: supports 'versions', 'blobVersion', 'networksMode',
+  // 'extensionColumns', 'feedSummary' and 'activeFeedGen' keys
   meta: {
     key: string;
     value:
@@ -207,20 +207,26 @@ export interface GTFSDBSchema extends DBSchema {
       | { key: 'blobVersion'; version: number }
       | { key: 'networksMode'; mode: NetworksMode }
       | ({ key: 'feedSummary' } & FeedSummary)
+      | { key: 'activeFeedGen'; gen: number }
       | {
           key: 'extensionColumns';
           columns: Record<string, string[]>;
         };
   };
-  // Raw JSON blobs for all GTFS tables: avoids per-row IDB overhead
+  // Raw JSON blobs for all GTFS tables: avoids per-row IDB overhead.
+  // Keyed by feed generation so an import can stage under gen+1 while the live
+  // feed stays readable, and split into chunks so no single JSON string
+  // approaches the engine's max string length.
   file_blobs: {
-    key: string;
-    value: { tableName: string; json: string };
+    key: [number, string, number];
+    value: { gen: number; tableName: string; chunk: number; json: string };
+    indexes: { gen: number };
   };
   // Opaque passthrough for unrecognized files: preserved verbatim on export
   passthrough_files: {
-    key: string;
-    value: { fileName: string; rawContent: string };
+    key: [number, string];
+    value: { gen: number; fileName: string; rawContent: string };
+    indexes: { gen: number };
   };
 }
 
@@ -245,7 +251,7 @@ export class GTFSDatabase {
   private db: IDBPDatabase<GTFSDBSchema> | null = null;
   private readonly dbName = CONFIG.DB_NAME;
   // Fixed schema version: bump only for schema changes; pre-upgrade modal handles export.
-  private readonly dbVersion = 11;
+  private readonly dbVersion = 12;
   /** Virtual table registry: large tables that bypass per-row IDB storage. */
   private virtualTables = new Map<string, VirtualTableHandlers>();
 
@@ -336,8 +342,14 @@ export class GTFSDatabase {
           });
           db.createObjectStore('snapshots', { keyPath: 'version' });
           db.createObjectStore('meta', { keyPath: 'key' });
-          db.createObjectStore('file_blobs', { keyPath: 'tableName' });
-          db.createObjectStore('passthrough_files', { keyPath: 'fileName' });
+          const blobStore = db.createObjectStore('file_blobs', {
+            keyPath: ['gen', 'tableName', 'chunk'],
+          });
+          blobStore.createIndex('gen', 'gen');
+          const passthroughStore = db.createObjectStore('passthrough_files', {
+            keyPath: ['gen', 'fileName'],
+          });
+          passthroughStore.createIndex('gen', 'gen');
 
           GTFS_FILES.map((f) => f.filename).forEach((fileName) => {
             const tableName = this.getTableName(fileName);
@@ -364,6 +376,8 @@ export class GTFSDatabase {
       });
 
       console.log('GTFSDatabase initialized successfully');
+
+      await this.sweepOrphanedGenerations();
     } catch (error) {
       console.error('Failed to initialize GTFSDatabase:', error);
 
@@ -432,10 +446,14 @@ export class GTFSDatabase {
   }
 
   /**
-   * Open the DB at its current version (no upgrade), read all file_blobs,
-   * and return them as a ZIP blob. Returns null if no blob data exists.
+   * Open the DB at its current version (no upgrade), read the stored feed's
+   * blobs, and return them as a ZIP blob. Returns null if no blob data exists.
+   *
+   * The recovery export: it runs when the app cannot open or read its own
+   * database through the normal path, so it talks to IndexedDB raw and never
+   * throws.
    */
-  private exportCurrentBlobsAsZip(): Promise<Blob | null> {
+  exportCurrentBlobsAsZip(): Promise<Blob | null> {
     return new Promise((resolve) => {
       const req = indexedDB.open(this.dbName);
       req.onsuccess = () => {
@@ -450,33 +468,69 @@ export class GTFSDatabase {
           .objectStore('file_blobs')
           .getAll();
         storeReq.onsuccess = async () => {
-          db.close();
           const entries = storeReq.result as {
+            gen?: number;
             tableName: string;
+            chunk?: number;
             csv?: string;
             json?: string;
           }[];
           if (!entries?.length) {
+            db.close();
             resolve(null);
             return;
           }
-          const zip = new JSZip();
-          for (const { tableName, csv, json } of entries) {
+
+          // Only the live feed's generation: a leftover staging generation is
+          // half a feed and must not be mixed into the export.
+          let activeGen = 0;
+          if (db.objectStoreNames.contains('meta')) {
+            activeGen = await new Promise<number>((res) => {
+              const metaReq = db
+                .transaction('meta', 'readonly')
+                .objectStore('meta')
+                .get('activeFeedGen');
+              metaReq.onsuccess = () =>
+                res((metaReq.result as { gen?: number })?.gen ?? 0);
+              metaReq.onerror = () => res(0);
+            });
+          }
+
+          // A table is its chunks concatenated in index order, so rows are
+          // gathered per table before any of it is unparsed.
+          const csvByTable = new Map<string, string>();
+          const rowsByTable = new Map<string, Record<string, unknown>[]>();
+          const sorted = [...entries].sort(
+            (a, b) => (a.chunk ?? 0) - (b.chunk ?? 0)
+          );
+          for (const { gen, tableName, csv, json } of sorted) {
+            if (gen !== undefined && gen !== activeGen) {
+              continue;
+            }
             if (csv) {
               // Old schema (v9): stored as raw CSV
-              zip.file(`${tableName}.txt`, csv);
+              csvByTable.set(tableName, csv);
             } else if (json) {
-              // New schema (v10): stored as JSON, convert back to CSV for export.
-              // newline: '\n' so the row separators match the '\n' terminator
-              // below; a CRLF body with a bare LF at the end makes Papa.parse
-              // swallow that LF into the last row's final field on re-import.
-              const rows = JSON.parse(json) as Record<string, unknown>[];
-              if (rows.length > 0) {
-                zip.file(
-                  `${tableName}.txt`,
-                  Papa.unparse(rows, { newline: '\n' }) + '\n'
-                );
-              }
+              const rows = rowsByTable.get(tableName) ?? [];
+              rows.push(...(JSON.parse(json) as Record<string, unknown>[]));
+              rowsByTable.set(tableName, rows);
+            }
+          }
+
+          const zip = new JSZip();
+          for (const [tableName, csv] of csvByTable) {
+            zip.file(`${tableName}.txt`, csv);
+          }
+          for (const [tableName, rows] of rowsByTable) {
+            // Stored as JSON, converted back to CSV for export. newline: '\n'
+            // so the row separators match the '\n' terminator below; a CRLF
+            // body with a bare LF at the end makes Papa.parse swallow that LF
+            // into the last row's final field on re-import.
+            if (rows.length > 0) {
+              zip.file(
+                `${tableName}.txt`,
+                Papa.unparse(rows, { newline: '\n' }) + '\n'
+              );
             }
           }
           // Append passthrough files if the store exists (may be absent on pre-v11 schema)
@@ -488,17 +542,21 @@ export class GTFSDatabase {
             await new Promise<void>((res) => {
               ptReq.onsuccess = () => {
                 const ptEntries = ptReq.result as {
+                  gen?: number;
                   fileName: string;
                   rawContent: string;
                 }[];
-                for (const { fileName, rawContent } of ptEntries) {
-                  zip.file(fileName, rawContent);
+                for (const { gen, fileName, rawContent } of ptEntries) {
+                  if (gen === undefined || gen === activeGen) {
+                    zip.file(fileName, rawContent);
+                  }
                 }
                 res();
               };
               ptReq.onerror = () => res();
             });
           }
+          db.close();
           resolve(
             await zip.generateAsync({
               type: 'blob',
@@ -652,52 +710,31 @@ export class GTFSDatabase {
     }
   }
 
-  /**
-   * Clear entire database when loading new GTFS file
-   */
-  async clearDatabase(): Promise<void> {
-    if (!this.db) {
-      throw new Error('Database not initialized');
-    }
-
-    try {
-      const transaction = this.db.transaction(
-        Array.from(this.db.objectStoreNames),
-        'readwrite'
-      );
-
-      // Clear all object stores
-      for (const storeName of this.db.objectStoreNames) {
-        await transaction.objectStore(storeName).clear();
-      }
-
-      await transaction.done;
-
-      console.log('Database cleared successfully');
-    } catch (error) {
-      console.error('Failed to clear database:', error);
-      throw error;
-    }
-  }
-
-  async savePassthroughFiles(files: Record<string, string>): Promise<void> {
+  async savePassthroughFiles(
+    gen: number,
+    files: Record<string, string>
+  ): Promise<void> {
     if (!this.db) {
       throw new Error('Database not initialized');
     }
     const tx = this.db.transaction('passthrough_files', 'readwrite');
     await Promise.all(
       Object.entries(files).map(([fileName, rawContent]) =>
-        tx.store.put({ fileName, rawContent })
+        tx.store.put({ gen, fileName, rawContent })
       )
     );
     await tx.done;
   }
 
-  async getAllPassthroughFiles(): Promise<Record<string, string>> {
+  async getAllPassthroughFiles(gen: number): Promise<Record<string, string>> {
     if (!this.db) {
       throw new Error('Database not initialized');
     }
-    const entries = await this.db.getAll('passthrough_files');
+    const entries = await this.db.getAllFromIndex(
+      'passthrough_files',
+      'gen',
+      IDBKeyRange.only(gen)
+    );
     return Object.fromEntries(entries.map((e) => [e.fileName, e.rawContent]));
   }
 
@@ -1162,25 +1199,203 @@ export class GTFSDatabase {
   }
 
   /**
-   * Persist JSON-serialized row array for a table into the file_blobs store.
+   * Replace a table's chunks for one generation in a single transaction.
+   *
+   * Chunks left over from a longer previous write are deleted in the same
+   * transaction: a table that shrank would otherwise read back with the tail of
+   * its old contents appended.
+   *
+   * Throws when the database is not open: a silently dropped blob write is
+   * invisible until the next reload comes back short.
    */
-  async saveTableBlob(tableName: string, json: string): Promise<void> {
+  async putTableChunks(
+    gen: number,
+    tableName: string,
+    chunks: string[]
+  ): Promise<void> {
     if (!this.db) {
-      return;
+      throw new Error('Database not initialized');
     }
-    await this.db.put('file_blobs', { tableName, json });
+    const tx = this.db.transaction('file_blobs', 'readwrite');
+    const store = tx.store;
+    for (let chunk = 0; chunk < chunks.length; chunk++) {
+      await store.put({ gen, tableName, chunk, json: chunks[chunk] });
+    }
+    let cursor = await store.openCursor(
+      IDBKeyRange.bound(
+        [gen, tableName, chunks.length],
+        [gen, tableName, Infinity]
+      )
+    );
+    while (cursor) {
+      await cursor.delete();
+      cursor = await cursor.continue();
+    }
+    await tx.done;
   }
 
   /**
-   * Retrieve JSON-serialized row array for a table from the file_blobs store.
-   * Returns null if no blob has been saved yet.
+   * How many chunks each table of one generation has, keyed by table name.
+   * Reads keys only, so describing a stored feed costs nothing.
    */
-  async getTableBlob(tableName: string): Promise<string | null> {
+  async listBlobChunkCounts(gen: number): Promise<Map<string, number>> {
     if (!this.db) {
-      return null;
+      throw new Error('Database not initialized');
     }
-    const record = await this.db.get('file_blobs', tableName);
-    return record?.json ?? null;
+    const keys = await this.db.getAllKeys(
+      'file_blobs',
+      IDBKeyRange.bound([gen], [gen + 1], false, true)
+    );
+    const counts = new Map<string, number>();
+    for (const key of keys) {
+      const tableName = key[1];
+      counts.set(tableName, (counts.get(tableName) ?? 0) + 1);
+    }
+    return counts;
+  }
+
+  /**
+   * Read one chunk of a table, or undefined when that chunk does not exist.
+   *
+   * One at a time by design: the restore hydrates and drops each chunk's JSON
+   * before asking for the next, and a whole-table read would hold every string
+   * of a multi-hundred-megabyte table at once.
+   */
+  async getBlobChunk(
+    gen: number,
+    tableName: string,
+    chunk: number
+  ): Promise<string | undefined> {
+    if (!this.db) {
+      throw new Error('Database not initialized');
+    }
+    const record = await this.db.get('file_blobs', [gen, tableName, chunk]);
+    return record?.json;
+  }
+
+  /**
+   * Drop every blob and passthrough record belonging to one generation.
+   * Used to sweep orphaned staging generations and to retire the old feed
+   * after a commit.
+   */
+  async deleteGeneration(gen: number): Promise<void> {
+    if (!this.db) {
+      throw new Error('Database not initialized');
+    }
+    const tx = this.db.transaction(
+      ['file_blobs', 'passthrough_files'],
+      'readwrite'
+    );
+    const range = IDBKeyRange.only(gen);
+    for (const storeName of ['file_blobs', 'passthrough_files'] as const) {
+      const index = tx.objectStore(storeName).index('gen');
+      let cursor = await index.openCursor(range);
+      while (cursor) {
+        await cursor.delete();
+        cursor = await cursor.continue();
+      }
+    }
+    await tx.done;
+    console.log(`[GTFSDatabase] Deleted generation ${gen}`);
+  }
+
+  /**
+   * Drop every generation that is not the active one.
+   *
+   * An import that crashes or is reloaded away between its staging writes and
+   * its commit leaves a full generation of blobs behind. Nothing reads them, so
+   * this is disk reclamation, not correctness: a failure is logged and boot
+   * continues.
+   */
+  private async sweepOrphanedGenerations(): Promise<void> {
+    try {
+      const active = await this.getActiveFeedGen();
+      const orphans = (await this.listGenerations()).filter(
+        (gen) => gen !== active
+      );
+      for (const gen of orphans) {
+        console.warn(
+          `[GTFSDatabase] Sweeping orphaned feed generation ${gen} (active is ${active})`
+        );
+        await this.deleteGeneration(gen);
+      }
+    } catch (error) {
+      console.error('[GTFSDatabase] Generation sweep failed:', error);
+    }
+  }
+
+  /**
+   * Make a staged generation the live feed, in one all-or-nothing transaction.
+   *
+   * Everything that says "which feed is loaded" flips together: the patch log
+   * and its snapshots are dropped, the meta pointers are rewritten, and the
+   * single locations.geojson row is replaced. IndexedDB gives all-or-nothing on
+   * the transaction, so a crash before `tx.done` leaves the previous generation
+   * live and completely intact.
+   */
+  async commitFeedGeneration(
+    gen: number,
+    options: {
+      blobVersion: number;
+      networksMode: NetworksMode;
+      feedSummary: FeedSummary;
+      locationsRow: GTFSDatabaseRecord | null;
+    }
+  ): Promise<void> {
+    if (!this.db) {
+      throw new Error('Database not initialized');
+    }
+
+    const tx = this.db.transaction(
+      ['meta', 'patches', 'snapshots', 'locations'],
+      'readwrite'
+    );
+
+    await tx.objectStore('patches').clear();
+    await tx.objectStore('snapshots').clear();
+
+    // The whole meta store is feed-scoped, so it is dropped rather than written
+    // key by key: a leftover `versions` or `extensionColumns` from the previous
+    // feed would be read back against the new feed's rows.
+    const meta = tx.objectStore('meta');
+    await meta.clear();
+    await meta.put({ key: 'activeFeedGen', gen });
+    await meta.put({ key: 'blobVersion', version: options.blobVersion });
+    await meta.put({ key: 'networksMode', mode: options.networksMode });
+    await meta.put({ key: 'feedSummary', ...options.feedSummary });
+
+    // locations.geojson is one row holding a whole FeatureCollection and has no
+    // virtual table, so it is the one table whose rows live in a real store and
+    // must swap inside the commit rather than with the blob chunks.
+    const locations = tx.objectStore('locations');
+    await locations.clear();
+    if (options.locationsRow) {
+      await locations.put(
+        options.locationsRow,
+        this.generateCompositeKey('locations', options.locationsRow)
+      );
+    }
+
+    await tx.done;
+    console.log(
+      `[GTFSDatabase] Committed feed generation ${gen} at blobVersion ${options.blobVersion}`
+    );
+  }
+
+  /**
+   * Every generation that has at least one blob or passthrough record.
+   */
+  async listGenerations(): Promise<number[]> {
+    if (!this.db) {
+      throw new Error('Database not initialized');
+    }
+    const gens = new Set<number>();
+    for (const storeName of ['file_blobs', 'passthrough_files'] as const) {
+      for (const key of await this.db.getAllKeys(storeName)) {
+        gens.add(key[0]);
+      }
+    }
+    return Array.from(gens).sort((a, b) => a - b);
   }
 
   /**
@@ -1851,13 +2066,27 @@ export class GTFSDatabase {
   }
 
   /**
-   * Record the patch version at which all dirty blobs were last flushed.
+   * The generation the live feed's blobs are stored under.
+   *
+   * Returns 0 when absent, which is also the generation a fresh database
+   * writes its first feed to.
    */
-  async setBlobVersion(version: number): Promise<void> {
+  async getActiveFeedGen(): Promise<number> {
+    if (!this.db) {
+      return 0;
+    }
+    const entry = await this.db.get('meta', 'activeFeedGen');
+    return entry?.key === 'activeFeedGen' ? entry.gen : 0;
+  }
+
+  /**
+   * Point the app at a generation. Flipping this is what makes an import live.
+   */
+  async setActiveFeedGen(gen: number): Promise<void> {
     if (!this.db) {
       throw new Error('Database not initialized');
     }
-    await this.db.put('meta', { key: 'blobVersion', version });
+    await this.db.put('meta', { key: 'activeFeedGen', gen });
   }
 
   /**
@@ -1904,6 +2133,23 @@ export class GTFSDatabase {
       throw new Error('Database not initialized');
     }
     await this.db.put('meta', { key: 'feedSummary', ...summary });
+  }
+
+  /**
+   * Write the blob version stamp and the feed summary together.
+   *
+   * One transaction because they describe the same flush: a summary that
+   * survives without its stamp (or the reverse) describes rows that were never
+   * written at that version.
+   */
+  async setBlobStamp(version: number, summary: FeedSummary): Promise<void> {
+    if (!this.db) {
+      throw new Error('Database not initialized');
+    }
+    const tx = this.db.transaction('meta', 'readwrite');
+    await tx.store.put({ key: 'blobVersion', version });
+    await tx.store.put({ key: 'feedSummary', ...summary });
+    await tx.done;
   }
 
   /**

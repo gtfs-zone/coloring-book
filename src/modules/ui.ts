@@ -25,6 +25,7 @@ import { Editor } from './editor.js';
 import { BrowseNavigation } from './browse-navigation.js';
 import { getStopDisplay, renderOptionLabel } from '../utils/entity-display.js';
 import { buildExportFilename } from '../utils/export-filename.js';
+import { runWhenIdle } from '../utils/run-when-idle.js';
 import { showHelpPageOnce } from './help-modal.js';
 
 function escapeHtml(text: string): string {
@@ -59,6 +60,8 @@ export class UIController {
    * from it; the feed itself lives in IndexedDB, not here.
    */
   currentSelection: FeedSelection | null;
+  /** Cancels a map update scheduled for a feed that has since been replaced. */
+  private cancelPendingMapUpdate: (() => void) | null = null;
 
   constructor() {
     this.gtfsParser = null;
@@ -211,6 +214,60 @@ export class UIController {
     }
   }
 
+  /**
+   * Build the map for the feed just loaded, off the load's critical path.
+   *
+   * The route build walks every shape point and every trip, so awaiting it
+   * inline keeps the progress bar up long after the feed is usable. The
+   * navigation refresh follows it because updateMap clears map focus.
+   */
+  private scheduleMapUpdate(): void {
+    // A pending update belongs to the feed that scheduled it. Drop it rather
+    // than let it wake up after the next feed has taken its place.
+    this.cancelPendingMapUpdate?.();
+    this.cancelPendingMapUpdate = runWhenIdle(() => {
+      this.cancelPendingMapUpdate = null;
+      console.time('[GTFS] updateMap');
+      this.mapController!.updateMap()
+        .then(async () => {
+          await this.browseNavigation?.refresh();
+          console.timeEnd('[GTFS] updateMap');
+        })
+        .catch((error: unknown) =>
+          notify.error(
+            `Failed to update map: ${error instanceof Error ? error.message : String(error)}`
+          )
+        );
+    });
+  }
+
+  /**
+   * Bring the UI onto the feed that was just installed.
+   *
+   * The one post-swap refresh: a file load, a URL load and the boot restore all
+   * run it, so the three cannot drift apart. Boot passes `navigateHome: false`
+   * because its page state comes from the URL and navigating home would discard
+   * a deep link.
+   */
+  async refreshAfterFeedSwap(
+    options: { navigateHome?: boolean } = {}
+  ): Promise<void> {
+    console.time('[GTFS] updateFileList');
+    this.updateFileList();
+    console.timeEnd('[GTFS] updateFileList');
+
+    this.scheduleMapUpdate();
+
+    if (this.browseNavigation) {
+      if (options.navigateHome) {
+        await navigateToHome();
+      }
+      await this.browseNavigation.refresh();
+    }
+
+    this.updateMapToolButtonState();
+  }
+
   async loadGTFSFile(file: File) {
     try {
       console.log('Loading GTFS file:', file.name);
@@ -230,37 +287,20 @@ export class UIController {
         );
       }
 
-      // Update UI
-
-      console.time('[GTFS] updateFileList');
-      this.updateFileList();
-
-      console.timeEnd('[GTFS] updateFileList');
-
-      console.time('[GTFS] updateMap');
-      await this.mapController!.updateMap();
-
-      console.timeEnd('[GTFS] updateMap');
+      await this.refreshAfterFeedSwap({ navigateHome: true });
 
       // Populate the file list without opening the Files modal
       this.showFileList();
-
-      // Refresh Objects navigation if available
-      if (this.browseNavigation) {
-        console.time('[GTFS] navigateToHome + refresh');
-        await navigateToHome();
-        this.browseNavigation.refresh();
-
-        console.timeEnd('[GTFS] navigateToHome + refresh');
-      }
-
-      // Update map tool button states
-      this.updateMapToolButtonState();
 
       notify.success(`Successfully loaded GTFS file: ${file.name}`);
 
       console.timeEnd('[GTFS] loadGTFSFile total');
     } catch (error) {
+      // A cancelled load leaves whatever feed was already loaded untouched.
+      if (error instanceof LoadCancelledError) {
+        notify.info('Load cancelled');
+        return;
+      }
       console.error('Error loading GTFS file:', error);
 
       // Show error notification with helpful message
@@ -387,18 +427,7 @@ export class UIController {
         );
       }
 
-      // Update UI
-      this.updateFileList();
-      await this.mapController!.updateMap();
-
-      // Refresh Objects navigation if available
-      if (this.browseNavigation) {
-        await navigateToHome();
-        this.browseNavigation.refresh();
-      }
-
-      // Update map tool button states
-      this.updateMapToolButtonState();
+      await this.refreshAfterFeedSwap({ navigateHome: true });
 
       notify.success('Successfully loaded GTFS from URL');
     } catch (error) {
