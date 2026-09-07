@@ -485,7 +485,7 @@ export class PatchManager {
   /**
    * Reset in-memory version bookkeeping after the underlying stores are wiped
    * for a new/replacement feed (patches, snapshots, and meta are all cleared
-   * by GTFSDatabase.clearDatabase()). Without this, appendAndPush's stale
+   * by GTFSDatabase.commitFeedGeneration()). Without this, appendAndPush's stale
    * currentVersion/headVersion from the previous feed cause a spurious
    * deletePatchesAfter() call against the now-empty patches store on the
    * first edit of the new feed.

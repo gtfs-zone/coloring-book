@@ -567,7 +567,7 @@ export class PageContentRenderer {
     const t0 = performance.now();
 
     // Edits since the last pass are not reflected in the published issues.
-    refreshFeedIssuesIfStale();
+    await refreshFeedIssuesIfStale();
     const tIssues = performance.now();
 
     const agencies = await this.dependencies.relationships.getAgenciesAsync();

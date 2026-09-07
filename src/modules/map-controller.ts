@@ -108,6 +108,10 @@ export class MapController {
   // Identity of the stops filter currently on the map, so applyStopsFilter can
   // skip a repaint when nothing about it changed. '' is the default filter.
   private appliedStopsFilterKey = '';
+  // The map update in flight and the feed generation it is drawing, so a second
+  // call for the same feed joins it instead of racing it.
+  private mapUpdateInFlight: { gen: number; promise: Promise<void> } | null =
+    null;
 
   private bottomPadding = 0;
 
@@ -495,9 +499,62 @@ export class MapController {
   }
 
   /**
-   * Update map with current GTFS data
+   * Update map with current GTFS data.
+   *
+   * Scoped to the feed it was started for: the route build yields to the event
+   * loop, so a whole import can land inside these awaits. An update whose feed
+   * has been replaced returns without touching the layers or the camera, and a
+   * second call for the same feed joins the one already running instead of
+   * starting a competing render.
    */
   public async updateMap(): Promise<void> {
+    const gen = this.gtfsParser?.feedGeneration ?? 0;
+    if (this.mapUpdateInFlight?.gen === gen) {
+      return this.mapUpdateInFlight.promise;
+    }
+    const tracked = this.runMapUpdate(gen).finally(() => {
+      if (this.mapUpdateInFlight?.promise === tracked) {
+        this.mapUpdateInFlight = null;
+      }
+    });
+    this.mapUpdateInFlight = { gen, promise: tracked };
+    return tracked;
+  }
+
+  /**
+   * True once the feed this update was started for is no longer the loaded one.
+   */
+  private feedSuperseded(gen: number, stage: string): boolean {
+    const current = this.gtfsParser?.feedGeneration ?? 0;
+    if (current === gen) {
+      return false;
+    }
+    console.log(
+      `[MapController] map update for feed generation ${gen} superseded by ${current} (after ${stage})`
+    );
+    return true;
+  }
+
+  /**
+   * Drop everything the previous feed drew.
+   *
+   * Subscribed to the feed-replaced signal, so the map empties the moment a
+   * feed stops being the loaded one rather than at the start of the next
+   * render, which on a large feed is seconds later.
+   */
+  public clearForNewFeed(): void {
+    if (!this.map) {
+      return;
+    }
+    this.focusedObject = { type: 'none' };
+    this.spotlightRouteIds = null;
+    this.appliedStopsFilterKey = '';
+    this.layerManager?.setStopsFilter(null);
+    this.layerManager?.clearAllLayers();
+    this.routeRenderer?.clearRoutes();
+  }
+
+  private async runMapUpdate(gen: number): Promise<void> {
     if (!this.isMapReady()) {
       return;
     }
@@ -510,6 +567,9 @@ export class MapController {
 
     // Ensure RouteRenderer is initialized (this waits for map style to load)
     await this.routeRenderer!.ensureInitialized();
+    if (this.feedSuperseded(gen, 'ensureInitialized')) {
+      return;
+    }
 
     // Reset any spotlight dimming left over from a selection in the old feed
     this.routeRenderer!.clearHighlight();
@@ -520,6 +580,9 @@ export class MapController {
 
     // Wait for route rendering to complete
     await this.routeRenderer!.renderRoutes();
+    if (this.feedSuperseded(gen, 'renderRoutes')) {
+      return;
+    }
 
     // Invalidate cached coord resolver so it rebuilds with the current feed's stops
     this.layerManager!.invalidateCoordResolver();

@@ -2913,7 +2913,7 @@ export class ScheduleController {
       // home panel draws. Without this, fixing a reference from inside the
       // timetable (assign a shape, add a stop) leaves it red until something
       // else triggers a revalidation.
-      refreshFeedIssuesIfStale();
+      await refreshFeedIssuesIfStale();
 
       // Leaving a timetable drops the UI-only field roster: it is a choice
       // about this route and direction, not a persisted preference.
