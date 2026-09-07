@@ -1,3 +1,13 @@
+## v0.32.0 (2026-09-07)
+
+### Feat
+
+- **route**: add a timetable button to the route header
+
+### Refactor
+
+- **modal**: port the Files and History modals to showModal
+
 ## v0.31.0 (2026-09-07)
 
 ### Feat
