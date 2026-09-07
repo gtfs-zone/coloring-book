@@ -653,7 +653,6 @@ export class PageContentRenderer {
                 data-inline-create="agency"
                 style="width: 150px;"
               />
-              <div class="badge badge-outline">${agencies.length} agenc${agencies.length !== 1 ? 'ies' : 'y'}</div>
             </div>
           </div>
           ${
@@ -700,7 +699,6 @@ export class PageContentRenderer {
                 data-inline-create="service"
                 style="width: 150px;"
               />
-              <div class="badge badge-outline">${serviceCount} service${serviceCount !== 1 ? 's' : ''}</div>
             </div>
           </div>
           ${

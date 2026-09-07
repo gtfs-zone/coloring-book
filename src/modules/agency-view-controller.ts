@@ -134,7 +134,6 @@ export class AgencyViewController {
               data-agency-id="${agency_id}"
               style="width: 150px;"
             />
-            <div class="badge badge-outline">${routes.length} route${routes.length !== 1 ? 's' : ''}</div>
           </div>
         </div>
         <div class="card bg-base-100 shadow-lg">
