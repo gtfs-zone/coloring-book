@@ -1,3 +1,9 @@
+## v0.32.1 (2026-09-07)
+
+### Refactor
+
+- **ui**: drop the section-header count badges
+
 ## v0.32.0 (2026-09-07)
 
 ### Feat
