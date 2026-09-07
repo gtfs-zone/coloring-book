@@ -1,3 +1,10 @@
+## v0.32.2 (2026-09-08)
+
+### Fix
+
+- **parser**: soften large-feed warning wording
+- **db**: stop a blocked IndexedDB request from wedging boot
+
 ## v0.32.1 (2026-09-07)
 
 ### Refactor
