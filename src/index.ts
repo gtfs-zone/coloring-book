@@ -26,6 +26,7 @@ import {
 import { PageStateManager } from './modules/page-state-manager';
 import { openModal, openTimetable } from './modules/navigation-actions';
 import { getModalRouter } from './modules/modal-router';
+import { showModal } from './modules/modal-utils';
 import { showTimetableModal } from './modules/timetable-modal';
 import type { PageState } from './types/page-state';
 import { PatchManager } from './modules/patch-manager';
@@ -432,31 +433,37 @@ export class GTFSEditor {
       // Initialize tab manager
       this.tabManager.initialize();
 
-      // Wire history-btn to open History modal
-      document.getElementById('history-btn')?.addEventListener('click', () => {
-        (
-          document.getElementById('history-modal') as HTMLDialogElement
-        )?.showModal();
-        this.historyController
-          .render()
-          .catch((e: unknown) => console.error('[history] render failed:', e));
-      });
+      // The Changes panel renders into the modal body, so it is filled on mount
+      // and torn down with the modal.
+      const openHistoryModal = () => {
+        void showModal({
+          title: 'History',
+          body: '<div id="changes-panel"></div>',
+          actions: [{ label: 'Close', onClick: () => {} }],
+          escapeAction: 0,
+          boxClassName: 'max-w-2xl w-11/12 h-[80vh]',
+          onMount: () => {
+            this.historyController
+              .render()
+              .catch((e: unknown) =>
+                console.error('[history] render failed:', e)
+              );
+          },
+        });
+      };
+
+      document
+        .getElementById('history-btn')
+        ?.addEventListener('click', openHistoryModal);
 
       // Initialize bottom sheet controller (mobile only)
       const rightPanel = document.getElementById('right-panel');
-      const openHistoryModal = () => {
-        (
-          document.getElementById('history-modal') as HTMLDialogElement
-        )?.showModal();
-        this.historyController
-          .render()
-          .catch((e: unknown) => console.error('[history] render failed:', e));
-      };
       const bottomSheet = rightPanel
         ? new BottomSheetController(
             rightPanel,
             this.tabManager,
-            openHistoryModal
+            openHistoryModal,
+            () => void this.uiController.openFilesModal()
           )
         : null;
 
@@ -749,11 +756,16 @@ export class GTFSEditor {
   }
 
   /**
-   * The navbar and dock buttons name no timetable, so the controller picks
-   * one: the first route with trips, its first service, its busiest direction.
+   * The navbar and dock buttons name the route the browse page is on, so the
+   * controller only has to pick that route's first service and busiest
+   * direction. Anywhere else it picks the whole target: the first route with
+   * trips, its first service, its busiest direction.
    */
   private async openDefaultTimetable(): Promise<void> {
-    const target = await this.scheduleController.resolveTimetableTarget();
+    const state = this.pageStateManager.getPageState();
+    const target = await this.scheduleController.resolveTimetableTarget(
+      state.type === 'route' ? { route_id: state.route_id } : {}
+    );
     if (!target) {
       notify.warning('This feed has no trips yet, so there is no timetable.');
       return;
