@@ -6,6 +6,12 @@ export const CONFIG = {
   // IndexedDB
   DB_NAME: 'GTFSZoneDB',
 
+  // IndexedDB: how long an open or delete request may sit unanswered before we
+  // treat the database as wedged. A request queued behind a blocked
+  // version-change operation fires no event at all, so without this the boot
+  // hangs forever with nothing logged.
+  DB_REQUEST_TIMEOUT_MS: 8_000,
+
   // Feed blobs: rows per file_blobs chunk. Keeps every serialized JSON string
   // far below the engine's max string length (SpiderMonkey: ~1.07 GB, which a
   // 4.5M-row stop_times.txt exceeds as a single string) and small enough to
