@@ -11,7 +11,7 @@ import { SearchController } from './modules/search-controller';
 import { buildSearchEntries } from './modules/search-entries';
 import { GTFSValidator } from './modules/gtfs-validator';
 import {
-  publishFeedIssues,
+  refreshFeedIssuesIfStale,
   setFeedIssueRevalidator,
 } from './modules/feed-issues';
 import { KeyboardShortcuts } from './modules/keyboard-shortcuts';
@@ -652,11 +652,10 @@ export class GTFSEditor {
     // badges otherwise listen to.
     this.navbarCounts.refresh();
 
-    const validationResults = await this.validator.validateFeed();
-    const issues = publishFeedIssues(validationResults, this.gtfsParser);
-    console.log(
-      `[GTFSEditor] validation: ${validationResults.errors.length} error(s), ${validationResults.warnings.length} warning(s), ${issues.length} issue group(s)`
-    );
+    // Through the staleness check rather than straight at the validator: the
+    // home panel usually renders the new feed first and has already validated
+    // this generation, and a second full sweep would publish the same issues.
+    await refreshFeedIssuesIfStale();
   }
 
   /**

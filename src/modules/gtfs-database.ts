@@ -1412,15 +1412,16 @@ export class GTFSDatabase {
     for (let chunk = 0; chunk < chunks.length; chunk++) {
       await store.put({ gen, tableName, chunk, json: chunks[chunk] });
     }
-    let cursor = await store.openCursor(
+    // Keys, not a cursor: a cursor step would deserialize each stale chunk's
+    // JSON string only to throw it away.
+    const staleKeys = await store.getAllKeys(
       IDBKeyRange.bound(
         [gen, tableName, chunks.length],
         [gen, tableName, Infinity]
       )
     );
-    while (cursor) {
-      await cursor.delete();
-      cursor = await cursor.continue();
+    for (const key of staleKeys) {
+      await store.delete(key);
     }
     await tx.done;
   }
@@ -1473,21 +1474,28 @@ export class GTFSDatabase {
     if (!this.db) {
       throw new Error('Database not initialized');
     }
+    const started = performance.now();
     const tx = this.db.transaction(
       ['file_blobs', 'passthrough_files'],
       'readwrite'
     );
     const range = IDBKeyRange.only(gen);
+    let deleted = 0;
     for (const storeName of ['file_blobs', 'passthrough_files'] as const) {
-      const index = tx.objectStore(storeName).index('gen');
-      let cursor = await index.openCursor(range);
-      while (cursor) {
-        await cursor.delete();
-        cursor = await cursor.continue();
+      const store = tx.objectStore(storeName);
+      // Keys, not a cursor: a cursor step deserializes the record's value, and
+      // a file_blobs value is a whole BLOB_CHUNK_ROWS-row JSON string. Nothing
+      // here reads the values, so they are never fetched.
+      const keys = await store.index('gen').getAllKeys(range);
+      for (const key of keys) {
+        await store.delete(key);
       }
+      deleted += keys.length;
     }
     await tx.done;
-    console.log(`[GTFSDatabase] Deleted generation ${gen}`);
+    console.log(
+      `[GTFSDatabase] Deleted generation ${gen}: ${deleted} record(s) in ${Math.round(performance.now() - started)}ms`
+    );
   }
 
   /**
@@ -2374,10 +2382,9 @@ export class GTFSDatabase {
     }
     const range = IDBKeyRange.lowerBound(version, true); // exclusive
     const tx = this.db.transaction('patches', 'readwrite');
-    let cursor = await tx.store.openCursor(range);
-    while (cursor) {
-      await cursor.delete();
-      cursor = await cursor.continue();
+    const keys = await tx.store.getAllKeys(range);
+    for (const key of keys) {
+      await tx.store.delete(key);
     }
     await tx.done;
   }

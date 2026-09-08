@@ -119,9 +119,8 @@ export function getFeedIssueEntities(code: string): ValidationEntity[] {
 let revalidator: FeedIssueRevalidator | null = null;
 let validatedKey: string | null = null;
 
-/** The pass currently running, and the staleness key it is validating. */
+/** The pass currently running, if any. */
 let pending: Promise<void> | null = null;
-let pendingKey: string | null = null;
 
 /**
  * Groups messages by file, code and field. Field is part of the key because a
@@ -344,7 +343,7 @@ function valueKey(file: string, field: string, value: string): string {
  * Validate, publish the grouped rows the home panel renders, and index the
  * dangling references so the use sites can colour them.
  */
-export function publishFeedIssues(
+function publishFeedIssues(
   results: ValidationResults,
   source?: FeedIssueRowSource
 ): IssueRow[] {
@@ -394,30 +393,43 @@ export function setFeedIssueRevalidator(next: FeedIssueRevalidator): void {
  * the empty boot scaffold both read 0 and the version alone would report "not
  * stale" while these issues describe a feed that is no longer loaded.
  *
- * The pass yields to the event loop, so two callers can overlap. A pass
- * already running for the same key is awaited rather than started again.
+ * The pass yields to the event loop, so callers arriving during one are
+ * serialized behind it rather than sweeping every table alongside it, and a
+ * pass whose key moved on while it ran is discarded instead of published.
  */
 export async function refreshFeedIssuesIfStale(): Promise<void> {
   if (!revalidator) {
     return;
   }
-  const key = revalidator.getStalenessKey();
-  if (key === validatedKey) {
-    return;
-  }
-  if (pendingKey === key && pending) {
+  // Wait out a pass that is already running rather than sweeping every table
+  // alongside it. At boot the home panel asks once against the empty scaffold
+  // and again once the stored feed is restored, and those two used to overlap.
+  while (pending) {
     await pending;
+  }
+
+  const active = revalidator;
+  const key = active.getStalenessKey();
+  if (key === validatedKey) {
     return;
   }
   console.log(
     `[FeedIssues] revalidating: issues are from ${validatedKey}, feed is at ${key}`
   );
   const start = performance.now();
-  const active = revalidator;
-  pendingKey = key;
   pending = active
     .validate()
     .then((results) => {
+      // The feed moved on while the pass ran. Publishing now would stamp these
+      // results with the key they no longer describe, leaving issues from a
+      // feed that is not loaded looking current. Drop them; the next caller
+      // sees the key is still stale and revalidates.
+      if (active.getStalenessKey() !== key) {
+        console.warn(
+          `[FeedIssues] discarding pass from ${key}: feed is now at ${active.getStalenessKey()}`
+        );
+        return;
+      }
       publishFeedIssues(results, active.source);
       console.log(
         `[FeedIssues] revalidated in ${Math.round(performance.now() - start)}ms`
@@ -425,7 +437,6 @@ export async function refreshFeedIssuesIfStale(): Promise<void> {
     })
     .finally(() => {
       pending = null;
-      pendingKey = null;
     });
   await pending;
 }
