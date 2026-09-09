@@ -1099,8 +1099,16 @@ export class GTFSValidator {
     const refsPerTrip = new Map<string, Map<string, number>>();
     // `route_id|ref` -> which halves of the pair the route uses anywhere.
     const halvesPerRoute = new Map<string, Set<string>>();
+    // Only a row that is one half of a pair can be reported, so the counting
+    // walk keeps those and the reporting walk skips the rest of the table.
+    const candidates: {
+      row: GTFSDatabaseRecord;
+      index: number;
+      ref: string;
+      pair: string;
+    }[] = [];
 
-    await this.eachRow(stopTimes, (row) => {
+    await this.eachRow(stopTimes, (row, index) => {
       const ref = refOf(row);
       if (ref === null) {
         return;
@@ -1116,22 +1124,18 @@ export class GTFSValidator {
         const halves = halvesPerRoute.get(key) ?? new Set<string>();
         halves.add(pair);
         halvesPerRoute.set(key, halves);
+        candidates.push({ row, index, ref, pair });
       }
     });
 
-    await this.eachRow(stopTimes, (row, index) => {
-      const ref = refOf(row);
-      const pair = pairOf(row);
-      if (ref === null || !PAIRS.includes(pair)) {
-        return;
-      }
+    for (const { row, index, ref, pair } of candidates) {
       const trip_id = String(row.trip_id ?? '');
       if ((refsPerTrip.get(trip_id)?.get(ref) ?? 0) !== 1) {
-        return;
+        continue;
       }
       const key = `${routeOfTrip.get(trip_id) ?? ''}|${ref}`;
       if ((halvesPerRoute.get(key)?.size ?? 0) < 2) {
-        return;
+        continue;
       }
       const missing = pair === '2:1' ? '(1, 2)' : '(2, 1)';
       this.addWarning(
@@ -1146,7 +1150,7 @@ export class GTFSValidator {
           value: pair,
         }
       );
-    });
+    }
   }
 
   /**
