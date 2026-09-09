@@ -18,28 +18,29 @@ MBTA, restored from IndexedDB (`feedGeneration` 1):
 
 ## Per-pass timings
 
-`validateFeed` total: **6383ms** (a second run of the whole feed measured 6327ms).
-Passes, in the order `validateFeed` runs them, timed individually:
+`validateFeed` total: **3495ms**. Passes timed individually, after the
+`Object.entries` fix in `bfb42ca`, with the pre-fix numbers alongside:
 
-| pass | ms |
-|---|---|
-| validateFieldWhitespace | 2375 |
-| validateStopTimes | 1042 |
-| validateForeignKeys | 806 |
-| validateConditionalPresence | 625 |
-| validateFlexLocations | 465 |
-| validateReferences | 214 |
-| validateShapes | 76 |
-| validateTrips | 32 |
-| validateStops | 18 |
-| everything else | 0-2 each |
+| pass | ms | before `bfb42ca` |
+|---|---|---|
+| validateStopTimes | 944 | 1042 |
+| validateFieldWhitespace | 864 | 2375 |
+| validateForeignKeys | 706 | 806 |
+| validateFlexLocations | 417 | 465 |
+| validateConditionalPresence | 303 | 625 |
+| validateReferences | 241 | 214 |
+| validateShapes | 42 | 76 |
+| validateTrips | 32 | 32 |
+| validateStops | 10 | 18 |
+| everything else | 0-3 each | 0-2 each |
+
+Total was 6383ms before the fix, so replacing `Object.entries(row)` with
+`for...in` in the whitespace pass took 45% off the whole validation (measured in
+isolation: 894ms vs 142ms per million rows). The remaining four hot passes are
+untouched.
 
 The same breakdown on a 3-route feed totals 13ms, so this is purely a
 rows-scale problem, not fixed overhead.
-
-`validateFieldWhitespace` has since been cut by replacing `Object.entries(row)`
-with `for...in` (measured in isolation: 894ms vs 142ms per million rows), so
-re-measure before trusting the 2375ms figure. The other passes are untouched.
 
 ## Already ruled out
 
