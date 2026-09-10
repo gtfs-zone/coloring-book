@@ -173,7 +173,7 @@ export function feedIssueGroupLabel(group: IssueGroup): {
       label: `${group.file} rows whose ${group.field} carries hidden whitespace`,
       note:
         override?.note ??
-        'Usually an export bug: a quoted CSV field that swallowed the line ending. The extra characters are invisible but count, so an id carrying them matches nothing.',
+        'A quoted CSV field that swallowed the line ending. The extra characters are invisible but count, so an id carrying them matches nothing.',
     };
   }
   const generic =
