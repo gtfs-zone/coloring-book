@@ -37,6 +37,13 @@ import {
 } from '../utils/frequency-rules.js';
 import { TimeFormatter } from '../utils/time-formatter.js';
 import { yieldToEventLoop } from '../utils/async-yield.js';
+import {
+  StopTimesValidationCache,
+  type PatchLogSource,
+  type RowIssues,
+  type StopTimesPassCache,
+  type WarmSweep,
+} from './stop-times-validation-cache.js';
 import { CONFIG } from '../config.js';
 
 /** The offending row, so a message can be traced back to an editable object. */
@@ -96,25 +103,144 @@ interface GTFSParserInterface {
   getFileDataSync(fileName: string): GTFSDatabaseRecord[];
   getFileDataSyncTyped(fileName: string): GTFSDatabaseRecord[];
   getAllFileNames(): string[];
+  readonly feedGeneration: number;
+}
+
+/**
+ * One message, built rather than pushed.
+ *
+ * The per-row checks write into a caller-supplied sink so the same code can
+ * either append to the live results (a cold sweep) or rebuild one row's
+ * messages in isolation (a warm sweep). addError/addWarning go through these
+ * too, so there is one definition of a message's shape.
+ */
+function errorMessage(
+  message: string,
+  code: string,
+  fileName: string | null = null,
+  rowNum: number | null = null,
+  entity: ValidationEntity | null = null
+): ValidationMessage {
+  return {
+    level: 'error',
+    message,
+    code,
+    file: fileName || undefined,
+    line: rowNum || undefined,
+    field: entity?.field,
+    entity: entity || undefined,
+  };
+}
+
+function warningMessage(
+  message: string,
+  code: string,
+  fileName: string | null = null,
+  rowNum: number | null = null,
+  entity: ValidationEntity | null = null
+): ValidationMessage {
+  return {
+    level: 'warning',
+    message,
+    code,
+    file: fileName || undefined,
+    line: rowNum || undefined,
+    field: entity?.field,
+    entity: entity || undefined,
+  };
+}
+
+function emptyResults(): ValidationResults {
+  return {
+    errors: [],
+    warnings: [],
+    info: [],
+    summary: {
+      isValid: true,
+      errorCount: 0,
+      warningCount: 0,
+      infoCount: 0,
+    },
+  };
+}
+
+/** A fresh, empty per-pass cache for a cold sweep to fill. */
+function emptyPassCache(
+  feedGeneration: number,
+  rowCount: number
+): StopTimesPassCache {
+  return {
+    feedGeneration,
+    rowCount,
+    stopTimes: [],
+    conditional: [],
+    whitespace: [],
+    foreignKeys: [],
+    flexLocation: [],
+    flexPairing: [],
+    tripsWithStopTimes: new Set<unknown>(),
+  };
+}
+
+/**
+ * Replace one row's messages in a sparse list that is sorted by row index, so
+ * a rebuilt row lands back in the position a full sweep would have put it.
+ */
+function setRowIssues(
+  entries: RowIssues[],
+  index: number,
+  messages: ValidationMessage[]
+): void {
+  let lo = 0;
+  let hi = entries.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (entries[mid].index < index) {
+      lo = mid + 1;
+    } else {
+      hi = mid;
+    }
+  }
+  const hit = lo < entries.length && entries[lo].index === index;
+  if (messages.length === 0) {
+    if (hit) {
+      entries.splice(lo, 1);
+    }
+    return;
+  }
+  if (hit) {
+    entries[lo] = { index, messages };
+  } else {
+    entries.splice(lo, 0, { index, messages });
+  }
 }
 
 export class GTFSValidator {
   private gtfsParser: GTFSParserInterface;
+  /** The sweep in progress writes here, pass by pass. */
   private validationResults: ValidationResults;
+  /** What the last sweep finished with, which is what readers get. */
+  private publishedResults: ValidationResults;
+
+  /** Survives across calls; the three below live for one validateFeed run. */
+  private stopTimesCache = new StopTimesValidationCache();
+  /** Where a cold sweep records its stop_times messages, null when not run
+   * from validateFeed (a pass called on its own must not touch the cache). */
+  private passCache: StopTimesPassCache | null = null;
+  /** Non-null while this run is reusing the cache. */
+  private warm: WarmSweep | null = null;
+  /** The sweep in progress, so a second caller queues instead of interleaving. */
+  private inFlight: Promise<void> | null = null;
+  /** The edited rows a warm run has to recheck, by primary key. */
+  private touchedRows = new Map<
+    string,
+    { index: number; row: GTFSDatabaseRecord }
+  >();
 
   constructor(gtfsParser: GTFSParserInterface) {
     this.gtfsParser = gtfsParser;
-    this.validationResults = {
-      errors: [],
-      warnings: [],
-      info: [],
-      summary: {
-        isValid: true,
-        errorCount: 0,
-        warningCount: 0,
-        infoCount: 0,
-      },
-    };
+    this.validationResults = emptyResults();
+    this.publishedResults = this.validationResults;
   }
 
   /**
@@ -134,18 +260,71 @@ export class GTFSValidator {
     }
   }
 
+  /**
+   * Wire the stop_times cache to the patch log, so an edit that touched a few
+   * rows can be revalidated without re-walking the table.
+   */
+  trackPatches(patchLog: PatchLogSource): void {
+    this.stopTimesCache.track(patchLog);
+  }
+
+  /** Drop the stop_times cache, e.g. when the feed is replaced. */
+  invalidateStopTimesCache(reason: string): void {
+    this.stopTimesCache.invalidate(reason);
+  }
+
+  /**
+   * Validate the whole feed.
+   *
+   * Runs serialized: a sweep yields to the event loop between passes, and a
+   * patch event landing in one of those gaps re-renders the home panel, which
+   * asks for the issues, which asks to validate. Two sweeps interleaving would
+   * write into the same results and the same cache. Callers arriving during a
+   * sweep queue behind it and get their own pass over the feed as it stands
+   * when their turn comes.
+   */
   async validateFeed(): Promise<ValidationResults> {
-    this.validationResults = {
-      errors: [],
-      warnings: [],
-      info: [],
-      summary: {
-        isValid: true,
-        errorCount: 0,
-        warningCount: 0,
-        infoCount: 0,
-      },
-    };
+    const running = this.inFlight;
+    let done!: () => void;
+    const turn = new Promise<void>((resolve) => {
+      done = resolve;
+    });
+    this.inFlight = turn;
+    if (running) {
+      console.log(
+        '[GTFSValidator] a sweep is already running: queueing behind it'
+      );
+      await running;
+    }
+    try {
+      return await this.sweepFeed();
+    } finally {
+      done();
+      if (this.inFlight === turn) {
+        this.inFlight = null;
+      }
+    }
+  }
+
+  private async sweepFeed(): Promise<ValidationResults> {
+    this.validationResults = emptyResults();
+
+    const stopTimes = this.gtfsParser.getFileDataSyncTyped(
+      GTFS_TABLES.STOP_TIMES
+    );
+    const generation = this.gtfsParser.feedGeneration;
+    this.warm = this.stopTimesCache.begin(generation, stopTimes.length);
+    if (this.warm) {
+      const problem = await this.resolveTouchedRows(stopTimes, this.warm);
+      if (problem) {
+        this.stopTimesCache.invalidate(problem);
+        this.warm = null;
+      }
+    }
+    const passCache = this.warm
+      ? this.warm.data
+      : emptyPassCache(generation, stopTimes.length);
+    this.passCache = passCache;
 
     // Run all validation checks, yielding between passes so the page keeps
     // painting while a large feed is swept.
@@ -170,9 +349,23 @@ export class GTFSValidator {
       () => this.validateConstrainedCodes(),
       () => this.validateReferences(),
     ];
-    for (const pass of passes) {
-      await pass();
-      await yieldToEventLoop();
+    try {
+      for (const pass of passes) {
+        await pass();
+        await yieldToEventLoop();
+      }
+      if (this.warm) {
+        this.stopTimesCache.settle();
+      } else {
+        this.stopTimesCache.store(passCache);
+      }
+    } finally {
+      // A pass called on its own (the timing snippet in
+      // docs/validation-performance.md does exactly that) must run cold and
+      // must not append to the stored cache, so nothing outlives the run.
+      this.passCache = null;
+      this.warm = null;
+      this.touchedRows = new Map();
     }
 
     // Update summary
@@ -185,7 +378,96 @@ export class GTFSValidator {
     this.validationResults.summary.isValid =
       this.validationResults.errors.length === 0;
 
+    this.publishedResults = this.validationResults;
     return this.validationResults;
+  }
+
+  /**
+   * Locate the rows a warm sweep has to recheck, and their row numbers.
+   *
+   * Returns a reason to sweep in full instead, or null when every edited row
+   * was found. Row numbers are only available by position, and copy-on-read
+   * rules out matching the stored row by identity, so this is one walk with a
+   * trip_id pre-filter: the composite key is only built for the handful of
+   * rows that pass it. It is the one remaining linear step on the warm path.
+   */
+  private async resolveTouchedRows(
+    stopTimes: GTFSDatabaseRecord[],
+    warm: WarmSweep
+  ): Promise<string | null> {
+    this.touchedRows = new Map();
+    if (warm.touched.length === 0) {
+      return null;
+    }
+
+    const wanted = new Set(warm.touched);
+    // A stop_times key is `trip_id:stop_sequence`, and a stop_sequence carries
+    // no colon, so everything before the last one is the trip_id. Only a
+    // pre-filter: the composite key below is what actually decides.
+    const wantedTrips = new Set(
+      warm.touched.map((id) => id.slice(0, id.lastIndexOf(':')))
+    );
+    await this.eachRow(stopTimes, (row, index) => {
+      const trip = (row as Record<string, unknown>).trip_id;
+      if (
+        !wantedTrips.has(typeof trip === 'string' ? trip : String(trip ?? ''))
+      ) {
+        return;
+      }
+      const id = this.rowId('stop_times', row);
+      if (wanted.has(id)) {
+        this.touchedRows.set(id, { index, row });
+      }
+    });
+
+    if (this.touchedRows.size !== wanted.size) {
+      return `${wanted.size - this.touchedRows.size} edited stop_times row(s) could not be located`;
+    }
+
+    // pickup_type / drop_off_type only reach validateFlexRowPairing's
+    // aggregate on a row that names a location group or zone. The row itself
+    // settles that, and its location fields cannot have moved: an edit to one
+    // of those forces a sweep before it gets here.
+    for (const id of warm.flexSensitive) {
+      const row = this.touchedRows.get(id)?.row as
+        | Record<string, unknown>
+        | undefined;
+      if (!row) {
+        continue;
+      }
+      if (
+        String(row.location_group_id ?? '').trim() !== '' ||
+        String(row.location_id ?? '').trim() !== ''
+      ) {
+        return `pickup_type or drop_off_type changed on flex row ${id}`;
+      }
+    }
+    return null;
+  }
+
+  /** Rebuild the edited rows' messages in one pass's sparse list. */
+  private refreshChunk(
+    entries: RowIssues[],
+    produce: (
+      row: GTFSDatabaseRecord,
+      rowNum: number,
+      out: ValidationMessage[]
+    ) => void
+  ): void {
+    for (const { index, row } of this.touchedRows.values()) {
+      const messages: ValidationMessage[] = [];
+      produce(row, index + 1, messages);
+      setRowIssues(entries, index, messages);
+    }
+  }
+
+  /** Replay a cached chunk in row order, which is the order a sweep produced. */
+  private emitChunk(entries: RowIssues[], sink: ValidationMessage[]): void {
+    for (const entry of entries) {
+      for (const message of entry.messages) {
+        sink.push(message);
+      }
+    }
   }
 
   /**
@@ -597,68 +879,98 @@ export class GTFSValidator {
       return;
     }
 
-    await this.eachRow(stopTimes, (stopTime, index) => {
-      const rowNum = index + 1;
+    const errors = this.validationResults.errors;
+    const entries = this.passCache?.stopTimes ?? null;
+    if (this.warm && entries) {
+      this.refreshChunk(entries, (row, rowNum, out) =>
+        this.stopTimeRowIssues(row, rowNum, out)
+      );
+      this.emitChunk(entries, errors);
+    } else {
+      await this.eachRow(stopTimes, (stopTime, index) => {
+        const before = errors.length;
+        this.stopTimeRowIssues(stopTime, index + 1, errors);
+        if (entries && errors.length > before) {
+          entries.push({ index, messages: errors.slice(before) });
+        }
+      });
+    }
 
-      // Required fields
-      if (!stopTime.trip_id || String(stopTime.trip_id).trim() === '') {
-        this.addError(
+    this.addInfo(`Found ${stopTimes.length} stop times`, 'STOP_TIME_COUNT');
+  }
+
+  /** The per-row rules of stop_times.txt. */
+  private stopTimeRowIssues(
+    stopTime: GTFSDatabaseRecord,
+    rowNum: number,
+    out: ValidationMessage[]
+  ): void {
+    // Required fields
+    if (!stopTime.trip_id || String(stopTime.trip_id).trim() === '') {
+      out.push(
+        errorMessage(
           `Row ${rowNum}: trip_id is required`,
           'MISSING_REQUIRED_FIELD',
           GTFS_TABLES.STOP_TIMES,
           rowNum
-        );
-      }
+        )
+      );
+    }
 
-      // stop_id is only required when the row names neither a location group
-      // nor a zone; validateConditionalPresence carries that rule.
+    // stop_id is only required when the row names neither a location group
+    // nor a zone; validateConditionalPresence carries that rule.
 
-      if (
-        stopTime.stop_sequence === null ||
-        stopTime.stop_sequence === undefined
-      ) {
-        this.addError(
+    if (
+      stopTime.stop_sequence === null ||
+      stopTime.stop_sequence === undefined
+    ) {
+      out.push(
+        errorMessage(
           `Row ${rowNum}: stop_sequence is required`,
           'MISSING_REQUIRED_FIELD',
           GTFS_TABLES.STOP_TIMES,
           rowNum
-        );
-      } else if (isNaN(parseInt(String(stopTime.stop_sequence)))) {
-        this.addError(
+        )
+      );
+    } else if (isNaN(parseInt(String(stopTime.stop_sequence)))) {
+      out.push(
+        errorMessage(
           `Row ${rowNum}: stop_sequence must be a number`,
           'INVALID_NUMBER',
           GTFS_TABLES.STOP_TIMES,
           rowNum
-        );
-      }
+        )
+      );
+    }
 
-      // Validate time format
-      if (
-        stopTime.arrival_time &&
-        !this.isValidTime(String(stopTime.arrival_time))
-      ) {
-        this.addError(
+    // Validate time format
+    if (
+      stopTime.arrival_time &&
+      !this.isValidTime(String(stopTime.arrival_time))
+    ) {
+      out.push(
+        errorMessage(
           `Row ${rowNum}: arrival_time format is invalid`,
           'INVALID_TIME_FORMAT',
           GTFS_TABLES.STOP_TIMES,
           rowNum
-        );
-      }
+        )
+      );
+    }
 
-      if (
-        stopTime.departure_time &&
-        !this.isValidTime(String(stopTime.departure_time))
-      ) {
-        this.addError(
+    if (
+      stopTime.departure_time &&
+      !this.isValidTime(String(stopTime.departure_time))
+    ) {
+      out.push(
+        errorMessage(
           `Row ${rowNum}: departure_time format is invalid`,
           'INVALID_TIME_FORMAT',
           GTFS_TABLES.STOP_TIMES,
           rowNum
-        );
-      }
-    });
-
-    this.addInfo(`Found ${stopTimes.length} stop times`, 'STOP_TIME_COUNT');
+        )
+      );
+    }
   }
 
   validateCalendar() {
@@ -845,12 +1157,24 @@ export class GTFSValidator {
 
     if (trips && stopTimes) {
       const trip_ids = new Set(trips.map((t) => t.trip_id));
-      // Built row by row rather than from stopTimes.map: the intermediate
-      // array would be one throwaway entry per stop time.
-      const tripsWithStopTimes = new Set<unknown>();
-      await this.eachRow(stopTimes, (st) => {
-        tripsWithStopTimes.add(st.trip_id);
-      });
+      // The set depends only on stop_times, and any edit that could move it
+      // (an insert, a delete, a changed trip_id) forces a full sweep, so a
+      // warm run reuses it. The warning loop below still re-runs, which is
+      // what picks up an edit to trips.txt.
+      let tripsWithStopTimes: Set<unknown>;
+      if (this.warm && this.passCache) {
+        tripsWithStopTimes = this.passCache.tripsWithStopTimes;
+      } else {
+        // Built row by row rather than from stopTimes.map: the intermediate
+        // array would be one throwaway entry per stop time.
+        tripsWithStopTimes = new Set<unknown>();
+        await this.eachRow(stopTimes, (st) => {
+          tripsWithStopTimes.add(st.trip_id);
+        });
+        if (this.passCache) {
+          this.passCache.tripsWithStopTimes = tripsWithStopTimes;
+        }
+      }
 
       // Check for trips without stop times
       trip_ids.forEach((trip_id) => {
@@ -994,26 +1318,63 @@ export class GTFSValidator {
     const stopTimes = this.gtfsParser.getFileDataSyncTyped(
       GTFS_TABLES.STOP_TIMES
     );
-    await this.eachRow(stopTimes, (row, index) => {
-      const location_id = String(row.location_id ?? '').trim();
-      if (location_id === '' || zoneIds.has(location_id)) {
-        return;
+    const errors = this.validationResults.errors;
+    const entries = this.passCache?.flexLocation ?? null;
+    if (this.warm && entries) {
+      this.refreshChunk(entries, (row, rowNum, out) =>
+        this.flexLocationRowIssues(zoneIds, row, rowNum, out)
+      );
+      this.emitChunk(entries, errors);
+    } else {
+      await this.eachRow(stopTimes, (row, index) => {
+        const before = errors.length;
+        this.flexLocationRowIssues(zoneIds, row, index + 1, errors);
+        if (entries && errors.length > before) {
+          entries.push({ index, messages: errors.slice(before) });
+        }
+      });
+    }
+
+    // Pairing is an aggregate over every trip on a route, so it is reused
+    // whole or recomputed whole; an edit that could move it forces a sweep.
+    const warnings = this.validationResults.warnings;
+    if (this.warm && this.passCache) {
+      for (const message of this.passCache.flexPairing) {
+        warnings.push(message);
       }
-      this.addError(
-        `Row ${index + 1}: location_id '${location_id}' not found in locations.geojson`,
+    } else {
+      const before = warnings.length;
+      await this.validateFlexRowPairing(stopTimes);
+      if (this.passCache) {
+        this.passCache.flexPairing = warnings.slice(before);
+      }
+    }
+  }
+
+  private flexLocationRowIssues(
+    zoneIds: Set<string>,
+    row: GTFSDatabaseRecord,
+    rowNum: number,
+    out: ValidationMessage[]
+  ): void {
+    const location_id = String(row.location_id ?? '').trim();
+    if (location_id === '' || zoneIds.has(location_id)) {
+      return;
+    }
+    out.push(
+      errorMessage(
+        `Row ${rowNum}: location_id '${location_id}' not found in locations.geojson`,
         'INVALID_REFERENCE',
         GTFS_TABLES.STOP_TIMES,
-        index + 1,
+        rowNum,
         {
           file: GTFS_TABLES.STOP_TIMES,
           id: this.rowId('stop_times', row),
           field: 'location_id',
           value: location_id,
         }
-      );
-    });
-
-    await this.validateFlexRowPairing(stopTimes);
+      )
+    );
   }
 
   /**
@@ -1167,19 +1528,47 @@ export class GTFSValidator {
         [GTFS_TABLES.BOOKING_RULES, validateBookingRuleRow],
       ];
 
+    const errors = this.validationResults.errors;
     for (const [table, check] of checks) {
       const rows = this.gtfsParser.getFileDataSyncTyped(table);
+      const entries =
+        table === GTFS_TABLES.STOP_TIMES
+          ? (this.passCache?.conditional ?? null)
+          : null;
+      if (this.warm && entries) {
+        this.refreshChunk(entries, (row, rowNum, out) =>
+          this.conditionalRowIssues(table, check, row, rowNum, out)
+        );
+        this.emitChunk(entries, errors);
+        continue;
+      }
       await this.eachRow(rows, (row, index) => {
-        const problem = check(row as Record<string, unknown>);
-        if (problem) {
-          this.addError(
-            `Row ${index + 1}: ${problem}`,
-            'CONDITIONAL_PRESENCE',
-            table,
-            index + 1
-          );
+        const before = errors.length;
+        this.conditionalRowIssues(table, check, row, index + 1, errors);
+        if (entries && errors.length > before) {
+          entries.push({ index, messages: errors.slice(before) });
         }
       });
+    }
+  }
+
+  private conditionalRowIssues(
+    table: string,
+    check: (row: Record<string, unknown>) => string | null,
+    row: GTFSDatabaseRecord,
+    rowNum: number,
+    out: ValidationMessage[]
+  ): void {
+    const problem = check(row as Record<string, unknown>);
+    if (problem) {
+      out.push(
+        errorMessage(
+          `Row ${rowNum}: ${problem}`,
+          'CONDITIONAL_PRESENCE',
+          table,
+          rowNum
+        )
+      );
     }
   }
 
@@ -1387,57 +1776,103 @@ export class GTFSValidator {
       byFile.set(ref.file, list);
     }
 
+    const errors = this.validationResults.errors;
     for (const [file, refs] of byFile) {
       const rows = this.gtfsParser.getFileDataSyncTyped(file);
       if (rows.length === 0) {
         continue;
       }
 
-      const checks: {
-        field: string;
-        known: Set<string>;
-        targetNames: string;
-      }[] = [];
-      for (const ref of refs) {
-        const known = new Set<string>();
-        for (const target of ref.targets) {
-          for (const value of await this.collectValues(
-            target.file,
-            target.field,
-            valueCache
-          )) {
-            known.add(value);
-          }
-        }
-        const targetNames = ref.targets
-          .map(
-            (target) => `${target.file.replace(/\.txt$/, '')}.${target.field}`
-          )
-          .join(' or ');
-        checks.push({ field: ref.field, known, targetNames });
-      }
-
       const tableName = file.replace(/\.txt$/, '');
-      await this.eachRow(rows, (row, index) => {
-        for (const check of checks) {
-          const value = String(row[check.field] ?? '');
-          if (value === '' || check.known.has(value)) {
-            continue;
-          }
-          this.addError(
-            `Row ${index + 1}: ${check.field} '${value}' not found in ${check.targetNames}`,
-            'INVALID_REFERENCE',
-            file,
-            index + 1,
-            {
-              file,
-              id: this.rowId(tableName, row),
-              field: check.field,
-              value,
-            }
+      const entries =
+        file === GTFS_TABLES.STOP_TIMES
+          ? (this.passCache?.foreignKeys ?? null)
+          : null;
+
+      // A warm run with nothing edited never needs the target value sets, so
+      // the collectValues walks for stop_times' own keys are skipped too.
+      if (this.warm && entries) {
+        if (this.touchedRows.size > 0) {
+          const checks = await this.buildForeignKeyChecks(refs, valueCache);
+          this.refreshChunk(entries, (row, rowNum, out) =>
+            this.foreignKeyRowIssues(file, tableName, checks, row, rowNum, out)
           );
         }
+        this.emitChunk(entries, errors);
+        continue;
+      }
+
+      const checks = await this.buildForeignKeyChecks(refs, valueCache);
+      await this.eachRow(rows, (row, index) => {
+        const before = errors.length;
+        this.foreignKeyRowIssues(
+          file,
+          tableName,
+          checks,
+          row,
+          index + 1,
+          errors
+        );
+        if (entries && errors.length > before) {
+          entries.push({ index, messages: errors.slice(before) });
+        }
       });
+    }
+  }
+
+  /** The value set and message wording for each foreign key one file declares. */
+  private async buildForeignKeyChecks(
+    refs: GTFSForeignKeyRef[],
+    valueCache: Map<string, Set<string>>
+  ): Promise<{ field: string; known: Set<string>; targetNames: string }[]> {
+    const checks: { field: string; known: Set<string>; targetNames: string }[] =
+      [];
+    for (const ref of refs) {
+      const known = new Set<string>();
+      for (const target of ref.targets) {
+        for (const value of await this.collectValues(
+          target.file,
+          target.field,
+          valueCache
+        )) {
+          known.add(value);
+        }
+      }
+      const targetNames = ref.targets
+        .map((target) => `${target.file.replace(/\.txt$/, '')}.${target.field}`)
+        .join(' or ');
+      checks.push({ field: ref.field, known, targetNames });
+    }
+    return checks;
+  }
+
+  private foreignKeyRowIssues(
+    file: string,
+    tableName: string,
+    checks: { field: string; known: Set<string>; targetNames: string }[],
+    row: GTFSDatabaseRecord,
+    rowNum: number,
+    out: ValidationMessage[]
+  ): void {
+    for (const check of checks) {
+      const value = String(row[check.field] ?? '');
+      if (value === '' || check.known.has(value)) {
+        continue;
+      }
+      out.push(
+        errorMessage(
+          `Row ${rowNum}: ${check.field} '${value}' not found in ${check.targetNames}`,
+          'INVALID_REFERENCE',
+          file,
+          rowNum,
+          {
+            file,
+            id: this.rowId(tableName, row),
+            field: check.field,
+            value,
+          }
+        )
+      );
     }
   }
 
@@ -1462,27 +1897,55 @@ export class GTFSValidator {
       }
 
       const tableName = file.replace(/\.txt$/, '');
+      const warnings = this.validationResults.warnings;
+      const entries =
+        file === GTFS_TABLES.STOP_TIMES
+          ? (this.passCache?.whitespace ?? null)
+          : null;
+      if (this.warm && entries) {
+        this.refreshChunk(entries, (row, rowNum, out) =>
+          this.whitespaceRowIssues(file, tableName, row, rowNum, out)
+        );
+        this.emitChunk(entries, warnings);
+        continue;
+      }
       await this.eachRow(rows, (row, index) => {
-        // `for...in` rather than Object.entries: the rows are plain parsed
-        // objects, and building a pairs array for each of stop_times' millions
-        // costs more than the check itself (measured 894ms against 142ms per
-        // million rows).
-        for (const field in row) {
-          const raw = (row as Record<string, unknown>)[field];
-          // Numeric fields are already numbers by now, so only strings can
-          // still be carrying the whitespace they arrived with.
-          if (typeof raw !== 'string' || !UNCLEAN_VALUE.test(raw)) {
-            continue;
-          }
-          this.addWarning(
-            `Row ${index + 1}: ${field} ${JSON.stringify(raw)} has surrounding whitespace or a control character`,
-            'UNCLEAN_VALUE',
-            file,
-            index + 1,
-            { file, id: this.rowId(tableName, row), field, value: raw }
-          );
+        const before = warnings.length;
+        this.whitespaceRowIssues(file, tableName, row, index + 1, warnings);
+        if (entries && warnings.length > before) {
+          entries.push({ index, messages: warnings.slice(before) });
         }
       });
+    }
+  }
+
+  private whitespaceRowIssues(
+    file: string,
+    tableName: string,
+    row: GTFSDatabaseRecord,
+    rowNum: number,
+    out: ValidationMessage[]
+  ): void {
+    // `for...in` rather than Object.entries: the rows are plain parsed
+    // objects, and building a pairs array for each of stop_times' millions
+    // costs more than the check itself (measured 894ms against 142ms per
+    // million rows).
+    for (const field in row) {
+      const raw = (row as Record<string, unknown>)[field];
+      // Numeric fields are already numbers by now, so only strings can
+      // still be carrying the whitespace they arrived with.
+      if (typeof raw !== 'string' || !UNCLEAN_VALUE.test(raw)) {
+        continue;
+      }
+      out.push(
+        warningMessage(
+          `Row ${rowNum}: ${field} ${JSON.stringify(raw)} has surrounding whitespace or a control character`,
+          'UNCLEAN_VALUE',
+          file,
+          rowNum,
+          { file, id: this.rowId(tableName, row), field, value: raw }
+        )
+      );
     }
   }
 
@@ -1592,15 +2055,9 @@ export class GTFSValidator {
     rowNum: number | null = null,
     entity: ValidationEntity | null = null
   ) {
-    this.validationResults.errors.push({
-      level: 'error',
-      message,
-      code,
-      file: fileName || undefined,
-      line: rowNum || undefined,
-      field: entity?.field,
-      entity: entity || undefined,
-    });
+    this.validationResults.errors.push(
+      errorMessage(message, code, fileName, rowNum, entity)
+    );
   }
 
   addWarning(
@@ -1610,15 +2067,9 @@ export class GTFSValidator {
     rowNum: number | null = null,
     entity: ValidationEntity | null = null
   ) {
-    this.validationResults.warnings.push({
-      level: 'warning',
-      message,
-      code,
-      file: fileName || undefined,
-      line: rowNum || undefined,
-      field: entity?.field,
-      entity: entity || undefined,
-    });
+    this.validationResults.warnings.push(
+      warningMessage(message, code, fileName, rowNum, entity)
+    );
   }
 
   addInfo(
@@ -1673,19 +2124,26 @@ export class GTFSValidator {
     return result.valid;
   }
 
+  /**
+   * The last completed sweep's results.
+   *
+   * Not `validationResults`: that one is reset at the start of a sweep and
+   * filled pass by pass, so reading it while a sweep is running returns a
+   * partial set that looks like a clean feed.
+   */
   getValidationSummary() {
-    return this.validationResults.summary;
+    return this.publishedResults.summary;
   }
 
   getValidationResults() {
-    return this.validationResults;
+    return this.publishedResults;
   }
 
   hasErrors() {
-    return this.validationResults.errors.length > 0;
+    return this.publishedResults.errors.length > 0;
   }
 
   hasWarnings() {
-    return this.validationResults.warnings.length > 0;
+    return this.publishedResults.warnings.length > 0;
   }
 }
