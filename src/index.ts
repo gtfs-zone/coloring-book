@@ -150,6 +150,9 @@ export class GTFSEditor {
       getStalenessKey: () =>
         `${this.gtfsParser.feedGeneration}:${this.patchManager.version}`,
     });
+    // Lets the validator reuse its stop_times passes across an edit that could
+    // not have changed them, instead of re-walking the table every time.
+    this.validator.trackPatches(this.patchManager);
 
     this.historyController = new HistoryController();
     this.navbarCounts = new NavbarCounts({
@@ -350,6 +353,9 @@ export class GTFSEditor {
       // existed each swap path had to remember these by hand, and the boot
       // paths did not. The parser fires it only once the new rows are final.
       this.gtfsParser.onFeedReplaced(() => {
+        // The stop_times messages the validator cached describe the previous
+        // feed's rows, and its row numbers.
+        this.validator.invalidateStopTimesCache('the feed was replaced');
         // Timetable data and picker options are keyed by ids that collide
         // across feeds, so stale entries redisplay the previous feed's rows.
         this.scheduleController.resetForNewFeed();
