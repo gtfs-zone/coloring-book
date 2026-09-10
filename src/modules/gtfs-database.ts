@@ -506,7 +506,7 @@ export class GTFSDatabase {
 
       const reason = blockedByOtherTab
         ? 'Another GTFS.zone tab still has the old database open, so it cannot be updated.'
-        : 'The browser is not answering the request to open the database. This usually means an earlier reset is still waiting on a tab that was never closed.';
+        : 'The browser is not answering the request to open the database. An earlier reset may still be waiting on a tab that was never closed.';
       let retry = false;
       await showModal({
         title: 'Database is not responding',
