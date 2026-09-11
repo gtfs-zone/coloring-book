@@ -184,12 +184,36 @@ validate. Two sweeps interleaving wrote into the same results object and the
 same cache. Callers now queue behind a running sweep, and `getValidationResults`
 returns the last _completed_ sweep rather than the partially filled one.
 
+## Where this stops
+
+Validation work is done. The two rounds landed different things and only one of
+them helps a reload:
+
+- The per-row cost cuts took a cold sweep from 6383ms to 3165ms. A cold sweep is
+  on the reload path (restore the feed, `validateAndUpdateInfo`, then the home
+  panel awaits `refreshFeedIssuesIfStale` before it draws), so that is ~3s off
+  every load of a large feed.
+- The stop_times cache is in memory and keyed on `feedGeneration`, so every
+  reload is still a cold sweep. What it buys is edit responsiveness: issues
+  republish in ~610ms after an edit rather than ~3.4s.
+
+The remaining validation item below (the other large tables) is **not being
+done**. It targets the ~350ms residual of a warm sweep, which is under what a
+user notices, and it would mean a second invalidation model for two more tables.
+That is the wrong trade against "reliability over performance" and "simplicity
+over abstraction". Reopen it only if a measurement shows a warm sweep mattering.
+
+The blob-flush item is worth doing and is not validation cost. The next thing to
+measure for load time is boot itself: set `DEBUG_BOOT` in `src/config.ts` and
+read `[boot] restore stored feed` against `[boot] refresh after feed swap`.
+
 ## What is left
 
-- **The other large tables.** A warm sweep is still ~350ms, and most of that is
-  the non-stop_times half of `validateFieldWhitespace` and `validateForeignKeys`
-  walking shapes (541k rows) and trips (168k). The same cache shape would apply;
-  it was left out deliberately to keep the invalidation model small.
+- **The other large tables.** Not planned, see above. A warm sweep is still
+  ~350ms, and most of that is the non-stop_times half of
+  `validateFieldWhitespace` and `validateForeignKeys` walking shapes (541k rows)
+  and trips (168k). The same cache shape would apply; it was left out
+  deliberately to keep the invalidation model small.
 - **Blob persistence contending with the sweep.** A burst of edits triggers the
   debounced blob flush, which serialises the whole stop_times table on the main
   thread. Measured during a three-edit burst, warm sweeps that recheck a single
