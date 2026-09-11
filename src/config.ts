@@ -105,7 +105,7 @@ export const CONFIG = {
   // Boot timing: set to true locally to emit console.time measurements for each
   // init stage. Leave false in production (logs are noisy and measured overhead
   // accumulates in tight loops).
-  DEBUG_BOOT: false,
+  DEBUG_BOOT: true,
 
   // Where the feed catalog and any path-only feed URL resolve to. Always the
   // deployed feed server: unlike test-track, this app has no local realtime
