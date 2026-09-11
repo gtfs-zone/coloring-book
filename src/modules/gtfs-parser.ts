@@ -187,9 +187,50 @@ class ChunkQueue implements AsyncIterable<HydrationChunk> {
   }
 }
 
+/**
+ * Primary-key lookups for one virtual table.
+ *
+ * The seam exists so a table whose key can be answered from a field map does
+ * not have to carry a key-to-row map of its own. `add` and `remove` take the
+ * row as well as the key so a derived implementation can ignore both and let
+ * the field map loop do the storage.
+ */
+interface KeyIndex {
+  get(key: string): GTFSDatabaseRecord | undefined;
+  has(key: string): boolean;
+  add(key: string, row: GTFSDatabaseRecord): void;
+  remove(key: string, row: GTFSDatabaseRecord): void;
+  clear(): void;
+}
+
+/** The default: one key-to-row map per table. Last row with a key wins. */
+class MapKeyIndex implements KeyIndex {
+  private map = new Map<string, GTFSDatabaseRecord>();
+
+  get(key: string): GTFSDatabaseRecord | undefined {
+    return this.map.get(key);
+  }
+
+  has(key: string): boolean {
+    return this.map.has(key);
+  }
+
+  add(key: string, row: GTFSDatabaseRecord): void {
+    this.map.set(key, row);
+  }
+
+  remove(key: string, _row: GTFSDatabaseRecord): void {
+    this.map.delete(key);
+  }
+
+  clear(): void {
+    this.map.clear();
+  }
+}
+
 /** The lookup structures a virtual table answers queries from. */
 interface TableIndex {
-  byId: Map<string, GTFSDatabaseRecord>;
+  byId: KeyIndex;
   fieldMaps: Map<string, Map<string, GTFSDatabaseRecord[]>>;
 }
 
@@ -328,7 +369,7 @@ export class GTFSParser {
 
   /**
    * Register a virtual table handler over rows that are already indexed.
-   * All mutations maintain the byId Map and any provided field-level Maps.
+   * All mutations maintain the key index and any provided field-level Maps.
    * For stop_times and trips, the class fields the synchronous lookup paths
    * read are repointed at this index here.
    *
@@ -420,7 +461,7 @@ export class GTFSParser {
             continue; // deduplication: skip rows already present (e.g. replaying an insert patch whose row was already loaded from the blob)
           }
           flat.push(row);
-          byId.set(key, row);
+          byId.add(key, row);
           for (const [field, map] of fieldMaps) {
             const val = String((row as Record<string, unknown>)[field] ?? '');
             addToBucket(map, val, row);
@@ -461,8 +502,8 @@ export class GTFSParser {
           row as Record<string, unknown>
         );
         if (newKey !== key) {
-          byId.delete(key);
-          byId.set(newKey, row);
+          byId.remove(key, row);
+          byId.add(newKey, row);
         }
         this.invalidateBlobForTable(tableName);
       },
@@ -472,7 +513,7 @@ export class GTFSParser {
         if (!row) {
           return;
         } // already removed by PatchManager
-        byId.delete(key);
+        byId.remove(key, row);
         const i = flat.indexOf(row);
         if (i !== -1) {
           flat.splice(i, 1);
@@ -490,7 +531,7 @@ export class GTFSParser {
           if (!row) {
             continue;
           }
-          byId.delete(k);
+          byId.remove(k, row);
           const i = flat.indexOf(row);
           if (i !== -1) {
             flat.splice(i, 1);
@@ -509,7 +550,7 @@ export class GTFSParser {
             continue;
           }
           flat.push(row);
-          byId.set(key, row);
+          byId.add(key, row);
           for (const [field, map] of fieldMaps) {
             const val = String((row as Record<string, unknown>)[field] ?? '');
             addToBucket(map, val, row);
@@ -565,7 +606,7 @@ export class GTFSParser {
       fieldMaps.set('agency_id', new Map());
     }
 
-    return { byId: new Map(), fieldMaps };
+    return { byId: new MapKeyIndex(), fieldMaps };
   }
 
   /**
@@ -588,7 +629,7 @@ export class GTFSParser {
           tableName,
           row as Record<string, unknown>
         );
-        index.byId.set(key, row);
+        index.byId.add(key, row);
       }
       const t1 = performance.now();
       for (const row of rows) {
@@ -608,7 +649,7 @@ export class GTFSParser {
         tableName,
         row as Record<string, unknown>
       );
-      index.byId.set(key, row);
+      index.byId.add(key, row);
       for (const [field, map] of index.fieldMaps) {
         const val = String((row as Record<string, unknown>)[field] ?? '');
         addToBucket(map, val, row);
