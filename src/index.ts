@@ -610,14 +610,22 @@ export class GTFSEditor {
       console.time('[boot] restore stored feed');
     }
     try {
+      const tRows = performance.now();
       const restored = await this.gtfsParser.restoreDataFromDatabase();
       if (!restored) {
         console.log('[boot] no stored feed to continue from');
         return 'nothing-stored';
       }
+      const tPatches = performance.now();
       // Paired with the restore, never run on a feed the user declined: replaying
       // patches over the wrong rows is how a feed gets corrupted.
       await this.patchManager.initialize();
+      if (CONFIG.DEBUG_BOOT) {
+        console.log(
+          `[hydrate] rows ${Math.round(tPatches - tRows)}ms, ` +
+            `patch replay ${Math.round(performance.now() - tPatches)}ms`
+        );
+      }
       // Only now are the rows final: the snapshot branch of patchManager.initialize
       // rebinds tables and replays the patch log on top of what the restore read.
       this.gtfsParser.markFeedReplaced();

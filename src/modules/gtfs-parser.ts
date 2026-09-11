@@ -580,6 +580,29 @@ export class GTFSParser {
     rows: GTFSDatabaseRecord[],
     index: TableIndex
   ): void {
+    if (CONFIG.DEBUG_BOOT) {
+      // Split the two halves so boot timing says which one to defer.
+      const t0 = performance.now();
+      for (const row of rows) {
+        const key = generateCompositeKeyFromRecord(
+          tableName,
+          row as Record<string, unknown>
+        );
+        index.byId.set(key, row);
+      }
+      const t1 = performance.now();
+      for (const row of rows) {
+        for (const [field, map] of index.fieldMaps) {
+          const val = String((row as Record<string, unknown>)[field] ?? '');
+          addToBucket(map, val, row);
+        }
+      }
+      const acc = this.debugIndexSplit.get(tableName) ?? { byId: 0, fields: 0 };
+      acc.byId += t1 - t0;
+      acc.fields += performance.now() - t1;
+      this.debugIndexSplit.set(tableName, acc);
+      return;
+    }
     for (const row of rows) {
       const key = generateCompositeKeyFromRecord(
         tableName,
@@ -592,6 +615,9 @@ export class GTFSParser {
       }
     }
   }
+
+  /** Boot timing only: per-table byId vs fieldMaps cost, filled when DEBUG_BOOT. */
+  private debugIndexSplit = new Map<string, { byId: number; fields: number }>();
 
   /**
    * Index a table's rows in one sweep and register its virtual table.
@@ -995,6 +1021,12 @@ export class GTFSParser {
     const data = createFeedScaffold();
     const indexes = new Map<string, TableIndex>();
     let rowsSinceYield = 0;
+    // Boot timing: where the per-chunk work goes, accumulated per table.
+    const spent = new Map<
+      string,
+      { rows: number; parse: number; append: number; index: number }
+    >();
+    let yieldMs = 0;
 
     for await (const { tableName, json } of chunks) {
       const entry = data[`${tableName}.txt`];
@@ -1009,17 +1041,62 @@ export class GTFSParser {
         indexes.set(tableName, index);
       }
 
+      const tParse = performance.now();
       const rows = JSON.parse(json) as GTFSDatabaseRecord[];
+      const tAppend = performance.now();
       for (const row of rows) {
         entry.data.push(row);
       }
+      const tIndex = performance.now();
       this.indexRowsInto(tableName, rows, index);
+
+      if (CONFIG.DEBUG_BOOT) {
+        const now = performance.now();
+        let acc = spent.get(tableName);
+        if (!acc) {
+          acc = { rows: 0, parse: 0, append: 0, index: 0 };
+          spent.set(tableName, acc);
+        }
+        acc.rows += rows.length;
+        acc.parse += tAppend - tParse;
+        acc.append += tIndex - tAppend;
+        acc.index += now - tIndex;
+      }
 
       rowsSinceYield += rows.length;
       if (rowsSinceYield >= CONFIG.HYDRATE_YIELD_ROWS) {
         rowsSinceYield = 0;
+        const tYield = performance.now();
         await yieldToEventLoop();
+        if (CONFIG.DEBUG_BOOT) {
+          yieldMs += performance.now() - tYield;
+        }
       }
+    }
+
+    if (CONFIG.DEBUG_BOOT) {
+      for (const [table, acc] of [...spent].sort(
+        (a, b) =>
+          b[1].parse +
+          b[1].append +
+          b[1].index -
+          (a[1].parse + a[1].append + a[1].index)
+      )) {
+        console.log(
+          `[hydrate] ${table}: ${acc.rows} rows, parse ${Math.round(acc.parse)}ms, ` +
+            `append ${Math.round(acc.append)}ms, index ${Math.round(acc.index)}ms`
+        );
+      }
+      for (const [table, acc] of this.debugIndexSplit) {
+        if (acc.byId + acc.fields >= 20) {
+          console.log(
+            `[hydrate] ${table} index split: byId ${Math.round(acc.byId)}ms, ` +
+              `fieldMaps ${Math.round(acc.fields)}ms`
+          );
+        }
+      }
+      this.debugIndexSplit.clear();
+      console.log(`[hydrate] yields: ${Math.round(yieldMs)}ms`);
     }
 
     // A populated table regenerates its CSV from the rows on demand, so its
@@ -1133,16 +1210,24 @@ export class GTFSParser {
   ): AsyncGenerator<HydrationChunk> {
     const totalChunks = [...counts.values()].reduce((sum, n) => sum + n, 0);
     let read = 0;
+    // Boot timing: how much of the restore is waiting on IndexedDB itself.
+    let idbMs = 0;
+    let bytes = 0;
     for (const [tableName, count] of counts) {
       for (let chunk = 0; chunk < count; chunk++) {
         // A cancel or a watchdog fire unwinds the hydration here, at the one
         // point of the restore that runs often enough to be responsive.
         op.throwIfAborted();
+        const tRead = performance.now();
         const json = await this.gtfsDatabase.getBlobChunk(
           gen,
           tableName,
           chunk
         );
+        if (CONFIG.DEBUG_BOOT) {
+          idbMs += performance.now() - tRead;
+          bytes += json?.length ?? 0;
+        }
         if (json === undefined) {
           throw new Error(
             `[GTFSParser] stored feed is missing ${tableName} chunk ${chunk} of generation ${gen}`
@@ -1159,6 +1244,12 @@ export class GTFSParser {
         );
         yield { tableName, json };
       }
+    }
+    if (CONFIG.DEBUG_BOOT) {
+      console.log(
+        `[hydrate] idb read: ${Math.round(idbMs)}ms for ${read} chunk(s), ` +
+          `${(bytes / 1e6).toFixed(1)}MB of JSON text`
+      );
     }
   }
 
@@ -1190,9 +1281,11 @@ export class GTFSParser {
     op.throwIfAborted();
     feedProgressIndicator.updateProgress(op.key, 5, 'Reading stored feed...');
 
+    const tHydrate = performance.now();
     const { data, indexes } = await this.hydrateFeed(
       this.readStoredChunks(gen, counts, op)
     );
+    const tGeojson = performance.now();
 
     // GeoJSON tables are per-row IDB reads (they're tiny) and get no chunks.
     for (const fileName of ALL_GTFS_FILES.filter((f) =>
@@ -1210,9 +1303,11 @@ export class GTFSParser {
     // from there a cancel would leave a half-adopted feed behind.
     op.throwIfAborted();
     op.clearWatchdog();
+    const tInstall = performance.now();
     feedProgressIndicator.updateProgress(op.key, 92, 'Building indexes...');
     this.installFeed(data, indexes);
 
+    const tPassthrough = performance.now();
     feedProgressIndicator.updateProgress(op.key, 96, 'Restoring files...');
     const ptFiles = await this.gtfsDatabase.getAllPassthroughFiles(gen);
     for (const [fileName, rawContent] of Object.entries(ptFiles)) {
@@ -1231,6 +1326,14 @@ export class GTFSParser {
           `[GTFSParser] Restored ${tableName} from blob: ${rows} rows in ${count} chunk(s)`
         );
       }
+    }
+    if (CONFIG.DEBUG_BOOT) {
+      console.log(
+        `[hydrate] phases: hydrate ${Math.round(tGeojson - tHydrate)}ms, ` +
+          `geojson ${Math.round(tInstall - tGeojson)}ms, ` +
+          `install ${Math.round(tPassthrough - tInstall)}ms, ` +
+          `passthrough+summary ${Math.round(performance.now() - tPassthrough)}ms`
+      );
     }
     feedProgressIndicator.updateProgress(op.key, 100, 'Complete!');
     return true;
