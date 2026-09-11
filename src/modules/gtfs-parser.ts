@@ -196,6 +196,8 @@ class ChunkQueue implements AsyncIterable<HydrationChunk> {
  * the field map loop do the storage.
  */
 interface KeyIndex {
+  /** False when lookups are derived, so hydration can skip building keys. */
+  readonly needsKeys: boolean;
   get(key: string): GTFSDatabaseRecord | undefined;
   has(key: string): boolean;
   add(key: string, row: GTFSDatabaseRecord): void;
@@ -205,6 +207,7 @@ interface KeyIndex {
 
 /** The default: one key-to-row map per table. Last row with a key wins. */
 class MapKeyIndex implements KeyIndex {
+  readonly needsKeys = true;
   private map = new Map<string, GTFSDatabaseRecord>();
 
   get(key: string): GTFSDatabaseRecord | undefined {
@@ -226,6 +229,52 @@ class MapKeyIndex implements KeyIndex {
   clear(): void {
     this.map.clear();
   }
+}
+
+/**
+ * stop_times key lookups served from the `trip_id` field map.
+ *
+ * A stop_times key is `trip_id:stop_sequence` and that field map already
+ * buckets every row by `trip_id`, so a key resolves to one bucket scan of a
+ * single trip. `add`, `remove` and `clear` are no-ops: the field map loop in
+ * the virtual table is the whole storage. Buckets are in `flat` order and the
+ * map this replaces kept the last row written for a key, so the scan runs
+ * backwards to keep last-wins on a feed with duplicate keys.
+ */
+class TripBucketKeyIndex implements KeyIndex {
+  readonly needsKeys = false;
+
+  constructor(private buckets: Map<string, GTFSDatabaseRecord[]>) {}
+
+  get(key: string): GTFSDatabaseRecord | undefined {
+    // Split at the last ':' so a trip_id containing one still resolves.
+    const cut = key.lastIndexOf(':');
+    if (cut === -1) {
+      return undefined;
+    }
+    const bucket = this.buckets.get(key.slice(0, cut));
+    if (!bucket) {
+      return undefined;
+    }
+    const sequence = key.slice(cut + 1);
+    for (let i = bucket.length - 1; i >= 0; i--) {
+      const row = bucket[i] as Record<string, unknown>;
+      if (String(row.stop_sequence ?? '') === sequence) {
+        return bucket[i];
+      }
+    }
+    return undefined;
+  }
+
+  has(key: string): boolean {
+    return this.get(key) !== undefined;
+  }
+
+  add(_key: string, _row: GTFSDatabaseRecord): void {}
+
+  remove(_key: string, _row: GTFSDatabaseRecord): void {}
+
+  clear(): void {}
 }
 
 /** The lookup structures a virtual table answers queries from. */
@@ -382,8 +431,9 @@ export class GTFSParser {
    * SHARED-ARRAY INVARIANT: The `flat` array passed in is stored as a live
    * reference and is the same object as gtfsData[fileName].data. All in-memory
    * mutations MUST go through the virtual table methods (insert, update, delete,
-   * clear). Direct pushes or splices on the array bypass the byId index and
-   * fieldMaps, corrupting them silently.
+   * clear). Direct pushes or splices on the array bypass the key index and
+   * fieldMaps, corrupting them silently. On stop_times the key index is derived
+   * from the trip_id fieldMap, so a bypassed push also breaks key lookups.
    */
   private registerVirtual(
     tableName: string,
@@ -497,13 +547,17 @@ export class GTFSParser {
             addToBucket(map, newVal, row);
           }
         }
-        const newKey = generateCompositeKeyFromRecord(
-          tableName,
-          row as Record<string, unknown>
-        );
-        if (newKey !== key) {
-          byId.remove(key, row);
-          byId.add(newKey, row);
+        // A derived index has no entry to move: the loop above already put the
+        // row in its new buckets, which is where its key is read from.
+        if (byId.needsKeys) {
+          const newKey = generateCompositeKeyFromRecord(
+            tableName,
+            row as Record<string, unknown>
+          );
+          if (newKey !== key) {
+            byId.remove(key, row);
+            byId.add(newKey, row);
+          }
         }
         this.invalidateBlobForTable(tableName);
       },
@@ -606,7 +660,12 @@ export class GTFSParser {
       fieldMaps.set('agency_id', new Map());
     }
 
-    return { byId: new MapKeyIndex(), fieldMaps };
+    const byId =
+      tableName === 'stop_times'
+        ? new TripBucketKeyIndex(fieldMaps.get('trip_id')!)
+        : new MapKeyIndex();
+
+    return { byId, fieldMaps };
   }
 
   /**
@@ -624,12 +683,14 @@ export class GTFSParser {
     if (CONFIG.DEBUG_BOOT) {
       // Split the two halves so boot timing says which one to defer.
       const t0 = performance.now();
-      for (const row of rows) {
-        const key = generateCompositeKeyFromRecord(
-          tableName,
-          row as Record<string, unknown>
-        );
-        index.byId.add(key, row);
+      if (index.byId.needsKeys) {
+        for (const row of rows) {
+          const key = generateCompositeKeyFromRecord(
+            tableName,
+            row as Record<string, unknown>
+          );
+          index.byId.add(key, row);
+        }
       }
       const t1 = performance.now();
       for (const row of rows) {
@@ -644,12 +705,15 @@ export class GTFSParser {
       this.debugIndexSplit.set(tableName, acc);
       return;
     }
+    const needsKeys = index.byId.needsKeys;
     for (const row of rows) {
-      const key = generateCompositeKeyFromRecord(
-        tableName,
-        row as Record<string, unknown>
-      );
-      index.byId.add(key, row);
+      if (needsKeys) {
+        const key = generateCompositeKeyFromRecord(
+          tableName,
+          row as Record<string, unknown>
+        );
+        index.byId.add(key, row);
+      }
       for (const [field, map] of index.fieldMaps) {
         const val = String((row as Record<string, unknown>)[field] ?? '');
         addToBucket(map, val, row);
