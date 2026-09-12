@@ -232,22 +232,27 @@ class MapKeyIndex implements KeyIndex {
 }
 
 /**
- * stop_times key lookups served from the `trip_id` field map.
+ * Composite key lookups served from a field map, for a table whose primary
+ * key is `[groupField, sequenceField]`.
  *
- * A stop_times key is `trip_id:stop_sequence` and that field map already
- * buckets every row by `trip_id`, so a key resolves to one bucket scan of a
- * single trip. `add`, `remove` and `clear` are no-ops: the field map loop in
- * the virtual table is the whole storage. Buckets are in `flat` order and the
- * map this replaces kept the last row written for a key, so the scan runs
- * backwards to keep last-wins on a feed with duplicate keys.
+ * stop_times (`trip_id`, `stop_sequence`) and shapes (`shape_id`,
+ * `shape_pt_sequence`) both key this way, and the group field already has a
+ * field map bucketing every row by it, so a key resolves to one bucket scan
+ * of a single group. `add`, `remove` and `clear` are no-ops: the field map
+ * loop in the virtual table is the whole storage. Buckets are in `flat` order
+ * and the map this replaces kept the last row written for a key, so the scan
+ * runs backwards to keep last-wins on a feed with duplicate keys.
  */
-class TripBucketKeyIndex implements KeyIndex {
+class BucketKeyIndex implements KeyIndex {
   readonly needsKeys = false;
 
-  constructor(private buckets: Map<string, GTFSDatabaseRecord[]>) {}
+  constructor(
+    private buckets: Map<string, GTFSDatabaseRecord[]>,
+    private sequenceField: string
+  ) {}
 
   get(key: string): GTFSDatabaseRecord | undefined {
-    // Split at the last ':' so a trip_id containing one still resolves.
+    // Split at the last ':' so a group id containing one still resolves.
     const cut = key.lastIndexOf(':');
     if (cut === -1) {
       return undefined;
@@ -259,7 +264,7 @@ class TripBucketKeyIndex implements KeyIndex {
     const sequence = key.slice(cut + 1);
     for (let i = bucket.length - 1; i >= 0; i--) {
       const row = bucket[i] as Record<string, unknown>;
-      if (String(row.stop_sequence ?? '') === sequence) {
+      if (String(row[this.sequenceField] ?? '') === sequence) {
         return bucket[i];
       }
     }
@@ -432,8 +437,9 @@ export class GTFSParser {
    * reference and is the same object as gtfsData[fileName].data. All in-memory
    * mutations MUST go through the virtual table methods (insert, update, delete,
    * clear). Direct pushes or splices on the array bypass the key index and
-   * fieldMaps, corrupting them silently. On stop_times the key index is derived
-   * from the trip_id fieldMap, so a bypassed push also breaks key lookups.
+   * fieldMaps, corrupting them silently. On stop_times and shapes the key
+   * index is derived from a fieldMap, so a bypassed push also breaks key
+   * lookups.
    */
   private registerVirtual(
     tableName: string,
@@ -658,12 +664,22 @@ export class GTFSParser {
       fieldMaps.set('agency_id', new Map());
     } else if (tableName === 'routes') {
       fieldMaps.set('agency_id', new Map());
+    } else if (tableName === 'shapes') {
+      // Also serves the shape_id key lookup below: see BucketKeyIndex.
+      fieldMaps.set('shape_id', new Map());
     }
 
-    const byId =
-      tableName === 'stop_times'
-        ? new TripBucketKeyIndex(fieldMaps.get('trip_id')!)
-        : new MapKeyIndex();
+    let byId: KeyIndex;
+    if (tableName === 'stop_times') {
+      byId = new BucketKeyIndex(fieldMaps.get('trip_id')!, 'stop_sequence');
+    } else if (tableName === 'shapes') {
+      byId = new BucketKeyIndex(
+        fieldMaps.get('shape_id')!,
+        'shape_pt_sequence'
+      );
+    } else {
+      byId = new MapKeyIndex();
+    }
 
     return { byId, fieldMaps };
   }
