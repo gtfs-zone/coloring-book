@@ -20,6 +20,7 @@ import {
 } from './navigation-actions';
 import { GTFS_TABLES } from '../types/gtfs';
 import { MapMode, MapController } from './map-controller';
+import { syncAutoZoomControl, wireAutoZoomControl } from './auto-zoom';
 import { GTFSParser } from './gtfs-parser';
 import { LoadCancelledError } from './feed-download';
 import { Editor } from './editor';
@@ -128,12 +129,9 @@ export class UIController {
       });
 
     // Auto-zoom toggle
-    document
-      .getElementById('auto-zoom-toggle')
-      ?.addEventListener('change', (e) => {
-        this.mapController?.setAutoZoom((e.target as HTMLInputElement).checked);
-        this.updateMapToolButtonState();
-      });
+    if (this.mapController) {
+      wireAutoZoomControl(this.mapController.getAutoZoom());
+    }
 
     // Breadcrumb navigation is now handled dynamically in renderBreadcrumbs()
 
@@ -1380,22 +1378,7 @@ export class UIController {
     pointerBtn?.classList.toggle('btn-primary', mode === MapMode.NAVIGATE);
 
     // Applies the persisted preference on boot as well as later toggles.
-    const autoZoom = this.mapController.isAutoZoomEnabled();
-    const autoZoomToggle = document.getElementById(
-      'auto-zoom-toggle'
-    ) as HTMLInputElement | null;
-    if (autoZoomToggle) {
-      autoZoomToggle.checked = autoZoom;
-    }
-    document
-      .getElementById('auto-zoom-btn')
-      ?.classList.toggle('btn-primary', autoZoom);
-    document
-      .getElementById('auto-zoom-tooltip')
-      ?.setAttribute(
-        'data-tip',
-        autoZoom ? 'Auto-zoom to selection' : 'Auto-zoom off (map stays put)'
-      );
+    syncAutoZoomControl(this.mapController.isAutoZoomEnabled());
 
     addStopBtn?.classList.toggle('btn-primary', mode === MapMode.ADD_STOP);
     if (addPathwayBtn) {
