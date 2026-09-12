@@ -21,20 +21,13 @@ export class BottomSheetController {
   private snap: Snap = 'closed';
   private panel: HTMLElement;
   private dismissCallbacks: Array<() => void> = [];
+  private snapCallbacks: Array<(covered: number) => void> = [];
   private active = false;
 
   constructor(panel: HTMLElement, dockItems: DockItem[] = []) {
     this.panel = panel;
-
-    // Only activate on mobile
-    if (window.innerWidth >= 768) {
-      return;
-    }
-
-    this.active = true;
     this.setupDragHandle();
     this.setupDock(dockItems);
-    this.setSnap('closed', false);
 
     const dock = document.getElementById('mobile-dock');
     if (dock) {
@@ -46,15 +39,24 @@ export class BottomSheetController {
       }).observe(dock);
     }
 
-    // Re-check on resize (e.g. orientation change)
-    window.addEventListener('resize', () => {
-      if (window.innerWidth >= 768) {
-        panel.style.removeProperty('height');
-        panel.classList.remove('sheet-full', 'sheet-half');
-      } else {
-        this.setSnap(this.snap, false);
+    const mobile = window.matchMedia('(max-width: 767px)');
+    this.applyMode(mobile.matches);
+    mobile.addEventListener('change', (e) => this.applyMode(e.matches));
+  }
+
+  /** Enter or leave sheet mode when the breakpoint is crossed. */
+  private applyMode(isMobile: boolean): void {
+    this.active = isMobile;
+    if (isMobile) {
+      this.setSnap(this.snap, false);
+    } else {
+      this.panel.style.removeProperty('height');
+      this.panel.style.removeProperty('overflow');
+      this.panel.classList.remove('sheet-full', 'sheet-half');
+      for (const cb of this.snapCallbacks) {
+        cb(CLOSED_PX);
       }
-    });
+    }
   }
 
   private setupDragHandle(): void {
@@ -71,6 +73,9 @@ export class BottomSheetController {
     let dragging = false;
 
     const onStart = (clientY: number) => {
+      if (!this.active) {
+        return;
+      }
       startY = clientY;
       startHeight = this.panel.getBoundingClientRect().height;
       lastY = clientY;
@@ -198,6 +203,10 @@ export class BottomSheetController {
         this.panel.style.transition = '';
       });
     }
+    const covered = this.coveredHeight();
+    for (const cb of this.snapCallbacks) {
+      cb(covered);
+    }
   }
 
   private setupDock(items: DockItem[]): void {
@@ -222,6 +231,23 @@ export class BottomSheetController {
 
   public onDismiss(cb: () => void): void {
     this.dismissCallbacks.push(cb);
+  }
+
+  /**
+   * Pixels of the map the sheet is currently covering. 0 on desktop, where the
+   * panel sits beside the map rather than over it.
+   */
+  public coveredHeight(): number {
+    if (!this.active || this.snap === 'closed') {
+      return CLOSED_PX;
+    }
+    const vph = window.visualViewport?.height ?? window.innerHeight;
+    return vph * (this.snap === 'half' ? HALF_VH : FULL_VH);
+  }
+
+  /** Fired on every snap change, including drag-driven ones. */
+  public onSnapChange(cb: (covered: number) => void): void {
+    this.snapCallbacks.push(cb);
   }
 
   public open(snap: 'half' | 'full' = 'half'): void {
