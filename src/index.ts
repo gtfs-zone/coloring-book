@@ -2,7 +2,6 @@ import { GTFSParser } from './modules/gtfs-parser';
 import { MapController } from './modules/map-controller';
 import { Editor } from './modules/editor';
 import { UIController } from './modules/ui';
-import { TabManager } from './modules/tab-manager';
 import { BottomSheetController } from './modules/bottom-sheet';
 import { GTFSRelationships } from './modules/gtfs-relationships';
 import { BrowseNavigation } from './modules/browse-navigation';
@@ -86,7 +85,6 @@ export class GTFSEditor {
   public mapController: MapController;
   public editor: Editor;
   public uiController: UIController;
-  public tabManager: TabManager;
   public relationships: GTFSRelationships;
   public infoDisplay: InfoDisplay;
   public browseNavigation: BrowseNavigation;
@@ -109,7 +107,6 @@ export class GTFSEditor {
     this.mapController = new MapController();
     this.editor = new Editor();
     this.uiController = new UIController();
-    this.tabManager = new TabManager();
     this.relationships = new GTFSRelationships(this.gtfsParser);
     this.infoDisplay = new InfoDisplay(this.relationships);
     this.scheduleController = new ScheduleController(
@@ -437,9 +434,6 @@ export class GTFSEditor {
         this.mapController.refreshAccentColor()
       );
 
-      // Initialize tab manager
-      this.tabManager.initialize();
-
       // The Changes panel renders into the modal body, so it is filled on mount
       // and torn down with the modal.
       const openHistoryModal = () => {
@@ -466,12 +460,14 @@ export class GTFSEditor {
       // Initialize bottom sheet controller (mobile only)
       const rightPanel = document.getElementById('right-panel');
       const bottomSheet = rightPanel
-        ? new BottomSheetController(
-            rightPanel,
-            this.tabManager,
-            openHistoryModal,
-            () => void this.uiController.openFilesModal()
-          )
+        ? new BottomSheetController(rightPanel, [
+            { id: 'dock-browse' },
+            {
+              id: 'dock-files',
+              onSelect: () => void this.uiController.openFilesModal(),
+            },
+            { id: 'dock-changes', snap: null, onSelect: openHistoryModal },
+          ])
         : null;
 
       if (bottomSheet) {
