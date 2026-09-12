@@ -17,14 +17,14 @@ export interface ExampleFeed {
  * against `RT_BASE` at fetch time (`feed-url-resolve.ts`): the local cafe-car in
  * dev, rt.gtfs.zone in the built site. So there is no separate set of "local"
  * examples to keep in sync, and a link someone shares works wherever it is
- * opened. `useCors: true` is correct for both halves of that — the proxy is what
+ * opened. `useCors: true` is correct for both halves of that: the proxy is what
  * rt.gtfs.zone needs in prod, and `maybeProxy` bypasses it for the local host in
  * dev. Feeds hosted by an agency stay absolute, since there is no single origin
  * to resolve them against.
  *
  * `useCors` is otherwise set per source from what the origin actually sends.
  * Only `raw.githubusercontent.com` sends `access-control-allow-origin: *`, so a
- * GitHub-hosted zip must point there directly and needs no proxy — a
+ * GitHub-hosted zip must point there directly and needs no proxy - a
  * `github.com/**\/raw/**` URL is never directly fetchable (it 301/302s through
  * hops that send no usable CORS header, which the browser aborts) and must be
  * rewritten to `raw.githubusercontent.com` or proxied. rt.gtfs.zone,
@@ -32,18 +32,18 @@ export interface ExampleFeed {
  *
  * Several agency feeds below are plain `http://`, which an https page blocks as
  * mixed content. They are only usable *because* they proxy: `maybeProxy`
- * produces `https://cors.kcfam.us/http://…`, and the plain-http hop happens
+ * produces `https://cors.kcfam.us/http://...`, and the plain-http hop happens
  * server-side. An http entry must therefore never ship with `useCors: false`.
  *
  * Two of these hosts (ripta.com, opendata.burlington.ca) refuse a bare request
  * outright but answer the proxy, so "it 403s in curl" is not evidence that an
- * entry is dead — check it the way the app fetches it.
+ * entry is dead - check it the way the app fetches it.
  */
 export const EXAMPLES: ExampleFeed[] = [
   {
     name: 'Amtrak',
     description:
-      'National rail — schedule from Amtrak, realtime via rt.gtfs.zone',
+      'National rail - schedule from Amtrak, realtime via rt.gtfs.zone',
     selection: {
       scheduled: {
         kind: 'url',
@@ -63,7 +63,7 @@ export const EXAMPLES: ExampleFeed[] = [
   {
     name: 'Columbia County',
     description:
-      'Columbia County Public Transportation, NY — realtime via rt.gtfs.zone',
+      'Columbia County Public Transportation, NY - realtime via rt.gtfs.zone',
     selection: {
       scheduled: {
         kind: 'url',
@@ -83,7 +83,7 @@ export const EXAMPLES: ExampleFeed[] = [
   {
     name: 'MBTA',
     description:
-      'Boston — three separate realtime .pb files straight from the agency',
+      'Boston - three separate realtime .pb files straight from the agency',
     selection: {
       scheduled: {
         kind: 'url',
@@ -104,10 +104,10 @@ export const EXAMPLES: ExampleFeed[] = [
     name: 'SEPTA',
     // The one entry that exercises the nested-zip syntax: SEPTA ships
     // google_bus.zip and google_rail.zip inside a single release asset, so the
-    // outer URL alone does not say which feed is meant. No alerts endpoint —
+    // outer URL alone does not say which feed is meant. No alerts endpoint -
     // SEPTA publishes Vehicle and Trip only.
     description:
-      'Philadelphia — bus feed nested inside the public GTFS release zip',
+      'Philadelphia - bus feed nested inside the public GTFS release zip',
     selection: {
       scheduled: {
         kind: 'url',
@@ -127,7 +127,7 @@ export const EXAMPLES: ExampleFeed[] = [
   },
   {
     name: 'Grand Poitiers',
-    description: 'Poitiers, France — Cadavl-hosted schedule and realtime',
+    description: 'Poitiers, France - Cadavl-hosted schedule and realtime',
     selection: {
       scheduled: {
         kind: 'url',
@@ -150,9 +150,9 @@ export const EXAMPLES: ExampleFeed[] = [
   {
     name: 'Divia',
     // The scheduled half is a data.gouv.fr resource id, so the URL names no file
-    // and has no .zip extension — it is one all the same.
+    // and has no .zip extension - it is one all the same.
     description:
-      'Dijon, France — schedule via data.gouv.fr, realtime via transport.data.gouv.fr',
+      'Dijon, France - schedule via data.gouv.fr, realtime via transport.data.gouv.fr',
     selection: {
       scheduled: {
         kind: 'url',
@@ -174,7 +174,7 @@ export const EXAMPLES: ExampleFeed[] = [
     name: 'RIPTA',
     // ripta.com 403s a bare request and the realtime host is http on a
     // non-standard port; both are fine through the proxy.
-    description: 'Rhode Island — realtime on port 81',
+    description: 'Rhode Island - realtime on port 81',
     selection: {
       scheduled: {
         kind: 'url',
@@ -196,7 +196,7 @@ export const EXAMPLES: ExampleFeed[] = [
   },
   {
     name: 'WCTA',
-    description: 'Whatcom County, WA — an Avail InfoPoint deployment',
+    description: 'Whatcom County, WA - an Avail InfoPoint deployment',
     selection: {
       scheduled: {
         kind: 'url',
@@ -218,7 +218,7 @@ export const EXAMPLES: ExampleFeed[] = [
   },
   {
     name: 'LCTA',
-    description: 'Luzerne County, PA — another Avail InfoPoint deployment',
+    description: 'Luzerne County, PA - another Avail InfoPoint deployment',
     selection: {
       scheduled: {
         kind: 'url',
@@ -242,7 +242,7 @@ export const EXAMPLES: ExampleFeed[] = [
     name: 'Burlington Transit',
     // opendata.burlington.ca refuses connections from some networks outright
     // but answers the proxy; do not read a curl timeout as a dead feed.
-    description: 'Burlington, Ontario — city open-data portal',
+    description: 'Burlington, Ontario - city open-data portal',
     selection: {
       scheduled: {
         kind: 'url',
@@ -264,7 +264,7 @@ export const EXAMPLES: ExampleFeed[] = [
   },
   {
     name: 'Big Blue Bus',
-    description: 'Santa Monica, CA — realtime served as .bin, over plain http',
+    description: 'Santa Monica, CA - realtime served as .bin, over plain http',
     selection: {
       scheduled: {
         kind: 'url',
@@ -284,7 +284,7 @@ export const EXAMPLES: ExampleFeed[] = [
   {
     name: 'London Transit',
     description:
-      'London, Ontario — schedule and realtime on separate http hosts',
+      'London, Ontario - schedule and realtime on separate http hosts',
     selection: {
       scheduled: {
         kind: 'url',
@@ -304,7 +304,7 @@ export const EXAMPLES: ExampleFeed[] = [
   {
     name: 'West Bus Service',
     // Schedule only: the operator publishes no GTFS-RT.
-    description: 'Vermont — small hand-maintained feed, schedule only',
+    description: 'Vermont - small hand-maintained feed, schedule only',
     selection: {
       scheduled: {
         kind: 'url',
