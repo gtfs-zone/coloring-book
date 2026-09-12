@@ -52,7 +52,7 @@ import {
 import { ShapesManager } from './modules/shapes-manager';
 import { renderDockIcons, renderNavbarActions } from './modules/navbar-actions';
 import { NavbarCounts } from './modules/navbar-counts';
-import { PanelResizer } from './modules/panel-resizer';
+import { PanelResizer, restorePanelWidth } from './modules/panel-resizer';
 import { LevelsController } from './modules/levels-controller';
 import { feedProgressIndicator } from './modules/feed-progress-indicator';
 import { databaseFallbackManager } from './modules/database-fallback-manager';
@@ -164,6 +164,7 @@ export class GTFSEditor {
     this.shapesManager = new ShapesManager(this.gtfsParser, this.patchManager);
 
     const appContainer = document.querySelector<HTMLElement>('.app-container')!;
+    restorePanelWidth(appContainer);
     new PanelResizer(appContainer, this.mapController);
     initFieldTooltipPortal();
 
