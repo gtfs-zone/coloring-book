@@ -50,6 +50,7 @@ import {
 } from './modules/calendar-modal';
 import { ShapesManager } from './modules/shapes-manager';
 import { renderDockIcons, renderNavbarActions } from './modules/navbar-actions';
+import { renderAutoZoomControl } from './modules/auto-zoom';
 import { NavbarCounts } from './modules/navbar-counts';
 import { PanelResizer, restorePanelWidth } from './modules/panel-resizer';
 import { LevelsController } from './modules/levels-controller';
@@ -231,6 +232,9 @@ export class GTFSEditor {
         renderNavbarActions(navbarActions);
       }
       renderDockIcons();
+      document
+        .getElementById('map-controls')
+        ?.insertAdjacentHTML('beforeend', renderAutoZoomControl());
 
       feedProgressIndicator.startLoading('boot', 'Opening database...');
 

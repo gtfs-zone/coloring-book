@@ -20,6 +20,7 @@ import { CONFIG } from '../config';
 import { Stops, Routes, Pathways, Agency, GTFS_TABLES } from '../types/gtfs';
 import { agencyRouteFilter, normalizeAgencyId } from '../utils/agency-helpers';
 import { BasemapControl } from './basemap-control';
+import { AutoZoom } from './auto-zoom';
 import { notify } from './notification-system';
 import type { PatchRecord, SingleGTFSPatch } from '../types/patch';
 import { getZoneFeature, listZones, zoneBounds } from './zone-store';
@@ -38,25 +39,6 @@ export type FocusedObject =
   | { type: 'route'; id: string }
   | { type: 'zone'; id: string }
   | { type: 'none' };
-
-// Persisted user preference: whether navigation moves the camera.
-const AUTO_ZOOM_KEY = 'map.autoZoom';
-
-function readAutoZoomPref(): boolean {
-  try {
-    return localStorage.getItem(AUTO_ZOOM_KEY) !== '0';
-  } catch {
-    return true;
-  }
-}
-
-function writeAutoZoomPref(enabled: boolean): void {
-  try {
-    localStorage.setItem(AUTO_ZOOM_KEY, enabled ? '1' : '0');
-  } catch {
-    console.warn('[MapController] could not persist the auto-zoom preference');
-  }
-}
 
 // Callback interfaces
 interface MapControllerCallbacks {
@@ -114,7 +96,11 @@ export class MapController {
 
   // Navigation-driven camera moves are suppressed while this is off. Feed
   // loads, resize restores and the add-stop zoom nudge bypass it.
-  private autoZoomEnabled = readAutoZoomPref();
+  private autoZoom = new AutoZoom(() => {
+    if (this.isMapReady()) {
+      this.refitFocusedObject();
+    }
+  });
 
   constructor(mapElementId = 'map') {
     this.mapElementId = mapElementId;
@@ -124,22 +110,12 @@ export class MapController {
     this.bottomPadding = px;
   }
 
-  public isAutoZoomEnabled(): boolean {
-    return this.autoZoomEnabled;
+  public getAutoZoom(): AutoZoom {
+    return this.autoZoom;
   }
 
-  /**
-   * Turn navigation-driven camera movement on or off. Turning it on refits to
-   * whatever is currently focused, so the button has an immediate effect
-   * instead of waiting for the next navigation.
-   */
-  public setAutoZoom(enabled: boolean): void {
-    this.autoZoomEnabled = enabled;
-    writeAutoZoomPref(enabled);
-    console.log(`[MapController] auto-zoom ${enabled ? 'on' : 'off'}`);
-    if (enabled && this.isMapReady()) {
-      this.refitFocusedObject();
-    }
+  public isAutoZoomEnabled(): boolean {
+    return this.autoZoom.isEnabled();
   }
 
   /** Re-run the camera move for the currently focused object. */
@@ -166,24 +142,13 @@ export class MapController {
     }
   }
 
-  /**
-   * Camera move driven by navigation. Suppressed while auto-zoom is off, so
-   * the highlight side effects around the call still run.
-   */
+  /** Camera moves driven by navigation, gated on the auto-zoom preference. */
   private autoFit(bounds: LngLatBounds, options: FitBoundsOptions): void {
-    if (!this.autoZoomEnabled) {
-      console.log('[MapController] auto-zoom off, skipping fit');
-      return;
-    }
-    this.map!.fitBounds(bounds, options);
+    this.autoZoom.fitBounds(this.map!, bounds, options);
   }
 
   private autoFlyTo(options: FlyToOptions): void {
-    if (!this.autoZoomEnabled) {
-      console.log('[MapController] auto-zoom off, skipping flyTo');
-      return;
-    }
-    this.map!.flyTo(options);
+    this.autoZoom.flyTo(this.map!, options);
   }
 
   /**
