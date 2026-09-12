@@ -5,9 +5,17 @@
 import { Map as MapLibreMap, StyleSpecification } from 'maplibre-gl';
 import { basemapStyles, getBasemapStyle } from './basemap-styles';
 
-const GLOBE_PROJECTION = { type: 'globe' };
+export interface MapAppearance {
+  basemap: string;
+}
 
-const GLOBE_SKY = {
+export interface BasemapControlOptions {
+  initial?: Partial<MapAppearance>;
+  /** Fired whenever the basemap changes, so a caller can persist it. */
+  onAppearanceChange?: (appearance: MapAppearance) => void;
+}
+
+const SKY = {
   'sky-color': '#199EF3',
   'sky-horizon-blend': 0.5,
   'horizon-color': '#ffffff',
@@ -17,46 +25,85 @@ const GLOBE_SKY = {
   'atmosphere-blend': ['interpolate', ['linear'], ['zoom'], 0, 1, 10, 1, 12, 0],
 };
 
+/** Merge the globe projection and its sky into a style spec. */
+function globeStyle(style: Record<string, unknown>): StyleSpecification {
+  return {
+    ...style,
+    projection: { type: 'globe' },
+    sky: SKY,
+  } as unknown as StyleSpecification;
+}
+
+/**
+ * The style the map should be constructed with, so the very first paint is
+ * already the requested basemap on the globe. Without this the control would
+ * have to `setStyle` right after load, which destroys any layers added in
+ * between.
+ *
+ * No caller here: this app boots one hardcoded basemap and persists nothing.
+ * Kept so the file stays one copy across the three apps rather than forking on
+ * an export.
+ *
+ * @lintignore
+ */
+export function initialMapStyle(
+  appearance: Partial<MapAppearance>
+): StyleSpecification {
+  const basemap =
+    getBasemapStyle(appearance.basemap ?? 'standard') ?? basemapStyles[0];
+  return globeStyle(basemap.style);
+}
+
+const CONTROL_STYLE_ID = 'basemap-control-styles';
+
 export class BasemapControl {
   private map: MapLibreMap;
   private container: HTMLElement | null = null;
-  private currentBasemap: string = 'standard';
+  private currentBasemap: string;
+  private onAppearanceChange: ((appearance: MapAppearance) => void) | null;
 
-  constructor(map: MapLibreMap) {
+  constructor(map: MapLibreMap, options: BasemapControlOptions = {}) {
     this.map = map;
+    this.currentBasemap = options.initial?.basemap ?? 'standard';
+    this.onAppearanceChange = options.onAppearanceChange ?? null;
+
     this.createControl();
     this.applyGlobeProjection();
   }
 
-  /**
-   * Set the globe projection and sky on the current style, once it is loaded
-   */
-  private applyGlobeProjection(): void {
-    if (this.map.isStyleLoaded()) {
-      this.setGlobeStyle();
-    } else {
-      this.map.once('load', () => {
-        this.setGlobeStyle();
-      });
-    }
+  public getAppearance(): MapAppearance {
+    return { basemap: this.currentBasemap };
+  }
+
+  private emitAppearance(): void {
+    this.onAppearanceChange?.(this.getAppearance());
   }
 
   /**
-   * Re-set the current style with the globe projection and sky applied
+   * Put the globe on whatever style the map booted with. Skipped when the map
+   * was constructed from `initialMapStyle()`, which already carries it, since
+   * `setStyle` here would destroy any layers added in the meantime.
    */
-  private setGlobeStyle(): void {
-    const currentStyle = this.map.getStyle();
-    if (!currentStyle) {
-      return;
-    }
-
-    const newStyle = {
-      ...currentStyle,
-      projection: GLOBE_PROJECTION,
-      sky: GLOBE_SKY,
+  private applyGlobeProjection(): void {
+    const apply = () => {
+      const current = this.map.getStyle() as unknown as
+        | Record<string, unknown>
+        | undefined;
+      if (!current) {
+        return;
+      }
+      const projection = current.projection as { type?: string } | undefined;
+      if (projection?.type === 'globe') {
+        return;
+      }
+      this.map.setStyle(globeStyle(current));
     };
 
-    this.map.setStyle(newStyle as unknown as StyleSpecification);
+    if (this.map.isStyleLoaded()) {
+      apply();
+    } else {
+      this.map.once('load', apply);
+    }
   }
 
   /**
@@ -70,6 +117,10 @@ export class BasemapControl {
       position: absolute;
       bottom: 40px;
       right: 10px;
+      display: flex;
+      gap: 12px;
+      align-items: flex-end;
+      flex-direction: row;
       pointer-events: none;
     `;
 
@@ -110,8 +161,28 @@ export class BasemapControl {
       </div>
     `;
 
-    // Add minimal custom styles
+    this.injectStyles();
+    this.attachEventListeners();
+
+    // Add to map container
+    const mapContainer = this.map.getContainer();
+
+    // Ensure map container has position relative for absolute positioning to work
+    const computedStyle = window.getComputedStyle(mapContainer);
+    if (computedStyle.position === 'static') {
+      mapContainer.style.position = 'relative';
+    }
+
+    mapContainer.appendChild(this.container);
+  }
+
+  /** Injected once, since `rebuildControl` runs on every basemap change. */
+  private injectStyles(): void {
+    if (document.getElementById(CONTROL_STYLE_ID)) {
+      return;
+    }
     const style = document.createElement('style');
+    style.id = CONTROL_STYLE_ID;
     style.textContent = `
       .basemap-control .fab {
         position: relative;
@@ -127,20 +198,6 @@ export class BasemapControl {
       }
     `;
     document.head.appendChild(style);
-
-    // Attach event listeners
-    this.attachEventListeners();
-
-    // Add to map container
-    const mapContainer = this.map.getContainer();
-
-    // Ensure map container has position relative for absolute positioning to work
-    const computedStyle = window.getComputedStyle(mapContainer);
-    if (computedStyle.position === 'static') {
-      mapContainer.style.position = 'relative';
-    }
-
-    mapContainer.appendChild(this.container);
   }
 
   /**
@@ -151,42 +208,43 @@ export class BasemapControl {
       return;
     }
 
-    // Basemap selection buttons
-    const basemapButtons = this.container.querySelectorAll('.basemap-btn');
-    basemapButtons.forEach((button) => {
-      button.addEventListener('click', () => {
-        const basemapId = (button as HTMLElement).getAttribute('data-basemap');
-        if (basemapId) {
-          this.changeBasemap(basemapId);
-        }
+    // Basemap selection buttons (plus the current one in the FAB centre)
+    this.container
+      .querySelectorAll('.basemap-btn, .basemap-current')
+      .forEach((button) => {
+        button.addEventListener('click', () => {
+          const basemapId = (button as HTMLElement).getAttribute(
+            'data-basemap'
+          );
+          if (basemapId) {
+            this.changeBasemap(basemapId);
+          }
+        });
       });
+  }
+
+  /**
+   * Swap the style, restore the view once it lands, and tell everyone else to
+   * re-add their layers, since `setStyle` drops every source and layer we own.
+   */
+  private applyStyle(
+    style: StyleSpecification,
+    detail: Record<string, unknown>
+  ): void {
+    const center = this.map.getCenter();
+    const zoom = this.map.getZoom();
+    const bearing = this.map.getBearing();
+    const pitch = this.map.getPitch();
+
+    this.map.setStyle(style);
+
+    this.map.once('styledata', () => {
+      this.map.setCenter(center);
+      this.map.setZoom(zoom);
+      this.map.setBearing(bearing);
+      this.map.setPitch(pitch);
+      this.map.fire('basemap:changed', detail);
     });
-
-    // Current basemap button (in center when FAB is open)
-    const currentBtn = this.container.querySelector('.basemap-current');
-    if (currentBtn) {
-      currentBtn.addEventListener('click', () => {
-        const basemapId = (currentBtn as HTMLElement).getAttribute(
-          'data-basemap'
-        );
-        if (basemapId) {
-          this.changeBasemap(basemapId);
-        }
-      });
-    }
-
-    // Main FAB button (just for accessibility, opening is handled by CSS hover/focus)
-    const mainFab = this.container.querySelector('.basemap-fab-main');
-    if (mainFab) {
-      mainFab.addEventListener('keydown', (e) => {
-        if (
-          (e as KeyboardEvent).key === 'Enter' ||
-          (e as KeyboardEvent).key === ' '
-        ) {
-          (e.target as HTMLElement).focus();
-        }
-      });
-    }
   }
 
   /**
@@ -195,7 +253,6 @@ export class BasemapControl {
   private changeBasemap(basemapId: string): void {
     // Skip if already on this basemap
     if (basemapId === this.currentBasemap) {
-      console.log(`Already on basemap: ${basemapId}`);
       return;
     }
 
@@ -205,41 +262,11 @@ export class BasemapControl {
       return;
     }
 
-    // Store current center and zoom
-    const center = this.map.getCenter();
-    const zoom = this.map.getZoom();
-    const bearing = this.map.getBearing();
-    const pitch = this.map.getPitch();
+    this.applyStyle(globeStyle(basemapStyle.style), { basemapId });
 
-    // Apply projection and sky to the new basemap style
-    const styleWithProjection = {
-      ...basemapStyle.style,
-      projection: GLOBE_PROJECTION,
-      sky: GLOBE_SKY,
-    };
-
-    // Set new style with projection
-    this.map.setStyle(styleWithProjection as unknown as StyleSpecification);
-
-    // Wait for style to load, then restore view and re-add layers
-    this.map.once('styledata', () => {
-      // Restore view
-      this.map.setCenter(center);
-      this.map.setZoom(zoom);
-      this.map.setBearing(bearing);
-      this.map.setPitch(pitch);
-
-      console.log('Style loaded, firing basemap:changed event');
-
-      // Trigger custom event for other modules to re-add their layers
-      this.map.fire('basemap:changed', { basemapId });
-    });
-
-    // Update active state
     this.currentBasemap = basemapId;
     this.rebuildControl();
-
-    console.log(`Basemap changed to: ${basemapStyle.name}`);
+    this.emitAppearance();
   }
 
   /**
@@ -249,17 +276,7 @@ export class BasemapControl {
     if (!this.container) {
       return;
     }
-
-    // Store reference to parent
-    const parent = this.container.parentNode;
-    if (!parent) {
-      return;
-    }
-
-    // Remove old container
     this.container.remove();
-
-    // Create new control
     this.createControl();
   }
 
