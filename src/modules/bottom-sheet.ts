@@ -1,6 +1,17 @@
-import { TabManager } from './tab-manager';
-
 type Snap = 'closed' | 'half' | 'full';
+
+/**
+ * One button of the mobile dock. The button itself lives in the host app's
+ * markup; this only says what pressing it does.
+ */
+export interface DockItem {
+  /** Element id of the button in the dock. */
+  id: string;
+  /** Snap to open the sheet to on press, or null to leave the sheet alone. */
+  snap?: 'half' | 'full' | null;
+  /** Ran after the sheet has snapped. */
+  onSelect?: () => void;
+}
 
 const CLOSED_PX = 0;
 const HALF_VH = 0.45;
@@ -12,12 +23,7 @@ export class BottomSheetController {
   private dismissCallbacks: Array<() => void> = [];
   private active = false;
 
-  constructor(
-    panel: HTMLElement,
-    tabManager: TabManager,
-    openHistoryModal?: () => void,
-    openFilesModal?: () => void
-  ) {
+  constructor(panel: HTMLElement, dockItems: DockItem[] = []) {
     this.panel = panel;
 
     // Only activate on mobile
@@ -27,11 +33,7 @@ export class BottomSheetController {
 
     this.active = true;
     this.setupDragHandle();
-    this.setupDock(
-      tabManager,
-      openHistoryModal ?? null,
-      openFilesModal ?? null
-    );
+    this.setupDock(dockItems);
     this.setSnap('closed', false);
 
     const dock = document.getElementById('mobile-dock');
@@ -198,38 +200,24 @@ export class BottomSheetController {
     }
   }
 
-  private setupDock(
-    tabManager: TabManager,
-    openHistoryModal: (() => void) | null,
-    openFilesModal: (() => void) | null
-  ): void {
-    const dockBrowse = document.getElementById('dock-browse');
-    const dockFiles = document.getElementById('dock-files');
-    const dockChanges = document.getElementById('dock-changes');
+  private setupDock(items: DockItem[]): void {
+    const buttons = items.map((item) => ({
+      item,
+      el: document.getElementById(item.id),
+    }));
 
-    const updateDockActive = (tabName: string) => {
-      dockBrowse?.classList.toggle('dock-active', tabName === 'browse');
-      dockFiles?.classList.toggle('dock-active', tabName === 'files');
-      dockChanges?.classList.toggle('dock-active', tabName === 'changes');
-    };
-
-    dockBrowse?.addEventListener('click', () => {
-      updateDockActive('browse');
-      this.open('half');
-    });
-
-    dockFiles?.addEventListener('click', () => {
-      updateDockActive('files');
-      this.open('half');
-      openFilesModal?.();
-    });
-
-    dockChanges?.addEventListener('click', () => {
-      updateDockActive('changes');
-      openHistoryModal?.();
-    });
-
-    void tabManager; // retained for API compatibility, tabs removed
+    for (const { item, el } of buttons) {
+      el?.addEventListener('click', () => {
+        for (const other of buttons) {
+          other.el?.classList.toggle('dock-active', other.item.id === item.id);
+        }
+        const snap = item.snap === undefined ? 'half' : item.snap;
+        if (snap) {
+          this.open(snap);
+        }
+        item.onSelect?.();
+      });
+    }
   }
 
   public onDismiss(cb: () => void): void {
