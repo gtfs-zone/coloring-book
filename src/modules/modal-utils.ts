@@ -87,6 +87,19 @@ export function renderTriangleIcon(sizeClass = 'h-4 w-4'): string {
 }
 
 /**
+ * Warning triangle, for a card or row that reports a problem with the feed.
+ *
+ * No caller here: this app's warnings render through `notification-system.ts`,
+ * which draws its own. Kept so the file stays one copy across the three apps
+ * rather than forking on an export.
+ *
+ * @lintignore
+ */
+export function renderWarningIcon(sizeClass = 'h-4 w-4'): string {
+  return `<svg xmlns="http://www.w3.org/2000/svg" class="${sizeClass}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" /></svg>`;
+}
+
+/**
  * A modal list table whose body scrolls under a pinned header.
  *
  * Keeps the column headers visible with hundreds of rows; anything that must
