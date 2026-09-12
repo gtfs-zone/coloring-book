@@ -27,6 +27,20 @@ import {
   stopsBackgroundPaint,
   type StopStyleOptions,
 } from './stop-layer-style';
+import {
+  ROUTES_CASING_LAYER,
+  STOPS_BACKGROUND_LAYER,
+  STOPS_CLICKAREA_LAYER,
+  STOPS_SOURCE,
+  STOPS_STATION_DOT_LAYER,
+  TOP_LEVEL_STOPS_FILTER,
+  specialStop,
+  stationDotFilter,
+  stationFadeOpacity,
+  stopClickAreaRadius,
+  stopFadeOpacity,
+  type StopFadeBands,
+} from './layer-specs';
 
 export interface StopLayerOptions {
   showBackground: boolean;
@@ -112,11 +126,22 @@ function offsetSegment([a, b]: Segment, meters: number): Segment {
 }
 
 // Default filter: show all top-level stops (empty parent_station) and stations (location_type=1), hide child stops.
-export const DEFAULT_STOPS_FILTER: FilterSpecification = [
-  'any',
-  ['==', ['get', 'parent_station'], ''],
-  ['==', ['get', 'location_type'], 1],
-] as FilterSpecification;
+export const DEFAULT_STOPS_FILTER = TOP_LEVEL_STOPS_FILTER;
+
+/** The zoom bands the stop layers fade through, from this app's config. */
+const STOP_FADE_BANDS: StopFadeBands = {
+  stationMin: CONFIG.STATION_FADE_ZOOM_MIN,
+  stationMax: CONFIG.STATION_FADE_ZOOM_MAX,
+  stopMin: CONFIG.STOP_FADE_ZOOM_MIN,
+  stopMax: CONFIG.STOP_FADE_ZOOM_MAX,
+};
+
+/**
+ * The editor's exempt states. `kept` is the editor's own: a member of an
+ * expanded station, or an endpoint of the focused stop's transfers, has to
+ * stay drawn whatever the spotlight says.
+ */
+const SPECIAL_STOP = specialStop(['focused', 'onRoute', 'kept']);
 
 export class LayerManager {
   private map: MapLibreMap;
@@ -208,7 +233,7 @@ export class LayerManager {
       }
     }
     const fill = stopFillColor(accent, this.defaultStopOptions.backgroundColor);
-    for (const layerId of ['stops-background', STOP_FOCUS_TOP_LAYER]) {
+    for (const layerId of [STOPS_BACKGROUND_LAYER, STOP_FOCUS_TOP_LAYER]) {
       if (this.map.getLayer(layerId)) {
         this.map.setPaintProperty(layerId, 'circle-color', fill);
       }
@@ -228,12 +253,12 @@ export class LayerManager {
   public clearAllLayers(): void {
     const layersToRemove = [
       ...LayerManager.PATHWAY_LAYER_IDS,
-      'stops-station-dot',
-      'stops-background',
-      'stops-focus-halo',
-      'stops-focus-ring',
-      'stops-focus-top',
-      'stops-clickarea',
+      STOPS_STATION_DOT_LAYER,
+      STOPS_BACKGROUND_LAYER,
+      STOP_FOCUS_HALO_LAYER,
+      STOP_FOCUS_RING_LAYER,
+      STOP_FOCUS_TOP_LAYER,
+      STOPS_CLICKAREA_LAYER,
       ...TRANSFER_LAYER_IDS,
       ZONE_FILL_LAYER,
       ZONE_OUTLINE_LAYER,
@@ -246,7 +271,7 @@ export class LayerManager {
     const sourcesToRemove = [
       'pathways',
       'station-ground',
-      'stops',
+      STOPS_SOURCE,
       TRANSFER_SOURCE,
       ZONE_SOURCE,
     ];
@@ -321,9 +346,9 @@ export class LayerManager {
     }
     const accent = this.accent();
     const before = [
-      'routes-casing',
-      'stops-focus-halo',
-      'stops-background',
+      ROUTES_CASING_LAYER,
+      STOP_FOCUS_HALO_LAYER,
+      STOPS_BACKGROUND_LAYER,
     ].find((id) => !!this.map.getLayer(id));
 
     this.map.addLayer(
@@ -537,8 +562,8 @@ export class LayerManager {
     // promoteId tells MapLibre to use the stop_id property as the feature id
     // for feature-state lookups, preserving string ids like "place-jfk" that
     // would otherwise be coerced to 0 by the vector-tile encoder.
-    if (!this.map.getSource('stops')) {
-      this.map.addSource('stops', {
+    if (!this.map.getSource(STOPS_SOURCE)) {
+      this.map.addSource(STOPS_SOURCE, {
         type: 'geojson',
         data: stopsGeoJSON,
         promoteId: 'stop_id',
@@ -671,106 +696,26 @@ export class LayerManager {
   }
 
   /**
-   * A stop is "special" when it must stay visible and clickable at any zoom:
-   * focused (clicked), on the currently spotlighted route, or kept (a member of
-   * the expanded station, or an endpoint of the focused stop's transfers).
-   */
-  private static readonly SPECIAL_STOP: ExpressionSpecification = [
-    'any',
-    ['boolean', ['feature-state', 'focused'], false],
-    ['boolean', ['feature-state', 'onRoute'], false],
-    ['boolean', ['feature-state', 'kept'], false],
-  ] as unknown as ExpressionSpecification;
-
-  /**
-   * Opacity expression that keeps special stops at full opacity and dims
-   * everything else to `dim`. Shared by `stopFadeOpacity`'s full-zoom branch
-   * and `setRouteStops`'s station-dot opacity so the two stay in lockstep.
-   */
-  private specialOrDim(dim: number): ExpressionSpecification {
-    return [
-      'case',
-      LayerManager.SPECIAL_STOP,
-      1,
-      dim,
-    ] as unknown as ExpressionSpecification;
-  }
-
-  /**
-   * Everything that isn't a special stop is gone. Used as the bottom stop of
-   * both fade bands, below which the map shows routes only.
-   */
-  private specialOnly(): ExpressionSpecification {
-    return [
-      'case',
-      LayerManager.SPECIAL_STOP,
-      1,
-      0,
-    ] as unknown as ExpressionSpecification;
-  }
-
-  /**
-   * Opacity expression for the stops layers. Two nested fade bands, both
-   * driven by zoom:
-   *
-   *   < STATION_FADE_ZOOM_MIN   nothing but special stops
-   *   ~ STATION_FADE_ZOOM_MAX   stations and child nodes have faded in
-   *   ~ STOP_FADE_ZOOM_MAX      plain stops (location_type 0) have faded in
-   *
-   * Stations get the gentler band because they're far more spaced out, a
-   * zoomed-out view of them still reads as a network, where the same view of
-   * every plain stop reads as a pile of dots. Special stops (focused, or on
-   * the spotlighted route) are exempt at every zoom. When `dim` is set (route
-   * spotlight active), non-special stops top out at `dim` rather than 1.
+   * Opacity expression for the stops layers, from the shared fade bands. When
+   * `dim` is set (route spotlight active), non-special stops top out at `dim`.
    */
   private stopFadeOpacity(dim: number | null): ExpressionSpecification {
-    const stationsOnly = [
-      'case',
-      LayerManager.SPECIAL_STOP,
-      1,
-      ['==', ['get', 'location_type'], 0],
-      0,
-      dim ?? 1,
-    ];
-    const fullZoom = dim === null ? 1 : this.specialOrDim(dim);
-    if (this.stopFadeDisabled) {
-      return fullZoom as unknown as ExpressionSpecification;
-    }
-    return [
-      'interpolate',
-      ['linear'],
-      ['zoom'],
-      CONFIG.STATION_FADE_ZOOM_MIN,
-      this.specialOnly(),
-      CONFIG.STATION_FADE_ZOOM_MAX,
-      stationsOnly,
-      CONFIG.STOP_FADE_ZOOM_MIN,
-      stationsOnly,
-      CONFIG.STOP_FADE_ZOOM_MAX,
-      fullZoom,
-    ] as unknown as ExpressionSpecification;
+    return stopFadeOpacity(
+      SPECIAL_STOP,
+      STOP_FADE_BANDS,
+      !this.stopFadeDisabled,
+      dim
+    );
   }
 
-  /**
-   * Opacity for the station-dot layer, which is filtered to location_type 1 and
-   * so only needs the station band. Without this the white station circle
-   * fades out at low zoom and leaves its black center dot floating.
-   */
+  /** The station-dot layer's opacity: the station band only. */
   private stationFadeOpacity(dim: number | null): ExpressionSpecification {
-    if (this.stopFadeDisabled) {
-      return (dim === null
-        ? 1
-        : this.specialOrDim(dim)) as unknown as ExpressionSpecification;
-    }
-    return [
-      'interpolate',
-      ['linear'],
-      ['zoom'],
-      CONFIG.STATION_FADE_ZOOM_MIN,
-      this.specialOnly(),
-      CONFIG.STATION_FADE_ZOOM_MAX,
-      dim === null ? 1 : this.specialOrDim(dim),
-    ] as unknown as ExpressionSpecification;
+    return stationFadeOpacity(
+      SPECIAL_STOP,
+      STOP_FADE_BANDS,
+      !this.stopFadeDisabled,
+      dim
+    );
   }
 
   /**
@@ -800,7 +745,7 @@ export class LayerManager {
     this.map.addLayer({
       id: STOP_FOCUS_HALO_LAYER,
       type: 'circle',
-      source: 'stops',
+      source: STOPS_SOURCE,
       filter: this.activeStopsFilter,
       paint: focusHaloPaint(accent),
     });
@@ -808,7 +753,7 @@ export class LayerManager {
     this.map.addLayer({
       id: STOP_FOCUS_RING_LAYER,
       type: 'circle',
-      source: 'stops',
+      source: STOPS_SOURCE,
       filter: this.activeStopsFilter,
       paint: focusRingPaint(accent),
     });
@@ -825,14 +770,14 @@ export class LayerManager {
    */
   private addStopsBackgroundLayer(options: StopLayerOptions): void {
     // Check if layer already exists
-    if (this.map.getLayer('stops-background')) {
+    if (this.map.getLayer(STOPS_BACKGROUND_LAYER)) {
       return;
     }
 
     this.map.addLayer({
-      id: 'stops-background',
+      id: STOPS_BACKGROUND_LAYER,
       type: 'circle',
-      source: 'stops',
+      source: STOPS_SOURCE,
       filter: this.activeStopsFilter,
       paint: stopsBackgroundPaint(
         this.stopStyle(options),
@@ -855,7 +800,7 @@ export class LayerManager {
     this.map.addLayer({
       id: STOP_FOCUS_TOP_LAYER,
       type: 'circle',
-      source: 'stops',
+      source: STOPS_SOURCE,
       filter: this.activeStopsFilter,
       paint: focusTopPaint(this.stopStyle(options)),
     });
@@ -867,19 +812,15 @@ export class LayerManager {
    * Added after the focus layer so a focused station keeps its dot.
    */
   private addStationDotLayer(): void {
-    if (this.map.getLayer('stops-station-dot')) {
+    if (this.map.getLayer(STOPS_STATION_DOT_LAYER)) {
       return;
     }
 
     this.map.addLayer({
-      id: 'stops-station-dot',
+      id: STOPS_STATION_DOT_LAYER,
       type: 'circle',
-      source: 'stops',
-      filter: [
-        '==',
-        ['get', 'location_type'],
-        1,
-      ] as unknown as FilterSpecification,
+      source: STOPS_SOURCE,
+      filter: stationDotFilter(null),
       paint: stationDotPaint(this.stationFadeOpacity(null)),
     });
   }
@@ -894,14 +835,14 @@ export class LayerManager {
    */
   private addStopsClickAreaLayer(options: StopLayerOptions): void {
     // Check if layer already exists
-    if (this.map.getLayer('stops-clickarea')) {
+    if (this.map.getLayer(STOPS_CLICKAREA_LAYER)) {
       return;
     }
 
     this.map.addLayer({
-      id: 'stops-clickarea',
+      id: STOPS_CLICKAREA_LAYER,
       type: 'circle',
-      source: 'stops',
+      source: STOPS_SOURCE,
       filter: this.activeStopsFilter,
       paint: {
         'circle-radius': this.clickAreaRadius(options.clickAreaRadius),
@@ -911,43 +852,14 @@ export class LayerManager {
     });
   }
 
-  /**
-   * Hit radius for the clickarea layer, mirroring `stopFadeOpacity` so an
-   * invisible stop is not hoverable. Under the small-feed exemption nothing
-   * fades, so the radius only grows with zoom.
-   */
+  /** The clickarea layer's hit radius, mirroring `stopFadeOpacity`. */
   private clickAreaRadius(r: number): ExpressionSpecification {
-    // Stay larger than the biggest visual circle (focused station at high
-    // zoom) so the clickarea is the sole hit-test layer.
-    const highZoom = [CONFIG.STOP_FADE_ZOOM_MAX, r, 19, r * 1.6];
-    if (this.stopFadeDisabled) {
-      return [
-        'interpolate',
-        ['linear'],
-        ['zoom'],
-        ...highZoom,
-      ] as unknown as ExpressionSpecification;
-    }
-    const stationsOnly = [
-      'case',
-      LayerManager.SPECIAL_STOP,
-      r,
-      ['==', ['get', 'location_type'], 0],
-      0,
-      r,
-    ];
-    return [
-      'interpolate',
-      ['linear'],
-      ['zoom'],
-      CONFIG.STATION_FADE_ZOOM_MIN,
-      ['case', LayerManager.SPECIAL_STOP, r, 0],
-      CONFIG.STATION_FADE_ZOOM_MAX,
-      stationsOnly,
-      CONFIG.STOP_FADE_ZOOM_MIN,
-      stationsOnly,
-      ...highZoom,
-    ] as unknown as ExpressionSpecification;
+    return stopClickAreaRadius(
+      SPECIAL_STOP,
+      STOP_FADE_BANDS,
+      !this.stopFadeDisabled,
+      r
+    );
   }
 
   /**
@@ -958,31 +870,19 @@ export class LayerManager {
   public setStopsFilter(filter: FilterSpecification | null): void {
     this.activeStopsFilter = filter ?? DEFAULT_STOPS_FILTER;
     for (const layerId of [
-      'stops-background',
-      'stops-focus-top',
-      'stops-focus-halo',
-      'stops-focus-ring',
-      'stops-clickarea',
+      STOPS_BACKGROUND_LAYER,
+      STOP_FOCUS_TOP_LAYER,
+      STOP_FOCUS_HALO_LAYER,
+      STOP_FOCUS_RING_LAYER,
+      STOPS_CLICKAREA_LAYER,
     ]) {
       if (this.map.getLayer(layerId)) {
         this.map.setFilter(layerId, this.activeStopsFilter);
       }
     }
     // Station-dot layer always filters to location_type=1; compose with activeStopsFilter when non-default
-    if (this.map.getLayer('stops-station-dot')) {
-      const stationDotFilter: FilterSpecification =
-        filter === null
-          ? ([
-              '==',
-              ['get', 'location_type'],
-              1,
-            ] as unknown as FilterSpecification)
-          : ([
-              'all',
-              ['==', ['get', 'location_type'], 1],
-              filter,
-            ] as unknown as FilterSpecification);
-      this.map.setFilter('stops-station-dot', stationDotFilter);
+    if (this.map.getLayer(STOPS_STATION_DOT_LAYER)) {
+      this.map.setFilter(STOPS_STATION_DOT_LAYER, stationDotFilter(filter));
     }
   }
 
@@ -992,11 +892,11 @@ export class LayerManager {
   private addStopsHoverBehavior(): void {
     // Only the clickarea layer: its radius collapses for hidden stops, so
     // hovering an invisible stop doesn't show a pointer cursor.
-    this.map.on('mouseenter', 'stops-clickarea', () => {
+    this.map.on('mouseenter', STOPS_CLICKAREA_LAYER, () => {
       this.map.getCanvas().style.cursor = 'pointer';
     });
 
-    this.map.on('mouseleave', 'stops-clickarea', () => {
+    this.map.on('mouseleave', STOPS_CLICKAREA_LAYER, () => {
       this.map.getCanvas().style.cursor = '';
     });
   }
@@ -1086,8 +986,8 @@ export class LayerManager {
     ] as unknown as ExpressionSpecification;
     // line-dasharray is not data-driven, so the dashed types need their own
     // layer. 0 (or empty) is a suggestion; 1, 2 and 3 are rules.
-    const before = this.map.getLayer('stops-background')
-      ? 'stops-background'
+    const before = this.map.getLayer(STOPS_BACKGROUND_LAYER)
+      ? STOPS_BACKGROUND_LAYER
       : undefined;
     const width = this.transferEmphasis(TRANSFER_WIDTH, TRANSFER_WIDTH_HOVERED);
     const opacity = this.transferEmphasis(
@@ -1239,15 +1139,21 @@ export class LayerManager {
   public setRouteStops(stop_ids: string[]): void {
     console.log(`[LayerManager] Spotlighting ${stop_ids.length} route stops`);
 
-    if (this.map.getSource('stops')) {
+    if (this.map.getSource(STOPS_SOURCE)) {
       for (const id of this.routeStopIds) {
-        this.map.setFeatureState({ source: 'stops', id }, { onRoute: false });
+        this.map.setFeatureState(
+          { source: STOPS_SOURCE, id },
+          { onRoute: false }
+        );
       }
       for (const id of stop_ids) {
-        this.map.setFeatureState({ source: 'stops', id }, { onRoute: true });
+        this.map.setFeatureState(
+          { source: STOPS_SOURCE, id },
+          { onRoute: true }
+        );
       }
     }
-    this.routeStopIds = this.map.getSource('stops') ? stop_ids : [];
+    this.routeStopIds = this.map.getSource(STOPS_SOURCE) ? stop_ids : [];
 
     this.applyStopFadePaint();
   }
@@ -1259,25 +1165,25 @@ export class LayerManager {
    */
   private applyStopFadePaint(): void {
     const dim = this.routeStopIds.length > 0 ? CONFIG.SPOTLIGHT_STOP_DIM : null;
-    if (this.map.getLayer('stops-background')) {
+    if (this.map.getLayer(STOPS_BACKGROUND_LAYER)) {
       const fade = this.stopFadeOpacity(dim);
-      this.map.setPaintProperty('stops-background', 'circle-opacity', fade);
+      this.map.setPaintProperty(STOPS_BACKGROUND_LAYER, 'circle-opacity', fade);
       this.map.setPaintProperty(
-        'stops-background',
+        STOPS_BACKGROUND_LAYER,
         'circle-stroke-opacity',
         fade
       );
     }
-    if (this.map.getLayer('stops-station-dot')) {
+    if (this.map.getLayer(STOPS_STATION_DOT_LAYER)) {
       this.map.setPaintProperty(
-        'stops-station-dot',
+        STOPS_STATION_DOT_LAYER,
         'circle-opacity',
         this.stationFadeOpacity(dim)
       );
     }
-    if (this.map.getLayer('stops-clickarea')) {
+    if (this.map.getLayer(STOPS_CLICKAREA_LAYER)) {
       this.map.setPaintProperty(
-        'stops-clickarea',
+        STOPS_CLICKAREA_LAYER,
         'circle-radius',
         this.clickAreaRadius(this.defaultStopOptions.clickAreaRadius)
       );
@@ -1318,12 +1224,12 @@ export class LayerManager {
     }
     console.log(`[LayerManager] Keeping ${next.length} stops visible`);
 
-    if (this.map.getSource('stops')) {
+    if (this.map.getSource(STOPS_SOURCE)) {
       for (const id of this.keptStopIds) {
-        this.map.setFeatureState({ source: 'stops', id }, { kept: false });
+        this.map.setFeatureState({ source: STOPS_SOURCE, id }, { kept: false });
       }
       for (const id of next) {
-        this.map.setFeatureState({ source: 'stops', id }, { kept: true });
+        this.map.setFeatureState({ source: STOPS_SOURCE, id }, { kept: true });
       }
       this.keptStopIds = next;
     } else {
@@ -1359,16 +1265,16 @@ export class LayerManager {
       next: stop_id,
     });
     try {
-      if (this.focusedStopId !== null && this.map.getSource('stops')) {
+      if (this.focusedStopId !== null && this.map.getSource(STOPS_SOURCE)) {
         this.map.setFeatureState(
-          { source: 'stops', id: this.focusedStopId },
+          { source: STOPS_SOURCE, id: this.focusedStopId },
           { focused: false }
         );
       }
       this.focusedStopId = stop_id;
-      if (stop_id !== null && this.map.getSource('stops')) {
+      if (stop_id !== null && this.map.getSource(STOPS_SOURCE)) {
         this.map.setFeatureState(
-          { source: 'stops', id: stop_id },
+          { source: STOPS_SOURCE, id: stop_id },
           { focused: true }
         );
       }
@@ -1405,19 +1311,19 @@ export class LayerManager {
       return;
     }
     try {
-      if (this.map.getSource('stops')) {
+      if (this.map.getSource(STOPS_SOURCE)) {
         for (const stop_id of prev) {
           this.map.setFeatureState(
-            { source: 'stops', id: stop_id },
+            { source: STOPS_SOURCE, id: stop_id },
             { hovered: false }
           );
         }
       }
       this.hoveredStopIds = next;
-      if (this.map.getSource('stops')) {
+      if (this.map.getSource(STOPS_SOURCE)) {
         for (const stop_id of next) {
           this.map.setFeatureState(
-            { source: 'stops', id: stop_id },
+            { source: STOPS_SOURCE, id: stop_id },
             { hovered: true }
           );
         }
@@ -1470,7 +1376,7 @@ export class LayerManager {
     state: Record<string, unknown>
   ): void {
     try {
-      this.map.setFeatureState({ source: 'stops', id: stop_id }, state);
+      this.map.setFeatureState({ source: STOPS_SOURCE, id: stop_id }, state);
     } catch (error) {
       console.debug('Could not set feature state for stop:', stop_id, error);
     }
@@ -1496,7 +1402,7 @@ export class LayerManager {
    * Update stops data source
    */
   public updateStopsData(): void {
-    const stopsSource = this.map.getSource('stops') as GeoJSONSource;
+    const stopsSource = this.map.getSource(STOPS_SOURCE) as GeoJSONSource;
     if (!stopsSource) {
       return;
     }
@@ -1718,9 +1624,9 @@ export class LayerManager {
     this.map.addSource('station-ground', { type: 'geojson', data: geojson });
 
     // Below the halo, which is itself below the pathways and the stops.
-    const before = this.map.getLayer('stops-focus-halo')
-      ? 'stops-focus-halo'
-      : 'stops-background';
+    const before = this.map.getLayer(STOP_FOCUS_HALO_LAYER)
+      ? STOP_FOCUS_HALO_LAYER
+      : STOPS_BACKGROUND_LAYER;
 
     this.map.addLayer(
       {
@@ -1809,7 +1715,7 @@ export class LayerManager {
             'line-join': 'round',
           },
         } as unknown as Parameters<MapLibreMap['addLayer']>[0],
-        'stops-background'
+        STOPS_BACKGROUND_LAYER
       );
     }
 
@@ -1838,7 +1744,7 @@ export class LayerManager {
             'line-join': 'round',
           },
         } as unknown as Parameters<MapLibreMap['addLayer']>[0],
-        'stops-background'
+        STOPS_BACKGROUND_LAYER
       );
     }
   }
@@ -1886,7 +1792,7 @@ export class LayerManager {
           ] as unknown as ExpressionSpecification,
         },
       },
-      'stops-background'
+      STOPS_BACKGROUND_LAYER
     );
   }
 
@@ -1904,7 +1810,7 @@ export class LayerManager {
           'line-opacity': 0,
         },
       },
-      'stops-background'
+      STOPS_BACKGROUND_LAYER
     );
 
     this.map.on('mouseenter', 'pathways-clickarea', this.onPathwayMouseEnter);

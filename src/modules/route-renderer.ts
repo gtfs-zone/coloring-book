@@ -17,6 +17,20 @@ import {
   routeColor as deriveRouteColor,
   casingColor as deriveCasingColor,
 } from '../utils/route-colors';
+import {
+  NO_ROUTE_FILTER,
+  ROUTES_BACKGROUND_LAYER,
+  ROUTES_CASING_LAYER,
+  ROUTES_CLICKAREA_LAYER,
+  ROUTES_DIRECTION_LAYER,
+  ROUTES_SOURCE,
+  ROUTE_CASING_WIDTH_STOPS,
+  ROUTE_WIDTH_STOPS,
+  routeMatch,
+  routeSortKeyExpression,
+  routeSpotlightOpacity,
+  zoomWidth,
+} from './layer-specs';
 
 /**
  * Thrown by an async feature build that a newer one has replaced.
@@ -49,48 +63,8 @@ export interface RouteFeature extends GeoJSON.Feature {
   };
 }
 
-// Zoom-interpolated line widths for the cased route look. The casing is a
-// darker outline drawn underneath the colored line so routes read as crisp
-// ribbons over the basemap at any zoom.
-//
-// Selection uses a "spotlight" treatment instead of extra highlight layers:
-// non-selected routes dim to low opacity and the selected route gets a width
-// bump, both as paint-expression updates on the two base layers.
-const ROUTE_WIDTH_STOPS: Array<[number, number]> = [
-  [10, 1.5],
-  [13, 3.5],
-  [16, 7.5],
-];
-const CASING_WIDTH_STOPS: Array<[number, number]> = [
-  [10, 3],
-  [13, 5.5],
-  [16, 10.5],
-];
-/**
- * Build a zoom-interpolated line-width expression. When `match` is given,
- * matched routes get their width multiplied by `bump` (the spotlight bump).
- */
-function zoomWidth(
-  widthStops: Array<[number, number]>,
-  match: ExpressionSpecification | null,
-  bump: number
-): ExpressionSpecification {
-  const expr: unknown[] = ['interpolate', ['linear'], ['zoom']];
-  for (const [zoom, width] of widthStops) {
-    expr.push(zoom, match ? ['case', match, width * bump, width] : width);
-  }
-  return expr as unknown as ExpressionSpecification;
-}
-
-/** Matches no feature: the direction layer's resting state. */
-const NO_ROUTE_FILTER = [
-  '==',
-  ['get', 'route_id'],
-  '',
-] as unknown as ExpressionSpecification;
-
 const ROUTE_LINE_WIDTH = zoomWidth(ROUTE_WIDTH_STOPS, null, 1);
-const ROUTE_CASING_WIDTH = zoomWidth(CASING_WIDTH_STOPS, null, 1);
+const ROUTE_CASING_WIDTH = zoomWidth(ROUTE_CASING_WIDTH_STOPS, null, 1);
 
 export class RouteRenderer {
   private map: MapLibreMap;
@@ -144,7 +118,7 @@ export class RouteRenderer {
       await this.initializationPromise;
     }
 
-    if (this.initialized && !this.map.getSource('routes')) {
+    if (this.initialized && !this.map.getSource(ROUTES_SOURCE)) {
       console.log('[RouteRenderer] Routes source missing, re-initializing...');
       this.initialized = false;
       this.initializationPromise = this.initializeMapLayers();
@@ -159,12 +133,12 @@ export class RouteRenderer {
       return;
     }
 
-    if (this.map.getSource('routes')) {
+    if (this.map.getSource(ROUTES_SOURCE)) {
       this.initialized = true;
       return;
     }
 
-    this.map.addSource('routes', {
+    this.map.addSource(ROUTES_SOURCE, {
       type: 'geojson',
       data: {
         type: 'FeatureCollection',
@@ -173,9 +147,9 @@ export class RouteRenderer {
     });
 
     this.map.addLayer({
-      id: 'routes-casing',
+      id: ROUTES_CASING_LAYER,
       type: 'line',
-      source: 'routes',
+      source: ROUTES_SOURCE,
       paint: {
         'line-color': ['get', 'colorDark'],
         'line-width': ROUTE_CASING_WIDTH,
@@ -189,9 +163,9 @@ export class RouteRenderer {
     });
 
     this.map.addLayer({
-      id: 'routes-background',
+      id: ROUTES_BACKGROUND_LAYER,
       type: 'line',
-      source: 'routes',
+      source: ROUTES_SOURCE,
       paint: {
         'line-color': ['get', 'color'],
         'line-width': ROUTE_LINE_WIDTH,
@@ -209,9 +183,9 @@ export class RouteRenderer {
     // later). Starts filtered to nothing; applySpotlight owns the filter.
     ensureMapIcons(this.map);
     this.map.addLayer({
-      id: 'routes-direction',
+      id: ROUTES_DIRECTION_LAYER,
       type: 'symbol',
-      source: 'routes',
+      source: ROUTES_SOURCE,
       filter: NO_ROUTE_FILTER,
       layout: {
         'symbol-placement': 'line',
@@ -250,9 +224,9 @@ export class RouteRenderer {
     });
 
     this.map.addLayer({
-      id: 'routes-clickarea',
+      id: ROUTES_CLICKAREA_LAYER,
       type: 'line',
-      source: 'routes',
+      source: ROUTES_SOURCE,
       paint: {
         'line-color': 'transparent',
         'line-width': 15,
@@ -296,7 +270,9 @@ export class RouteRenderer {
     this.dirtyFlag = true;
     requestAnimationFrame(() => {
       this.dirtyFlag = false;
-      const source = this.map.getSource('routes') as maplibregl.GeoJSONSource;
+      const source = this.map.getSource(
+        ROUTES_SOURCE
+      ) as maplibregl.GeoJSONSource;
       if (!source) {
         return;
       }
@@ -610,7 +586,9 @@ export class RouteRenderer {
       return;
     }
 
-    const source = this.map.getSource('routes') as maplibregl.GeoJSONSource;
+    const source = this.map.getSource(
+      ROUTES_SOURCE
+    ) as maplibregl.GeoJSONSource;
     source.setData({
       type: 'FeatureCollection' as const,
       features: [...this.routeFeatures.values()],
@@ -621,7 +599,9 @@ export class RouteRenderer {
   }
 
   public clearRoutes(): void {
-    const source = this.map.getSource('routes') as maplibregl.GeoJSONSource;
+    const source = this.map.getSource(
+      ROUTES_SOURCE
+    ) as maplibregl.GeoJSONSource;
     if (source) {
       source.setData({
         type: 'FeatureCollection',
@@ -636,36 +616,22 @@ export class RouteRenderer {
    * to CONFIG.SPOTLIGHT_ROUTE_DIM opacity, matching routes get a width bump.
    */
   private applySpotlight(route_ids: string[] | null): void {
-    if (!this.map.getLayer('routes-background')) {
+    if (!this.map.getLayer(ROUTES_BACKGROUND_LAYER)) {
       return;
     }
-    const match: ExpressionSpecification | null =
-      route_ids && route_ids.length > 0
-        ? ([
-            'in',
-            ['get', 'route_id'],
-            ['literal', route_ids],
-          ] as unknown as ExpressionSpecification)
-        : null;
-    const opacity = match
-      ? ([
-          'case',
-          match,
-          1,
-          CONFIG.SPOTLIGHT_ROUTE_DIM,
-        ] as unknown as ExpressionSpecification)
-      : 1;
-    this.map.setPaintProperty('routes-background', 'line-opacity', opacity);
-    this.map.setPaintProperty('routes-casing', 'line-opacity', opacity);
+    const match = routeMatch(route_ids);
+    const opacity = routeSpotlightOpacity(match, CONFIG.SPOTLIGHT_ROUTE_DIM);
+    this.map.setPaintProperty(ROUTES_BACKGROUND_LAYER, 'line-opacity', opacity);
+    this.map.setPaintProperty(ROUTES_CASING_LAYER, 'line-opacity', opacity);
     this.map.setPaintProperty(
-      'routes-background',
+      ROUTES_BACKGROUND_LAYER,
       'line-width',
       zoomWidth(ROUTE_WIDTH_STOPS, match, CONFIG.SPOTLIGHT_LINE_BUMP)
     );
     this.map.setPaintProperty(
-      'routes-casing',
+      ROUTES_CASING_LAYER,
       'line-width',
-      zoomWidth(CASING_WIDTH_STOPS, match, CONFIG.SPOTLIGHT_CASING_BUMP)
+      zoomWidth(ROUTE_CASING_WIDTH_STOPS, match, CONFIG.SPOTLIGHT_CASING_BUMP)
     );
 
     // Lift the spotlighted routes above everything else. line-sort-key is a
@@ -673,18 +639,11 @@ export class RouteRenderer {
     // route_id match used for opacity works here unchanged. Layout changes
     // force a tile re-layout, which is fine once per selection but must never
     // be driven from hover.
-    const sortKey: ExpressionSpecification = match
-      ? ([
-          'case',
-          match,
-          CONFIG.SPOTLIGHT_SORT_KEY,
-          ['get', 'sortKey'],
-        ] as unknown as ExpressionSpecification)
-      : (['get', 'sortKey'] as unknown as ExpressionSpecification);
+    const sortKey = routeSortKeyExpression(match, CONFIG.SPOTLIGHT_SORT_KEY);
     for (const id of [
-      'routes-casing',
-      'routes-background',
-      'routes-clickarea',
+      ROUTES_CASING_LAYER,
+      ROUTES_BACKGROUND_LAYER,
+      ROUTES_CLICKAREA_LAYER,
     ]) {
       if (this.map.getLayer(id)) {
         this.map.setLayoutProperty(id, 'line-sort-key', sortKey);
@@ -694,9 +653,9 @@ export class RouteRenderer {
     // Direction arrows only when exactly one route is spotlighted: a stop click
     // spotlights every route serving the stop, and arrows on all of them are
     // noise.
-    if (this.map.getLayer('routes-direction')) {
+    if (this.map.getLayer(ROUTES_DIRECTION_LAYER)) {
       this.map.setFilter(
-        'routes-direction',
+        ROUTES_DIRECTION_LAYER,
         route_ids && route_ids.length === 1
           ? ([
               '==',
@@ -1250,20 +1209,20 @@ export class RouteRenderer {
   public destroy(): void {
     this.clearRoutes();
 
-    if (this.map.getLayer('routes-clickarea')) {
-      this.map.removeLayer('routes-clickarea');
+    if (this.map.getLayer(ROUTES_CLICKAREA_LAYER)) {
+      this.map.removeLayer(ROUTES_CLICKAREA_LAYER);
     }
-    if (this.map.getLayer('routes-direction')) {
-      this.map.removeLayer('routes-direction');
+    if (this.map.getLayer(ROUTES_DIRECTION_LAYER)) {
+      this.map.removeLayer(ROUTES_DIRECTION_LAYER);
     }
-    if (this.map.getLayer('routes-background')) {
-      this.map.removeLayer('routes-background');
+    if (this.map.getLayer(ROUTES_BACKGROUND_LAYER)) {
+      this.map.removeLayer(ROUTES_BACKGROUND_LAYER);
     }
-    if (this.map.getLayer('routes-casing')) {
-      this.map.removeLayer('routes-casing');
+    if (this.map.getLayer(ROUTES_CASING_LAYER)) {
+      this.map.removeLayer(ROUTES_CASING_LAYER);
     }
-    if (this.map.getSource('routes')) {
-      this.map.removeSource('routes');
+    if (this.map.getSource(ROUTES_SOURCE)) {
+      this.map.removeSource(ROUTES_SOURCE);
     }
   }
 }
