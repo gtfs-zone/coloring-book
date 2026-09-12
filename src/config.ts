@@ -102,6 +102,12 @@ export const CONFIG = {
   // above every other route. Far above any natural key (max ~90999).
   SPOTLIGHT_SORT_KEY: 1_000_000,
 
+  // Which day a week starts on in the calendar input and the month grid, 0 for
+  // Sunday through 6 for Saturday. The other gtfs.zone apps answer this
+  // differently, so `calendar-input.ts` takes it as an argument rather than
+  // holding an opinion.
+  WEEK_START: 0,
+
   // Boot timing: set to true locally to emit console.time measurements for each
   // init stage. Leave false in production (logs are noisy and measured overhead
   // accumulates in tight loops).

@@ -80,11 +80,6 @@ export function todayGtfsDate(): string {
   return toGtfsDateLocal(new Date());
 }
 
-/** Today in the user's timezone, as an `<input type="date">` value. */
-export function todayInputValue(): string {
-  return toInputValue(todayGtfsDate());
-}
-
 /**
  * Human-readable form of a single GTFS date.
  *
@@ -143,6 +138,16 @@ export function formatGtfsDateRange(start: string, end?: string): string {
 
   return `${startText} - ${formatGtfsDate(end)}`;
 }
+
+/**
+ * A GTFS date as the calendar input speaks it: `YYYYMMDD` in, a UTC-midnight
+ * `Date` out. Structurally a `DateCodec`, without importing the DOM module
+ * that declares the type - this file has no dependencies and keeps none.
+ */
+export const GTFS_DATE_CODEC = {
+  parse: parseGtfsDate,
+  format: toGtfsDate,
+};
 
 /**
  * GTFS date to the `YYYY-MM-DD` value an `<input type="date">` requires.

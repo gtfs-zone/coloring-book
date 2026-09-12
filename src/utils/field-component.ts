@@ -11,6 +11,11 @@
 import { getGTFSFieldDescription } from './zod-tooltip-helper';
 import { renderSpecDescription } from './spec-markup';
 import {
+  renderPresenceBadge,
+  renderTooltipTrigger,
+  type FieldLabelOptions,
+} from './field-label';
+import {
   GTFS_PRIMARY_KEYS,
   GTFS_FIELD_TYPES,
   GTFS_FIELD_SPECS,
@@ -81,12 +86,6 @@ export interface FieldConfig {
   isExtension?: boolean;
 }
 
-/** Rendering options for a field label. */
-export interface FieldLabelOptions {
-  /** Use abbreviated presence wording, for narrow columns and headers. */
-  short?: boolean;
-}
-
 /**
  * Escape HTML special characters to prevent XSS
  */
@@ -97,20 +96,6 @@ function escapeHtml(text: string | number | undefined): string {
   const div = document.createElement('div');
   div.textContent = String(text);
   return div.innerHTML;
-}
-
-/**
- * Escape a string for safe embedding inside an HTML attribute value,
- * including quote characters (unlike `escapeHtml`, which only needs to be
- * safe as text content).
- */
-function escapeAttr(text: string): string {
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
 }
 
 /**
@@ -145,58 +130,6 @@ export function getSpecUrl(tableName: string | undefined): string {
   );
 }
 
-/** Badge class and wording for each presence value that gets a badge. */
-const PRESENCE_BADGES: Partial<
-  Record<GTFSPresence, { badgeClass: string; label: string; short: string }>
-> = {
-  Required: {
-    badgeClass: 'badge-error',
-    label: 'Required',
-    short: 'Required',
-  },
-  'Conditionally Required': {
-    badgeClass: 'badge-warning',
-    label: 'Conditionally required',
-    short: 'Cond. required',
-  },
-  Recommended: {
-    badgeClass: 'badge-success',
-    label: 'Recommended',
-    short: 'Recommended',
-  },
-  'Conditionally Forbidden': {
-    badgeClass: 'badge-ghost',
-    label: 'Conditionally forbidden',
-    short: 'Cond. forbidden',
-  },
-};
-
-/**
- * Render the presence indicator as a badge carrying the presence word.
- *
- * `Optional` and a missing presence render nothing: an optional field is the
- * default and a badge on every one of them would be noise.
- *
- * Narrow contexts (table headers, the timetable label column) pass
- * `short: true` to get the abbreviated wording instead of clipping with CSS.
- */
-function renderPresenceMark(
-  config: FieldConfig,
-  options?: FieldLabelOptions
-): string {
-  if (!config.presence) {
-    return '';
-  }
-
-  const badge = PRESENCE_BADGES[config.presence];
-  if (!badge) {
-    return '';
-  }
-
-  const text = options?.short ? badge.short : badge.label;
-  return ` <span class="badge badge-xs ${badge.badgeClass} align-middle whitespace-nowrap">${escapeHtml(text)}</span>`;
-}
-
 /**
  * Build structured tooltip content for a field, as HTML.
  *
@@ -227,18 +160,6 @@ export function buildFieldTooltipContent(config: FieldConfig): string {
 }
 
 /**
- * The `data-tooltip-content` attribute for a portal tooltip trigger.
- *
- * For icon-only affordances (a `+`, a `✕`, a trash glyph), which have no text
- * to read the action off. The element also needs the `field-tooltip-trigger`
- * class, which callers add to their own class list. Text spans keep their
- * plain `title` instead: they already say what they are.
- */
-export function tooltipContentAttr(content: string): string {
-  return `data-tooltip-content="${escapeAttr(content)}"`;
-}
-
-/**
  * Render the shared label content pattern: label text (linked to spec) + presence badge,
  * wrapped in a tooltip trigger showing structured field info on hover.
  * Used by both form field labels and timetable trip property rows.
@@ -262,10 +183,11 @@ export function renderFieldLabelContent(
   const linkContent = specUrl
     ? `<a href="${specUrl}" target="_blank" rel="noopener noreferrer">${labelText}</a>`
     : labelText;
-  const presenceMark = renderPresenceMark(config, options);
+  const badge = renderPresenceBadge(config.presence, options);
+  const presenceMark = badge ? ` ${badge}` : '';
 
   if (tipContent) {
-    return `<span class="field-tooltip-trigger" tabindex="0" data-tooltip-content="${escapeAttr(tipContent)}">${linkContent}${presenceMark}</span>`;
+    return renderTooltipTrigger(tipContent, `${linkContent}${presenceMark}`);
   }
   return `${linkContent}${presenceMark}`;
 }

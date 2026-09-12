@@ -11,12 +11,13 @@
  * that drift.
  *
  * They deliberately know nothing about GTFS, patches, or the database: the
- * caller decides what a committed value means. The one date import below is a
- * formatting helper, not GTFS semantics.
+ * caller decides what a committed value means. A date editor's value is
+ * `YYYY-MM-DD`, which is a format, not GTFS semantics.
  */
 
 import { escapeHtml } from './escape-html';
-import { todayInputValue } from './gtfs-date';
+import { attachCalendarInput, ISO_DATE_CODEC } from './calendar-input';
+import { CONFIG } from '../config';
 import {
   keyToGridDirection,
   isVerticalArrow,
@@ -163,7 +164,11 @@ export function openInlineEditor(
   }
 
   const input = document.createElement('input');
-  input.type = options.inputType ?? 'text';
+  // A date is a text box with our own month grid behind it rather than a
+  // native `type="date"`, so it looks like the rest of the app and the week
+  // start is ours to pick. See `calendar-input.ts`.
+  const isDate = options.inputType === 'date';
+  input.type = isDate ? 'text' : (options.inputType ?? 'text');
   input.className =
     `${LIVE_EDITOR_CLASS} input ${options.sizeClass ?? 'input-xs'} ${options.className ?? 'w-full'}`.trim();
   input.value = options.initialValue ?? options.value;
@@ -188,26 +193,6 @@ export function openInlineEditor(
     input.setAttribute('list', datalist.id);
   }
 
-  // A date editor gets a Today chip under it: the browser's own picker marks
-  // today but still costs a popup and a click to reach.
-  let todayChip: HTMLButtonElement | null = null;
-  if (input.type === 'date') {
-    todayChip = document.createElement('button');
-    todayChip.type = 'button';
-    todayChip.textContent = 'Today';
-    // A body child, above the modal layer, so a cell inside a modal is not
-    // clipped by it - same reason as the inline menu below.
-    todayChip.className =
-      'inline-edit-today btn btn-xs btn-ghost fixed z-[2000] text-primary';
-    // Keeps the input focused, so the click is not swallowed by a blur commit.
-    todayChip.addEventListener('mousedown', (e) => e.preventDefault());
-    todayChip.addEventListener('click', () => {
-      input.value = todayInputValue();
-      liveInputDirty = true;
-      input.blur();
-    });
-  }
-
   span.replaceWith(input);
   liveInput = input;
   liveInputDirty = false;
@@ -225,21 +210,27 @@ export function openInlineEditor(
     input.select();
   }
 
-  if (todayChip) {
-    // Sits just past the input's right edge, level with the native picker's
-    // calendar button, so the two date shortcuts read as one control.
-    document.body.appendChild(todayChip);
-    const rect = input.getBoundingClientRect();
-    const chipRect = todayChip.getBoundingClientRect();
-    todayChip.style.top = `${rect.top + (rect.height - chipRect.height) / 2}px`;
-    todayChip.style.left = `${rect.right + 2}px`;
+  // Clicking anywhere in a date box opens the grid. The box stays typeable,
+  // which is the keyboard path: the grid takes focus from nobody, so it cannot
+  // trip the blur commit below.
+  let closeCalendar: (() => void) | null = null;
+  if (isDate) {
+    closeCalendar = attachCalendarInput(input, {
+      codec: ISO_DATE_CODEC,
+      weekStart: CONFIG.WEEK_START,
+      allowEmpty: true,
+      onPick: () => {
+        liveInputDirty = true;
+        input.blur();
+      },
+    });
   }
 
   let settled = false;
   const restore = (): void => {
     input.replaceWith(span);
     datalist?.remove();
-    todayChip?.remove();
+    closeCalendar?.();
     if (liveInput === input) {
       liveInput = null;
     }
