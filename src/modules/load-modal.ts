@@ -31,6 +31,7 @@ import { describeMissing, isComplete } from './feed-selection';
 import { normalizeFeedUrl, validateFeedUrl } from './feed-url-resolve';
 import type { ModalAction } from './modal-utils';
 import { renderUploadIcon, showModal } from './modal-utils';
+import { renderTooltipTrigger } from '../utils/field-label';
 
 /**
  * Where a row came from, in the order the groups are shown. The atlas is last
@@ -296,9 +297,7 @@ function corsToggle(id: string): string {
     <label class="flex items-center gap-2 text-xs cursor-pointer font-normal shrink-0">
       <input type="checkbox" id="${id}" class="checkbox checkbox-xs" checked />
       CORS proxy
-      <span class="tooltip tooltip-left" data-tip="${CORS_TOOLTIP}">
-        <span class="cursor-help opacity-60">?</span>
-      </span>
+      ${renderTooltipTrigger(CORS_TOOLTIP, '<span class="cursor-help opacity-60">?</span>')}
     </label>`;
 }
 
