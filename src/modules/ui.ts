@@ -90,8 +90,8 @@ export class UIController {
   }
 
   setupEventListeners() {
-    // Load button: one modal covering examples, the rt.gtfs.zone catalog, the
-    // TransitLand atlas, a hand-typed URL, and file upload.
+    // Load button: one modal covering examples, the TransitLand atlas, a
+    // hand-typed URL, and file upload.
     document.getElementById('load-btn')?.addEventListener('click', () => {
       void this.openLoadModal();
     });

@@ -26,30 +26,21 @@
 
 import UFuzzy from '@leeoniya/ufuzzy';
 import { EXAMPLES } from './examples';
-import type { CatalogFeed } from './feed-catalog';
-import { describeLiveness, loadCatalog, realtimePaths } from './feed-catalog';
 import type { FeedSelection } from './feed-selection';
 import { describeMissing, isComplete } from './feed-selection';
-import {
-  isLocalUrl,
-  normalizeFeedUrl,
-  RT_BASE,
-  validateFeedUrl,
-} from './feed-url-resolve';
+import { normalizeFeedUrl, validateFeedUrl } from './feed-url-resolve';
 import type { ModalAction } from './modal-utils';
 import { renderUploadIcon, showModal } from './modal-utils';
 
 /**
- * Where a row came from, in the order the groups are shown. Feeds this stack
- * serves are first because they are the ones we can vouch for; the atlas is
- * last because it is thousands of rows of unverified metadata.
+ * Where a row came from, in the order the groups are shown. The atlas is last
+ * because it is thousands of rows of unverified metadata.
  */
-type Group = 'verified' | 'example' | 'atlas';
+type Group = 'example' | 'atlas';
 
-const GROUP_ORDER: readonly Group[] = ['verified', 'example', 'atlas'];
+const GROUP_ORDER: readonly Group[] = ['example', 'atlas'];
 
 const GROUP_LABELS: Record<Group, string> = {
-  verified: 'Feeds on rt.gtfs.zone',
   example: 'Examples',
   atlas: 'TransitLand Atlas',
 };
@@ -155,31 +146,6 @@ function reason(err: unknown): string {
 
 // ─── Sources ──────────────────────────────────────────────────────────────────
 
-function catalogRow(feed: CatalogFeed, realtime: boolean): FeedRow {
-  const live = realtime ? describeLiveness(feed) : '';
-  return {
-    rowId: `verified:${feed.feed_name}`,
-    group: 'verified',
-    provides: realtime ? 'pair' : 'scheduled',
-    name: feed.feed_name,
-    subtitle: realtime
-      ? live
-        ? `serving ${live}`
-        : 'no live data right now'
-      : '',
-    // `static_url` is cafe-car's field name and stays that way on the wire;
-    // it is the scheduled feed from here inward.
-    scheduledUrl: feed.static_url || undefined,
-    ...(realtime ? realtimePaths(feed) : {}),
-    // The scheduled half is somebody else's CDN, so it needs the proxy. The
-    // realtime half does not: this list only exists because rt.gtfs.zone
-    // answered a cross-origin request from here, which is the same permission
-    // the .pb endpoints need. Skipping the proxy hop is free accuracy.
-    scheduledCors: true,
-    rtCors: false,
-  };
-}
-
 function exampleRows(realtime: boolean): FeedRow[] {
   return EXAMPLES.map((ex, i) => {
     const rt = realtime ? ex.selection.realtime : null;
@@ -223,31 +189,11 @@ function atlasRow(row: AtlasRow): FeedRow {
   };
 }
 
-/** The feeds this stack serves. Rejects when the catalog is unreachable. */
-async function catalogRows(realtime: boolean): Promise<FeedRow[]> {
-  const feeds = await loadCatalog();
-  return feeds
-    .filter((f) => hasUsableData(f, realtime))
-    .map((f) => catalogRow(f, realtime));
-}
-
 /** The TransitLand corpus. Rejects when the file cannot be fetched. */
 async function atlasFeedRows(realtime: boolean): Promise<FeedRow[]> {
   const atlas = await loadAtlasRows();
   const usable = realtime ? atlas : atlas.filter((r) => r.kind === 'static');
   return usable.map(atlasRow);
-}
-
-/** The banner a failed catalog fetch deserves, or null when it deserves none. */
-function catalogNote(err: unknown): string | null {
-  if (isLocalUrl(RT_BASE)) {
-    // A dev machine with no feed server running is the overwhelmingly common
-    // reason this fails locally, and it is not something the user can act on.
-    // It is not an outage, so it does not get an outage banner.
-    console.warn('[LoadModal] feed catalog unreachable at', RT_BASE, err);
-    return null;
-  }
-  return `Feed catalog unavailable — ${reason(err)}`;
 }
 
 function atlasNote(err: unknown): string | null {
@@ -268,18 +214,6 @@ function buildHaystack(rows: FeedRow[]): string[] {
       .filter(Boolean)
       .join(' ')
   );
-}
-
-/**
- * A feed with nothing in any endpoint is a feed with nothing to show — but only
- * when realtime is what you came for. Without it, a scheduled URL is the whole
- * point and the liveness flags are irrelevant.
- */
-function hasUsableData(feed: CatalogFeed, realtime: boolean): boolean {
-  if (!realtime) {
-    return Boolean(feed.static_url);
-  }
-  return feed.has_vehicles || feed.has_trip_updates || feed.has_alerts;
 }
 
 // ─── Rendering ────────────────────────────────────────────────────────────────
@@ -449,17 +383,14 @@ export async function showLoadModal(
     return '';
   };
 
-  // Both remote sources are already in flight while the modal paints, and
-  // neither is allowed to keep it shut: the examples are compiled in, so there
-  // is always something to load, and the URL fields and upload need no list at
-  // all. Their rows fold in as they land.
+  // The atlas fetch is already in flight while the modal paints, and is not
+  // allowed to keep it shut: the examples are compiled in, so there is always
+  // something to load, and the URL fields and upload need no list at all. Its
+  // rows fold in as they land.
   const sources: Array<{
     load: Promise<FeedRow[]>;
     note: (err: unknown) => string | null;
-  }> = [
-    { load: catalogRows(realtime), note: catalogNote },
-    { load: atlasFeedRows(realtime), note: atlasNote },
-  ];
+  }> = [{ load: atlasFeedRows(realtime), note: atlasNote }];
   let pending = sources.length;
 
   const uf = new UFuzzy();
@@ -524,8 +455,8 @@ export async function showLoadModal(
   // the results absorb the slack means there is exactly one scrollbar on the
   // screen, always the same one, in both apps.
   //
-  // Search first: the catalog is how most feeds are loaded, so it and its
-  // results lead, and the URL/upload block sits below as the escape hatch.
+  // Search first: results lead, and the URL/upload block sits below as the
+  // escape hatch.
   const body = `
     <div class="flex h-full min-h-0 min-w-0 flex-col gap-3">
       ${options.continueWith ? continueCard(options.continueWith) : ''}
