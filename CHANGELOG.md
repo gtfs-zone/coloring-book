@@ -1,3 +1,23 @@
+## v0.32.3 (2026-09-12)
+
+### Fix
+
+- remove non-objective phrasing from issue and error messages
+- **perf**: stop a hidden tab from stalling boot
+
+### Refactor
+
+- **load**: drop the cafe-car feed catalog from the load modal
+- **parser**: put virtual table key lookups behind an interface
+
+### Perf
+
+- **boot**: derive shapes key lookups from the shape_id field map
+- **boot**: derive stop_times key lookups from the trip_id field map
+- **validator**: revalidate stop_times incrementally after an edit
+- **validator**: cut the per-row cost of stop_times validation
+- **validator**: stop allocating a pairs array per row
+
 ## v0.32.2 (2026-09-08)
 
 ### Fix
