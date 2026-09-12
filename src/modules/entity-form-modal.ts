@@ -13,6 +13,12 @@ import { escapeHtml } from '../utils/escape-html';
 import { GTFS_FIELD_SPECS } from '../types/gtfs';
 import type { GTFSPresence } from '../gtfs-spec/types';
 import { getEnumOptions, isEnumField } from '../types/gtfs-enums';
+import {
+  attachCalendarInput,
+  ISO_DATE_CODEC,
+  type DateCodec,
+} from '../utils/calendar-input';
+import { CONFIG } from '../config';
 
 export interface EntityFormField {
   /** Field name. Also the value key and the basis of the input's id. */
@@ -33,6 +39,13 @@ export interface EntityFormField {
   mono?: boolean;
   /** A line of explanation under the input. */
   note?: string;
+  /**
+   * For `date`. How the field's stored string becomes a day and back.
+   *
+   * Defaults to `YYYY-MM-DD`. A caller storing GTFS `YYYYMMDD` passes its own
+   * rather than converting on the way in and out.
+   */
+  dateCodec?: DateCodec;
 }
 
 export interface EntityFormOptions {
@@ -124,9 +137,11 @@ function renderInput(field: EntityFormField): string {
   }
 
   const mono = field.mono ? ' font-mono' : '';
+  // A date is a text box: the month grid behind it is ours, not the browser's,
+  // and it is wired up on mount. See `calendar-input.ts`.
   return `<input
     id="${id}"
-    type="${type}"
+    type="${type === 'date' ? 'text' : type}"
     class="input input-bordered w-full${mono}"
     value="${escapeHtml(field.value ?? '')}"
     placeholder="${escapeHtml(field.placeholder ?? '')}"
@@ -187,6 +202,9 @@ export async function promptNewEntity(
   options: EntityFormOptions
 ): Promise<Record<string, string> | null> {
   let created: Record<string, string> | null = null;
+  // The calendar popovers are body children, so they outlive the modal box and
+  // have to be closed when it goes.
+  const closeCalendars: Array<() => void> = [];
 
   const body = `
     <div class="space-y-3">
@@ -210,6 +228,21 @@ export async function promptNewEntity(
         first.select();
       } else {
         first?.focus();
+      }
+      for (const field of options.fields) {
+        if (field.type !== 'date') {
+          continue;
+        }
+        const input = document.getElementById(inputId(field.field));
+        if (input instanceof HTMLInputElement) {
+          closeCalendars.push(
+            attachCalendarInput(input, {
+              codec: field.dateCodec ?? ISO_DATE_CODEC,
+              weekStart: CONFIG.WEEK_START,
+              allowEmpty: true,
+            })
+          );
+        }
       }
       options.onMount?.(close);
     },
@@ -243,5 +276,6 @@ export async function promptNewEntity(
     ],
   });
 
+  closeCalendars.forEach((close) => close());
   return created;
 }

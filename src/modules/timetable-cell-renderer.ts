@@ -11,7 +11,7 @@ import { getEnumOptions } from '../types/gtfs-enums';
 import { stopTimeFieldKind } from './timetable-fields';
 import { FieldPresence, stopTimeFieldPresence } from '../utils/flex-rules';
 import { formatIssueValue, isDanglingReference } from './feed-issues';
-import { tooltipContentAttr } from '../utils/field-component';
+import { tooltipContentAttr } from '../utils/field-label';
 import { renderPickerTrigger } from '../utils/picker-trigger';
 
 /** Everything one cell needs to render its stack of sub-rows. */

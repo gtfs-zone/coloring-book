@@ -14,11 +14,7 @@ import { promptNewEntity } from './entity-form-modal';
 import { notify } from './notification-system';
 import { createDefaultService } from '../utils/default-values';
 import { feedBounds, type FeedBoundsSource } from '../utils/feed-bounds';
-import {
-  fromInputValue,
-  toInputValue,
-  todayInputValue,
-} from '../utils/gtfs-date';
+import { GTFS_DATE_CODEC } from '../utils/gtfs-date';
 import { DAYS_OF_WEEK } from './service-days-controller';
 
 export interface NewServiceModalDeps {
@@ -60,15 +56,6 @@ function renderDayToggles(): string {
   `;
 }
 
-/** A "Today" shortcut under a date input. */
-function todayButton(inputField: string): string {
-  return `<button
-    type="button"
-    class="btn btn-xs btn-ghost self-start"
-    data-today-for="entity-form-${inputField}"
-  >Today</button>`;
-}
-
 /**
  * Ask for a new service and write it.
  *
@@ -100,32 +87,19 @@ export async function showNewServiceModal(
         field: 'start_date',
         tableName: 'calendar',
         type: 'date',
-        value: toInputValue(startDate),
-        note: todayButton('start_date'),
+        dateCodec: GTFS_DATE_CODEC,
+        value: startDate,
       },
       {
         field: 'end_date',
         tableName: 'calendar',
         type: 'date',
-        value: toInputValue(endDate),
-        note: todayButton('end_date'),
+        dateCodec: GTFS_DATE_CODEC,
+        value: endDate,
       },
     ],
     extraBody: renderDayToggles(),
     onMount: () => {
-      document
-        .querySelectorAll<HTMLButtonElement>('[data-today-for]')
-        .forEach((btn) => {
-          btn.addEventListener('click', () => {
-            const target = document.getElementById(
-              btn.dataset.todayFor ?? ''
-            ) as HTMLInputElement | null;
-            if (target) {
-              target.value = todayInputValue();
-            }
-          });
-        });
-
       document
         .querySelectorAll<HTMLButtonElement>('.new-service-day')
         .forEach((btn) => {
@@ -168,10 +142,15 @@ export async function showNewServiceModal(
         return `Service "${service_id}" already exists in calendar_dates.txt. Open it to give it a weekly pattern.`;
       }
 
-      const start_date = fromInputValue(v.start_date);
-      const end_date = fromInputValue(v.end_date);
+      const start_date = v.start_date;
+      const end_date = v.end_date;
       if (start_date === '' || end_date === '') {
         return 'A service needs both a start and an end date.';
+      }
+      // The box is typeable as well as pickable, so a hand-typed date has to
+      // be checked here rather than trusted to the input's type.
+      if (!/^\d{8}$/.test(start_date) || !/^\d{8}$/.test(end_date)) {
+        return 'Enter dates as YYYYMMDD.';
       }
       if (end_date < start_date) {
         return 'The end date is before the start date.';
@@ -185,8 +164,8 @@ export async function showNewServiceModal(
         ...Object.fromEntries(
           DAYS_OF_WEEK.map(({ key }) => [key, days.has(key) ? 1 : 0])
         ),
-        start_date: fromInputValue(v.start_date),
-        end_date: fromInputValue(v.end_date),
+        start_date: v.start_date,
+        end_date: v.end_date,
       };
 
       console.log('[NewServiceModal] creating service', service_id, row);
