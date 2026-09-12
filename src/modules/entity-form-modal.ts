@@ -7,15 +7,12 @@
  * the field list, the validation and the commit.
  */
 
-import { showModal } from './modal-utils.js';
-import {
-  renderFieldLabel,
-  type FieldConfig,
-} from '../utils/field-component.js';
-import { escapeHtml } from '../utils/escape-html.js';
-import { GTFS_FIELD_SPECS } from '../types/gtfs.js';
-import type { GTFSPresence } from '../gtfs-spec/types.js';
-import { getEnumOptions, isEnumField } from '../types/gtfs-enums.js';
+import { showModal } from './modal-utils';
+import { renderFieldLabel, type FieldConfig } from '../utils/field-component';
+import { escapeHtml } from '../utils/escape-html';
+import { GTFS_FIELD_SPECS } from '../types/gtfs';
+import type { GTFSPresence } from '../gtfs-spec/types';
+import { getEnumOptions, isEnumField } from '../types/gtfs-enums';
 
 export interface EntityFormField {
   /** Field name. Also the value key and the basis of the input's id. */

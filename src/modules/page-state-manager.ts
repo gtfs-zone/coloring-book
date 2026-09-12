@@ -16,10 +16,10 @@ import {
   PageStateManagerConfig,
   StateValidator,
   isPageState,
-} from '../types/page-state.js';
-import { BreadcrumbItem } from './breadcrumb-trail.js';
-import { BreadcrumbLookup, buildBreadcrumbs } from './breadcrumbs.js';
-import { CONFIG } from '../config.js';
+} from '../types/page-state';
+import { BreadcrumbItem } from './breadcrumb-trail';
+import { BreadcrumbLookup, buildBreadcrumbs } from './breadcrumbs';
+import { CONFIG } from '../config';
 
 /**
  * Event handler type for navigation events

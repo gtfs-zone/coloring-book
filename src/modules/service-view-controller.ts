@@ -6,25 +6,25 @@
  * and related transit routes/trips.
  */
 
-import type { Agency, Routes, Trips } from '../types/gtfs.js';
-import { normalizeAgencyId } from '../utils/agency-helpers.js';
-import { renderTrashIcon } from './modal-utils.js';
+import type { Agency, Routes, Trips } from '../types/gtfs';
+import { normalizeAgencyId } from '../utils/agency-helpers';
+import { renderTrashIcon } from './modal-utils';
 import {
   renderTimetableReference,
   TIMETABLE_REF_ROW,
   VIEW_ROUTE_BTN,
-} from '../utils/entity-references.js';
-import { getRouteDisplay } from '../utils/entity-display.js';
+} from '../utils/entity-references';
+import { getRouteDisplay } from '../utils/entity-display';
 import {
   feedBounds,
   trimOrExtendServices,
   type BatchMixedPatchManager,
   type FeedBounds,
-} from '../utils/feed-bounds.js';
+} from '../utils/feed-bounds';
 import {
   showOptionPickerModal,
   type OptionPickerItem,
-} from './option-picker-modal.js';
+} from './option-picker-modal';
 
 const CREATE_TIMETABLE_BTN = 'create-timetable-btn';
 const TRIM_TO_FEED_START_BTN = 'trim-to-feed-start-btn';

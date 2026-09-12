@@ -4,9 +4,9 @@
  * adding a page is an entry in `help-pages.ts`, not a new renderer.
  */
 
-import { showSidebarModal } from './sidebar-modal.js';
-import { escapeHtml } from '../utils/escape-html.js';
-import { HELP_PAGES, getHelpPage, type HelpGroup } from './help-pages.js';
+import { showSidebarModal } from './sidebar-modal';
+import { escapeHtml } from '../utils/escape-html';
+import { HELP_PAGES, getHelpPage, type HelpGroup } from './help-pages';
 
 const GROUP_ORDER: HelpGroup[] = ['Getting Started', 'Reference'];
 

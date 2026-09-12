@@ -12,9 +12,9 @@
  * default.
  */
 
-import type { ValidationMessage } from './gtfs-validator.js';
-import type { PatchRecord, SingleGTFSPatch } from '../types/patch.js';
-import { GTFS_FOREIGN_KEYS, GTFS_TABLES } from '../types/gtfs.js';
+import type { ValidationMessage } from './gtfs-validator';
+import type { PatchRecord, SingleGTFSPatch } from '../types/patch';
+import { GTFS_FOREIGN_KEYS, GTFS_TABLES } from '../types/gtfs';
 
 /** The messages one stop_times row produced in one pass. */
 export interface RowIssues {

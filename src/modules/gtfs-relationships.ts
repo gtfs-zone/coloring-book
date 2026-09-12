@@ -4,13 +4,10 @@
  * Agency -> Routes -> Trips -> Stop Times -> Stops
  */
 
-import { GTFSDatabase, GTFSDatabaseRecord } from './gtfs-database.js';
-import {
-  normalizeAgencyId,
-  agencyRouteFilter,
-} from '../utils/agency-helpers.js';
-import type { StopTimeRef } from '../types/gtfs-flex.js';
-import { stopTimeRef } from '../types/gtfs-flex.js';
+import { GTFSDatabase, GTFSDatabaseRecord } from './gtfs-database';
+import { normalizeAgencyId, agencyRouteFilter } from '../utils/agency-helpers';
+import type { StopTimeRef } from '../types/gtfs-flex';
+import { stopTimeRef } from '../types/gtfs-flex';
 
 /** The stop_times column each reference kind lives in. */
 const STOP_TIME_REF_FIELD: Record<StopTimeRef['kind'], string> = {

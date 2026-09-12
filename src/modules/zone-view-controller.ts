@@ -8,21 +8,18 @@
  * other entity page.
  */
 
-import type { GTFSParser } from './gtfs-parser.js';
-import { GTFS_TABLES } from '../types/gtfs.js';
-import { escapeHtml } from '../utils/escape-html.js';
-import { getRouteDisplay, renderCardLabel } from '../utils/entity-display.js';
-import {
-  renderFieldLabel,
-  type FieldConfig,
-} from '../utils/field-component.js';
-import { openInlineEditor } from '../utils/inline-edit.js';
-import { renderTrashIcon } from './modal-utils.js';
-import { notify } from './notification-system.js';
+import type { GTFSParser } from './gtfs-parser';
+import { GTFS_TABLES } from '../types/gtfs';
+import { escapeHtml } from '../utils/escape-html';
+import { getRouteDisplay, renderCardLabel } from '../utils/entity-display';
+import { renderFieldLabel, type FieldConfig } from '../utils/field-component';
+import { openInlineEditor } from '../utils/inline-edit';
+import { renderTrashIcon } from './modal-utils';
+import { notify } from './notification-system';
 import {
   attachZoneGeometryHandlers,
   renderZoneGeometrySection,
-} from './zone-geometry-editor.js';
+} from './zone-geometry-editor';
 import {
   getZoneFeature,
   setZoneProperties,
@@ -30,7 +27,7 @@ import {
   zoneName,
   type ZoneFeature,
   type ZonePatchRecorder,
-} from './zone-store.js';
+} from './zone-store';
 
 /**
  * Own row class rather than the shared ROUTE_REF_ROW: the agency view

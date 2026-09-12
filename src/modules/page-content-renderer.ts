@@ -6,54 +6,54 @@
  * rendering logic across multiple modules.
  */
 
-import { PageState } from '../types/page-state.js';
+import { PageState } from '../types/page-state';
 import {
   StopViewController,
   StopViewDependencies,
-} from './stop-view-controller.js';
+} from './stop-view-controller';
 import {
   AgencyViewController,
   AgencyViewDependencies,
-} from './agency-view-controller.js';
+} from './agency-view-controller';
 import {
   ServiceViewController,
   ServiceViewDependencies,
-} from './service-view-controller.js';
+} from './service-view-controller';
 import {
   PathwayViewController,
   PathwayViewDependencies,
-} from './pathway-view-controller.js';
+} from './pathway-view-controller';
 import {
   ZoneViewController,
   ZoneViewDependencies,
-} from './zone-view-controller.js';
+} from './zone-view-controller';
 import {
   LocationGroupViewController,
   LocationGroupViewDependencies,
-} from './location-group-view-controller.js';
+} from './location-group-view-controller';
 import {
   installInlineEditableFields,
   renderInlineEntityFields,
-} from '../utils/inline-editable-field.js';
-import { installStopAreasField } from '../utils/stop-areas-field.js';
+} from '../utils/inline-editable-field';
+import { installStopAreasField } from '../utils/stop-areas-field';
 import type {
   EditableTableDeps,
   EditableTablePatchManager,
-} from './editable-table.js';
-import { renderIssueCard } from '../utils/issue-card.js';
-import { installGuideButtons } from './help-modal.js';
+} from './editable-table';
+import { renderIssueCard } from '../utils/issue-card';
+import { installGuideButtons } from './help-modal';
 import {
   getFeedIssueEntities,
   getFeedIssues,
   refreshFeedIssuesIfStale,
-} from './feed-issues.js';
+} from './feed-issues';
 import {
   applyWhitespaceFix,
   describeWhitespaceFix,
   WHITESPACE_FIX_ACTION,
-} from '../utils/whitespace-fix.js';
-import { GTFS_TABLES } from '../types/gtfs.js';
-import { InlineEntityCreator } from '../utils/inline-entity-creator.js';
+} from '../utils/whitespace-fix';
+import { GTFS_TABLES } from '../types/gtfs';
+import { InlineEntityCreator } from '../utils/inline-entity-creator';
 import {
   getAgencyDisplay,
   getEntityDisplay,
@@ -61,35 +61,35 @@ import {
   getRouteDisplay,
   renderCardLabel,
   renderOptionLabel,
-} from '../utils/entity-display.js';
-import { showModal, renderTrashIcon } from './modal-utils.js';
-import { renderNavIcon } from './nav-icons.js';
-import { promptNewEntity } from './entity-form-modal.js';
-import { showNewServiceModal } from './new-service-modal.js';
-import { specStoreName } from '../utils/spec-field-edit.js';
-import { showOptionPickerModal } from './option-picker-modal.js';
+} from '../utils/entity-display';
+import { showModal, renderTrashIcon } from './modal-utils';
+import { renderNavIcon } from './nav-icons';
+import { promptNewEntity } from './entity-form-modal';
+import { showNewServiceModal } from './new-service-modal';
+import { specStoreName } from '../utils/spec-field-edit';
+import { showOptionPickerModal } from './option-picker-modal';
 import {
   renderPickerTrigger,
   setPickerTriggerContent,
-} from '../utils/picker-trigger.js';
-import { notify } from './notification-system.js';
-import { escapeHtml } from '../utils/escape-html.js';
+} from '../utils/picker-trigger';
+import { notify } from './notification-system';
+import { escapeHtml } from '../utils/escape-html';
 import {
   getCurrentPageState,
   navigateToHome,
   openModal,
   navigateToLocationGroup,
   navigateToZone,
-} from './navigation-actions.js';
-import type { GTFSParser } from './gtfs-parser.js';
-import { renderRouteDiagram, ROUTE_DIAGRAM_ROW } from './route-diagram.js';
-import { generateCompositeKeyFromRecord } from '../utils/gtfs-primary-keys.js';
+} from './navigation-actions';
+import type { GTFSParser } from './gtfs-parser';
+import { renderRouteDiagram, ROUTE_DIAGRAM_ROW } from './route-diagram';
+import { generateCompositeKeyFromRecord } from '../utils/gtfs-primary-keys';
 import {
   applyZoneFeatures,
   getZoneFeatures,
   LOCATIONS_ROW_KEY,
   LOCATIONS_TABLE,
-} from './zone-store.js';
+} from './zone-store';
 import {
   attachServiceTimelineListeners,
   filterServiceDataMap,
@@ -97,9 +97,9 @@ import {
   loadTripCounts,
   renderServiceTimeline,
   type ServiceTimelineSource,
-} from './service-timeline.js';
-import { normalizeAgencyId } from '../utils/agency-helpers.js';
-import { feedBounds, trimOrExtendServices } from '../utils/feed-bounds.js';
+} from './service-timeline';
+import { normalizeAgencyId } from '../utils/agency-helpers';
+import { feedBounds, trimOrExtendServices } from '../utils/feed-bounds';
 import {
   STOP_REF_ROW,
   PATHWAY_REF_ROW,
@@ -107,7 +107,7 @@ import {
   TIMETABLE_REF_ROW,
   VIEW_ROUTE_BTN,
   VIEW_SERVICE_BTN,
-} from '../utils/entity-references.js';
+} from '../utils/entity-references';
 
 /** Marks the route page's network picker. */
 const ROUTE_NETWORK_FIELD = 'route-network-field';
@@ -1562,7 +1562,7 @@ export class PageContentRenderer {
   private addInlineCreationListeners(container: HTMLElement): void {
     const inlineCreator = new InlineEntityCreator(
       this.dependencies
-        .gtfsDatabase as unknown as import('./gtfs-database.js').GTFSDatabase,
+        .gtfsDatabase as unknown as import('./gtfs-database').GTFSDatabase,
       () => {
         // Refresh the page after entity creation
         if (this.dependencies.onEntityCreated) {

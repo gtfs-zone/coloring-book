@@ -6,7 +6,7 @@
  * even blocked. Anything on the boot path that waits on a raw request goes
  * through here so a wedged database surfaces instead of hanging.
  */
-import { CONFIG } from '../config.js';
+import { CONFIG } from '../config';
 
 /**
  * Resolve with the promise's value, or null if it has not settled in `ms`.

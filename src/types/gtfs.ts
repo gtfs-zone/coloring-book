@@ -6,8 +6,8 @@
  */
 
 import { z } from 'zod';
-import { gtfsSpec } from '../gtfs-spec/index.js';
-import type { GTFSPresence } from '../gtfs-spec/types.js';
+import { gtfsSpec } from '../gtfs-spec/index';
+import type { GTFSPresence } from '../gtfs-spec/types';
 import {
   deriveGTFSPrimaryKeys,
   deriveGTFSFieldTypes,
@@ -15,8 +15,8 @@ import {
   deriveGTFSFileInfos,
   deriveGTFSFieldSpecs,
   deriveGTFSForeignKeys,
-} from '../gtfs-spec/adapter.js';
-import { GTFS_FIELD_TYPE_METADATA } from './gtfs-field-types.js';
+} from '../gtfs-spec/adapter';
+import { GTFS_FIELD_TYPE_METADATA } from './gtfs-field-types';
 
 export interface GTFSFileInfo {
   filename: string;
@@ -69,7 +69,7 @@ export type {
   Translations,
   FeedInfo,
   Attributions,
-} from './gtfs-entities.js';
+} from './gtfs-entities';
 
 // ─── Table name constants ──────────────────────────────────────────────────────
 // Kept as a literal `as const` object so consumers get narrow string literal

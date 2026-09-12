@@ -6,7 +6,7 @@
  * from the code that draws it.
  */
 
-import { eyebrow, lede, footnote, glyphList } from './help-modal.js';
+import { eyebrow, lede, footnote, glyphList } from './help-modal';
 import {
   renderBlurb,
   renderVersionAndSource,
@@ -16,14 +16,14 @@ import {
   renderExternalLink,
   TRANSITLAND_URL,
   type AboutApp,
-} from './about-links.js';
+} from './about-links';
 import {
   PATHWAY_CATEGORIES,
   PATHWAY_CATEGORY_ORDER,
   PATHWAY_MODES,
   modesInCategory,
-} from '../utils/pathway-modes.js';
-import { getSpecUrl } from '../utils/field-component.js';
+} from '../utils/pathway-modes';
+import { getSpecUrl } from '../utils/field-component';
 
 /**
  * A link into the GTFS reference for one file, dropped after a `lede()` or

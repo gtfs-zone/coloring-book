@@ -5,7 +5,7 @@
  * Polygon or Point coming back is a mistake worth naming rather than coercing.
  */
 
-import type { Shapes } from '../types/gtfs-entities.js';
+import type { Shapes } from '../types/gtfs-entities';
 
 /** One shape's rows as a LineString feature, in shape_pt_sequence order. */
 export function shapeRowsToFeature(

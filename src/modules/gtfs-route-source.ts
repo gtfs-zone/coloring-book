@@ -1,13 +1,13 @@
-import type { GTFSParser } from './gtfs-parser.js';
+import type { GTFSParser } from './gtfs-parser';
 import type {
   RouteSource,
   RouteSourceTrip,
   RouteSourceStopTime,
-} from './route-source.js';
-import { GTFS_TABLES } from '../types/gtfs.js';
-import type { LocationGroups, Stops } from '../types/gtfs-entities.js';
-import type { StopTimeRef } from '../types/gtfs-flex.js';
-import { stopTimeRef } from '../types/gtfs-flex.js';
+} from './route-source';
+import { GTFS_TABLES } from '../types/gtfs';
+import type { LocationGroups, Stops } from '../types/gtfs-entities';
+import type { StopTimeRef } from '../types/gtfs-flex';
+import { stopTimeRef } from '../types/gtfs-flex';
 
 interface StopIndexEntry {
   parent?: string;

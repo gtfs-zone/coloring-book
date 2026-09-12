@@ -18,9 +18,9 @@ import {
   ModalStateOf,
   ModalType,
   PageState,
-} from '../types/page-state.js';
-import { closeModalsAbove, modalStackDepth } from './modal-utils.js';
-import { getPageStateManager } from './page-state-manager.js';
+} from '../types/page-state';
+import { closeModalsAbove, modalStackDepth } from './modal-utils';
+import { getPageStateManager } from './page-state-manager';
 
 /**
  * Per-open details that do not belong in the URL: a row to draw attention to,

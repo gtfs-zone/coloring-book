@@ -5,7 +5,7 @@
  * interface is what lets the same engine run over either.
  */
 
-import type { StopTimeRef } from '../types/gtfs-flex.js';
+import type { StopTimeRef } from '../types/gtfs-flex';
 
 export interface RouteSourceTrip {
   trip_id: string;

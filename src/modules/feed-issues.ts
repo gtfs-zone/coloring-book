@@ -9,15 +9,12 @@
  * (ROUTE_COUNT, STOP_COUNT, ...), which are not problems.
  */
 
-import type { ValidationEntity, ValidationResults } from './gtfs-validator.js';
-import { renderIssueCard } from '../utils/issue-card.js';
-import type { IssueItem, IssueRow } from '../utils/issue-card.js';
-import { WHITESPACE_FIX_ACTION } from '../utils/whitespace-fix.js';
-import {
-  getEntityDisplay,
-  renderOptionLabel,
-} from '../utils/entity-display.js';
-import { generateCompositeKeyFromRecord } from '../utils/gtfs-primary-keys.js';
+import type { ValidationEntity, ValidationResults } from './gtfs-validator';
+import { renderIssueCard } from '../utils/issue-card';
+import type { IssueItem, IssueRow } from '../utils/issue-card';
+import { WHITESPACE_FIX_ACTION } from '../utils/whitespace-fix';
+import { getEntityDisplay, renderOptionLabel } from '../utils/entity-display';
+import { generateCompositeKeyFromRecord } from '../utils/gtfs-primary-keys';
 
 /** Rows for the entity labels. Just the parser's sync read, narrowed. */
 export interface FeedIssueRowSource {

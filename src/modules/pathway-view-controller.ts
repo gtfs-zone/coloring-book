@@ -1,11 +1,11 @@
-import type { Pathways, Stops } from '../types/gtfs-entities.js';
-import type { QueryOnlyDatabase } from '../utils/field-component.js';
-import { renderInlineEntityFields } from '../utils/inline-editable-field.js';
-import { GTFS_TABLES } from '../types/gtfs.js';
-import { ENTITY_REF_BTN } from '../utils/entity-references.js';
-import { getStopDisplay, renderOptionLabel } from '../utils/entity-display.js';
-import { pathwayModeLabel } from '../utils/pathway-modes.js';
-import { pageHeaderEyebrow } from './breadcrumb-trail.js';
+import type { Pathways, Stops } from '../types/gtfs-entities';
+import type { QueryOnlyDatabase } from '../utils/field-component';
+import { renderInlineEntityFields } from '../utils/inline-editable-field';
+import { GTFS_TABLES } from '../types/gtfs';
+import { ENTITY_REF_BTN } from '../utils/entity-references';
+import { getStopDisplay, renderOptionLabel } from '../utils/entity-display';
+import { pathwayModeLabel } from '../utils/pathway-modes';
+import { pageHeaderEyebrow } from './breadcrumb-trail';
 
 function escapeAttr(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');

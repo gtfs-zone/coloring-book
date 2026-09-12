@@ -7,7 +7,7 @@
  * an entry in `FARES_ENTRIES` rather than a renderer plus an add/edit modal.
  */
 
-import { showSidebarModal } from './sidebar-modal.js';
+import { showSidebarModal } from './sidebar-modal';
 import {
   renderEditableTable,
   installEditableTableHandlers,
@@ -16,29 +16,26 @@ import {
   type EditableTableConfig,
   type EditableTableDeps,
   type EditableTableJoinColumn,
-} from './editable-table.js';
-import type { OptionPickerItem } from './option-picker-modal.js';
-import { escapeHtml } from '../utils/escape-html.js';
-import { specStoreName } from '../utils/spec-field-edit.js';
+} from './editable-table';
+import type { OptionPickerItem } from './option-picker-modal';
+import { escapeHtml } from '../utils/escape-html';
+import { specStoreName } from '../utils/spec-field-edit';
 import {
   getEntityDisplay,
   getStopDisplay,
   renderOptionLabel,
-} from '../utils/entity-display.js';
-import {
-  formatDateRange,
-  formatDaysOfWeek,
-} from '../utils/entity-references.js';
-import { stopLocationType } from '../utils/area-hierarchy.js';
-import { generateCompositeKeyFromRecord } from '../utils/gtfs-primary-keys.js';
+} from '../utils/entity-display';
+import { formatDateRange, formatDaysOfWeek } from '../utils/entity-references';
+import { stopLocationType } from '../utils/area-hierarchy';
+import { generateCompositeKeyFromRecord } from '../utils/gtfs-primary-keys';
 import {
   validateFareLegJoinRuleRow,
   validateFareTransferRuleRow,
   validateTimeframeRow,
-} from '../utils/fares-rules.js';
-import { renderSpecDescription } from '../utils/spec-markup.js';
-import { gtfsSpec } from '../gtfs-spec/index.js';
-import { GTFS_TABLES } from '../types/gtfs.js';
+} from '../utils/fares-rules';
+import { renderSpecDescription } from '../utils/spec-markup';
+import { gtfsSpec } from '../gtfs-spec/index';
+import { GTFS_TABLES } from '../types/gtfs';
 
 export type FaresModalDeps = EditableTableDeps;
 

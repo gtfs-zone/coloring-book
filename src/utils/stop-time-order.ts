@@ -6,7 +6,7 @@
  * moves exactly those rows.
  */
 
-import type { StopTimes } from '../types/gtfs-entities.js';
+import type { StopTimes } from '../types/gtfs-entities';
 
 /**
  * The time a row sorts on.

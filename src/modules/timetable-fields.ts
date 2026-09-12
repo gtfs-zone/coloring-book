@@ -8,9 +8,9 @@
  * only exclusions.
  */
 
-import { gtfsSpec } from '../gtfs-spec/index.js';
-import { GTFSFieldType, mapGTFSTypeString } from '../types/gtfs-field-types.js';
-import type { AlignedTrip } from './timetable-data-processor.js';
+import { gtfsSpec } from '../gtfs-spec/index';
+import { GTFSFieldType, mapGTFSTypeString } from '../types/gtfs-field-types';
+import type { AlignedTrip } from './timetable-data-processor';
 
 /** The editor a field's sub-row opens on click. */
 export type StopTimeFieldKind =

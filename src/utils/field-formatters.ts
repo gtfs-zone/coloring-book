@@ -8,9 +8,9 @@
  * - validate: Validate that a value matches the expected format
  */
 
-import { GTFSFieldType, validateFieldType } from '../types/gtfs-field-types.js';
-import { fromInputValue, toInputValue } from './gtfs-date.js';
-import { TimeFormatter } from './time-formatter.js';
+import { GTFSFieldType, validateFieldType } from '../types/gtfs-field-types';
+import { fromInputValue, toInputValue } from './gtfs-date';
+import { TimeFormatter } from './time-formatter';
 
 export interface FieldFormatter {
   /**

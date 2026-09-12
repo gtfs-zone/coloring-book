@@ -5,8 +5,8 @@
  * The authoritative source is src/gtfs-spec/files/*.ts.
  */
 
-import { gtfsSpec } from '../gtfs-spec/index.js';
-import { deriveGTFSEnums } from '../gtfs-spec/adapter.js';
+import { gtfsSpec } from '../gtfs-spec/index';
+import { deriveGTFSEnums } from '../gtfs-spec/adapter';
 
 export interface GTFSEnumOption {
   value: number | string;

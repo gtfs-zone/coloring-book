@@ -1,5 +1,5 @@
-import { notify } from './notification-system.js';
-import { isOutsideTopModal } from './modal-utils.js';
+import { notify } from './notification-system';
+import { isOutsideTopModal } from './modal-utils';
 
 export class KeyboardShortcuts {
   private gtfsEditor: {

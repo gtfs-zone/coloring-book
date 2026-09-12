@@ -7,7 +7,7 @@ import {
   RoutesSchema,
   CalendarSchema,
   GTFS_FIELD_SPECS,
-} from '../types/gtfs.js';
+} from '../types/gtfs';
 
 /**
  * Extract description from a Zod schema field

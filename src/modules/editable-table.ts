@@ -16,44 +16,40 @@
  * same object, so they always see the rows the user is looking at.
  */
 
-import {
-  showModal,
-  renderTrashIcon,
-  isOutsideTopModal,
-} from './modal-utils.js';
+import { showModal, renderTrashIcon, isOutsideTopModal } from './modal-utils';
 import {
   showMultiOptionPickerModal,
   showOptionPickerModal,
   type OptionPickerItem,
-} from './option-picker-modal.js';
-import { notify } from './notification-system.js';
-import { formatIssueValue } from './feed-issues.js';
-import { escapeHtml } from '../utils/escape-html.js';
+} from './option-picker-modal';
+import { notify } from './notification-system';
+import { formatIssueValue } from './feed-issues';
+import { escapeHtml } from '../utils/escape-html';
 import {
   renderPickerTrigger,
   setPickerTriggerContent,
-} from '../utils/picker-trigger.js';
+} from '../utils/picker-trigger';
 import {
   COLOR_EMPTY,
   openInlineEditor,
   openInlineMenu,
-} from '../utils/inline-edit.js';
+} from '../utils/inline-edit';
 import {
   convertValueToGTFS,
   formatValueForDisplay,
-} from '../utils/field-formatters.js';
-import { GTFSFieldType, mapGTFSTypeString } from '../types/gtfs-field-types.js';
+} from '../utils/field-formatters';
+import { GTFSFieldType, mapGTFSTypeString } from '../types/gtfs-field-types';
 import {
   generateCompositeKeyFromRecord,
   getGTFSPrimaryKey,
-} from '../utils/gtfs-primary-keys.js';
-import { patchUpdate } from '../utils/patch-utils.js';
+} from '../utils/gtfs-primary-keys';
+import { patchUpdate } from '../utils/patch-utils';
 import {
   generateFieldConfigsFromSchema,
   renderFieldLabelContent,
   renderSpecFieldLabelContent,
   type FieldConfig,
-} from '../utils/field-component.js';
+} from '../utils/field-component';
 import {
   buildForeignKeyOptions,
   coerceFieldValue,
@@ -63,16 +59,16 @@ import {
   specStoreName,
   validateFieldValue,
   type SpecFieldKind,
-} from '../utils/spec-field-edit.js';
+} from '../utils/spec-field-edit';
 import {
   addExtensionColumn,
   extensionFieldSpec,
   extensionFields,
   validateExtensionColumnName,
   EXTENSION_FIELD_DESCRIPTION,
-} from '../utils/extension-fields.js';
-import { GTFSSchemas, GTFS_FIELD_SPECS } from '../types/gtfs.js';
-import type { GTFSFieldSpec } from '../gtfs-spec/types.js';
+} from '../utils/extension-fields';
+import { GTFSSchemas, GTFS_FIELD_SPECS } from '../types/gtfs';
+import type { GTFSFieldSpec } from '../gtfs-spec/types';
 import type { z } from 'zod';
 
 export interface EditableTableDatabase {

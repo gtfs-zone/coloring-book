@@ -10,16 +10,16 @@
  * new service_id it resolves with.
  */
 
-import { promptNewEntity } from './entity-form-modal.js';
-import { notify } from './notification-system.js';
-import { createDefaultService } from '../utils/default-values.js';
-import { feedBounds, type FeedBoundsSource } from '../utils/feed-bounds.js';
+import { promptNewEntity } from './entity-form-modal';
+import { notify } from './notification-system';
+import { createDefaultService } from '../utils/default-values';
+import { feedBounds, type FeedBoundsSource } from '../utils/feed-bounds';
 import {
   fromInputValue,
   toInputValue,
   todayInputValue,
-} from '../utils/gtfs-date.js';
-import { DAYS_OF_WEEK } from './service-days-controller.js';
+} from '../utils/gtfs-date';
+import { DAYS_OF_WEEK } from './service-days-controller';
 
 export interface NewServiceModalDeps {
   database: FeedBoundsSource & {

@@ -1,15 +1,15 @@
-import { CONFIG } from '../config.js';
+import { CONFIG } from '../config';
 import Clusterize from 'clusterize.js';
 import {
   getGTFSFieldDescription,
   createTooltip,
-} from '../utils/zod-tooltip-helper.js';
-import { renderSpecDescriptionPlain } from '../utils/spec-markup.js';
+} from '../utils/zod-tooltip-helper';
+import { renderSpecDescriptionPlain } from '../utils/spec-markup';
 import {
   generateCompositeKeyFromRecord,
   getGTFSPrimaryKey,
-} from '../utils/gtfs-primary-keys.js';
-import { keyToGridDirection } from '../utils/grid-navigation.js';
+} from '../utils/gtfs-primary-keys';
+import { keyToGridDirection } from '../utils/grid-navigation';
 
 interface GTFSParser {
   updateFileInMemory(fileName: string, content: string): void;

@@ -8,26 +8,26 @@
  * https://daisyui.com/components/fieldset/
  */
 
-import { getGTFSFieldDescription } from './zod-tooltip-helper.js';
-import { renderSpecDescription } from './spec-markup.js';
+import { getGTFSFieldDescription } from './zod-tooltip-helper';
+import { renderSpecDescription } from './spec-markup';
 import {
   GTFS_PRIMARY_KEYS,
   GTFS_FIELD_TYPES,
   GTFS_FIELD_SPECS,
-} from '../types/gtfs.js';
-import type { GTFSPresence } from '../gtfs-spec/types.js';
+} from '../types/gtfs';
+import type { GTFSPresence } from '../gtfs-spec/types';
 import type { z } from 'zod';
 import {
   GTFSFieldType,
   getInputTypeForFieldType,
   getInputAttributesForFieldType,
   mapGTFSTypeString,
-} from '../types/gtfs-field-types.js';
+} from '../types/gtfs-field-types';
 import {
   getEnumOptions,
   isEnumField,
   type GTFSEnumOption,
-} from '../types/gtfs-enums.js';
+} from '../types/gtfs-enums';
 
 export interface FieldConfig {
   /** Field name in the GTFS specification (e.g., 'stop_name', 'stop_lat') */
@@ -353,7 +353,7 @@ function findEmptyEquivalent(
  *
  * @example
  * ```typescript
- * import { StopsSchema, GTFS_TABLES } from '../types/gtfs.js';
+ * import { StopsSchema, GTFS_TABLES } from '../types/gtfs';
  * const configs = generateFieldConfigsFromSchema(
  *   StopsSchema,
  *   stop,

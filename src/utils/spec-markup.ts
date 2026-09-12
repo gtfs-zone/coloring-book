@@ -9,7 +9,7 @@
  * though its only inputs are compile-time constants.
  */
 
-import { escapeHtml } from './escape-html.js';
+import { escapeHtml } from './escape-html';
 import twoLegSvg from '../assets/gtfs-spec/2-leg.svg';
 import threeLegSvg from '../assets/gtfs-spec/3-leg.svg';
 import inliningSvg from '../assets/gtfs-spec/inlining.svg';

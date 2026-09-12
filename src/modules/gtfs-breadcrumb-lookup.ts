@@ -5,9 +5,9 @@
  * using the GTFS database for object name resolution.
  */
 
-import { BreadcrumbLookup, StopAncestor } from './breadcrumbs.js';
-import { GTFSDatabase } from './gtfs-database.js';
-import { getStopDisplay, renderOptionLabel } from '../utils/entity-display.js';
+import { BreadcrumbLookup, StopAncestor } from './breadcrumbs';
+import { GTFSDatabase } from './gtfs-database';
+import { getStopDisplay, renderOptionLabel } from '../utils/entity-display';
 
 /** A stops row carries location_type as a string; blank means a plain stop. */
 function parseLocationType(value: unknown): number | undefined {

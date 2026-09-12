@@ -7,18 +7,18 @@
  * property pages both ask them, so they live here rather than in either.
  */
 
-import { GTFSSchemas } from '../types/gtfs.js';
-import { GTFSFieldType, mapGTFSTypeString } from '../types/gtfs-field-types.js';
+import { GTFSSchemas } from '../types/gtfs';
+import { GTFSFieldType, mapGTFSTypeString } from '../types/gtfs-field-types';
 import {
   currencyOptions,
   languageOptions,
   timezoneOptions,
-} from './constrained-values.js';
-import { getGTFSPrimaryKey } from './gtfs-primary-keys.js';
-import { getEntityDisplay, renderOptionLabel } from './entity-display.js';
-import { TimeFormatter } from './time-formatter.js';
-import type { OptionPickerItem } from '../modules/option-picker-modal.js';
-import type { GTFSFieldSpec } from '../gtfs-spec/types.js';
+} from './constrained-values';
+import { getGTFSPrimaryKey } from './gtfs-primary-keys';
+import { getEntityDisplay, renderOptionLabel } from './entity-display';
+import { TimeFormatter } from './time-formatter';
+import type { OptionPickerItem } from '../modules/option-picker-modal';
+import type { GTFSFieldSpec } from '../gtfs-spec/types';
 import type { z } from 'zod';
 
 export type SpecFieldKind =

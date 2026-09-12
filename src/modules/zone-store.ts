@@ -7,10 +7,10 @@
  * key `locations` (primary key type 'none', see utils/gtfs-primary-keys.ts).
  */
 
-import type { GTFSParser } from './gtfs-parser.js';
-import { GTFS_TABLES } from '../types/gtfs.js';
-import { patchUpdate } from '../utils/patch-utils.js';
-import type { GTFSDatabaseRecord } from './gtfs-database.js';
+import type { GTFSParser } from './gtfs-parser';
+import { GTFS_TABLES } from '../types/gtfs';
+import { patchUpdate } from '../utils/patch-utils';
+import type { GTFSDatabaseRecord } from './gtfs-database';
 
 /** Object store and row key for locations.geojson. */
 export const LOCATIONS_TABLE = 'locations';

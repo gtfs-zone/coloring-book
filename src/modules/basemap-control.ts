@@ -3,7 +3,7 @@
  */
 
 import { Map as MapLibreMap, StyleSpecification } from 'maplibre-gl';
-import { basemapStyles, getBasemapStyle } from './basemap-styles.js';
+import { basemapStyles, getBasemapStyle } from './basemap-styles';
 
 const GLOBE_PROJECTION = { type: 'globe' };
 

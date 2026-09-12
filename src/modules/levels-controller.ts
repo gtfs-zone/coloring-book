@@ -1,17 +1,17 @@
-import { showModal } from './modal-utils.js';
+import { showModal } from './modal-utils';
 import {
   renderEditableTable,
   installEditableTableHandlers,
   uninstallEditableTableHandlers,
   type EditableTableConfig,
   type EditableTableJoinColumn,
-} from './editable-table.js';
-import type { OptionPickerItem } from './option-picker-modal.js';
-import type { GTFSDatabase } from './gtfs-database.js';
-import type { PatchManager } from './patch-manager.js';
-import { getStopDisplay, renderOptionLabel } from '../utils/entity-display.js';
-import { specStoreName } from '../utils/spec-field-edit.js';
-import { GTFS_TABLES } from '../types/gtfs.js';
+} from './editable-table';
+import type { OptionPickerItem } from './option-picker-modal';
+import type { GTFSDatabase } from './gtfs-database';
+import type { PatchManager } from './patch-manager';
+import { getStopDisplay, renderOptionLabel } from '../utils/entity-display';
+import { specStoreName } from '../utils/spec-field-edit';
+import { GTFS_TABLES } from '../types/gtfs';
 
 const INSTANCE_ID = 'levels';
 const STOPS_STORE = specStoreName(GTFS_TABLES.STOPS);

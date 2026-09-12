@@ -1,7 +1,7 @@
-import { GTFS_TABLES } from '../types/gtfs.js';
-import { getZoneCollection } from './zone-store.js';
-import type { GTFSParser } from './gtfs-parser.js';
-import type { PatchManager } from './patch-manager.js';
+import { GTFS_TABLES } from '../types/gtfs';
+import { getZoneCollection } from './zone-store';
+import type { GTFSParser } from './gtfs-parser';
+import type { PatchManager } from './patch-manager';
 
 interface NavbarCountsDeps {
   gtfsParser: GTFSParser;

@@ -4,31 +4,27 @@
  * Provides auto-save functionality for service day modifications
  */
 
-import {
-  Calendar,
-  CalendarDates,
-  GTFSTableMap,
-} from '../types/gtfs-entities.js';
-import { GTFS_TABLES } from '../types/gtfs.js';
+import { Calendar, CalendarDates, GTFSTableMap } from '../types/gtfs-entities';
+import { GTFS_TABLES } from '../types/gtfs';
 import { notify } from './notification-system';
-import { patchUpdate } from '../utils/patch-utils.js';
+import { patchUpdate } from '../utils/patch-utils';
 import {
   getUsFederalDates,
   getUsFederalHolidays,
-} from '../calendar-patterns/us-federal.js';
+} from '../calendar-patterns/us-federal';
 import {
   formatGtfsDateWithWeekday,
   fromInputValue,
   toGtfsDateLocal,
-} from '../utils/gtfs-date.js';
+} from '../utils/gtfs-date';
 import {
   installEditableTableHandlers,
   renderEditableTable,
   type EditableTableConfig,
   type EditableTableDeps,
   type EditableTablePatchManager,
-} from './editable-table.js';
-import { renderInlineEntityFields } from '../utils/inline-editable-field.js';
+} from './editable-table';
+import { renderInlineEntityFields } from '../utils/inline-editable-field';
 
 // Days of the week in US format (Sunday first)
 export const DAYS_OF_WEEK = [

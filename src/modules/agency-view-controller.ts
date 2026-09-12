@@ -5,19 +5,16 @@
  * Provides a single-column layout showing agency properties and related routes.
  */
 
-import type { Agency, Routes } from '../types/gtfs.js';
-import type { QueryOnlyDatabase } from '../utils/field-component.js';
-import { renderInlineEntityFields } from '../utils/inline-editable-field.js';
-import { GTFS_TABLES } from '../types/gtfs.js';
-import {
-  normalizeAgencyId,
-  agencyRouteFilter,
-} from '../utils/agency-helpers.js';
+import type { Agency, Routes } from '../types/gtfs';
+import type { QueryOnlyDatabase } from '../utils/field-component';
+import { renderInlineEntityFields } from '../utils/inline-editable-field';
+import { GTFS_TABLES } from '../types/gtfs';
+import { normalizeAgencyId, agencyRouteFilter } from '../utils/agency-helpers';
 import {
   renderRouteReference,
   ROUTE_REF_ROW,
-} from '../utils/entity-references.js';
-import { renderTrashIcon } from './modal-utils.js';
+} from '../utils/entity-references';
+import { renderTrashIcon } from './modal-utils';
 
 export interface AgencyViewDependencies {
   gtfsDatabase?: QueryOnlyDatabase;

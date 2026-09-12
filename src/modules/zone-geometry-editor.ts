@@ -9,12 +9,12 @@
  * (`removeMissing=false`), so a round trip can never delete another zone.
  */
 
-import type { GTFSParser } from './gtfs-parser.js';
-import { encodeGeojsonIoUrl } from '../utils/geojson-io.js';
+import type { GTFSParser } from './gtfs-parser';
+import { encodeGeojsonIoUrl } from '../utils/geojson-io';
 import {
   attachGeojsonExchangeHandlers,
   renderGeojsonExchangeBlock,
-} from './geojson-exchange.js';
+} from './geojson-exchange';
 import {
   getZoneFeature,
   getZoneFeatures,
@@ -24,9 +24,9 @@ import {
   zoneBounds,
   zoneVertexCount,
   type ZonePatchRecorder,
-} from './zone-store.js';
-import { notify } from './notification-system.js';
-import { escapeHtml } from '../utils/escape-html.js';
+} from './zone-store';
+import { notify } from './notification-system';
+import { escapeHtml } from '../utils/escape-html';
 
 export interface ZoneGeometryDependencies {
   gtfsParser: GTFSParser;

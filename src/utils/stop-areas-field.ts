@@ -11,19 +11,19 @@
  * through the patch log.
  */
 
-import { showOptionPickerModal } from '../modules/option-picker-modal.js';
-import { promptNewEntity } from '../modules/entity-form-modal.js';
-import { notify } from '../modules/notification-system.js';
-import { isOutsideTopModal } from '../modules/modal-utils.js';
-import { GTFS_TABLES } from '../types/gtfs.js';
-import { escapeHtml } from './escape-html.js';
-import { generateCompositeKeyFromRecord } from './gtfs-primary-keys.js';
-import { getEntityDisplay, renderOptionLabel } from './entity-display.js';
+import { showOptionPickerModal } from '../modules/option-picker-modal';
+import { promptNewEntity } from '../modules/entity-form-modal';
+import { notify } from '../modules/notification-system';
+import { isOutsideTopModal } from '../modules/modal-utils';
+import { GTFS_TABLES } from '../types/gtfs';
+import { escapeHtml } from './escape-html';
+import { generateCompositeKeyFromRecord } from './gtfs-primary-keys';
+import { getEntityDisplay, renderOptionLabel } from './entity-display';
 import {
   canStopHaveAreas,
   getEffectiveAreasForStop,
   stopLocationType,
-} from './area-hierarchy.js';
+} from './area-hierarchy';
 
 /** Marks the container this module's delegated listeners refresh. */
 const FIELD_CLASS = 'stop-areas-field';

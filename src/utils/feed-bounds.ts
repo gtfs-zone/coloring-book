@@ -8,7 +8,7 @@
  * a computed range.
  */
 
-import { generateCompositeKeyFromRecord } from './gtfs-primary-keys.js';
+import { generateCompositeKeyFromRecord } from './gtfs-primary-keys';
 
 export interface FeedBounds {
   start?: string;

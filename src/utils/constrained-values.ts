@@ -10,7 +10,7 @@
  * nothing in them changes for the life of the page.
  */
 
-import type { OptionPickerItem } from '../modules/option-picker-modal.js';
+import type { OptionPickerItem } from '../modules/option-picker-modal';
 
 /**
  * BCP-47 primary language subtags offered by the picker.

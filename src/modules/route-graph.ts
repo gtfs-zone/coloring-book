@@ -20,7 +20,7 @@
  * single column, exactly as it looks today.
  */
 
-import type { RouteSequence } from './route-sequence.js';
+import type { RouteSequence } from './route-sequence';
 
 /**
  * More lanes than this and the gutter costs more width than the branching is

@@ -3,16 +3,16 @@
  * Handles HTML generation for individual stop_time cells
  */
 
-import { TimeFormatter } from '../utils/time-formatter.js';
-import { EditableStopTime } from './timetable-data-processor.js';
-import type { StopTimeRef } from '../types/gtfs-flex.js';
-import { escapeHtml } from '../utils/escape-html.js';
-import { getEnumOptions } from '../types/gtfs-enums.js';
-import { stopTimeFieldKind } from './timetable-fields.js';
-import { FieldPresence, stopTimeFieldPresence } from '../utils/flex-rules.js';
-import { formatIssueValue, isDanglingReference } from './feed-issues.js';
-import { tooltipContentAttr } from '../utils/field-component.js';
-import { renderPickerTrigger } from '../utils/picker-trigger.js';
+import { TimeFormatter } from '../utils/time-formatter';
+import { EditableStopTime } from './timetable-data-processor';
+import type { StopTimeRef } from '../types/gtfs-flex';
+import { escapeHtml } from '../utils/escape-html';
+import { getEnumOptions } from '../types/gtfs-enums';
+import { stopTimeFieldKind } from './timetable-fields';
+import { FieldPresence, stopTimeFieldPresence } from '../utils/flex-rules';
+import { formatIssueValue, isDanglingReference } from './feed-issues';
+import { tooltipContentAttr } from '../utils/field-component';
+import { renderPickerTrigger } from '../utils/picker-trigger';
 
 /** Everything one cell needs to render its stack of sub-rows. */
 export interface StopTimeCellParams {

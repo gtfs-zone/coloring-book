@@ -5,26 +5,26 @@ import {
   renderUploadIcon,
   renderSimplifyIcon,
   renderRouteWaypointsIcon,
-} from './modal-utils.js';
+} from './modal-utils';
 import JSZip from 'jszip';
 import Papa from 'papaparse';
-import { showOptionPickerModal } from './option-picker-modal.js';
-import type { GTFSParser } from './gtfs-parser.js';
-import type { PatchManager } from './patch-manager.js';
-import type { Shapes } from '../types/gtfs-entities.js';
-import { parseGPX } from '../utils/gpx-parser.js';
-import { generateCompositeKeyFromRecord } from '../utils/gtfs-primary-keys.js';
-import { escapeHtml } from '../utils/escape-html.js';
+import { showOptionPickerModal } from './option-picker-modal';
+import type { GTFSParser } from './gtfs-parser';
+import type { PatchManager } from './patch-manager';
+import type { Shapes } from '../types/gtfs-entities';
+import { parseGPX } from '../utils/gpx-parser';
+import { generateCompositeKeyFromRecord } from '../utils/gtfs-primary-keys';
+import { escapeHtml } from '../utils/escape-html';
 import {
   getRouteDisplay,
   getStopDisplay,
   renderOptionLabel,
-} from '../utils/entity-display.js';
-import { renderEntityChip } from '../utils/entity-references.js';
-import { routeColor } from '../utils/route-colors.js';
-import { openTimetable } from './navigation-actions.js';
-import { deviationMetres, simplifyIndices } from '../utils/simplify-path.js';
-import { encodeGeojsonIoUrl } from '../utils/geojson-io.js';
+} from '../utils/entity-display';
+import { renderEntityChip } from '../utils/entity-references';
+import { routeColor } from '../utils/route-colors';
+import { openTimetable } from './navigation-actions';
+import { deviationMetres, simplifyIndices } from '../utils/simplify-path';
+import { encodeGeojsonIoUrl } from '../utils/geojson-io';
 import {
   attachGeojsonExchangeHandlers,
   geojsonExchangeInput,
@@ -33,14 +33,14 @@ import {
   readIncomingFeature,
   renderGeojsonExchangeBlock,
   showGeojsonExchangeError,
-} from './geojson-exchange.js';
+} from './geojson-exchange';
 import {
   shapeFeatureToPoints,
   shapeRowsToFeature,
-} from '../utils/shape-geojson.js';
-import { notify } from './notification-system.js';
-import { promptNewEntity } from './entity-form-modal.js';
-import { GTFS_TABLES } from '../types/gtfs.js';
+} from '../utils/shape-geojson';
+import { notify } from './notification-system';
+import { promptNewEntity } from './entity-form-modal';
+import { GTFS_TABLES } from '../types/gtfs';
 
 /**
  * The stops of the simplify slider, in metres of allowed deviation. The

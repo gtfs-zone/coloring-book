@@ -6,16 +6,16 @@
  * render the same view. The modal remains a caller like any other.
  */
 
-import { escapeHtml } from '../utils/escape-html.js';
-import { formatDaysOfWeek } from '../utils/entity-references.js';
+import { escapeHtml } from '../utils/escape-html';
+import { formatDaysOfWeek } from '../utils/entity-references';
 import {
   formatGtfsDateRange,
   formatGtfsDateWithWeekday,
   parseGtfsDate,
   toGtfsDate as formatGTFS,
   todayGtfsDate,
-} from '../utils/gtfs-date.js';
-import { renderPencilIcon, renderTriangleIcon } from './modal-utils.js';
+} from '../utils/gtfs-date';
+import { renderPencilIcon, renderTriangleIcon } from './modal-utils';
 
 export interface ServiceData {
   calendar: Record<string, unknown> | null;

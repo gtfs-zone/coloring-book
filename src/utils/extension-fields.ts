@@ -15,8 +15,8 @@
  * `src/gtfs-spec/` and `pnpm check-spec` blocks a commit that diverges.
  */
 
-import { GTFS_FIELD_SPECS } from '../types/gtfs.js';
-import type { GTFSFieldSpec } from '../gtfs-spec/types.js';
+import { GTFS_FIELD_SPECS } from '../types/gtfs';
+import type { GTFSFieldSpec } from '../gtfs-spec/types';
 
 export const EXTENSION_FIELD_DESCRIPTION =
   'This field is not part of the GTFS specification. It is preserved as-is on export.';
