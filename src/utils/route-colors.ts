@@ -123,3 +123,42 @@ export function casingColor(color: string): string {
       .join('')
   );
 }
+
+/**
+ * Relative luminance above which black text beats white on a given fill.
+ * Deliberately above the 0.179 WCAG crossover: route badges are small, bold,
+ * and sit on saturated fills, where dark-on-mid reads better than the contrast
+ * math alone suggests.
+ */
+const TEXT_LUMINANCE_PIVOT = 0.45;
+
+/** Relative luminance (WCAG) of a `#rrggbb` color. */
+function luminance(hex: string): number {
+  const n = parseInt(hex.slice(1), 16);
+  const channels = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((v) => {
+    const c = v / 255;
+    return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+  });
+  return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2];
+}
+
+/**
+ * Legible text over `fill`. Honors the feed's `route_text_color` when present,
+ * an agency's own pairing is authoritative even when it's a poor one, and
+ * otherwise picks black or white by luminance. Blindly defaulting to white is
+ * what makes a badge on a pale feed color unreadable.
+ *
+ * No caller here: this app renders no route badge. Kept so the file stays one
+ * copy across the three apps rather than forking on an export.
+ *
+ * @lintignore
+ */
+export function routeTextColor(fill: string, gtfsTextColor?: string): string {
+  if (isGtfsColor(gtfsTextColor)) {
+    return `#${gtfsTextColor}`;
+  }
+  if (!/^#[0-9A-Fa-f]{6}$/.test(fill)) {
+    return '#ffffff';
+  }
+  return luminance(fill) > TEXT_LUMINANCE_PIVOT ? '#000000' : '#ffffff';
+}
