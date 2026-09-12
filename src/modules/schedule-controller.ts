@@ -4,85 +4,79 @@
  * Accessed via Objects tab -> Route -> Service ID
  */
 
-import { Stops, StopTimes, Trips } from '../types/gtfs-entities.js';
-import type { StopTimeRef } from '../types/gtfs-flex.js';
+import { Stops, StopTimes, Trips } from '../types/gtfs-entities';
+import type { StopTimeRef } from '../types/gtfs-flex';
 import { notify } from './notification-system';
 import {
   formatIssueValue,
   markReferenceResolved,
   refreshFeedIssuesIfStale,
-} from './feed-issues.js';
-import type { GTFSParser } from './gtfs-parser.js';
-import { TimeFormatter } from '../utils/time-formatter.js';
+} from './feed-issues';
+import type { GTFSParser } from './gtfs-parser';
+import { TimeFormatter } from '../utils/time-formatter';
 import {
   coupleStopTimes,
   type CoupledTimes,
-} from '../utils/stop-time-coupling.js';
+} from '../utils/stop-time-coupling';
 import {
   TimetableDataProcessor,
   TimetableData,
-} from './timetable-data-processor.js';
-import { TimetableRenderer } from './timetable-renderer.js';
+} from './timetable-data-processor';
+import { TimetableRenderer } from './timetable-renderer';
 import {
   TimetableDatabase,
   StopTimeEditPlan,
   FlexWindowField,
   FlexRowShape,
-} from './timetable-database.js';
-import { generateCompositeKeyFromRecord } from '../utils/gtfs-primary-keys.js';
-import { patchUpdate } from '../utils/patch-utils.js';
+} from './timetable-database';
+import { generateCompositeKeyFromRecord } from '../utils/gtfs-primary-keys';
+import { patchUpdate } from '../utils/patch-utils';
 import {
   openInlineEditor,
   openInlineMenu,
   getLiveEditorState,
-} from '../utils/inline-edit.js';
+} from '../utils/inline-edit';
 import {
   arrowToGridDirection,
   type GridDirection,
-} from '../utils/grid-navigation.js';
-import { showModal, isOutsideTopModal } from './modal-utils.js';
-import {
-  showOptionPickerModal,
-  OptionPickerItem,
-} from './option-picker-modal.js';
-import { getEnumOptions } from '../types/gtfs-enums.js';
+} from '../utils/grid-navigation';
+import { showModal, isOutsideTopModal } from './modal-utils';
+import { showOptionPickerModal, OptionPickerItem } from './option-picker-modal';
+import { getEnumOptions } from '../types/gtfs-enums';
 import {
   navigateToLocationGroup,
   navigateToZone,
   openTimetable,
-} from './navigation-actions.js';
+} from './navigation-actions';
 import {
   TIMETABLE_ADD_DIRECTION,
   TIMETABLE_DIRECTION_TAB,
   TIMETABLE_ROUTE_PICKER,
   TIMETABLE_SERVICE_PICKER,
-} from './timetable-selectors.js';
-import { getRouteDisplay, getStopDisplay } from '../utils/entity-display.js';
-import {
-  formatDateRange,
-  formatDaysOfWeek,
-} from '../utils/entity-references.js';
-import { showNewServiceModal } from './new-service-modal.js';
-import { promptNewEntity, type EntityFormField } from './entity-form-modal.js';
-import { mirrorTripTimes, shiftRowTimes } from '../utils/stop-time-shift.js';
-import { listZones, zoneName } from './zone-store.js';
-import { validateFlexStopTimeRow } from '../utils/flex-rules.js';
-import { renderSpecDescriptionPlain } from '../utils/spec-markup.js';
-import { escapeHtml } from '../utils/escape-html.js';
-import { setPickerTriggerContent } from '../utils/picker-trigger.js';
-import { getGTFSFieldDescription } from '../utils/zod-tooltip-helper.js';
-import { GTFS_TABLES } from '../types/gtfs.js';
-import type { LocationGroups } from '../types/gtfs-entities.js';
+} from './timetable-selectors';
+import { getRouteDisplay, getStopDisplay } from '../utils/entity-display';
+import { formatDateRange, formatDaysOfWeek } from '../utils/entity-references';
+import { showNewServiceModal } from './new-service-modal';
+import { promptNewEntity, type EntityFormField } from './entity-form-modal';
+import { mirrorTripTimes, shiftRowTimes } from '../utils/stop-time-shift';
+import { listZones, zoneName } from './zone-store';
+import { validateFlexStopTimeRow } from '../utils/flex-rules';
+import { renderSpecDescriptionPlain } from '../utils/spec-markup';
+import { escapeHtml } from '../utils/escape-html';
+import { setPickerTriggerContent } from '../utils/picker-trigger';
+import { getGTFSFieldDescription } from '../utils/zod-tooltip-helper';
+import { GTFS_TABLES } from '../types/gtfs';
+import type { LocationGroups } from '../types/gtfs-entities';
 import {
   stopTimeFieldKind,
   STOP_TIME_EDITABLE_FIELDS,
   TIME_FIELDS,
   WINDOW_FIELDS,
-} from './timetable-fields.js';
+} from './timetable-fields';
 import {
   validateFrequencyRow,
   frequencyPeriodKey,
-} from '../utils/frequency-rules.js';
+} from '../utils/frequency-rules';
 
 /**
  * Identifies one time cell across a re-render.

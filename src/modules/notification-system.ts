@@ -1,4 +1,4 @@
-import { renderCloseIcon } from './modal-utils.js';
+import { renderCloseIcon } from './modal-utils';
 
 interface NotificationAction {
   id: string;

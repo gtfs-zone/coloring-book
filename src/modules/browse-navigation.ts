@@ -4,14 +4,14 @@
  * Uses PageStateManager for state management and breadcrumb navigation
  */
 
-import { PageState } from '../types/page-state.js';
-import { getPageStateManager } from './page-state-manager.js';
+import { PageState } from '../types/page-state';
+import { getPageStateManager } from './page-state-manager';
 import {
   BreadcrumbItem,
   pageTitle,
   renderBreadcrumbTrail,
-} from './breadcrumb-trail.js';
-import { APP_NAME } from './breadcrumbs.js';
+} from './breadcrumb-trail';
+import { APP_NAME } from './breadcrumbs';
 import {
   navigateToAgency,
   navigateToRoute,
@@ -21,12 +21,12 @@ import {
   openTimetable,
   addNavigationListener,
   getCurrentPageState,
-} from './navigation-actions.js';
+} from './navigation-actions';
 import {
   PageContentRenderer,
   ContentRendererDependencies,
-} from './page-content-renderer.js';
-import type { GTFSParser } from './gtfs-parser.js';
+} from './page-content-renderer';
+import type { GTFSParser } from './gtfs-parser';
 
 export class BrowseNavigation {
   private relationships: {
@@ -65,7 +65,7 @@ export class BrowseNavigation {
       service_id: string
     ) => Promise<Record<string, unknown>[]>;
   };
-  private gtfsRelationshipsInstance: import('./gtfs-relationships.js').GTFSRelationships; // The actual GTFSRelationships instance for database access
+  private gtfsRelationshipsInstance: import('./gtfs-relationships').GTFSRelationships; // The actual GTFSRelationships instance for database access
   private mapController: {
     highlightStop: (stop_id: string) => void;
     highlightPathway: (pathway_id: string) => void;
@@ -171,7 +171,7 @@ export class BrowseNavigation {
     this.relationships = gtfsRelationships;
     this.gtfsParser = gtfsParser ?? null;
     this.gtfsRelationshipsInstance =
-      gtfsRelationships as unknown as import('./gtfs-relationships.js').GTFSRelationships;
+      gtfsRelationships as unknown as import('./gtfs-relationships').GTFSRelationships;
     this.mapController = mapController;
     this.serviceDaysController = serviceDaysController ?? null;
   }
@@ -255,7 +255,7 @@ export class BrowseNavigation {
           this.gtfsRelationshipsInstance.gtfsDatabase.updateRow(
             tableName,
             key,
-            data as Partial<import('./gtfs-database.js').GTFSDatabaseRecord>
+            data as Partial<import('./gtfs-database').GTFSDatabaseRecord>
           ),
         getRow: (tableName: string, key: string) =>
           this.gtfsRelationshipsInstance.gtfsDatabase.getRow(tableName, key),
@@ -264,7 +264,7 @@ export class BrowseNavigation {
         insertRows: (tableName: string, rows: unknown[]) =>
           this.gtfsRelationshipsInstance.gtfsDatabase.insertRows(
             tableName,
-            rows as import('./gtfs-database.js').GTFSDatabaseRecord[]
+            rows as import('./gtfs-database').GTFSDatabaseRecord[]
           ),
         deleteRow: (tableName: string, key: string) =>
           this.gtfsRelationshipsInstance.gtfsDatabase.deleteRow(tableName, key),

@@ -1,11 +1,11 @@
-import { escapeHtml } from '../utils/escape-html.js';
-import { renderRouteWaypointsIcon } from './modal-utils.js';
+import { escapeHtml } from '../utils/escape-html';
+import { renderRouteWaypointsIcon } from './modal-utils';
 import {
   renderMoonIcon,
   renderNavIcon,
   renderSunIcon,
   type NavIconName,
-} from './nav-icons.js';
+} from './nav-icons';
 
 /**
  * The navbar's action row, as data.

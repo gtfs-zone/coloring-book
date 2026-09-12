@@ -3,14 +3,14 @@
  * Handles HTML generation for timetable views and schedule headers
  */
 
-import { Stops } from '../types/gtfs-entities.js';
+import { Stops } from '../types/gtfs-entities';
 import {
   TimetableData,
   DirectionInfo,
   AlignedTrip,
   TripFrequency,
-} from './timetable-data-processor.js';
-import { TimetableCellRenderer } from './timetable-cell-renderer.js';
+} from './timetable-data-processor';
+import { TimetableCellRenderer } from './timetable-cell-renderer';
 import {
   generateFieldConfigsFromSchema,
   FieldConfig,
@@ -18,27 +18,27 @@ import {
   renderSpecFieldLabelContent,
   buildFieldTooltipContent,
   tooltipContentAttr,
-} from '../utils/field-component.js';
-import { visibleStopTimeFields, WINDOW_FIELDS } from './timetable-fields.js';
-import { describeFrequency } from '../utils/frequency-rules.js';
-import { TimeFormatter } from '../utils/time-formatter.js';
-import { getEnumOptions } from '../types/gtfs-enums.js';
-import { TripsSchema, GTFS_TABLES } from '../types/gtfs.js';
+} from '../utils/field-component';
+import { visibleStopTimeFields, WINDOW_FIELDS } from './timetable-fields';
+import { describeFrequency } from '../utils/frequency-rules';
+import { TimeFormatter } from '../utils/time-formatter';
+import { getEnumOptions } from '../types/gtfs-enums';
+import { TripsSchema, GTFS_TABLES } from '../types/gtfs';
 import {
   getRouteDisplay,
   getStopDisplay,
   renderCardLabel,
   renderOptionLabel,
-} from '../utils/entity-display.js';
-import { escapeHtml } from '../utils/escape-html.js';
-import { renderPickerTrigger } from '../utils/picker-trigger.js';
+} from '../utils/entity-display';
+import { escapeHtml } from '../utils/escape-html';
+import { renderPickerTrigger } from '../utils/picker-trigger';
 import {
   TIMETABLE_ADD_DIRECTION,
   TIMETABLE_DIRECTION_TAB,
   TIMETABLE_ROUTE_PICKER,
   TIMETABLE_SERVICE_PICKER,
-} from './timetable-selectors.js';
-import { formatIssueValue, isDanglingReference } from './feed-issues.js';
+} from './timetable-selectors';
+import { formatIssueValue, isDanglingReference } from './feed-issues';
 import {
   renderTrashIcon,
   renderRouteWaypointsIcon,
@@ -47,8 +47,8 @@ import {
   renderReverseIcon,
   renderShiftTimeIcon,
   renderUploadIcon,
-} from './modal-utils.js';
-import { routeColor } from '../utils/route-colors.js';
+} from './modal-utils';
+import { routeColor } from '../utils/route-colors';
 import {
   railCell,
   rowPaths,
@@ -57,10 +57,10 @@ import {
   isEndpoint,
   gutterWidth,
   STRIP_ROW_CLASS,
-} from './route-strip.js';
-import { RouteSequence } from './route-sequence.js';
-import { RouteGraph } from './route-graph.js';
-import type { StopTimeRef } from '../types/gtfs-flex.js';
+} from './route-strip';
+import { RouteSequence } from './route-sequence';
+import { RouteGraph } from './route-graph';
+import type { StopTimeRef } from '../types/gtfs-flex';
 
 function getBrouterProfile(routeType: string | number): string {
   const t = Number(routeType);

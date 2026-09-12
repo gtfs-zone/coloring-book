@@ -2,11 +2,11 @@
  * Database Fallback Manager
  * Handles IndexedDB support detection and error recovery.
  */
-import { feedProgressIndicator } from './feed-progress-indicator.js';
-import { notify } from './notification-system.js';
-import { showModal } from './modal-utils.js';
-import { deleteDatabaseWithTimeout } from '../utils/idb-request.js';
-import { buildExportFilename } from '../utils/export-filename.js';
+import { feedProgressIndicator } from './feed-progress-indicator';
+import { notify } from './notification-system';
+import { showModal } from './modal-utils';
+import { deleteDatabaseWithTimeout } from '../utils/idb-request';
+import { buildExportFilename } from '../utils/export-filename';
 
 export interface BrowserCapabilities {
   indexedDB: boolean;

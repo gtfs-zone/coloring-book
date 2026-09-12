@@ -5,47 +5,41 @@
  * Provides a single-column layout showing stop properties and timetable relationships.
  */
 
-import type {
-  Routes,
-  Stops,
-  Trips,
-  StopTimes,
-  Pathways,
-} from '../types/gtfs.js';
-import type { QueryOnlyDatabase } from '../utils/field-component.js';
-import { renderInlineEntityFields } from '../utils/inline-editable-field.js';
-import { GTFS_TABLES } from '../types/gtfs.js';
+import type { Routes, Stops, Trips, StopTimes, Pathways } from '../types/gtfs';
+import type { QueryOnlyDatabase } from '../utils/field-component';
+import { renderInlineEntityFields } from '../utils/inline-editable-field';
+import { GTFS_TABLES } from '../types/gtfs';
 import {
   getRouteDisplay,
   getStopDisplay,
   renderCardLabel,
   renderOptionLabel,
-} from '../utils/entity-display.js';
-import { escapeHtml } from '../utils/escape-html.js';
-import { routeColor } from '../utils/route-colors.js';
+} from '../utils/entity-display';
+import { escapeHtml } from '../utils/escape-html';
+import { routeColor } from '../utils/route-colors';
 import {
   filterServiceDataMap,
   loadServiceData,
   renderServiceTimeline,
   type ServiceDataMap,
-} from './service-timeline.js';
-import { pathwayModeLabel } from '../utils/pathway-modes.js';
-import { renderTrashIcon } from './modal-utils.js';
+} from './service-timeline';
+import { pathwayModeLabel } from '../utils/pathway-modes';
+import { renderTrashIcon } from './modal-utils';
 import {
   renderPathwayReference,
   renderStopReference,
-} from '../utils/entity-references.js';
-import { collectDescendantStops } from '../utils/stop-hierarchy.js';
-import { renderStopAreasField } from '../utils/stop-areas-field.js';
+} from '../utils/entity-references';
+import { collectDescendantStops } from '../utils/stop-hierarchy';
+import { renderStopAreasField } from '../utils/stop-areas-field';
 import {
   renderEditableTable,
   installEditableTableHandlers,
   type EditableTableConfig,
   type EditableTableDeps,
-} from './editable-table.js';
-import { openModal } from './navigation-actions.js';
-import { specStoreName } from '../utils/spec-field-edit.js';
-import { validateTransferRow } from '../utils/fares-rules.js';
+} from './editable-table';
+import { openModal } from './navigation-actions';
+import { specStoreName } from '../utils/spec-field-edit';
+import { validateTransferRow } from '../utils/fares-rules';
 
 /** How many `via` stop names are spelled out before collapsing to "+N more". */
 const MAX_VIA_LABELS = 3;

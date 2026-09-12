@@ -6,18 +6,18 @@
  * list (location_group_stops.txt) and the routes whose trips reference it.
  */
 
-import { GTFS_TABLES } from '../types/gtfs.js';
-import { escapeHtml } from '../utils/escape-html.js';
+import { GTFS_TABLES } from '../types/gtfs';
+import { escapeHtml } from '../utils/escape-html';
 import {
   getEntityDisplay,
   getRouteDisplay,
   getStopDisplay,
   renderCardLabel,
   renderOptionLabel,
-} from '../utils/entity-display.js';
-import { generateCompositeKeyFromRecord } from '../utils/gtfs-primary-keys.js';
-import { renderInlineEntityFields } from '../utils/inline-editable-field.js';
-import { showOptionPickerModal } from './option-picker-modal.js';
+} from '../utils/entity-display';
+import { generateCompositeKeyFromRecord } from '../utils/gtfs-primary-keys';
+import { renderInlineEntityFields } from '../utils/inline-editable-field';
+import { showOptionPickerModal } from './option-picker-modal';
 
 const MEMBER_ROW = 'location-group-member-row';
 const MEMBER_REMOVE = 'location-group-member-remove';

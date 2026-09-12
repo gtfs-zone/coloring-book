@@ -13,11 +13,11 @@
  * viewBox.
  */
 
-import type { GTFSParser } from './gtfs-parser.js';
-import { GTFSRouteSource } from './gtfs-route-source.js';
-import { routeGraph } from './route-graph.js';
-import type { RouteSequence } from './route-sequence.js';
-import { directionsForRoute, routeSequence } from './route-sequence.js';
+import type { GTFSParser } from './gtfs-parser';
+import { GTFSRouteSource } from './gtfs-route-source';
+import { routeGraph } from './route-graph';
+import type { RouteSequence } from './route-sequence';
+import { directionsForRoute, routeSequence } from './route-sequence';
 import {
   endpointNote,
   endpointThreshold,
@@ -27,13 +27,13 @@ import {
   railCell,
   rowPaths,
   STRIP_ROW_CLASS,
-} from './route-strip.js';
-import type { RowDot } from './route-strip.js';
-import { GTFS_TABLES } from '../types/gtfs.js';
-import type { Stops } from '../types/gtfs-entities.js';
-import { getStopDisplay, renderCardLabel } from '../utils/entity-display.js';
-import { escapeHtml } from '../utils/escape-html.js';
-import { routeColor } from '../utils/route-colors.js';
+} from './route-strip';
+import type { RowDot } from './route-strip';
+import { GTFS_TABLES } from '../types/gtfs';
+import type { Stops } from '../types/gtfs-entities';
+import { getStopDisplay, renderCardLabel } from '../utils/entity-display';
+import { escapeHtml } from '../utils/escape-html';
+import { routeColor } from '../utils/route-colors';
 
 /**
  * Marks a diagram row. Carries either `data-stop-id` (opens the stop page) or

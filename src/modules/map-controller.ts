@@ -6,27 +6,24 @@ import {
 } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 
-import { RouteRenderer } from './route-renderer.js';
-import { DEFAULT_STOPS_FILTER, LayerManager } from './layer-manager.js';
+import { RouteRenderer } from './route-renderer';
+import { DEFAULT_STOPS_FILTER, LayerManager } from './layer-manager';
 import {
   InteractionHandler,
   InteractionCallbacks,
-} from './interaction-handler.js';
-import { PageStateManager } from './page-state-manager.js';
-import { GTFSParser } from './gtfs-parser.js';
-import { PatchManager } from './patch-manager.js';
-import { hasValidCoords } from '../utils/stop-coords.js';
-import { CONFIG } from '../config.js';
-import { Stops, Routes, Pathways, Agency, GTFS_TABLES } from '../types/gtfs.js';
-import {
-  agencyRouteFilter,
-  normalizeAgencyId,
-} from '../utils/agency-helpers.js';
-import { BasemapControl } from './basemap-control.js';
-import { notify } from './notification-system.js';
-import type { PatchRecord, SingleGTFSPatch } from '../types/patch.js';
-import { getZoneFeature, listZones, zoneBounds } from './zone-store.js';
-import { stopTimeRef } from '../types/gtfs-flex.js';
+} from './interaction-handler';
+import { PageStateManager } from './page-state-manager';
+import { GTFSParser } from './gtfs-parser';
+import { PatchManager } from './patch-manager';
+import { hasValidCoords } from '../utils/stop-coords';
+import { CONFIG } from '../config';
+import { Stops, Routes, Pathways, Agency, GTFS_TABLES } from '../types/gtfs';
+import { agencyRouteFilter, normalizeAgencyId } from '../utils/agency-helpers';
+import { BasemapControl } from './basemap-control';
+import { notify } from './notification-system';
+import type { PatchRecord, SingleGTFSPatch } from '../types/patch';
+import { getZoneFeature, listZones, zoneBounds } from './zone-store';
+import { stopTimeRef } from '../types/gtfs-flex';
 
 // Map interaction modes
 export enum MapMode {

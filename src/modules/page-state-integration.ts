@@ -5,17 +5,14 @@
  * Sets up breadcrumb lookup and provides convenience functions.
  */
 
-import {
-  PageStateManager,
-  initPageStateManager,
-} from './page-state-manager.js';
+import { PageStateManager, initPageStateManager } from './page-state-manager';
 import {
   GTFSBreadcrumbLookup,
   createGTFSBreadcrumbLookup,
-} from './gtfs-breadcrumb-lookup.js';
-import { GTFSParser } from './gtfs-parser.js';
-import { GTFSRelationships } from './gtfs-relationships.js';
-import { getZoneFeature } from './zone-store.js';
+} from './gtfs-breadcrumb-lookup';
+import { GTFSParser } from './gtfs-parser';
+import { GTFSRelationships } from './gtfs-relationships';
+import { getZoneFeature } from './zone-store';
 
 let globalBreadcrumbLookup: GTFSBreadcrumbLookup | null = null;
 

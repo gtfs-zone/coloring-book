@@ -8,7 +8,7 @@
  * up, since the variant sets and the data sources genuinely differ.
  */
 
-import { PageState } from '../types/page-state.js';
+import { PageState } from '../types/page-state';
 
 /**
  * One crumb: a dim uppercase type over a name, pointing at a page state.

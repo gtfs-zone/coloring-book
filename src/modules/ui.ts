@@ -1,33 +1,33 @@
 import { notify } from './notification-system';
-import { showModal, renderChevronIcon } from './modal-utils.js';
-import { showLoadModal } from './load-modal.js';
-import { showFilesModal } from './files-modal.js';
-import type { ContinueOffer } from './load-modal.js';
-import type { FeedSelection } from './feed-selection.js';
-import { resolvedScheduledUrl } from './feed-selection.js';
+import { showModal, renderChevronIcon } from './modal-utils';
+import { showLoadModal } from './load-modal';
+import { showFilesModal } from './files-modal';
+import type { ContinueOffer } from './load-modal';
+import type { FeedSelection } from './feed-selection';
+import { resolvedScheduledUrl } from './feed-selection';
 import {
   getAgencyFieldDescription,
   getRouteFieldDescription,
   getCalendarFieldDescription,
   createTooltip,
   getSchemaFieldName,
-} from '../utils/zod-tooltip-helper.js';
+} from '../utils/zod-tooltip-helper';
 import {
   openTimetable,
   navigateToHome,
   navigateToAgency,
   navigateToRoute,
-} from './navigation-actions.js';
-import { GTFS_TABLES } from '../types/gtfs.js';
-import { MapMode, MapController } from './map-controller.js';
-import { GTFSParser } from './gtfs-parser.js';
-import { LoadCancelledError } from './feed-download.js';
-import { Editor } from './editor.js';
-import { BrowseNavigation } from './browse-navigation.js';
-import { getStopDisplay, renderOptionLabel } from '../utils/entity-display.js';
-import { buildExportFilename } from '../utils/export-filename.js';
-import { runWhenIdle } from '../utils/run-when-idle.js';
-import { showHelpPageOnce } from './help-modal.js';
+} from './navigation-actions';
+import { GTFS_TABLES } from '../types/gtfs';
+import { MapMode, MapController } from './map-controller';
+import { GTFSParser } from './gtfs-parser';
+import { LoadCancelledError } from './feed-download';
+import { Editor } from './editor';
+import { BrowseNavigation } from './browse-navigation';
+import { getStopDisplay, renderOptionLabel } from '../utils/entity-display';
+import { buildExportFilename } from '../utils/export-filename';
+import { runWhenIdle } from '../utils/run-when-idle';
+import { showHelpPageOnce } from './help-modal';
 
 function escapeHtml(text: string): string {
   return text

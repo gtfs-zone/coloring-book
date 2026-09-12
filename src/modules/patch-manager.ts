@@ -7,8 +7,8 @@
  * patch replay (inside this file), and feed import.
  * Use patchUpdate() from utils/patch-utils.ts for interactive edit handlers.
  */
-import { GTFSDatabase, GTFSDatabaseRecord } from './gtfs-database.js';
-import { GTFSParser } from './gtfs-parser.js';
+import { GTFSDatabase, GTFSDatabaseRecord } from './gtfs-database';
+import { GTFSParser } from './gtfs-parser';
 import {
   GTFSPatch,
   SingleGTFSPatch,
@@ -16,9 +16,9 @@ import {
   PatchRecord,
   SnapshotRecord,
   GTFSState,
-} from '../types/patch.js';
-import { CONFIG } from '../config.js';
-import { getGTFSPrimaryKey } from '../utils/gtfs-primary-keys.js';
+} from '../types/patch';
+import { CONFIG } from '../config';
+import { getGTFSPrimaryKey } from '../utils/gtfs-primary-keys';
 
 type PatchEventType = 'undo' | 'redo' | 'change' | 'jump';
 type PatchEventListener = (record?: PatchRecord) => void;

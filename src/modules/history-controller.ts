@@ -1,6 +1,6 @@
-import { PatchManager } from './patch-manager.js';
-import { GTFSPatch } from '../types/patch.js';
-import { humanLabel } from '../utils/patch-label.js';
+import { PatchManager } from './patch-manager';
+import { GTFSPatch } from '../types/patch';
+import { humanLabel } from '../utils/patch-label';
 
 function escHtml(s: unknown): string {
   return String(s ?? '')

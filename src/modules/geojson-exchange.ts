@@ -10,14 +10,14 @@
 import {
   isEncodedGeojsonIoUrl,
   parseGeojsonIoInput,
-} from '../utils/geojson-io.js';
+} from '../utils/geojson-io';
 import {
   describeHttpError,
   describeNetworkError,
   maybeProxy,
-} from './feed-selection.js';
-import { showModal } from './modal-utils.js';
-import { escapeHtml } from '../utils/escape-html.js';
+} from './feed-selection';
+import { showModal } from './modal-utils';
+import { escapeHtml } from '../utils/escape-html';
 
 /** Chooses which feature of a pasted collection the caller meant. */
 export type FeaturePicker = (

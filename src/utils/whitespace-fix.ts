@@ -12,13 +12,13 @@
  * caller so the notification can say so.
  */
 
-import type { ValidationEntity } from '../modules/gtfs-validator.js';
-import type { EditableTableDeps } from '../modules/editable-table.js';
-import { GTFS_FIELD_SPECS } from '../types/gtfs.js';
+import type { ValidationEntity } from '../modules/gtfs-validator';
+import type { EditableTableDeps } from '../modules/editable-table';
+import { GTFS_FIELD_SPECS } from '../types/gtfs';
 import {
   generateCompositeKeyFromRecord,
   getGTFSPrimaryKey,
-} from './gtfs-primary-keys.js';
+} from './gtfs-primary-keys';
 
 /** `data-issue-action` value of the "Fix all" button on an UNCLEAN_VALUE row. */
 export const WHITESPACE_FIX_ACTION = 'fix-whitespace';

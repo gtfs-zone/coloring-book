@@ -11,22 +11,22 @@ import {
   CalendarDates,
   StopTimes,
   Trips,
-} from '../types/gtfs-entities.js';
-import { CalendarSchema, GTFS_TABLES } from '../types/gtfs.js';
-import { TimeFormatter } from '../utils/time-formatter.js';
-import { isChronological } from '../utils/stop-time-order.js';
-import type { StopTimeRef } from '../types/gtfs-flex.js';
-import { stopTimeRef } from '../types/gtfs-flex.js';
-import type { GTFSParser } from './gtfs-parser.js';
-import { GTFSRouteSource } from './gtfs-route-source.js';
-import type { RouteSourceTrip } from './route-source.js';
+} from '../types/gtfs-entities';
+import { CalendarSchema, GTFS_TABLES } from '../types/gtfs';
+import { TimeFormatter } from '../utils/time-formatter';
+import { isChronological } from '../utils/stop-time-order';
+import type { StopTimeRef } from '../types/gtfs-flex';
+import { stopTimeRef } from '../types/gtfs-flex';
+import type { GTFSParser } from './gtfs-parser';
+import { GTFSRouteSource } from './gtfs-route-source';
+import type { RouteSourceTrip } from './route-source';
 import {
   routeSequence,
   clearRouteSequenceCache,
   directionsForRoute,
   RouteSequence,
-} from './route-sequence.js';
-import { routeGraph, RouteGraph } from './route-graph.js';
+} from './route-sequence';
+import { routeGraph, RouteGraph } from './route-graph';
 
 /** Trimmed string value, or null when absent or blank. */
 function emptyToNull(raw: unknown): string | null {

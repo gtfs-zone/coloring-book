@@ -9,16 +9,13 @@
 import { openDB, DBSchema, IDBPDatabase } from 'idb';
 import JSZip from 'jszip';
 import Papa from 'papaparse';
-import { GTFS_FILES } from '../types/gtfs.js';
-import { CONFIG } from '../config.js';
-import { databaseFallbackManager } from './database-fallback-manager.js';
-import { showModal } from './modal-utils.js';
-import { notify } from './notification-system.js';
-import {
-  withTimeout,
-  deleteDatabaseWithTimeout,
-} from '../utils/idb-request.js';
-import { PatchRecord, SnapshotRecord } from '../types/patch.js';
+import { GTFS_FILES } from '../types/gtfs';
+import { CONFIG } from '../config';
+import { databaseFallbackManager } from './database-fallback-manager';
+import { showModal } from './modal-utils';
+import { notify } from './notification-system';
+import { withTimeout, deleteDatabaseWithTimeout } from '../utils/idb-request';
+import { PatchRecord, SnapshotRecord } from '../types/patch';
 import {
   Agency,
   Routes,
@@ -39,15 +36,15 @@ import {
   FareMedia,
   FareProducts,
   GTFSTableMap,
-} from '../types/gtfs-entities.js';
+} from '../types/gtfs-entities';
 import {
   getNaturalKeyField,
   isNaturalKey,
   generateCompositeKeyFromRecord,
   getGTFSPrimaryKey,
-} from '../utils/gtfs-primary-keys.js';
-import { TimeFormatter } from '../utils/time-formatter.js';
-import { buildExportFilename } from '../utils/export-filename.js';
+} from '../utils/gtfs-primary-keys';
+import { TimeFormatter } from '../utils/time-formatter';
+import { buildExportFilename } from '../utils/export-filename';
 
 /**
  * Which on-disk form the imported feed expressed its networks in.

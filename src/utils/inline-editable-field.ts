@@ -16,31 +16,24 @@
 import {
   showOptionPickerModal,
   type OptionPickerItem,
-} from '../modules/option-picker-modal.js';
-import { notify } from '../modules/notification-system.js';
-import { isOutsideTopModal } from '../modules/modal-utils.js';
+} from '../modules/option-picker-modal';
+import { notify } from '../modules/notification-system';
+import { isOutsideTopModal } from '../modules/modal-utils';
 import {
   formatIssueValue,
   isDanglingReference,
   markReferenceResolved,
   renderEntityIssueNote,
-} from '../modules/feed-issues.js';
-import { escapeHtml } from './escape-html.js';
-import {
-  renderPickerTrigger,
-  setPickerTriggerContent,
-} from './picker-trigger.js';
-import {
-  COLOR_EMPTY,
-  openInlineEditor,
-  openInlineMenu,
-} from './inline-edit.js';
-import type { InlineEditorInputType } from './inline-edit.js';
+} from '../modules/feed-issues';
+import { escapeHtml } from './escape-html';
+import { renderPickerTrigger, setPickerTriggerContent } from './picker-trigger';
+import { COLOR_EMPTY, openInlineEditor, openInlineMenu } from './inline-edit';
+import type { InlineEditorInputType } from './inline-edit';
 import {
   generateFieldConfigsFromSchema,
   renderFieldLabel,
   type FieldConfig,
-} from './field-component.js';
+} from './field-component';
 import {
   buildForeignKeyOptions,
   coerceFieldValue,
@@ -51,23 +44,20 @@ import {
   specStoreName,
   validateFieldValue,
   type ForeignKeyRowSource,
-} from './spec-field-edit.js';
-import {
-  convertValueToGTFS,
-  formatValueForDisplay,
-} from './field-formatters.js';
-import { GTFSSchemas, GTFS_FIELD_SPECS } from '../types/gtfs.js';
+} from './spec-field-edit';
+import { convertValueToGTFS, formatValueForDisplay } from './field-formatters';
+import { GTFSSchemas, GTFS_FIELD_SPECS } from '../types/gtfs';
 import {
   GTFSFieldType,
   getInputTypeForFieldType,
-} from '../types/gtfs-field-types.js';
-import { getGTFSPrimaryKey } from './gtfs-primary-keys.js';
+} from '../types/gtfs-field-types';
+import { getGTFSPrimaryKey } from './gtfs-primary-keys';
 import {
   extensionFieldSpec,
   extensionFields,
   EXTENSION_FIELD_DESCRIPTION,
-} from './extension-fields.js';
-import type { GTFSFieldSpec } from '../gtfs-spec/types.js';
+} from './extension-fields';
+import type { GTFSFieldSpec } from '../gtfs-spec/types';
 import type { z } from 'zod';
 
 /** Marks a span this module's delegated listeners are responsible for. */

@@ -1,50 +1,47 @@
-import { GTFSDatabaseRecord } from './gtfs-database.js';
+import { GTFSDatabaseRecord } from './gtfs-database';
 import {
   GTFS_TABLES,
   GTFS_FOREIGN_KEYS,
   GTFS_FIELD_SPECS,
-} from '../types/gtfs.js';
-import type { GTFSForeignKeyRef } from '../gtfs-spec/adapter.js';
-import { generateCompositeKeyFromRecord } from '../utils/gtfs-primary-keys.js';
-import { GTFSFieldType, mapGTFSTypeString } from '../types/gtfs-field-types.js';
+} from '../types/gtfs';
+import type { GTFSForeignKeyRef } from '../gtfs-spec/adapter';
+import { generateCompositeKeyFromRecord } from '../utils/gtfs-primary-keys';
+import { GTFSFieldType, mapGTFSTypeString } from '../types/gtfs-field-types';
 import {
   isValidCurrencyCode,
   isValidLanguageCode,
   isValidTimezone,
-} from '../utils/constrained-values.js';
-import { validateValue } from '../utils/field-formatters.js';
-import {
-  buildStopCoordResolver,
-  hasValidCoords,
-} from '../utils/stop-coords.js';
-import type { Pathways, Stops } from '../types/gtfs-entities.js';
-import { stopLocationType } from '../utils/area-hierarchy.js';
+} from '../utils/constrained-values';
+import { validateValue } from '../utils/field-formatters';
+import { buildStopCoordResolver, hasValidCoords } from '../utils/stop-coords';
+import type { Pathways, Stops } from '../types/gtfs-entities';
+import { stopLocationType } from '../utils/area-hierarchy';
 import {
   validateFareLegJoinRuleRow,
   validateFareTransferRuleRow,
   validateTimeframeRow,
   validateTransferRow,
-} from '../utils/fares-rules.js';
+} from '../utils/fares-rules';
 import {
   validateBookingRuleRow,
   validateFlexStopTimeRow,
   validateLocationGroupId,
-} from '../utils/flex-rules.js';
+} from '../utils/flex-rules';
 import {
   frequencyEndIsAmbiguous,
   frequencyPeriodKey,
   frequencyRowProblem,
-} from '../utils/frequency-rules.js';
-import { TimeFormatter } from '../utils/time-formatter.js';
-import { yieldToEventLoop } from '../utils/async-yield.js';
+} from '../utils/frequency-rules';
+import { TimeFormatter } from '../utils/time-formatter';
+import { yieldToEventLoop } from '../utils/async-yield';
 import {
   StopTimesValidationCache,
   type PatchLogSource,
   type RowIssues,
   type StopTimesPassCache,
   type WarmSweep,
-} from './stop-times-validation-cache.js';
-import { CONFIG } from '../config.js';
+} from './stop-times-validation-cache';
+import { CONFIG } from '../config';
 
 /** The offending row, so a message can be traced back to an editable object. */
 export interface ValidationEntity {

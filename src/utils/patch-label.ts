@@ -1,5 +1,5 @@
-import { GTFSPatch } from '../types/patch.js';
-import { getEntityDisplay } from './entity-display.js';
+import { GTFSPatch } from '../types/patch';
+import { getEntityDisplay } from './entity-display';
 
 /** Human-readable singular type names, keyed by GTFS table name. */
 const TYPE_LABELS: Record<string, string> = {

@@ -11,17 +11,14 @@
 import JSZip from 'jszip';
 import Papa from 'papaparse';
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb';
-import { CONFIG } from '../config.js';
-import {
-  ALL_GTFS_FILES,
-  isSupportedFile,
-} from '../modules/gtfs-file-registry.js';
-import { processParsedData } from '../utils/gtfs-field-values.js';
+import { CONFIG } from '../config';
+import { ALL_GTFS_FILES, isSupportedFile } from '../modules/gtfs-file-registry';
+import { processParsedData } from '../utils/gtfs-field-values';
 import {
   downloadWithProgress,
   downloadPercent,
   formatBytes,
-} from '../modules/feed-download.js';
+} from '../modules/feed-download';
 
 type GTFSDatabaseRecord = {
   [key: string]: string | number | boolean | undefined;

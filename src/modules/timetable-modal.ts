@@ -16,12 +16,12 @@
  * selection across the rebuild.
  */
 
-import type { ScheduleController } from './schedule-controller.js';
-import type { PatchManager } from './patch-manager.js';
-import { NavigationEvent, TimetableModalState } from '../types/page-state.js';
-import { getPageStateManager } from './page-state-manager.js';
-import { showModal } from './modal-utils.js';
-import { notify } from './notification-system.js';
+import type { ScheduleController } from './schedule-controller';
+import type { PatchManager } from './patch-manager';
+import { NavigationEvent, TimetableModalState } from '../types/page-state';
+import { getPageStateManager } from './page-state-manager';
+import { showModal } from './modal-utils';
+import { notify } from './notification-system';
 
 export interface TimetableModalDeps {
   scheduleController: ScheduleController;

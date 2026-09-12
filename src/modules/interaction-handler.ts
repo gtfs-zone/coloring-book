@@ -6,14 +6,14 @@ import {
   Point,
   MapGeoJSONFeature,
 } from 'maplibre-gl';
-import { Stops } from '../types/gtfs-entities.js';
-import { MapMode } from './map-controller.js';
-import type { GTFSParser } from './gtfs-parser.js';
-import { showModal } from './modal-utils.js';
-import { generateId } from '../utils/uuid.js';
-import { hasLiveEditor } from '../utils/inline-edit.js';
-import { promptNewEntity, type EntityFormField } from './entity-form-modal.js';
-import { GTFS_TABLES } from '../types/gtfs.js';
+import { Stops } from '../types/gtfs-entities';
+import { MapMode } from './map-controller';
+import type { GTFSParser } from './gtfs-parser';
+import { showModal } from './modal-utils';
+import { generateId } from '../utils/uuid';
+import { hasLiveEditor } from '../utils/inline-edit';
+import { promptNewEntity, type EntityFormField } from './entity-form-modal';
+import { GTFS_TABLES } from '../types/gtfs';
 
 export interface InteractionCallbacks {
   onRouteClick?: (route_id: string) => void;
@@ -748,7 +748,7 @@ export class InteractionHandler {
    * Show the persistent ADD_PATHWAY hint notification, replacing any prior one.
    */
   private async showAddPathwayNotification(message: string): Promise<void> {
-    const { notify } = await import('./notification-system.js');
+    const { notify } = await import('./notification-system');
     if (this.addPathwayNotificationId !== null) {
       notify.removeNotification(this.addPathwayNotificationId);
     }
@@ -762,7 +762,7 @@ export class InteractionHandler {
     if (this.addPathwayNotificationId === null) {
       return;
     }
-    const { notify } = await import('./notification-system.js');
+    const { notify } = await import('./notification-system');
     notify.removeNotification(this.addPathwayNotificationId);
     this.addPathwayNotificationId = null;
   }

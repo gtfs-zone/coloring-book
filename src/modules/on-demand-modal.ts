@@ -8,7 +8,7 @@
  * and links through to the zone browse page where the geometry is edited.
  */
 
-import { showSidebarModal } from './sidebar-modal.js';
+import { showSidebarModal } from './sidebar-modal';
 import {
   attachGeojsonExchangeHandlers,
   geojsonExchangeInput,
@@ -16,9 +16,9 @@ import {
   readIncomingFeature,
   renderGeojsonExchangeBlock,
   showGeojsonExchangeError,
-} from './geojson-exchange.js';
-import { encodeGeojsonIoUrl } from '../utils/geojson-io.js';
-import { promptNewEntity } from './entity-form-modal.js';
+} from './geojson-exchange';
+import { encodeGeojsonIoUrl } from '../utils/geojson-io';
+import { promptNewEntity } from './entity-form-modal';
 import {
   renderEditableTable,
   installEditableTableHandlers,
@@ -27,19 +27,19 @@ import {
   type EditableTableConfig,
   type EditableTableDeps,
   type EditableTableJoinColumn,
-} from './editable-table.js';
-import { emptyState, memberJoinColumn, serviceOptions } from './fares-modal.js';
-import type { OptionPickerItem } from './option-picker-modal.js';
-import { escapeHtml } from '../utils/escape-html.js';
-import { specStoreName } from '../utils/spec-field-edit.js';
-import { getStopDisplay, renderOptionLabel } from '../utils/entity-display.js';
-import { stopLocationType } from '../utils/area-hierarchy.js';
+} from './editable-table';
+import { emptyState, memberJoinColumn, serviceOptions } from './fares-modal';
+import type { OptionPickerItem } from './option-picker-modal';
+import { escapeHtml } from '../utils/escape-html';
+import { specStoreName } from '../utils/spec-field-edit';
+import { getStopDisplay, renderOptionLabel } from '../utils/entity-display';
+import { stopLocationType } from '../utils/area-hierarchy';
 import {
   validateBookingRuleRow,
   validateLocationGroupId,
-} from '../utils/flex-rules.js';
-import { LOCATIONS_TABLE } from './zone-store.js';
-import { GTFS_TABLES } from '../types/gtfs.js';
+} from '../utils/flex-rules';
+import { LOCATIONS_TABLE } from './zone-store';
+import { GTFS_TABLES } from '../types/gtfs';
 
 export interface OnDemandModalDeps extends EditableTableDeps {
   /** Opens a zone's browse page. The modal closes first. */

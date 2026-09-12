@@ -9,8 +9,8 @@
  * Like `validateFlexStopTimeRow`, every check tolerates a half-typed row.
  */
 
-import { generateCompositeKeyFromRecord } from './gtfs-primary-keys.js';
-import { TimeFormatter } from './time-formatter.js';
+import { generateCompositeKeyFromRecord } from './gtfs-primary-keys';
+import { TimeFormatter } from './time-formatter';
 
 function cell(row: Record<string, unknown>, field: string): string {
   return String(row[field] ?? '').trim();

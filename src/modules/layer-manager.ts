@@ -1,26 +1,20 @@
 import { Map as MapLibreMap, GeoJSONSource } from 'maplibre-gl';
 import type { FilterSpecification, ExpressionSpecification } from 'maplibre-gl';
-import { Stops, Pathways } from '../types/gtfs-entities.js';
-import type { GTFSParser } from './gtfs-parser.js';
-import { CONFIG } from '../config.js';
-import {
-  buildStopCoordResolver,
-  hasValidCoords,
-} from '../utils/stop-coords.js';
-import { bufferedHull } from '../utils/station-hull.js';
-import {
-  clearThemeColorCache,
-  resolveThemeColor,
-} from '../utils/theme-color.js';
+import { Stops, Pathways } from '../types/gtfs-entities';
+import type { GTFSParser } from './gtfs-parser';
+import { CONFIG } from '../config';
+import { buildStopCoordResolver, hasValidCoords } from '../utils/stop-coords';
+import { bufferedHull } from '../utils/station-hull';
+import { clearThemeColorCache, resolveThemeColor } from '../utils/theme-color';
 import {
   PATHWAY_CATEGORIES,
   PATHWAY_CATEGORY_ORDER,
   PATHWAY_MODES,
   modesInCategory,
   type PathwayCategory,
-} from '../utils/pathway-modes.js';
-import { ensureMapIcons } from './map-icons.js';
-import { listZones, zoneName } from './zone-store.js';
+} from '../utils/pathway-modes';
+import { ensureMapIcons } from './map-icons';
+import { listZones, zoneName } from './zone-store';
 import {
   STOP_FOCUS_HALO_LAYER,
   STOP_FOCUS_RING_LAYER,
@@ -32,7 +26,7 @@ import {
   stopFillColor,
   stopsBackgroundPaint,
   type StopStyleOptions,
-} from './stop-layer-style.js';
+} from './stop-layer-style';
 
 export interface StopLayerOptions {
   showBackground: boolean;

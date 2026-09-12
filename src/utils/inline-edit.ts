@@ -15,13 +15,13 @@
  * formatting helper, not GTFS semantics.
  */
 
-import { escapeHtml } from './escape-html.js';
-import { todayInputValue } from './gtfs-date.js';
+import { escapeHtml } from './escape-html';
+import { todayInputValue } from './gtfs-date';
 import {
   keyToGridDirection,
   isVerticalArrow,
   type GridDirection,
-} from './grid-navigation.js';
+} from './grid-navigation';
 
 /** Marks the single live editor. Any second editor is refused while it exists. */
 export const LIVE_EDITOR_CLASS = 'editor-input-live';

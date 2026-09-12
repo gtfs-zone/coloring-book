@@ -8,7 +8,7 @@ import {
   getRouteFieldDescription,
   getCalendarFieldDescription,
   createTooltip,
-} from '../utils/zod-tooltip-helper.js';
+} from '../utils/zod-tooltip-helper';
 
 export class InfoDisplay {
   private relationships: {

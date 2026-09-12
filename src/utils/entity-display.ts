@@ -1,4 +1,4 @@
-import { escapeHtml } from './escape-html.js';
+import { escapeHtml } from './escape-html';
 
 export interface EntityDisplayInfo {
   primary: string; // shown prominently (name, short name, or ID as fallback)

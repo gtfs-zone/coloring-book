@@ -5,21 +5,21 @@
  * the normal navigation path and leave the sidebar and URL correct.
  */
 
-import { GTFS_TABLES } from '../types/gtfs.js';
-import type { PageState } from '../types/page-state.js';
+import { GTFS_TABLES } from '../types/gtfs';
+import type { PageState } from '../types/page-state';
 import {
   getAgencyDisplay,
   getRouteDisplay,
   getStopDisplay,
-} from '../utils/entity-display.js';
-import type { GTFSParser } from './gtfs-parser.js';
-import { listZones, zoneName } from './zone-store.js';
+} from '../utils/entity-display';
+import type { GTFSParser } from './gtfs-parser';
+import { listZones, zoneName } from './zone-store';
 import {
   neutralMarker,
   routeMarker,
   stopMarker,
   type SearchEntry,
-} from './search-controller.js';
+} from './search-controller';
 
 /** Non-empty values only, so the haystack has no runs of blanks to match into. */
 function haystack(...parts: (string | undefined)[]): string {

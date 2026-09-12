@@ -1,13 +1,13 @@
-import { showModal, renderTriangleIcon } from './modal-utils.js';
-import { escapeHtml } from '../utils/escape-html.js';
-import { toGtfsDate as formatGTFS, todayGtfsDate } from '../utils/gtfs-date.js';
+import { showModal, renderTriangleIcon } from './modal-utils';
+import { escapeHtml } from '../utils/escape-html';
+import { toGtfsDate as formatGTFS, todayGtfsDate } from '../utils/gtfs-date';
 import {
   feedBounds,
   trimOrExtendServices,
   type BatchMixedPatchManager,
   type FeedBoundsWriteDatabase,
-} from '../utils/feed-bounds.js';
-import { notify } from './notification-system.js';
+} from '../utils/feed-bounds';
+import { notify } from './notification-system';
 import {
   attachServiceTimelineListeners,
   isServiceActive,
@@ -17,7 +17,7 @@ import {
   type ServiceData,
   type ServiceDataMap,
   type ServiceTimelineSource,
-} from './service-timeline.js';
+} from './service-timeline';
 
 export interface CalendarModalDeps {
   gtfsDatabase: ServiceTimelineSource & FeedBoundsWriteDatabase;

@@ -13,7 +13,7 @@
  * `utils/entity-display.ts`, which is its own piece of work.
  */
 
-import { showSidebarModal } from './sidebar-modal.js';
+import { showSidebarModal } from './sidebar-modal';
 import {
   renderEditableTable,
   installEditableTableHandlers,
@@ -21,13 +21,13 @@ import {
   type EditableTableColumnOverride,
   type EditableTableConfig,
   type EditableTableDeps,
-} from './editable-table.js';
-import { emptyState } from './fares-modal.js';
-import { escapeHtml } from '../utils/escape-html.js';
-import { specStoreName } from '../utils/spec-field-edit.js';
-import { validateTransferRow } from '../utils/fares-rules.js';
-import { gtfsSpec } from '../gtfs-spec/index.js';
-import { GTFS_FIELD_SPECS, GTFS_TABLES } from '../types/gtfs.js';
+} from './editable-table';
+import { emptyState } from './fares-modal';
+import { escapeHtml } from '../utils/escape-html';
+import { specStoreName } from '../utils/spec-field-edit';
+import { validateTransferRow } from '../utils/fares-rules';
+import { gtfsSpec } from '../gtfs-spec/index';
+import { GTFS_FIELD_SPECS, GTFS_TABLES } from '../types/gtfs';
 
 export type FeedDataModalDeps = EditableTableDeps;
 

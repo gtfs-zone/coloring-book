@@ -8,9 +8,9 @@
  * this shape is a list of entries rather than another copy of the layout.
  */
 
-import { showModal, renderHelpIcon } from './modal-utils.js';
-import { installGuideButtons } from './help-modal.js';
-import { escapeHtml } from '../utils/escape-html.js';
+import { showModal, renderHelpIcon } from './modal-utils';
+import { installGuideButtons } from './help-modal';
+import { escapeHtml } from '../utils/escape-html';
 
 export interface SidebarModalEntry {
   /** Table name, help page id, or anything else unique within the modal. */

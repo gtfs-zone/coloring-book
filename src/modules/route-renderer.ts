@@ -6,17 +6,17 @@ import {
   Shapes,
   StopTimes,
   Stops,
-} from '../types/gtfs-entities.js';
-import type { GTFSParser } from './gtfs-parser.js';
-import type { PatchOp } from '../types/patch.js';
-import { CONFIG } from '../config.js';
-import { routeSortKey } from './route-sort.js';
-import { yieldToEventLoop } from '../utils/async-yield.js';
-import { ensureMapIcons } from './map-icons.js';
+} from '../types/gtfs-entities';
+import type { GTFSParser } from './gtfs-parser';
+import type { PatchOp } from '../types/patch';
+import { CONFIG } from '../config';
+import { routeSortKey } from './route-sort';
+import { yieldToEventLoop } from '../utils/async-yield';
+import { ensureMapIcons } from './map-icons';
 import {
   routeColor as deriveRouteColor,
   casingColor as deriveCasingColor,
-} from '../utils/route-colors.js';
+} from '../utils/route-colors';
 
 /**
  * Thrown by an async feature build that a newer one has replaced.

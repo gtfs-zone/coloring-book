@@ -6,8 +6,8 @@
  * shared `breadcrumb-trail.ts`.
  */
 
-import { PageState } from '../types/page-state.js';
-import { BreadcrumbItem, stopTypeLabel } from './breadcrumb-trail.js';
+import { PageState } from '../types/page-state';
+import { BreadcrumbItem, stopTypeLabel } from './breadcrumb-trail';
 
 /** Name used as the tail of every page title. */
 export const APP_NAME = 'edit.gtfs.zone';

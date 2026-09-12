@@ -6,9 +6,9 @@
  * Replaces scattered navigation logic across multiple modules.
  */
 
-import { ModalState, PageState } from '../types/page-state.js';
-import { getPageStateManager } from './page-state-manager.js';
-import { ModalTransient, getModalRouter } from './modal-router.js';
+import { ModalState, PageState } from '../types/page-state';
+import { getPageStateManager } from './page-state-manager';
+import { ModalTransient, getModalRouter } from './modal-router';
 
 /**
  * Navigate to home page (agencies list)

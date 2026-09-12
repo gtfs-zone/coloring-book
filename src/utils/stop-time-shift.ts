@@ -6,9 +6,9 @@
  * patch system.
  */
 
-import type { StopTimes } from '../types/gtfs-entities.js';
-import { TimeFormatter } from './time-formatter.js';
-import { effectiveStopTime } from './stop-time-order.js';
+import type { StopTimes } from '../types/gtfs-entities';
+import { TimeFormatter } from './time-formatter';
+import { effectiveStopTime } from './stop-time-order';
 
 /** The stop_time fields that carry a clock time. */
 const TIME_FIELDS = [

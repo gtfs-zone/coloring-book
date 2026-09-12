@@ -8,7 +8,7 @@
  * drive the panes by id.
  */
 
-import { showModal } from './modal-utils.js';
+import { showModal } from './modal-utils';
 
 const FILES_MODAL_BODY = `
   <div class="flex flex-col h-full min-h-0">

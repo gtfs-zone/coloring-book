@@ -1,34 +1,34 @@
 import JSZip from 'jszip';
 import Papa from 'papaparse';
-import { CONFIG } from '../config.js';
+import { CONFIG } from '../config';
 import {
   GTFSDatabase,
   GTFSDatabaseRecord,
   type FeedSummary,
   type NetworksMode,
-} from './gtfs-database.js';
-import { GTFS_FILES, GTFS_TABLES } from '../types/gtfs.js';
-import { feedProgressIndicator } from './feed-progress-indicator.js';
-import { notify } from './notification-system.js';
+} from './gtfs-database';
+import { GTFS_FILES, GTFS_TABLES } from '../types/gtfs';
+import { feedProgressIndicator } from './feed-progress-indicator';
+import { notify } from './notification-system';
 import {
   ALL_GTFS_FILES,
   makeHeaderOnlyCSV,
   getFileHeaders,
-} from './gtfs-file-registry.js';
+} from './gtfs-file-registry';
 import type {
   ImportSource,
   WorkerDoneMessage,
   WorkerOutbound,
   WorkerOversizeMessage,
-} from '../workers/gtfs-parser.worker.js';
-import { showModal } from './modal-utils.js';
-import { escapeHtml } from '../utils/escape-html.js';
-import { GTFSTableMap, StopTimes } from '../types/gtfs-entities.js';
-import { generateCompositeKeyFromRecord } from '../utils/gtfs-primary-keys.js';
-import { splitInnerZipPath } from './feed-url-resolve.js';
-import { yieldToEventLoop } from '../utils/async-yield.js';
-import { processParsedData } from '../utils/gtfs-field-values.js';
-import { LoadCancelledError, formatBytes } from './feed-download.js';
+} from '../workers/gtfs-parser.worker';
+import { showModal } from './modal-utils';
+import { escapeHtml } from '../utils/escape-html';
+import { GTFSTableMap, StopTimes } from '../types/gtfs-entities';
+import { generateCompositeKeyFromRecord } from '../utils/gtfs-primary-keys';
+import { splitInnerZipPath } from './feed-url-resolve';
+import { yieldToEventLoop } from '../utils/async-yield';
+import { processParsedData } from '../utils/gtfs-field-values';
+import { LoadCancelledError, formatBytes } from './feed-download';
 
 /**
  * The shell one feed-producing operation runs inside: its progress key, its

@@ -31,9 +31,9 @@
  * the rest in linear time.
  */
 
-import type { RouteSource, RouteSourceTrip } from './route-source.js';
-import type { StopTimeRef } from '../types/gtfs-flex.js';
-import { shortestCommonSupersequence } from './scs.js';
+import type { RouteSource, RouteSourceTrip } from './route-source';
+import type { StopTimeRef } from '../types/gtfs-flex';
+import { shortestCommonSupersequence } from './scs';
 
 /**
  * One stop_time reference together with which visit it is, within a single

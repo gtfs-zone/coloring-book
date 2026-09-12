@@ -1,4 +1,4 @@
-import { toGtfsDate as toYYYYMMDD } from '../utils/gtfs-date.js';
+import { toGtfsDate as toYYYYMMDD } from '../utils/gtfs-date';
 
 /** Day of week for a UTC date (0=Sun, 1=Mon, ..., 6=Sat) */
 function utcDow(year: number, month: number, day: number): number {
