@@ -1,3 +1,9 @@
+## v0.33.1 (2026-09-14)
+
+### Fix
+
+- **shapes**: clarify the shapes panel help text
+
 ## v0.33.0 (2026-09-13)
 
 ### Feat
