@@ -13,7 +13,11 @@ import {
   refreshFeedIssuesIfStale,
   setFeedIssueRevalidator,
 } from './modules/feed-issues';
-import { KeyboardShortcuts } from './modules/keyboard-shortcuts';
+import {
+  KeyboardShortcuts,
+  describeShortcuts,
+  type ShortcutCommand,
+} from './modules/keyboard-shortcuts';
 import { ScheduleController } from './modules/schedule-controller';
 import { ServiceDaysController } from './modules/service-days-controller';
 import { ThemeController } from './modules/theme-controller';
@@ -24,7 +28,8 @@ import {
 } from './modules/page-state-integration';
 import { PageStateManager } from './modules/page-state-manager';
 import { openModal, openTimetable } from './modules/navigation-actions';
-import { getModalRouter } from './modules/modal-router';
+import { createModalRouter, getModalRouter } from './modules/modal-router';
+import { editorShortcuts } from './modules/shortcut-list';
 import { showModal } from './modules/modal-utils';
 import { showTimetableModal } from './modules/timetable-modal';
 import type { PageState } from './types/page-state';
@@ -93,6 +98,7 @@ export class GTFSEditor {
   public searchController: SearchController<PageState>;
   public validator: GTFSValidator;
   public keyboardShortcuts: KeyboardShortcuts;
+  private shortcutCommands: ShortcutCommand[];
   public scheduleController: ScheduleController;
   public serviceDaysController: ServiceDaysController;
   public themeController: ThemeController;
@@ -127,7 +133,10 @@ export class GTFSEditor {
       onSelect: (state) => this.focusSearchResult(state),
     });
     this.validator = new GTFSValidator(this.gtfsParser);
-    this.keyboardShortcuts = new KeyboardShortcuts(this);
+    this.shortcutCommands = editorShortcuts(this);
+    this.keyboardShortcuts = new KeyboardShortcuts(this.shortcutCommands, () =>
+      this.tabLock.isActive()
+    );
     this.themeController = new ThemeController();
 
     // Initialize PageStateManager (will be fully set up after GTFS parser initialization)
@@ -135,6 +144,7 @@ export class GTFSEditor {
       this.gtfsParser,
       this.relationships
     );
+    createModalRouter(this.pageStateManager);
 
     // PatchManager wires the append-only patch log to the parser's database
     this.patchManager = new PatchManager(
@@ -426,9 +436,8 @@ export class GTFSEditor {
       // Wire up guide modal
       setHelpRuntimeData({
         version: __APP_VERSION__,
-        shortcuts: this.keyboardShortcuts.getShortcutsList(),
+        shortcuts: describeShortcuts(this.shortcutCommands),
       });
-      this.keyboardShortcuts.setShowHelpHandler(() => showHelpModal('about'));
       document
         .getElementById('help-btn')
         ?.addEventListener('click', () => void showHelpModal());

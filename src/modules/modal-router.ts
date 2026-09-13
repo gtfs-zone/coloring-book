@@ -20,7 +20,15 @@ import {
   PageState,
 } from '../types/page-state';
 import { closeModalsAbove, modalStackDepth } from './modal-utils';
-import { getPageStateManager } from './page-state-manager';
+
+/**
+ * The navigation state the router writes back to. Structural rather than the
+ * `PageStateManager` class, so each app can hand over its own.
+ */
+interface ModalHost {
+  /** Drop the modal from the URL when the user, not the router, closed it. */
+  clearModal(): Promise<void>;
+}
 
 /**
  * Per-open details that do not belong in the URL: a row to draw attention to,
@@ -56,6 +64,8 @@ class ModalRouter {
   private openers = new Map<ModalType, ModalOpener>();
   private session: ModalSession | null = null;
   private pendingTransient: ModalTransient = {};
+
+  constructor(private host: ModalHost) {}
 
   /** Wire a modal type to the function that opens it. */
   register<T extends ModalType>(
@@ -133,7 +143,7 @@ class ModalRouter {
       // the close resolves a promise a microtask later.
       if (this.session === session) {
         this.session = null;
-        await getPageStateManager().clearModal();
+        await this.host.clearModal();
       }
       transient.onClosed?.();
     })();
@@ -142,9 +152,15 @@ class ModalRouter {
 
 let instance: ModalRouter | null = null;
 
+/** Build the router for this app. Called once, during boot. */
+export function createModalRouter(host: ModalHost): ModalRouter {
+  instance = new ModalRouter(host);
+  return instance;
+}
+
 export function getModalRouter(): ModalRouter {
   if (!instance) {
-    instance = new ModalRouter();
+    throw new Error('[ModalRouter] createModalRouter has not run yet');
   }
   return instance;
 }
