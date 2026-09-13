@@ -1,3 +1,24 @@
+## v0.33.0 (2026-09-13)
+
+### Feat
+
+- **shared**: three fixes to files all three apps vendor
+- **forms**: extract the calendar input and the shared field label
+- **sheet**: re-activate across the breakpoint and report covered height
+- **icons**: add renderWarningIcon
+- **route-colors**: restore routeTextColor for the apps that render badges
+- **panel**: persist the panel width and drop the resizer's MapController import
+
+### Refactor
+
+- **shortcuts**: parameterize keyboard shortcuts and the modal router
+- **navbar**: parameterize navbar-actions over its action list
+- **map**: extract the auto-zoom preference and its control
+- **map**: clean up the basemap control and make it vendorable
+- **map**: extract the shared layer specification into layer-specs.ts
+- **dock**: parameterize the mobile dock over a descriptor list
+- **imports**: drop the .js suffix from relative imports
+
 ## v0.32.3 (2026-09-12)
 
 ### Fix
