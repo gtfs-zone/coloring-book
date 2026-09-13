@@ -49,6 +49,7 @@ import {
   type CalendarModalDeps,
 } from './modules/calendar-modal';
 import { ShapesManager } from './modules/shapes-manager';
+import { DOCK_ICONS, NAVBAR_ACTIONS } from './modules/navbar-action-list';
 import { renderDockIcons, renderNavbarActions } from './modules/navbar-actions';
 import { renderAutoZoomControl } from './modules/auto-zoom';
 import { NavbarCounts } from './modules/navbar-counts';
@@ -229,9 +230,9 @@ export class GTFSEditor {
       // Build the navbar before anything looks up a button by id.
       const navbarActions = document.getElementById('navbar-actions');
       if (navbarActions) {
-        renderNavbarActions(navbarActions);
+        renderNavbarActions(navbarActions, NAVBAR_ACTIONS);
       }
-      renderDockIcons();
+      renderDockIcons(DOCK_ICONS);
       document
         .getElementById('map-controls')
         ?.insertAdjacentHTML('beforeend', renderAutoZoomControl());
