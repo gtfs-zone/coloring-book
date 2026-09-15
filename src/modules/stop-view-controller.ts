@@ -16,7 +16,7 @@ import {
   renderOptionLabel,
 } from '../utils/entity-display';
 import { escapeHtml } from '../utils/escape-html';
-import { routeColor } from '../utils/route-colors';
+import { routeColor } from 'interlocking/utils/route-colors';
 import {
   filterServiceDataMap,
   loadServiceData,

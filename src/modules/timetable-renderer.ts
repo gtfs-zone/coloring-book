@@ -48,7 +48,7 @@ import {
   renderShiftTimeIcon,
   renderUploadIcon,
 } from './modal-utils';
-import { routeColor } from '../utils/route-colors';
+import { routeColor } from 'interlocking/utils/route-colors';
 import {
   railCell,
   rowPaths,

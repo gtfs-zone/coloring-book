@@ -7,7 +7,7 @@ import {
 } from './entity-display';
 import { escapeHtml } from './escape-html';
 import { formatGtfsDateRange } from './gtfs-date';
-import { routeColor } from './route-colors';
+import { routeColor } from 'interlocking/utils/route-colors';
 
 function escapeAttr(text: unknown): string {
   const div = document.createElement('div');
