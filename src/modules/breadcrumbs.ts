@@ -35,7 +35,7 @@ export interface BreadcrumbLookup {
   getLocationGroupName: (location_group_id: string) => Promise<string>;
 }
 
-const HOME: BreadcrumbItem = {
+const HOME: BreadcrumbItem<PageState> = {
   typeLabel: 'Feed',
   label: 'Home',
   pageState: { type: 'home' },
@@ -69,7 +69,9 @@ async function nameOf(
   }
 }
 
-function ancestorCrumbs(ancestors: StopAncestor[]): BreadcrumbItem[] {
+function ancestorCrumbs(
+  ancestors: StopAncestor[]
+): BreadcrumbItem<PageState>[] {
   return ancestors.map((ancestor) => ({
     typeLabel: stopTypeLabel(ancestor.location_type),
     label: ancestor.label,
@@ -84,7 +86,7 @@ function ancestorCrumbs(ancestors: StopAncestor[]): BreadcrumbItem[] {
 export async function buildBreadcrumbs(
   pageState: PageState,
   lookup: BreadcrumbLookup | null
-): Promise<BreadcrumbItem[]> {
+): Promise<BreadcrumbItem<PageState>[]> {
   try {
     switch (pageState.type) {
       case 'home':

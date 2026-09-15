@@ -499,7 +499,7 @@ export class BrowseNavigation {
     this.attachEventListeners();
   }
 
-  renderBreadcrumbs(breadcrumbs: BreadcrumbItem[]): string {
+  renderBreadcrumbs(breadcrumbs: BreadcrumbItem<PageState>[]): string {
     if (breadcrumbs.length === 0) {
       return '';
     }
