@@ -32,7 +32,7 @@ import { createModalRouter, getModalRouter } from './modules/modal-router';
 import { editorShortcuts } from './modules/shortcut-list';
 import { showModal } from './modules/modal-utils';
 import { showTimetableModal } from './modules/timetable-modal';
-import type { PageState } from './types/page-state';
+import type { ModalState, PageState } from './types/page-state';
 import { PatchManager } from './modules/patch-manager';
 import { HistoryController } from './modules/history-controller';
 import { TabLockController } from './modules/tab-lock';
@@ -152,7 +152,7 @@ export class GTFSEditor {
       this.gtfsParser,
       this.relationships
     );
-    createModalRouter(this.pageStateManager);
+    createModalRouter<ModalState>(this.pageStateManager);
 
     // PatchManager wires the append-only patch log to the parser's database
     this.patchManager = new PatchManager(
@@ -690,7 +690,7 @@ export class GTFSEditor {
    * navigation can never arrive at an empty registry.
    */
   private registerModals(shapesManager: ShapesManager): void {
-    const router = getModalRouter();
+    const router = getModalRouter<ModalState>();
 
     router.register('timetable', (modal) =>
       showTimetableModal(
