@@ -53,7 +53,8 @@ export type PaneModalType = Exclude<ModalType, 'timetable'>;
 
 /**
  * Written as a mapped type over the pane modal types rather than one interface
- * with a union `type`, so `ModalStateOf` can pick a single member out of it.
+ * with a union `type`, so a single member can be picked out of it by `type`
+ * (which is how `modal-router.ts` narrows an opener's argument).
  */
 export type PaneModalState = {
   [T in PaneModalType]: {
@@ -68,12 +69,6 @@ export type PaneModalState = {
  * page rather than to a separate modal page state.
  */
 export type ModalState = TimetableModalState | PaneModalState;
-
-/** The modal state shape belonging to one modal type. */
-export type ModalStateOf<T extends ModalType> = Extract<
-  ModalState,
-  { type: T }
->;
 
 /** Distributed so that narrowing on `type` still works through the modal field. */
 type WithModal<T> = T extends unknown ? T & { modal?: ModalState } : never;
