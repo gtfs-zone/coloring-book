@@ -148,7 +148,7 @@ export class PageStateManager {
   /**
    * Generate breadcrumbs for the current page state
    */
-  async getBreadcrumbs(): Promise<BreadcrumbItem[]> {
+  async getBreadcrumbs(): Promise<BreadcrumbItem<PageState>[]> {
     return buildBreadcrumbs(this.currentState, this.breadcrumbLookup);
   }
 
