@@ -33,7 +33,7 @@ import { GTFS_TABLES } from '../types/gtfs';
 import type { Stops } from '../types/gtfs-entities';
 import { getStopDisplay, renderCardLabel } from '../utils/entity-display';
 import { escapeHtml } from '../utils/escape-html';
-import { routeColor } from '../utils/route-colors';
+import { routeColor } from 'interlocking/utils/route-colors';
 
 /**
  * Marks a diagram row. Carries either `data-stop-id` (opens the stop page) or

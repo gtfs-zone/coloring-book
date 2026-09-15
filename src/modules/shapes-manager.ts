@@ -21,7 +21,7 @@ import {
   renderOptionLabel,
 } from '../utils/entity-display';
 import { renderEntityChip } from '../utils/entity-references';
-import { routeColor } from '../utils/route-colors';
+import { routeColor } from 'interlocking/utils/route-colors';
 import { openTimetable } from './navigation-actions';
 import { deviationMetres, simplifyIndices } from '../utils/simplify-path';
 import { encodeGeojsonIoUrl } from '../utils/geojson-io';

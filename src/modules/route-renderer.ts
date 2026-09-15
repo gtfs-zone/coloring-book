@@ -16,7 +16,7 @@ import { ensureMapIcons } from './map-icons';
 import {
   routeColor as deriveRouteColor,
   casingColor as deriveCasingColor,
-} from '../utils/route-colors';
+} from 'interlocking/utils/route-colors';
 import {
   NO_ROUTE_FILTER,
   ROUTES_BACKGROUND_LAYER,
