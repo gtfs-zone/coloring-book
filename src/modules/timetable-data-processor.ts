@@ -16,7 +16,7 @@ import { CalendarSchema, GTFS_TABLES } from '../types/gtfs';
 import { TimeFormatter } from '../utils/time-formatter';
 import { isChronological } from '../utils/stop-time-order';
 import type { StopTimeRef } from '../types/gtfs-flex';
-import { stopTimeRef } from '../types/gtfs-flex';
+import { stopTimeRef } from '../utils/stop-time-ref';
 import type { GTFSParser } from './gtfs-parser';
 import { GTFSRouteSource } from './gtfs-route-source';
 import type { RouteSourceTrip } from './route-source';

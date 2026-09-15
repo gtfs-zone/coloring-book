@@ -24,7 +24,7 @@ import { AutoZoom } from './auto-zoom';
 import { notify } from './notification-system';
 import type { PatchRecord, SingleGTFSPatch } from '../types/patch';
 import { getZoneFeature, listZones, zoneBounds } from './zone-store';
-import { stopTimeRef } from '../types/gtfs-flex';
+import { stopTimeRef } from '../utils/stop-time-ref';
 
 // Map interaction modes
 export enum MapMode {

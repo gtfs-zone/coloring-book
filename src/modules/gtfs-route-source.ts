@@ -7,7 +7,7 @@ import type {
 import { GTFS_TABLES } from '../types/gtfs';
 import type { LocationGroups, Stops } from '../types/gtfs-entities';
 import type { StopTimeRef } from '../types/gtfs-flex';
-import { stopTimeRef } from '../types/gtfs-flex';
+import { stopTimeRef } from '../utils/stop-time-ref';
 
 interface StopIndexEntry {
   parent?: string;
