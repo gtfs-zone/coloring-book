@@ -157,7 +157,7 @@ export function describeMissing(
 /**
  * The scheduled URL to actually fetch, proxied if the source asks for it.
  *
- * Note the asymmetry with the realtime side: `RT_BASE` resolution is realtime
+ * Note the asymmetry with the realtime side: RT base resolution is realtime
  * only. A path-only scheduled URL stays same-origin, because there is no single
  * server that scheduled feeds come from.
  */
@@ -167,23 +167,32 @@ export function resolvedScheduledUrl(src: ScheduledSource): string {
 
 /**
  * The three RT URLs to actually fetch: path-only entries resolved against
- * `RT_BASE` first, then proxied per the source's setting. Resolution has to come
+ * `rtBase` first, then proxied per the source's setting. Resolution has to come
  * first — in the built site `/amtrak/…` is an rt.gtfs.zone URL, which does need
- * the proxy.
+ * the proxy. Callers pass their app's `CONFIG.RT_BASE`.
  */
 export function resolvedRealtimeUrls(
-  rt: RealtimeSource
+  rt: RealtimeSource,
+  rtBase: string
 ): Record<RealtimeEndpointName, string> {
   return {
-    vehicles: resolvedRealtimeUrl(rt.vehiclesUrl ?? '', rt.useCors),
-    tripUpdates: resolvedRealtimeUrl(rt.tripUpdatesUrl ?? '', rt.useCors),
-    alerts: resolvedRealtimeUrl(rt.alertsUrl ?? '', rt.useCors),
+    vehicles: resolvedRealtimeUrl(rt.vehiclesUrl ?? '', rt.useCors, rtBase),
+    tripUpdates: resolvedRealtimeUrl(
+      rt.tripUpdatesUrl ?? '',
+      rt.useCors,
+      rtBase
+    ),
+    alerts: resolvedRealtimeUrl(rt.alertsUrl ?? '', rt.useCors, rtBase),
   };
 }
 
 /** One realtime URL, resolved and proxied — the single path from stored to fetched. */
-export function resolvedRealtimeUrl(url: string, useCors: boolean): string {
-  return maybeProxy(resolveRealtimeUrl(url), useCors);
+export function resolvedRealtimeUrl(
+  url: string,
+  useCors: boolean,
+  rtBase: string
+): string {
+  return maybeProxy(resolveRealtimeUrl(url, rtBase), useCors);
 }
 
 /** A short description of the whole selection, for toasts and titles. */
