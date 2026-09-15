@@ -11,7 +11,7 @@
  */
 
 import { promptNewEntity } from './entity-form-modal';
-import { notify } from './notification-system';
+import { notify } from 'interlocking/modules/notification-system';
 import { createDefaultService } from '../utils/default-values';
 import { feedBounds, type FeedBoundsSource } from '../utils/feed-bounds';
 import { GTFS_DATE_CODEC } from '../utils/gtfs-date';

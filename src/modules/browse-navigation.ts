@@ -10,7 +10,7 @@ import {
   BreadcrumbItem,
   pageTitle,
   renderBreadcrumbTrail,
-} from './breadcrumb-trail';
+} from 'interlocking/modules/breadcrumb-trail';
 import { APP_NAME } from './breadcrumbs';
 import {
   navigateToAgency,

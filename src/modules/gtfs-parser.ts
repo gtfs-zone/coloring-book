@@ -8,8 +8,8 @@ import {
   type NetworksMode,
 } from './gtfs-database';
 import { GTFS_FILES, GTFS_TABLES } from '../types/gtfs';
-import { feedProgressIndicator } from './feed-progress-indicator';
-import { notify } from './notification-system';
+import { feedProgressIndicator } from 'interlocking/modules/feed-progress-indicator';
+import { notify } from 'interlocking/modules/notification-system';
 import {
   ALL_GTFS_FILES,
   makeHeaderOnlyCSV,
@@ -21,14 +21,17 @@ import type {
   WorkerOutbound,
   WorkerOversizeMessage,
 } from '../workers/gtfs-parser.worker';
-import { showModal } from './modal-utils';
-import { escapeHtml } from '../utils/escape-html';
+import { showModal } from 'interlocking/modules/modal-utils';
+import { escapeHtml } from 'interlocking/utils/escape-html';
 import { GTFSTableMap, StopTimes } from '../types/gtfs-entities';
 import { generateCompositeKeyFromRecord } from '../utils/gtfs-primary-keys';
-import { splitInnerZipPath } from './feed-url-resolve';
+import { splitInnerZipPath } from 'interlocking/modules/feed-url-resolve';
 import { yieldToEventLoop } from '../utils/async-yield';
 import { processParsedData } from '../utils/gtfs-field-values';
-import { LoadCancelledError, formatBytes } from './feed-download';
+import {
+  LoadCancelledError,
+  formatBytes,
+} from 'interlocking/modules/feed-download';
 
 /**
  * The shell one feed-producing operation runs inside: its progress key, its

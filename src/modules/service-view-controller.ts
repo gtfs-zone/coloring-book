@@ -8,7 +8,7 @@
 
 import type { Agency, Routes, Trips } from '../types/gtfs';
 import { normalizeAgencyId } from '../utils/agency-helpers';
-import { renderTrashIcon } from './modal-utils';
+import { renderTrashIcon } from 'interlocking/modules/modal-utils';
 import {
   renderTimetableReference,
   TIMETABLE_REF_ROW,

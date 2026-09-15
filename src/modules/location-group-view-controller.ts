@@ -7,7 +7,7 @@
  */
 
 import { GTFS_TABLES } from '../types/gtfs';
-import { escapeHtml } from '../utils/escape-html';
+import { escapeHtml } from 'interlocking/utils/escape-html';
 import {
   getEntityDisplay,
   getRouteDisplay,

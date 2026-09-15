@@ -5,8 +5,8 @@
  */
 
 import { Stops, StopTimes, Trips } from '../types/gtfs-entities';
-import type { StopTimeRef } from '../types/gtfs-flex';
-import { notify } from './notification-system';
+import type { StopTimeRef } from 'interlocking/types/gtfs-flex';
+import { notify } from 'interlocking/modules/notification-system';
 import {
   formatIssueValue,
   markReferenceResolved,
@@ -40,7 +40,7 @@ import {
   arrowToGridDirection,
   type GridDirection,
 } from '../utils/grid-navigation';
-import { showModal, isOutsideTopModal } from './modal-utils';
+import { showModal, isOutsideTopModal } from 'interlocking/modules/modal-utils';
 import { showOptionPickerModal, OptionPickerItem } from './option-picker-modal';
 import { getEnumOptions } from '../types/gtfs-enums';
 import {
@@ -62,7 +62,7 @@ import { mirrorTripTimes, shiftRowTimes } from '../utils/stop-time-shift';
 import { listZones, zoneName } from './zone-store';
 import { validateFlexStopTimeRow } from '../utils/flex-rules';
 import { renderSpecDescriptionPlain } from '../utils/spec-markup';
-import { escapeHtml } from '../utils/escape-html';
+import { escapeHtml } from 'interlocking/utils/escape-html';
 import { setPickerTriggerContent } from '../utils/picker-trigger';
 import { getGTFSFieldDescription } from '../utils/zod-tooltip-helper';
 import { GTFS_TABLES } from '../types/gtfs';

@@ -6,7 +6,7 @@
  * render the same view. The modal remains a caller like any other.
  */
 
-import { escapeHtml } from '../utils/escape-html';
+import { escapeHtml } from 'interlocking/utils/escape-html';
 import { formatDaysOfWeek } from '../utils/entity-references';
 import {
   formatGtfsDateRange,
@@ -15,7 +15,10 @@ import {
   toGtfsDate as formatGTFS,
   todayGtfsDate,
 } from '../utils/gtfs-date';
-import { renderPencilIcon, renderTriangleIcon } from './modal-utils';
+import {
+  renderPencilIcon,
+  renderTriangleIcon,
+} from 'interlocking/modules/modal-utils';
 
 export interface ServiceData {
   calendar: Record<string, unknown> | null;

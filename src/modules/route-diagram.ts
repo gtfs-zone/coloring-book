@@ -15,9 +15,12 @@
 
 import type { GTFSParser } from './gtfs-parser';
 import { GTFSRouteSource } from './gtfs-route-source';
-import { routeGraph } from './route-graph';
-import type { RouteSequence } from './route-sequence';
-import { directionsForRoute, routeSequence } from './route-sequence';
+import { routeGraph } from 'interlocking/modules/route-graph';
+import type { RouteSequence } from 'interlocking/modules/route-sequence';
+import {
+  directionsForRoute,
+  routeSequence,
+} from 'interlocking/modules/route-sequence';
 import {
   endpointNote,
   endpointThreshold,
@@ -27,12 +30,12 @@ import {
   railCell,
   rowPaths,
   STRIP_ROW_CLASS,
-} from './route-strip';
-import type { RowDot } from './route-strip';
+} from 'interlocking/modules/route-strip';
+import type { RowDot } from 'interlocking/modules/route-strip';
 import { GTFS_TABLES } from '../types/gtfs';
 import type { Stops } from '../types/gtfs-entities';
 import { getStopDisplay, renderCardLabel } from '../utils/entity-display';
-import { escapeHtml } from '../utils/escape-html';
+import { escapeHtml } from 'interlocking/utils/escape-html';
 import { routeColor } from 'interlocking/utils/route-colors';
 
 /**

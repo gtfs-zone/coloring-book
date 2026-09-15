@@ -15,7 +15,7 @@ import {
   renderCardLabel,
   renderOptionLabel,
 } from '../utils/entity-display';
-import { escapeHtml } from '../utils/escape-html';
+import { escapeHtml } from 'interlocking/utils/escape-html';
 import { routeColor } from 'interlocking/utils/route-colors';
 import {
   filterServiceDataMap,
@@ -24,7 +24,7 @@ import {
   type ServiceDataMap,
 } from './service-timeline';
 import { pathwayModeLabel } from '../utils/pathway-modes';
-import { renderTrashIcon } from './modal-utils';
+import { renderTrashIcon } from 'interlocking/modules/modal-utils';
 import {
   renderPathwayReference,
   renderStopReference,

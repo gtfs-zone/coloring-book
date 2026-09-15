@@ -37,7 +37,7 @@ Playwright requires the app to be served first (`pnpm serve`) before tests run: 
 
 ### Module System
 
-The app is orchestrated by the `GTFSEditor` class in `src/index.ts`. All 44 modules in `src/modules/` are instantiated there and wired together via constructor injection and callbacks (no DI framework). Circular references between modules are resolved post-construction by passing references explicitly.
+The app is orchestrated by the `GTFSEditor` class in `src/index.ts`. All 64 modules in `src/modules/` are instantiated there and wired together via constructor injection and callbacks (no DI framework). Circular references between modules are resolved post-construction by passing references explicitly.
 
 There is no centralized state management (no Redux/Zustand). State is distributed:
 - **IndexedDB** (`GTFSDatabase`): persistent GTFS data
@@ -52,9 +52,26 @@ There is no centralized state management (no Redux/Zustand). State is distribute
 | Data | `gtfs-parser.ts`, `gtfs-database.ts`, `gtfs-validator.ts`, `gtfs-relationships.ts` |
 | Map | `map-controller.ts`, `route-renderer.ts`, `layer-manager.ts`, `interaction-handler.ts` |
 | Editor | `editor.ts` (CodeMirror 6), `ui.ts` (file list / editor / preview state machine), `patch-manager.ts` (append-only patch log + undo/redo), `history-controller.ts` (Changes panel UI) |
-| Navigation | `page-state-manager.ts`, `breadcrumbs.ts`, `breadcrumb-trail.ts` (vendored downstream), `objects-navigation.ts`, `page-content-renderer.ts` |
+| Navigation | `page-state-manager.ts`, `breadcrumbs.ts`, `objects-navigation.ts`, `page-content-renderer.ts` |
 | Views | `schedule-controller.ts`, `service-days-controller.ts`, `stop-view-controller.ts`, `timetable-*.ts` |
-| UI | `notification-system.ts`, `tab-manager.ts`, `theme-controller.ts`, `keyboard-shortcuts.ts` |
+| UI | `navbar-action-list.ts`, `shortcut-list.ts`, `help-pages.ts`, `tab-lock.ts` |
+
+### Shared modules (`interlocking`)
+
+Modules shared with the two realtime apps live in the `interlocking` package, a
+git dependency shipping raw TypeScript with no build step. Import them as
+`interlocking/modules/...`, `interlocking/utils/...` and
+`interlocking/types/gtfs-flex`; `tsconfig.json` `paths` and a `resolve.alias` in
+`vite.config.js` point both at `node_modules/interlocking/src`.
+
+It holds the notification system, theme controller, keyboard shortcut engine,
+modal plumbing (`modal-utils`, `modal-router`, `sidebar-modal`), the breadcrumb
+trail, the map layer/icon/basemap modules, the route graph/sequence/strip
+diagram primitives, feed download and selection, search, and the shared
+`escape-html` / `route-colors` / `theme-color` / `tooltip-position` helpers.
+
+A shared change is a commit in interlocking, a tag, and a bump in each consumer.
+It is not edited here.
 
 ### Configuration
 

@@ -13,10 +13,10 @@
 
 import { showOptionPickerModal } from '../modules/option-picker-modal';
 import { promptNewEntity } from '../modules/entity-form-modal';
-import { notify } from '../modules/notification-system';
-import { isOutsideTopModal } from '../modules/modal-utils';
+import { notify } from 'interlocking/modules/notification-system';
+import { isOutsideTopModal } from 'interlocking/modules/modal-utils';
 import { GTFS_TABLES } from '../types/gtfs';
-import { escapeHtml } from './escape-html';
+import { escapeHtml } from 'interlocking/utils/escape-html';
 import { generateCompositeKeyFromRecord } from './gtfs-primary-keys';
 import { getEntityDisplay, renderOptionLabel } from './entity-display';
 import {

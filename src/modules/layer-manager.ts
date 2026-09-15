@@ -5,7 +5,10 @@ import type { GTFSParser } from './gtfs-parser';
 import { CONFIG } from '../config';
 import { buildStopCoordResolver, hasValidCoords } from '../utils/stop-coords';
 import { bufferedHull } from '../utils/station-hull';
-import { clearThemeColorCache, resolveThemeColor } from '../utils/theme-color';
+import {
+  clearThemeColorCache,
+  resolveThemeColor,
+} from 'interlocking/utils/theme-color';
 import {
   PATHWAY_CATEGORIES,
   PATHWAY_CATEGORY_ORDER,
@@ -13,7 +16,7 @@ import {
   modesInCategory,
   type PathwayCategory,
 } from '../utils/pathway-modes';
-import { ensureMapIcons } from './map-icons';
+import { ensureMapIcons } from 'interlocking/modules/map-icons';
 import { listZones, zoneName } from './zone-store';
 import {
   STOP_FOCUS_HALO_LAYER,
@@ -26,7 +29,7 @@ import {
   stopFillColor,
   stopsBackgroundPaint,
   type StopStyleOptions,
-} from './stop-layer-style';
+} from 'interlocking/modules/stop-layer-style';
 import {
   ROUTES_CASING_LAYER,
   STOPS_BACKGROUND_LAYER,
@@ -40,7 +43,7 @@ import {
   stopClickAreaRadius,
   stopFadeOpacity,
   type StopFadeBands,
-} from './layer-specs';
+} from 'interlocking/modules/layer-specs';
 
 export interface StopLayerOptions {
   showBackground: boolean;

@@ -8,7 +8,7 @@
  * and links through to the zone browse page where the geometry is edited.
  */
 
-import { showSidebarModal } from './sidebar-modal';
+import { showSidebarModal } from 'interlocking/modules/sidebar-modal';
 import {
   attachGeojsonExchangeHandlers,
   geojsonExchangeInput,
@@ -30,7 +30,7 @@ import {
 } from './editable-table';
 import { emptyState, memberJoinColumn, serviceOptions } from './fares-modal';
 import type { OptionPickerItem } from './option-picker-modal';
-import { escapeHtml } from '../utils/escape-html';
+import { escapeHtml } from 'interlocking/utils/escape-html';
 import { specStoreName } from '../utils/spec-field-edit';
 import { getStopDisplay, renderOptionLabel } from '../utils/entity-display';
 import { stopLocationType } from '../utils/area-hierarchy';

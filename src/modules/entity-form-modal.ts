@@ -7,9 +7,9 @@
  * the field list, the validation and the commit.
  */
 
-import { showModal } from './modal-utils';
+import { showModal } from 'interlocking/modules/modal-utils';
 import { renderFieldLabel, type FieldConfig } from '../utils/field-component';
-import { escapeHtml } from '../utils/escape-html';
+import { escapeHtml } from 'interlocking/utils/escape-html';
 import { GTFS_FIELD_SPECS } from '../types/gtfs';
 import type { GTFSPresence } from '../gtfs-spec/types';
 import { getEnumOptions, isEnumField } from '../types/gtfs-enums';

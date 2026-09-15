@@ -2,11 +2,11 @@ import { GTFSParser } from './modules/gtfs-parser';
 import { MapController } from './modules/map-controller';
 import { Editor } from './modules/editor';
 import { UIController } from './modules/ui';
-import { BottomSheetController } from './modules/bottom-sheet';
+import { BottomSheetController } from 'interlocking/modules/bottom-sheet';
 import { GTFSRelationships } from './modules/gtfs-relationships';
 import { BrowseNavigation } from './modules/browse-navigation';
 import { InfoDisplay } from './modules/info-display';
-import { SearchController } from './modules/search-controller';
+import { SearchController } from 'interlocking/modules/search-controller';
 import { buildSearchEntries } from './modules/search-entries';
 import { GTFSValidator } from './modules/gtfs-validator';
 import {
@@ -17,20 +17,23 @@ import {
   KeyboardShortcuts,
   describeShortcuts,
   type ShortcutCommand,
-} from './modules/keyboard-shortcuts';
+} from 'interlocking/modules/keyboard-shortcuts';
 import { ScheduleController } from './modules/schedule-controller';
 import { ServiceDaysController } from './modules/service-days-controller';
-import { ThemeController } from './modules/theme-controller';
-import { notify } from './modules/notification-system';
+import { ThemeController } from 'interlocking/modules/theme-controller';
+import { notify } from 'interlocking/modules/notification-system';
 import {
   initializePageStateWithGTFS,
   takeLoadCommand,
 } from './modules/page-state-integration';
 import { PageStateManager } from './modules/page-state-manager';
 import { openModal, openTimetable } from './modules/navigation-actions';
-import { createModalRouter, getModalRouter } from './modules/modal-router';
+import {
+  createModalRouter,
+  getModalRouter,
+} from 'interlocking/modules/modal-router';
 import { editorShortcuts } from './modules/shortcut-list';
-import { showModal } from './modules/modal-utils';
+import { showModal } from 'interlocking/modules/modal-utils';
 import { showTimetableModal } from './modules/timetable-modal';
 import type { ModalState, PageState } from './types/page-state';
 import { PatchManager } from './modules/patch-manager';
@@ -43,7 +46,7 @@ import {
   setHelpPages,
   showHelpModal,
   showHelpPageOnce,
-} from './modules/help-modal';
+} from 'interlocking/modules/help-modal';
 import {
   HELP_GROUP_ORDER,
   HELP_PAGES,
@@ -63,16 +66,22 @@ import {
 } from './modules/calendar-modal';
 import { ShapesManager } from './modules/shapes-manager';
 import { DOCK_ICONS, NAVBAR_ACTIONS } from './modules/navbar-action-list';
-import { renderDockIcons, renderNavbarActions } from './modules/navbar-actions';
-import { renderAutoZoomControl } from './modules/auto-zoom';
+import {
+  renderDockIcons,
+  renderNavbarActions,
+} from 'interlocking/modules/navbar-actions';
+import { renderAutoZoomControl } from 'interlocking/modules/auto-zoom';
 import { NavbarCounts } from './modules/navbar-counts';
-import { PanelResizer, restorePanelWidth } from './modules/panel-resizer';
+import {
+  PanelResizer,
+  restorePanelWidth,
+} from 'interlocking/modules/panel-resizer';
 import { LevelsController } from './modules/levels-controller';
-import { feedProgressIndicator } from './modules/feed-progress-indicator';
+import { feedProgressIndicator } from 'interlocking/modules/feed-progress-indicator';
 import { databaseFallbackManager } from './modules/database-fallback-manager';
-import { LoadCancelledError } from './modules/feed-download';
+import { LoadCancelledError } from 'interlocking/modules/feed-download';
 import { CONFIG } from './config';
-import { initFieldTooltipPortal } from './utils/tooltip-position';
+import { initFieldTooltipPortal } from 'interlocking/utils/tooltip-position';
 import './styles/main.css';
 
 declare global {
