@@ -39,8 +39,16 @@ import { TabLockController } from './modules/tab-lock';
 import { humanLabel } from './utils/patch-label';
 import { loadExtensionColumns } from './utils/extension-fields';
 import { runWhenIdle } from './utils/run-when-idle';
-import { showHelpModal, showHelpPageOnce } from './modules/help-modal';
-import { setHelpRuntimeData } from './modules/help-pages';
+import {
+  setHelpPages,
+  showHelpModal,
+  showHelpPageOnce,
+} from './modules/help-modal';
+import {
+  HELP_GROUP_ORDER,
+  HELP_PAGES,
+  setHelpRuntimeData,
+} from './modules/help-pages';
 import { showFaresModal } from './modules/fares-modal';
 import { showFeedDataModal } from './modules/feed-data-modal';
 import { showOnDemandModal } from './modules/on-demand-modal';
@@ -434,6 +442,7 @@ export class GTFSEditor {
       });
 
       // Wire up guide modal
+      setHelpPages(HELP_PAGES, HELP_GROUP_ORDER);
       setHelpRuntimeData({
         version: __APP_VERSION__,
         shortcuts: describeShortcuts(this.shortcutCommands),
