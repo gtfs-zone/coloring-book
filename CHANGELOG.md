@@ -1,3 +1,18 @@
+## v0.34.0 (2026-09-16)
+
+### Feat
+
+- **load-modal**: offer a linked feed, a failure notice, and a custom-URL row
+
+### Refactor
+
+- consume the 34 shared modules from interlocking
+- **flex**: keep gtfs-flex.ts to the types, move the row reader out
+- **modal-router**: make the router generic over the modal state union
+- **breadcrumbs**: make the crumb shell generic over the page state
+- **help**: make the page registry an argument of the viewer
+- **feed-url**: make the realtime base a parameter
+
 ## v0.33.1 (2026-09-14)
 
 ### Fix
