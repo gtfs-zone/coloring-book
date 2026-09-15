@@ -1,4 +1,4 @@
-import type { FeedSelection } from './feed-selection';
+import type { FeedSelection } from 'interlocking/modules/feed-selection';
 
 export interface ExampleFeed {
   name: string;

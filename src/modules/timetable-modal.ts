@@ -20,8 +20,8 @@ import type { ScheduleController } from './schedule-controller';
 import type { PatchManager } from './patch-manager';
 import { NavigationEvent, TimetableModalState } from '../types/page-state';
 import { getPageStateManager } from './page-state-manager';
-import { showModal } from './modal-utils';
-import { notify } from './notification-system';
+import { showModal } from 'interlocking/modules/modal-utils';
+import { notify } from 'interlocking/modules/notification-system';
 
 export interface TimetableModalDeps {
   scheduleController: ScheduleController;

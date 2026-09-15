@@ -25,8 +25,8 @@ import {
   zoneVertexCount,
   type ZonePatchRecorder,
 } from './zone-store';
-import { notify } from './notification-system';
-import { escapeHtml } from '../utils/escape-html';
+import { notify } from 'interlocking/modules/notification-system';
+import { escapeHtml } from 'interlocking/utils/escape-html';
 
 export interface ZoneGeometryDependencies {
   gtfsParser: GTFSParser;

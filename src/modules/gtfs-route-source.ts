@@ -3,10 +3,10 @@ import type {
   RouteSource,
   RouteSourceTrip,
   RouteSourceStopTime,
-} from './route-source';
+} from 'interlocking/modules/route-source';
 import { GTFS_TABLES } from '../types/gtfs';
 import type { LocationGroups, Stops } from '../types/gtfs-entities';
-import type { StopTimeRef } from '../types/gtfs-flex';
+import type { StopTimeRef } from 'interlocking/types/gtfs-flex';
 import { stopTimeRef } from '../utils/stop-time-ref';
 
 interface StopIndexEntry {

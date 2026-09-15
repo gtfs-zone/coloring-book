@@ -41,7 +41,7 @@ import type {
   EditableTablePatchManager,
 } from './editable-table';
 import { renderIssueCard } from '../utils/issue-card';
-import { installGuideButtons } from './help-modal';
+import { installGuideButtons } from 'interlocking/modules/help-modal';
 import {
   getFeedIssueEntities,
   getFeedIssues,
@@ -62,8 +62,8 @@ import {
   renderCardLabel,
   renderOptionLabel,
 } from '../utils/entity-display';
-import { showModal, renderTrashIcon } from './modal-utils';
-import { renderNavIcon } from './nav-icons';
+import { showModal, renderTrashIcon } from 'interlocking/modules/modal-utils';
+import { renderNavIcon } from 'interlocking/modules/nav-icons';
 import { promptNewEntity } from './entity-form-modal';
 import { showNewServiceModal } from './new-service-modal';
 import { specStoreName } from '../utils/spec-field-edit';
@@ -72,8 +72,8 @@ import {
   renderPickerTrigger,
   setPickerTriggerContent,
 } from '../utils/picker-trigger';
-import { notify } from './notification-system';
-import { escapeHtml } from '../utils/escape-html';
+import { notify } from 'interlocking/modules/notification-system';
+import { escapeHtml } from 'interlocking/utils/escape-html';
 import {
   getCurrentPageState,
   navigateToHome,

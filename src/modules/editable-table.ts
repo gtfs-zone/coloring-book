@@ -16,15 +16,19 @@
  * same object, so they always see the rows the user is looking at.
  */
 
-import { showModal, renderTrashIcon, isOutsideTopModal } from './modal-utils';
+import {
+  showModal,
+  renderTrashIcon,
+  isOutsideTopModal,
+} from 'interlocking/modules/modal-utils';
 import {
   showMultiOptionPickerModal,
   showOptionPickerModal,
   type OptionPickerItem,
 } from './option-picker-modal';
-import { notify } from './notification-system';
+import { notify } from 'interlocking/modules/notification-system';
 import { formatIssueValue } from './feed-issues';
-import { escapeHtml } from '../utils/escape-html';
+import { escapeHtml } from 'interlocking/utils/escape-html';
 import {
   renderPickerTrigger,
   setPickerTriggerContent,

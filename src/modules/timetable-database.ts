@@ -5,13 +5,13 @@
  */
 
 import { StopTimes, GTFSTableMap } from '../types/gtfs-entities';
-import type { StopTimeRef } from '../types/gtfs-flex';
+import type { StopTimeRef } from 'interlocking/types/gtfs-flex';
 import { StopTimesSchema } from '../types/gtfs';
 import type { CoupledTimes } from '../utils/stop-time-coupling';
 import { TimeFormatter } from '../utils/time-formatter';
 import { chronologicalOrder } from '../utils/stop-time-order';
 import { mirrorTripTimes, shiftRowTimes } from '../utils/stop-time-shift';
-import { notify } from './notification-system';
+import { notify } from 'interlocking/modules/notification-system';
 
 /** The two ends of a stop_time's pickup/drop-off window. */
 export type FlexWindowField =

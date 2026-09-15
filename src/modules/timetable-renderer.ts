@@ -30,7 +30,7 @@ import {
   renderCardLabel,
   renderOptionLabel,
 } from '../utils/entity-display';
-import { escapeHtml } from '../utils/escape-html';
+import { escapeHtml } from 'interlocking/utils/escape-html';
 import { renderPickerTrigger } from '../utils/picker-trigger';
 import {
   TIMETABLE_ADD_DIRECTION,
@@ -47,7 +47,7 @@ import {
   renderReverseIcon,
   renderShiftTimeIcon,
   renderUploadIcon,
-} from './modal-utils';
+} from 'interlocking/modules/modal-utils';
 import { routeColor } from 'interlocking/utils/route-colors';
 import {
   railCell,
@@ -57,10 +57,10 @@ import {
   isEndpoint,
   gutterWidth,
   STRIP_ROW_CLASS,
-} from './route-strip';
-import { RouteSequence } from './route-sequence';
-import { RouteGraph } from './route-graph';
-import type { StopTimeRef } from '../types/gtfs-flex';
+} from 'interlocking/modules/route-strip';
+import { RouteSequence } from 'interlocking/modules/route-sequence';
+import { RouteGraph } from 'interlocking/modules/route-graph';
+import type { StopTimeRef } from 'interlocking/types/gtfs-flex';
 
 function getBrouterProfile(routeType: string | number): string {
   const t = Number(routeType);

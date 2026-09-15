@@ -5,7 +5,7 @@ import {
   renderCardLabel,
   renderOptionLabel,
 } from './entity-display';
-import { escapeHtml } from './escape-html';
+import { escapeHtml } from 'interlocking/utils/escape-html';
 import { formatGtfsDateRange } from './gtfs-date';
 import { routeColor } from 'interlocking/utils/route-colors';
 

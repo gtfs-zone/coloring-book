@@ -15,18 +15,18 @@ import {
 import { CalendarSchema, GTFS_TABLES } from '../types/gtfs';
 import { TimeFormatter } from '../utils/time-formatter';
 import { isChronological } from '../utils/stop-time-order';
-import type { StopTimeRef } from '../types/gtfs-flex';
+import type { StopTimeRef } from 'interlocking/types/gtfs-flex';
 import { stopTimeRef } from '../utils/stop-time-ref';
 import type { GTFSParser } from './gtfs-parser';
 import { GTFSRouteSource } from './gtfs-route-source';
-import type { RouteSourceTrip } from './route-source';
+import type { RouteSourceTrip } from 'interlocking/modules/route-source';
 import {
   routeSequence,
   clearRouteSequenceCache,
   directionsForRoute,
   RouteSequence,
-} from './route-sequence';
-import { routeGraph, RouteGraph } from './route-graph';
+} from 'interlocking/modules/route-sequence';
+import { routeGraph, RouteGraph } from 'interlocking/modules/route-graph';
 
 /** Trimmed string value, or null when absent or blank. */
 function emptyToNull(raw: unknown): string | null {

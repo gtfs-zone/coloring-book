@@ -4,7 +4,7 @@
  */
 
 import type { GTFSDatabase } from '../modules/gtfs-database';
-import { notify } from '../modules/notification-system';
+import { notify } from 'interlocking/modules/notification-system';
 import {
   createDefaultAgency,
   createDefaultRoute,

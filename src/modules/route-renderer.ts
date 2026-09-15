@@ -10,9 +10,9 @@ import {
 import type { GTFSParser } from './gtfs-parser';
 import type { PatchOp } from '../types/patch';
 import { CONFIG } from '../config';
-import { routeSortKey } from './route-sort';
+import { routeSortKey } from 'interlocking/modules/route-sort';
 import { yieldToEventLoop } from '../utils/async-yield';
-import { ensureMapIcons } from './map-icons';
+import { ensureMapIcons } from 'interlocking/modules/map-icons';
 import {
   routeColor as deriveRouteColor,
   casingColor as deriveCasingColor,
@@ -30,7 +30,7 @@ import {
   routeSortKeyExpression,
   routeSpotlightOpacity,
   zoomWidth,
-} from './layer-specs';
+} from 'interlocking/modules/layer-specs';
 
 /**
  * Thrown by an async feature build that a newer one has replaced.

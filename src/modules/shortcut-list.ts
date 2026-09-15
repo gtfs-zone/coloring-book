@@ -1,5 +1,5 @@
-import { showHelpModal } from './help-modal';
-import type { ShortcutCommand } from './keyboard-shortcuts';
+import { showHelpModal } from 'interlocking/modules/help-modal';
+import type { ShortcutCommand } from 'interlocking/modules/keyboard-shortcuts';
 
 /**
  * This app's keyboard commands.

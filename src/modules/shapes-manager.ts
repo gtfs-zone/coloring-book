@@ -5,7 +5,7 @@ import {
   renderUploadIcon,
   renderSimplifyIcon,
   renderRouteWaypointsIcon,
-} from './modal-utils';
+} from 'interlocking/modules/modal-utils';
 import JSZip from 'jszip';
 import Papa from 'papaparse';
 import { showOptionPickerModal } from './option-picker-modal';
@@ -14,7 +14,7 @@ import type { PatchManager } from './patch-manager';
 import type { Shapes } from '../types/gtfs-entities';
 import { parseGPX } from '../utils/gpx-parser';
 import { generateCompositeKeyFromRecord } from '../utils/gtfs-primary-keys';
-import { escapeHtml } from '../utils/escape-html';
+import { escapeHtml } from 'interlocking/utils/escape-html';
 import {
   getRouteDisplay,
   getStopDisplay,
@@ -38,7 +38,7 @@ import {
   shapeFeatureToPoints,
   shapeRowsToFeature,
 } from '../utils/shape-geojson';
-import { notify } from './notification-system';
+import { notify } from 'interlocking/modules/notification-system';
 import { promptNewEntity } from './entity-form-modal';
 import { GTFS_TABLES } from '../types/gtfs';
 

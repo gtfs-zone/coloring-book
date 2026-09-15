@@ -7,7 +7,7 @@
  * an entry in `FARES_ENTRIES` rather than a renderer plus an add/edit modal.
  */
 
-import { showSidebarModal } from './sidebar-modal';
+import { showSidebarModal } from 'interlocking/modules/sidebar-modal';
 import {
   renderEditableTable,
   installEditableTableHandlers,
@@ -18,7 +18,7 @@ import {
   type EditableTableJoinColumn,
 } from './editable-table';
 import type { OptionPickerItem } from './option-picker-modal';
-import { escapeHtml } from '../utils/escape-html';
+import { escapeHtml } from 'interlocking/utils/escape-html';
 import { specStoreName } from '../utils/spec-field-edit';
 import {
   getEntityDisplay,
