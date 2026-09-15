@@ -6,7 +6,13 @@
  * from the code that draws it.
  */
 
-import { eyebrow, lede, footnote, glyphList } from './help-modal';
+import {
+  eyebrow,
+  lede,
+  footnote,
+  glyphList,
+  type HelpPageEntry,
+} from './help-modal';
 import {
   renderBlurb,
   renderVersionAndSource,
@@ -36,18 +42,13 @@ function specLink(tableName: string, label: string): string {
 
 export type HelpGroup = 'Getting Started' | 'Reference';
 
-export interface HelpPage {
-  id: string;
-  label: string;
+/** This app's pages, narrowing the viewer's `group` to the groups it has. */
+export interface HelpPage extends HelpPageEntry {
   group: HelpGroup;
-  title: string;
-  render(): string;
-  /**
-   * Marks a page that is auto-shown once at its trigger and afterwards only
-   * reachable from the Guide menu. Pages without it are reference-only.
-   */
-  showOnce?: boolean;
 }
+
+/** The order the viewer's sidebar groups these in. */
+export const HELP_GROUP_ORDER: HelpGroup[] = ['Getting Started', 'Reference'];
 
 function icon(paths: string): string {
   return `<svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">${paths}</svg>`;
@@ -521,7 +522,3 @@ export const HELP_PAGES: HelpPage[] = [
   mapKeyPage,
   shortcutsPage,
 ];
-
-export function getHelpPage(id: string): HelpPage | undefined {
-  return HELP_PAGES.find((page) => page.id === id);
-}
