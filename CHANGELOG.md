@@ -1,3 +1,9 @@
+## v0.34.1 (2026-09-16)
+
+### Fix
+
+- **css**: scan the interlocking package for Tailwind classes
+
 ## v0.34.0 (2026-09-16)
 
 ### Feat
