@@ -11,6 +11,10 @@ const config: KnipConfig = {
     // Used in postcss.config.js as string plugin names, not ESM imports
     "@tailwindcss/postcss",
     "autoprefixer",
+    // Referenced from src/styles/main.css (`@import 'tailwindcss'`, `@plugin "daisyui"`),
+    // which knip does not read
+    "tailwindcss",
+    "daisyui",
     // TypeScript compiler helpers: used implicitly by tsc with importHelpers
     "tslib",
     // @types/jszip augments the jszip package; no direct import needed
