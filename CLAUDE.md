@@ -126,7 +126,7 @@ Strict mode is enabled. `noUnusedLocals` and `noUnusedParameters` are enforced, 
 
 ### CSS
 
-Tailwind CSS v4 + DaisyUI v5. Themes are configured in `tailwind.config.js` (9 themes available; default dark: "night"). Write styles with Tailwind utility classes.
+Tailwind CSS v4 + DaisyUI v5. There is no `tailwind.config.js`: the DaisyUI themes (`light`, `dark`, `cupcake`, `night`) and the scanned sources are declared in `src/styles/main.css` via `@plugin "daisyui"` and `@source`. Classes used only by the `interlocking` package are picked up by the explicit `@source` pointing into `node_modules/interlocking/src`; drop it and the shared modules render unstyled. Write styles with Tailwind utility classes.
 
 ### Testing
 
