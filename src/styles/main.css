@@ -1,6 +1,7 @@
 /* Tailwind CSS v4 with DaisyUI plugin */
 @import 'tailwindcss';
 @source "../**/*.{html,js,ts}";
+@source "../../node_modules/interlocking/src/**/*.ts";
 
 @plugin "daisyui" {
   themes:
