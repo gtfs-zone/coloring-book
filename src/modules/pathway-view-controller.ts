@@ -5,7 +5,7 @@ import { GTFS_TABLES } from '../types/gtfs';
 import { ENTITY_REF_BTN } from '../utils/entity-references';
 import { getStopDisplay, renderOptionLabel } from '../utils/entity-display';
 import { pathwayModeLabel } from '../utils/pathway-modes';
-import { pageHeaderEyebrow } from 'interlocking/modules/breadcrumb-trail';
+import { pageHeaderEyebrow } from 'interlocking/ui/breadcrumb-trail';
 
 function escapeAttr(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');

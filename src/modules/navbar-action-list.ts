@@ -1,11 +1,11 @@
-import { renderRouteWaypointsIcon } from 'interlocking/modules/modal-utils';
+import { renderRouteWaypointsIcon } from 'interlocking/ui/modal-utils';
 import {
   renderMoonIcon,
   renderNavIcon,
   renderSunIcon,
   type NavIconName,
-} from 'interlocking/modules/nav-icons';
-import type { NavbarAction } from 'interlocking/modules/navbar-actions';
+} from 'interlocking/ui/nav-icons';
+import type { NavbarAction } from 'interlocking/ui/navbar-actions';
 
 /**
  * This app's navbar action row and dock artwork.

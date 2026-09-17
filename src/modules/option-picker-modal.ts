@@ -1,5 +1,5 @@
 import uFuzzy from '@leeoniya/ufuzzy';
-import { showModal } from 'interlocking/modules/modal-utils';
+import { showModal } from 'interlocking/ui/modal-utils';
 
 export interface OptionPickerItem {
   value: string;

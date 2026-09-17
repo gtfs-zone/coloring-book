@@ -6,7 +6,7 @@
 
 import { Calendar, CalendarDates, GTFSTableMap } from '../types/gtfs-entities';
 import { GTFS_TABLES } from '../types/gtfs';
-import { notify } from 'interlocking/modules/notification-system';
+import { notify } from 'interlocking/ui/notification-system';
 import { patchUpdate } from '../utils/patch-utils';
 import {
   getUsFederalDates,

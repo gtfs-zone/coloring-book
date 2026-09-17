@@ -1,4 +1,4 @@
-import { escapeHtml } from 'interlocking/utils/escape-html';
+import { escapeHtml } from 'interlocking/util/escape-html';
 
 export interface EntityDisplayInfo {
   primary: string; // shown prominently (name, short name, or ID as fallback)

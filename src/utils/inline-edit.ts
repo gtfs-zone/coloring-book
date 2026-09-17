@@ -15,7 +15,7 @@
  * `YYYY-MM-DD`, which is a format, not GTFS semantics.
  */
 
-import { escapeHtml } from 'interlocking/utils/escape-html';
+import { escapeHtml } from 'interlocking/util/escape-html';
 import { attachCalendarInput, ISO_DATE_CODEC } from './calendar-input';
 import { CONFIG } from '../config';
 import {

@@ -6,7 +6,7 @@
 
 import { GTFSDatabase, GTFSDatabaseRecord } from './gtfs-database';
 import { normalizeAgencyId, agencyRouteFilter } from '../utils/agency-helpers';
-import type { StopTimeRef } from 'interlocking/types/gtfs-flex';
+import type { StopTimeRef } from 'interlocking/gtfs/types';
 import { stopTimeRef } from '../utils/stop-time-ref';
 
 /** The stop_times column each reference kind lives in. */

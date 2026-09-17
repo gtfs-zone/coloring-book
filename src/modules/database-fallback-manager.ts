@@ -2,9 +2,9 @@
  * Database Fallback Manager
  * Handles IndexedDB support detection and error recovery.
  */
-import { feedProgressIndicator } from 'interlocking/modules/feed-progress-indicator';
-import { notify } from 'interlocking/modules/notification-system';
-import { showModal } from 'interlocking/modules/modal-utils';
+import { feedProgressIndicator } from 'interlocking/ui/progress-indicator';
+import { notify } from 'interlocking/ui/notification-system';
+import { showModal } from 'interlocking/ui/modal-utils';
 import { deleteDatabaseWithTimeout } from '../utils/idb-request';
 import { buildExportFilename } from '../utils/export-filename';
 

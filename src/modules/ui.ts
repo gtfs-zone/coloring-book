@@ -1,10 +1,10 @@
-import { notify } from 'interlocking/modules/notification-system';
-import { showModal, renderChevronIcon } from 'interlocking/modules/modal-utils';
+import { notify } from 'interlocking/ui/notification-system';
+import { showModal, renderChevronIcon } from 'interlocking/ui/modal-utils';
 import { showLoadModal } from './load-modal';
 import { showFilesModal } from './files-modal';
 import type { ContinueOffer } from './load-modal';
-import type { FeedSelection } from 'interlocking/modules/feed-selection';
-import { resolvedScheduledUrl } from 'interlocking/modules/feed-selection';
+import type { FeedSelection } from 'interlocking/gtfs/feed-selection';
+import { resolvedScheduledUrl } from 'interlocking/gtfs/feed-selection';
 import {
   getAgencyFieldDescription,
   getRouteFieldDescription,
@@ -23,15 +23,15 @@ import { MapMode, MapController } from './map-controller';
 import {
   syncAutoZoomControl,
   wireAutoZoomControl,
-} from 'interlocking/modules/auto-zoom';
+} from 'interlocking/map/auto-zoom';
 import { GTFSParser } from './gtfs-parser';
-import { LoadCancelledError } from 'interlocking/modules/feed-download';
+import { LoadCancelledError } from 'interlocking/gtfs/feed-download';
 import { Editor } from './editor';
 import { BrowseNavigation } from './browse-navigation';
 import { getStopDisplay, renderOptionLabel } from '../utils/entity-display';
 import { buildExportFilename } from '../utils/export-filename';
 import { runWhenIdle } from '../utils/run-when-idle';
-import { showHelpPageOnce } from 'interlocking/modules/help-modal';
+import { showHelpPageOnce } from 'interlocking/ui/help-modal';
 
 function escapeHtml(text: string): string {
   return text

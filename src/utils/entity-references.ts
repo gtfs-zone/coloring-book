@@ -5,9 +5,9 @@ import {
   renderCardLabel,
   renderOptionLabel,
 } from './entity-display';
-import { escapeHtml } from 'interlocking/utils/escape-html';
+import { escapeHtml } from 'interlocking/util/escape-html';
 import { formatGtfsDateRange } from './gtfs-date';
-import { routeColor } from 'interlocking/utils/route-colors';
+import { routeColor } from 'interlocking/gtfs/route-colors';
 
 function escapeAttr(text: unknown): string {
   const div = document.createElement('div');

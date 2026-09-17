@@ -15,7 +15,7 @@
  * is already shared for the same reason.
  */
 
-import { escapeHtml } from 'interlocking/utils/escape-html';
+import { escapeHtml } from 'interlocking/util/escape-html';
 
 /**
  * The *Presence* column, which the schedule and realtime references word the

@@ -12,8 +12,8 @@ import Papa from 'papaparse';
 import { GTFS_FILES } from '../types/gtfs';
 import { CONFIG } from '../config';
 import { databaseFallbackManager } from './database-fallback-manager';
-import { showModal } from 'interlocking/modules/modal-utils';
-import { notify } from 'interlocking/modules/notification-system';
+import { showModal } from 'interlocking/ui/modal-utils';
+import { notify } from 'interlocking/ui/notification-system';
 import { withTimeout, deleteDatabaseWithTimeout } from '../utils/idb-request';
 import { PatchRecord, SnapshotRecord } from '../types/patch';
 import {

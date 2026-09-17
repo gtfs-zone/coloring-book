@@ -13,7 +13,7 @@
  * `utils/entity-display.ts`, which is its own piece of work.
  */
 
-import { showSidebarModal } from 'interlocking/modules/sidebar-modal';
+import { showSidebarModal } from 'interlocking/ui/sidebar-modal';
 import {
   renderEditableTable,
   installEditableTableHandlers,
@@ -23,7 +23,7 @@ import {
   type EditableTableDeps,
 } from './editable-table';
 import { emptyState } from './fares-modal';
-import { escapeHtml } from 'interlocking/utils/escape-html';
+import { escapeHtml } from 'interlocking/util/escape-html';
 import { specStoreName } from '../utils/spec-field-edit';
 import { validateTransferRow } from '../utils/fares-rules';
 import { gtfsSpec } from '../gtfs-spec/index';
