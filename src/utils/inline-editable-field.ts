@@ -17,15 +17,15 @@ import {
   showOptionPickerModal,
   type OptionPickerItem,
 } from '../modules/option-picker-modal';
-import { notify } from 'interlocking/modules/notification-system';
-import { isOutsideTopModal } from 'interlocking/modules/modal-utils';
+import { notify } from 'interlocking/ui/notification-system';
+import { isOutsideTopModal } from 'interlocking/ui/modal-utils';
 import {
   formatIssueValue,
   isDanglingReference,
   markReferenceResolved,
   renderEntityIssueNote,
 } from '../modules/feed-issues';
-import { escapeHtml } from 'interlocking/utils/escape-html';
+import { escapeHtml } from 'interlocking/util/escape-html';
 import { renderPickerTrigger, setPickerTriggerContent } from './picker-trigger';
 import { COLOR_EMPTY, openInlineEditor, openInlineMenu } from './inline-edit';
 import type { InlineEditorInputType } from './inline-edit';

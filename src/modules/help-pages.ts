@@ -12,7 +12,7 @@ import {
   footnote,
   glyphList,
   type HelpPageEntry,
-} from 'interlocking/modules/help-modal';
+} from 'interlocking/ui/help-modal';
 import {
   renderBlurb,
   renderVersionAndSource,
@@ -22,7 +22,7 @@ import {
   renderExternalLink,
   TRANSITLAND_URL,
   type AboutApp,
-} from 'interlocking/modules/about-links';
+} from 'interlocking/ui/about-links';
 import {
   PATHWAY_CATEGORIES,
   PATHWAY_CATEGORY_ORDER,

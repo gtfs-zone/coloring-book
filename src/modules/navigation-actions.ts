@@ -8,10 +8,7 @@
 
 import { ModalState, PageState } from '../types/page-state';
 import { getPageStateManager } from './page-state-manager';
-import {
-  ModalTransient,
-  getModalRouter,
-} from 'interlocking/modules/modal-router';
+import { ModalTransient, getModalRouter } from 'interlocking/ui/modal-router';
 
 /**
  * Navigate to home page (agencies list)

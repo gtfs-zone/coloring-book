@@ -60,8 +60,8 @@ There is no centralized state management (no Redux/Zustand). State is distribute
 
 Modules shared with the two realtime apps live in the `interlocking` package, a
 git dependency shipping raw TypeScript with no build step. Import them as
-`interlocking/modules/...`, `interlocking/utils/...` and
-`interlocking/types/gtfs-flex`; `tsconfig.json` `paths` and a `resolve.alias` in
+`interlocking/ui/...`, `interlocking/gtfs/...`, `interlocking/map/...` and
+`interlocking/util/...`; `tsconfig.json` `paths` and a `resolve.alias` in
 `vite.config.js` point both at `node_modules/interlocking/src`.
 
 It holds the notification system, theme controller, keyboard shortcut engine,

@@ -15,9 +15,9 @@ import {
   describeHttpError,
   describeNetworkError,
   maybeProxy,
-} from 'interlocking/modules/feed-selection';
-import { showModal } from 'interlocking/modules/modal-utils';
-import { escapeHtml } from 'interlocking/utils/escape-html';
+} from 'interlocking/gtfs/feed-selection';
+import { showModal } from 'interlocking/ui/modal-utils';
+import { escapeHtml } from 'interlocking/util/escape-html';
 
 /** Chooses which feature of a pasted collection the caller meant. */
 export type FeaturePicker = (

@@ -10,12 +10,12 @@
 
 import type { GTFSParser } from './gtfs-parser';
 import { GTFS_TABLES } from '../types/gtfs';
-import { escapeHtml } from 'interlocking/utils/escape-html';
+import { escapeHtml } from 'interlocking/util/escape-html';
 import { getRouteDisplay, renderCardLabel } from '../utils/entity-display';
 import { renderFieldLabel, type FieldConfig } from '../utils/field-component';
 import { openInlineEditor } from '../utils/inline-edit';
-import { renderTrashIcon } from 'interlocking/modules/modal-utils';
-import { notify } from 'interlocking/modules/notification-system';
+import { renderTrashIcon } from 'interlocking/ui/modal-utils';
+import { notify } from 'interlocking/ui/notification-system';
 import {
   attachZoneGeometryHandlers,
   renderZoneGeometrySection,

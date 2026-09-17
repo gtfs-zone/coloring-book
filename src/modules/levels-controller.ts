@@ -1,4 +1,4 @@
-import { showModal } from 'interlocking/modules/modal-utils';
+import { showModal } from 'interlocking/ui/modal-utils';
 import {
   renderEditableTable,
   installEditableTableHandlers,

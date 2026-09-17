@@ -5,7 +5,7 @@ import {
   renderUploadIcon,
   renderSimplifyIcon,
   renderRouteWaypointsIcon,
-} from 'interlocking/modules/modal-utils';
+} from 'interlocking/ui/modal-utils';
 import JSZip from 'jszip';
 import Papa from 'papaparse';
 import { showOptionPickerModal } from './option-picker-modal';
@@ -14,14 +14,14 @@ import type { PatchManager } from './patch-manager';
 import type { Shapes } from '../types/gtfs-entities';
 import { parseGPX } from '../utils/gpx-parser';
 import { generateCompositeKeyFromRecord } from '../utils/gtfs-primary-keys';
-import { escapeHtml } from 'interlocking/utils/escape-html';
+import { escapeHtml } from 'interlocking/util/escape-html';
 import {
   getRouteDisplay,
   getStopDisplay,
   renderOptionLabel,
 } from '../utils/entity-display';
 import { renderEntityChip } from '../utils/entity-references';
-import { routeColor } from 'interlocking/utils/route-colors';
+import { routeColor } from 'interlocking/gtfs/route-colors';
 import { openTimetable } from './navigation-actions';
 import { deviationMetres, simplifyIndices } from '../utils/simplify-path';
 import { encodeGeojsonIoUrl } from '../utils/geojson-io';
@@ -38,7 +38,7 @@ import {
   shapeFeatureToPoints,
   shapeRowsToFeature,
 } from '../utils/shape-geojson';
-import { notify } from 'interlocking/modules/notification-system';
+import { notify } from 'interlocking/ui/notification-system';
 import { promptNewEntity } from './entity-form-modal';
 import { GTFS_TABLES } from '../types/gtfs';
 

@@ -15,12 +15,12 @@
 
 import type { GTFSParser } from './gtfs-parser';
 import { GTFSRouteSource } from './gtfs-route-source';
-import { routeGraph } from 'interlocking/modules/route-graph';
-import type { RouteSequence } from 'interlocking/modules/route-sequence';
+import { routeGraph } from 'interlocking/gtfs/route-graph';
+import type { RouteSequence } from 'interlocking/gtfs/route-sequence';
 import {
   directionsForRoute,
   routeSequence,
-} from 'interlocking/modules/route-sequence';
+} from 'interlocking/gtfs/route-sequence';
 import {
   endpointNote,
   endpointThreshold,
@@ -30,13 +30,13 @@ import {
   railCell,
   rowPaths,
   STRIP_ROW_CLASS,
-} from 'interlocking/modules/route-strip';
-import type { RowDot } from 'interlocking/modules/route-strip';
+} from 'interlocking/gtfs/route-strip';
+import type { RowDot } from 'interlocking/gtfs/route-strip';
 import { GTFS_TABLES } from '../types/gtfs';
 import type { Stops } from '../types/gtfs-entities';
 import { getStopDisplay, renderCardLabel } from '../utils/entity-display';
-import { escapeHtml } from 'interlocking/utils/escape-html';
-import { routeColor } from 'interlocking/utils/route-colors';
+import { escapeHtml } from 'interlocking/util/escape-html';
+import { routeColor } from 'interlocking/gtfs/route-colors';
 
 /**
  * Marks a diagram row. Carries either `data-stop-id` (opens the stop page) or

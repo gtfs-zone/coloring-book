@@ -17,7 +17,7 @@ import {
   StateValidator,
   isPageState,
 } from '../types/page-state';
-import { BreadcrumbItem } from 'interlocking/modules/breadcrumb-trail';
+import { BreadcrumbItem } from 'interlocking/ui/breadcrumb-trail';
 import { BreadcrumbLookup, buildBreadcrumbs } from './breadcrumbs';
 import { CONFIG } from '../config';
 

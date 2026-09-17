@@ -1,8 +1,5 @@
-import {
-  showModal,
-  renderTriangleIcon,
-} from 'interlocking/modules/modal-utils';
-import { escapeHtml } from 'interlocking/utils/escape-html';
+import { showModal, renderTriangleIcon } from 'interlocking/ui/modal-utils';
+import { escapeHtml } from 'interlocking/util/escape-html';
 import { toGtfsDate as formatGTFS, todayGtfsDate } from '../utils/gtfs-date';
 import {
   feedBounds,
@@ -10,7 +7,7 @@ import {
   type BatchMixedPatchManager,
   type FeedBoundsWriteDatabase,
 } from '../utils/feed-bounds';
-import { notify } from 'interlocking/modules/notification-system';
+import { notify } from 'interlocking/ui/notification-system';
 import {
   attachServiceTimelineListeners,
   isServiceActive,

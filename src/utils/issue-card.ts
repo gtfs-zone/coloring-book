@@ -16,7 +16,7 @@
  * here means re-vendoring there.
  */
 
-import { escapeHtml } from 'interlocking/utils/escape-html';
+import { escapeHtml } from 'interlocking/util/escape-html';
 
 export interface IssueItem {
   /** Plain text shown for this item. Escaped here, so pass raw text. */

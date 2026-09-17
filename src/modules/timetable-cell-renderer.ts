@@ -5,8 +5,8 @@
 
 import { TimeFormatter } from '../utils/time-formatter';
 import { EditableStopTime } from './timetable-data-processor';
-import type { StopTimeRef } from 'interlocking/types/gtfs-flex';
-import { escapeHtml } from 'interlocking/utils/escape-html';
+import type { StopTimeRef } from 'interlocking/gtfs/types';
+import { escapeHtml } from 'interlocking/util/escape-html';
 import { getEnumOptions } from '../types/gtfs-enums';
 import { stopTimeFieldKind } from './timetable-fields';
 import { FieldPresence, stopTimeFieldPresence } from '../utils/flex-rules';
