@@ -40,7 +40,7 @@ import type {
   EditableTableDeps,
   EditableTablePatchManager,
 } from './editable-table';
-import { renderIssueCard } from '../utils/issue-card';
+import { renderIssueCard } from 'interlocking/ui/issue-card';
 import { installGuideButtons } from 'interlocking/ui/help-modal';
 import {
   getFeedIssueEntities,

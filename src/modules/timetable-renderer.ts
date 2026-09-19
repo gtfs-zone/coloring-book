@@ -18,7 +18,7 @@ import {
   renderSpecFieldLabelContent,
   buildFieldTooltipContent,
 } from '../utils/field-component';
-import { tooltipContentAttr } from '../utils/field-label';
+import { tooltipContentAttr } from 'interlocking/ui/field-label';
 import { visibleStopTimeFields, WINDOW_FIELDS } from './timetable-fields';
 import { describeFrequency } from '../utils/frequency-rules';
 import { TimeFormatter } from '../utils/time-formatter';

@@ -4,7 +4,7 @@ import {
   getGTFSFieldDescription,
   createTooltip,
 } from '../utils/zod-tooltip-helper';
-import { renderSpecDescriptionPlain } from '../utils/spec-markup';
+import { renderSpecDescriptionPlain } from 'interlocking/gtfs/spec-markup';
 import {
   generateCompositeKeyFromRecord,
   getGTFSPrimaryKey,
