@@ -33,7 +33,7 @@ import {
   validateFareTransferRuleRow,
   validateTimeframeRow,
 } from '../utils/fares-rules';
-import { renderSpecDescription } from '../utils/spec-markup';
+import { renderSpecDescription } from 'interlocking/gtfs/spec-markup';
 import { gtfsSpec } from '../gtfs-spec/index';
 import { GTFS_TABLES } from '../types/gtfs';
 

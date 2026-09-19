@@ -65,10 +65,12 @@ git dependency shipping raw TypeScript with no build step. Import them as
 `vite.config.js` point both at `node_modules/interlocking/src`.
 
 It holds the notification system, theme controller, keyboard shortcut engine,
-modal plumbing (`modal-utils`, `modal-router`, `sidebar-modal`), the breadcrumb
-trail, the map layer/icon/basemap modules, the route graph/sequence/strip
-diagram primitives, feed download and selection, search, and the shared
-`escape-html` / `route-colors` / `theme-color` / `tooltip-position` helpers.
+modal plumbing (`modal-utils`, `modal-router`, `sidebar-modal`), the load modal
+and its curated examples, the breadcrumb trail, the map layer/icon/basemap
+modules, the route graph/sequence/strip diagram primitives, feed download and
+selection, search, the field label, issue card and calendar input components,
+the spec description renderer, and the shared `escape-html` / `route-colors` /
+`theme-color` / `tooltip-position` helpers.
 
 A shared change is a commit in interlocking, a tag, and a bump in each consumer.
 It is not edited here.
@@ -87,7 +89,7 @@ GTFS types are defined in `src/types/` with Zod schemas for runtime validation. 
 
 `pnpm check-spec` diffs the two and exits non-zero on any difference not listed in the script's `KNOWN_DIVERGENCES`. It runs from `.husky/pre-commit`, so drift blocks a commit. See `reference/README.md` for how to refresh the snapshot.
 
-Descriptions carry markdown and HTML, so anything rendering one must go through `renderSpecDescription` / `renderSpecDescriptionPlain` in `src/utils/spec-markup.ts`.
+Descriptions carry markdown and HTML, so anything rendering one must go through `renderSpecDescription` / `renderSpecDescriptionPlain` in `interlocking/gtfs/spec-markup`. `src/index.ts` points it at the schedule reference and hands it the three diagrams the reference embeds.
 
 ### Build
 

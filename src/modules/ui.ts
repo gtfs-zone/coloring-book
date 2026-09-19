@@ -1,8 +1,8 @@
 import { notify } from 'interlocking/ui/notification-system';
 import { showModal, renderChevronIcon } from 'interlocking/ui/modal-utils';
-import { showLoadModal } from './load-modal';
+import { showLoadModal } from 'interlocking/ui/load-modal';
 import { showFilesModal } from './files-modal';
-import type { ContinueOffer } from './load-modal';
+import type { ContinueOffer } from 'interlocking/ui/load-modal';
 import type { FeedSelection } from 'interlocking/gtfs/feed-selection';
 import { resolvedScheduledUrl } from 'interlocking/gtfs/feed-selection';
 import {

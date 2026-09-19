@@ -16,7 +16,10 @@
  */
 
 import { escapeHtml } from 'interlocking/util/escape-html';
-import { attachCalendarInput, ISO_DATE_CODEC } from './calendar-input';
+import {
+  attachCalendarInput,
+  ISO_DATE_CODEC,
+} from 'interlocking/ui/calendar-input';
 import { CONFIG } from '../config';
 import {
   keyToGridDirection,

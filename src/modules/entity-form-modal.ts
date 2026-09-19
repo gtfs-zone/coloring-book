@@ -17,7 +17,7 @@ import {
   attachCalendarInput,
   ISO_DATE_CODEC,
   type DateCodec,
-} from '../utils/calendar-input';
+} from 'interlocking/ui/calendar-input';
 import { CONFIG } from '../config';
 
 export interface EntityFormField {

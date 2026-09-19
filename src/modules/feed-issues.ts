@@ -10,8 +10,8 @@
  */
 
 import type { ValidationEntity, ValidationResults } from './gtfs-validator';
-import { renderIssueCard } from '../utils/issue-card';
-import type { IssueItem, IssueRow } from '../utils/issue-card';
+import { renderIssueCard } from 'interlocking/ui/issue-card';
+import type { IssueItem, IssueRow } from 'interlocking/ui/issue-card';
 import { WHITESPACE_FIX_ACTION } from '../utils/whitespace-fix';
 import { getEntityDisplay, renderOptionLabel } from '../utils/entity-display';
 import { generateCompositeKeyFromRecord } from '../utils/gtfs-primary-keys';

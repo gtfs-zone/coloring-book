@@ -79,7 +79,22 @@ import { databaseFallbackManager } from './modules/database-fallback-manager';
 import { LoadCancelledError } from 'interlocking/gtfs/feed-download';
 import { CONFIG } from './config';
 import { initFieldTooltipPortal } from 'interlocking/util/tooltip-position';
+import { configureSpecMarkup } from 'interlocking/gtfs/spec-markup';
+import twoLegSvg from './assets/gtfs-spec/2-leg.svg';
+import threeLegSvg from './assets/gtfs-spec/3-leg.svg';
+import inliningSvg from './assets/gtfs-spec/inlining.svg';
 import './styles/main.css';
+
+// Reference anchors resolve against the schedule reference, and the three
+// diagrams it embeds are bundled here.
+configureSpecMarkup({
+  referenceUrl: 'https://gtfs.org/documentation/schedule/reference/',
+  images: {
+    '2-leg.svg': twoLegSvg,
+    '3-leg.svg': threeLegSvg,
+    'inlining.svg': inliningSvg,
+  },
+});
 
 declare global {
   interface Window {

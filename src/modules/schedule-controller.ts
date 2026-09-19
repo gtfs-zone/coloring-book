@@ -61,7 +61,7 @@ import { promptNewEntity, type EntityFormField } from './entity-form-modal';
 import { mirrorTripTimes, shiftRowTimes } from '../utils/stop-time-shift';
 import { listZones, zoneName } from './zone-store';
 import { validateFlexStopTimeRow } from '../utils/flex-rules';
-import { renderSpecDescriptionPlain } from '../utils/spec-markup';
+import { renderSpecDescriptionPlain } from 'interlocking/gtfs/spec-markup';
 import { escapeHtml } from 'interlocking/util/escape-html';
 import { setPickerTriggerContent } from '../utils/picker-trigger';
 import { getGTFSFieldDescription } from '../utils/zod-tooltip-helper';
