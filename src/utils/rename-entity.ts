@@ -8,10 +8,7 @@
  * the patch's `source.id` pointing at the old key and undo silently drops.
  */
 
-import type {
-  GTFSDatabase,
-  GTFSDatabaseRecord,
-} from '../modules/gtfs-database';
+import type { GTFSDatabaseRecord } from '../modules/gtfs-database';
 import type { PatchManager } from '../modules/patch-manager';
 import { GTFS_FOREIGN_KEYS } from '../types/gtfs';
 import {
@@ -20,6 +17,33 @@ import {
   getNaturalKeyField,
 } from './gtfs-primary-keys';
 import { CONFIG } from '../config';
+
+/**
+ * The database handle a rename needs. Structural rather than `GTFSDatabase`
+ * so a page's narrower handle can drive it without being widened first.
+ */
+export interface RenameDatabase {
+  getRow(
+    tableName: string,
+    key: string
+  ): Promise<GTFSDatabaseRecord | undefined>;
+  queryRows(
+    tableName: string,
+    filter?: Record<string, string | number | boolean>
+  ): Promise<GTFSDatabaseRecord[]>;
+  insertRows(tableName: string, rows: GTFSDatabaseRecord[]): Promise<void>;
+  updateRow(
+    tableName: string,
+    key: string,
+    data: Partial<GTFSDatabaseRecord>
+  ): Promise<void>;
+  deleteRow(tableName: string, key: string): Promise<void>;
+}
+
+/** The one patch call a rename makes. */
+export interface RenamePatchManager {
+  recordBatchMixed: PatchManager['recordBatchMixed'];
+}
 
 /** One referencing field's contribution to a rename, for display. */
 export interface RenameCascade {
@@ -81,7 +105,7 @@ function fieldIsPartOfKey(table: string, field: string): boolean {
  * Exported so the modal can validate as the user types.
  */
 export async function validateRenameTarget(
-  db: GTFSDatabase,
+  db: RenameDatabase,
   table: string,
   oldId: string,
   newId: string
@@ -107,7 +131,7 @@ export async function validateRenameTarget(
  * until `applyRename` is called with the returned plan.
  */
 export async function renamePlan(
-  db: GTFSDatabase,
+  db: RenameDatabase,
   table: string,
   oldId: string,
   newId: string
@@ -153,9 +177,7 @@ export async function renamePlan(
     const refTable = tableNameForFile(ref.file);
     // Strict equality on the stored value, so an implicitly-resolved blank
     // agency_id in a single-agency feed is left alone.
-    const matches = (await db.queryRows(refTable, {
-      [ref.field]: oldId,
-    })) as GTFSDatabaseRecord[];
+    const matches = await db.queryRows(refTable, { [ref.field]: oldId });
     const rekeys = fieldIsPartOfKey(refTable, ref.field);
 
     let counted = 0;
@@ -219,8 +241,8 @@ export async function renamePlan(
  * replay nor the reversed inverse replay ever holds two rows on one key.
  */
 export async function applyRename(
-  db: GTFSDatabase,
-  patchManager: PatchManager,
+  db: RenameDatabase,
+  patchManager: RenamePatchManager,
   plan: RenamePlan
 ): Promise<void> {
   const { table, keyField, oldId, newId, row, edits } = plan;
