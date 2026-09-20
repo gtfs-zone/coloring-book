@@ -27,7 +27,7 @@ import {
 } from '../modules/feed-issues';
 import { escapeHtml } from 'interlocking/util/escape-html';
 import { renderPickerTrigger, setPickerTriggerContent } from './picker-trigger';
-import { COLOR_EMPTY, openInlineEditor, openInlineMenu } from './inline-edit';
+import { openInlineEditor, openInlineMenu } from './inline-edit';
 import type { InlineEditorInputType } from './inline-edit';
 import {
   generateFieldConfigsFromSchema,
@@ -460,7 +460,7 @@ function openPlainEditor(
   const display =
     current && type ? formatValueForDisplay(current, type) : current;
   openInlineEditor(span, {
-    value: inputType === 'color' && display === '' ? COLOR_EMPTY : display,
+    value: display,
     inputType,
     sizeClass: 'input-sm',
     className: 'w-full',
