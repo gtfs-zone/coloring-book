@@ -177,15 +177,14 @@ export async function showRenameModal(
             return true;
           }
 
+          let rows = 0;
           try {
             // Planned again rather than reusing the preview: the preview was
             // built for a different target, and the feed may have moved since.
             const plan = await renamePlan(deps.database, table, id, newId);
             await applyRename(deps.database, patchManager, plan);
-            notify.success(
-              `Renamed ${keyField} to ${newId}: ${plan.total.toLocaleString()} row${plan.total === 1 ? '' : 's'} updated`
-            );
             renamed = newId;
+            rows = plan.total;
           } catch (error) {
             console.error('[RenameIdModal] rename failed', error);
             showError(
@@ -193,6 +192,12 @@ export async function showRenameModal(
             );
             return true;
           }
+
+          // Outside the try: the write is done, so nothing that happens now
+          // may report it as a failure.
+          notify.success(
+            `Renamed ${keyField} to ${newId}: ${rows.toLocaleString()} row${rows === 1 ? '' : 's'} updated`
+          );
           return false;
         },
       },
