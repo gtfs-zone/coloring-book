@@ -693,13 +693,13 @@ export class PageContentRenderer {
           <div class="flex items-center justify-between gap-4">
             <h2 class="text-lg font-semibold">Agencies</h2>
             <div class="flex items-center gap-2">
-              <input
-                type="text"
-                class="input input-sm input-bordered"
-                placeholder="New Agency ID"
-                data-inline-create="agency"
-                style="width: 150px;"
-              />
+              <button
+                type="button"
+                class="btn btn-sm btn-outline"
+                data-entity-create="agency"
+                title="New agency"
+                aria-label="New agency"
+              >+</button>
             </div>
           </div>
           ${
@@ -739,13 +739,13 @@ export class PageContentRenderer {
                 title="${escapeHtml(bulkExtendTitle)}"
                 ${bounds.end && canBulkTrimExtend ? '' : 'disabled'}
               >Extend all to feed end</button>
-              <input
-                type="text"
-                class="input input-sm input-bordered"
-                placeholder="New Service ID"
-                data-inline-create="service"
-                style="width: 150px;"
-              />
+              <button
+                type="button"
+                class="btn btn-sm btn-outline"
+                data-entity-create="service"
+                title="New service"
+                aria-label="New service"
+              >+</button>
             </div>
           </div>
           ${
@@ -1579,8 +1579,8 @@ export class PageContentRenderer {
         void this.handleBulkTrimOrExtend('end_date');
       });
 
-    // Add inline entity creation event listeners
-    this.addInlineCreationListeners(container);
+    // Add entity creation event listeners
+    this.addEntityCreationListeners(container);
 
     // Add service selection dropdown listener
     this.addServiceSelectionListener(container);
@@ -1621,9 +1621,9 @@ export class PageContentRenderer {
   }
 
   /**
-   * Add event listeners for inline entity creation
+   * Add event listeners for the "+" buttons on the entity lists
    */
-  private addInlineCreationListeners(container: HTMLElement): void {
+  private addEntityCreationListeners(container: HTMLElement): void {
     const inlineCreator = new InlineEntityCreator(
       this.dependencies
         .gtfsDatabase as unknown as import('./gtfs-database').GTFSDatabase,
@@ -1636,42 +1636,53 @@ export class PageContentRenderer {
       this.dependencies.patchManager
     );
 
-    // Find all inline creation inputs
-    const createInputs = container.querySelectorAll('[data-inline-create]');
-    createInputs.forEach((input) => {
-      const entityType = input.getAttribute('data-inline-create');
-
-      // Handle blur event to create entity
-      input.addEventListener('blur', async () => {
-        const value = (input as HTMLInputElement).value.trim();
-        if (!value) {
-          return;
-        }
-
-        let success = false;
-        if (entityType === 'agency') {
-          success = await inlineCreator.createAgency(value);
-        } else if (entityType === 'service') {
-          success = await inlineCreator.createService(value);
-        } else if (entityType === 'route') {
-          const agencyId = input.getAttribute('data-agency-id') || undefined;
-          success = await inlineCreator.createRoute(value, agencyId);
-        }
-
-        // Clear input if successful
-        if (success) {
-          (input as HTMLInputElement).value = '';
-        }
+    container
+      .querySelectorAll<HTMLElement>('[data-entity-create]')
+      .forEach((button) => {
+        const entityType = button.dataset.entityCreate;
+        button.addEventListener('click', () => {
+          void this.createEntity(inlineCreator, entityType, button);
+        });
       });
+  }
 
-      // Handle Enter key
-      input.addEventListener('keydown', async (e: Event) => {
-        const keyEvent = e as KeyboardEvent;
-        if (keyEvent.key === 'Enter') {
-          (input as HTMLElement).blur();
-        }
-      });
-    });
+  /**
+   * Create the entity behind a "+" button and open its page
+   */
+  private async createEntity(
+    inlineCreator: InlineEntityCreator,
+    entityType: string | undefined,
+    button: HTMLElement
+  ): Promise<void> {
+    if (entityType === 'agency') {
+      const agency_id = await inlineCreator.createAgency();
+      if (agency_id) {
+        this.dependencies.onAgencyClick(agency_id);
+      }
+      return;
+    }
+
+    if (entityType === 'service') {
+      const service_id = await inlineCreator.createService();
+      if (service_id) {
+        this.dependencies.onServiceClick?.(service_id);
+      }
+      return;
+    }
+
+    if (entityType === 'route') {
+      const route_id = await inlineCreator.createRoute(
+        button.dataset.agencyId || undefined
+      );
+      if (route_id) {
+        this.dependencies.onRouteClick(route_id);
+      }
+      return;
+    }
+
+    console.warn(
+      `[PageContentRenderer] unknown data-entity-create value: ${entityType}`
+    );
   }
 
   /**

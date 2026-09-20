@@ -1,10 +1,11 @@
 /**
  * Inline Entity Creator Utility
- * Provides reusable logic for creating GTFS entities inline
+ * Creates a GTFS entity with default values under a generated ID
  */
 
 import type { GTFSDatabase } from '../modules/gtfs-database';
 import { notify } from 'interlocking/ui/notification-system';
+import { getNaturalKeyField } from './gtfs-primary-keys';
 import {
   createDefaultAgency,
   createDefaultRoute,
@@ -19,6 +20,36 @@ interface PatchManagerLike {
   ) => Promise<void>;
 }
 
+interface RowSource {
+  getAllRows: (tableName: string) => Promise<unknown[]>;
+}
+
+/**
+ * First free `<prefix>_<n>` ID in a naturally-keyed table, counting from 1.
+ */
+export async function nextEntityId(
+  database: RowSource,
+  tableName: string,
+  prefix: string
+): Promise<string> {
+  const keyField = getNaturalKeyField(tableName);
+  if (!keyField) {
+    throw new Error(`[nextEntityId] ${tableName} has no natural key`);
+  }
+
+  const rows = (await database.getAllRows(tableName)) as Record<
+    string,
+    unknown
+  >[];
+  const taken = new Set(rows.map((row) => String(row[keyField])));
+
+  let n = 1;
+  while (taken.has(`${prefix}_${n}`)) {
+    n += 1;
+  }
+  return `${prefix}_${n}`;
+}
+
 export class InlineEntityCreator {
   constructor(
     private database: GTFSDatabase,
@@ -27,120 +58,66 @@ export class InlineEntityCreator {
   ) {}
 
   /**
-   * Validate that an ID is not empty and doesn't contain problematic characters
+   * Create a new agency under a generated ID, returning that ID
    */
-  private validateId(id: string, entityType: string): boolean {
-    if (!id || id.trim() === '') {
-      notify.error(`${entityType} ID cannot be empty`);
-      return false;
-    }
-
-    // Basic validation - could be extended
-    const trimmedId = id.trim();
-    if (trimmedId !== id) {
-      notify.warning(
-        `${entityType} ID has leading/trailing spaces - they will be removed`
-      );
-    }
-
-    return true;
-  }
-
-  /**
-   * Create a new agency
-   */
-  async createAgency(agencyId: string): Promise<boolean> {
-    const trimmedId = agencyId.trim();
-
-    if (!this.validateId(trimmedId, 'Agency')) {
-      return false;
-    }
-
+  async createAgency(): Promise<string | null> {
     try {
-      // Check if agency already exists
-      const existing = await this.database.getRow('agency', trimmedId);
-      if (existing) {
-        notify.error(`Agency "${trimmedId}" already exists`);
-        return false;
-      }
-
-      // Create new agency with defaults
-      const newAgency = createDefaultAgency(trimmedId);
+      const agency_id = await nextEntityId(this.database, 'agency', 'agency');
+      const newAgency = createDefaultAgency(agency_id);
       await this.database.insertRows('agency', [newAgency]);
       await this.patchManager?.recordInsert(
         'agency',
-        trimmedId,
+        agency_id,
         newAgency as unknown as Record<string, unknown>
       );
 
       this.onEntityCreated();
-      return true;
+      return agency_id;
     } catch (error) {
       console.error('Error creating agency:', error);
       notify.error(
         `Failed to create agency: ${error instanceof Error ? error.message : 'Unknown error'}`
       );
-      return false;
+      return null;
     }
   }
 
   /**
-   * Create a new service (calendar entry)
+   * Create a new service (calendar entry) under a generated ID
    */
-  async createService(serviceId: string): Promise<boolean> {
-    const trimmedId = serviceId.trim();
-
-    if (!this.validateId(trimmedId, 'Service')) {
-      return false;
-    }
-
+  async createService(): Promise<string | null> {
     try {
-      // Check if service already exists
-      const existing = await this.database.getRow('calendar', trimmedId);
-      if (existing) {
-        notify.error(`Service "${trimmedId}" already exists`);
-        return false;
-      }
-
-      // Create new service with defaults
-      const newService = createDefaultService(trimmedId);
+      const service_id = await nextEntityId(
+        this.database,
+        'calendar',
+        'service'
+      );
+      const newService = createDefaultService(service_id);
       await this.database.insertRows('calendar', [newService]);
       await this.patchManager?.recordInsert(
         'calendar',
-        trimmedId,
+        service_id,
         newService as unknown as Record<string, unknown>
       );
 
       this.onEntityCreated();
-      return true;
+      return service_id;
     } catch (error) {
       console.error('Error creating service:', error);
       notify.error(
         `Failed to create service: ${error instanceof Error ? error.message : 'Unknown error'}`
       );
-      return false;
+      return null;
     }
   }
 
   /**
-   * Create a new route
+   * Create a new route under a generated ID, on the given agency or the first
    */
-  async createRoute(routeId: string, agencyId?: string): Promise<boolean> {
-    const trimmedId = routeId.trim();
-
-    if (!this.validateId(trimmedId, 'Route')) {
-      return false;
-    }
-
+  async createRoute(agencyId?: string): Promise<string | null> {
     try {
-      // Check if route already exists
-      const existing = await this.database.getRow('routes', trimmedId);
-      if (existing) {
-        notify.error(`Route "${trimmedId}" already exists`);
-        return false;
-      }
+      const route_id = await nextEntityId(this.database, 'routes', 'route');
 
-      // If no agency_id provided, try to get the first agency
       let finalAgencyId = agencyId;
       if (!finalAgencyId) {
         const agencies = await this.database.getAllRows('agency');
@@ -149,23 +126,22 @@ export class InlineEntityCreator {
         }
       }
 
-      // Create new route with defaults
-      const newRoute = createDefaultRoute(trimmedId, finalAgencyId);
+      const newRoute = createDefaultRoute(route_id, finalAgencyId);
       await this.database.insertRows('routes', [newRoute]);
       await this.patchManager?.recordInsert(
         'routes',
-        trimmedId,
+        route_id,
         newRoute as unknown as Record<string, unknown>
       );
 
       this.onEntityCreated();
-      return true;
+      return route_id;
     } catch (error) {
       console.error('Error creating route:', error);
       notify.error(
         `Failed to create route: ${error instanceof Error ? error.message : 'Unknown error'}`
       );
-      return false;
+      return null;
     }
   }
 }

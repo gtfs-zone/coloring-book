@@ -15,6 +15,7 @@ import {
   ROUTE_REF_ROW,
 } from '../utils/entity-references';
 import { renderTrashIcon } from 'interlocking/ui/modal-utils';
+import { escapeHtml } from 'interlocking/util/escape-html';
 
 export interface AgencyViewDependencies {
   gtfsDatabase?: QueryOnlyDatabase;
@@ -123,14 +124,14 @@ export class AgencyViewController {
         <div class="flex items-center justify-between gap-4">
           <h2 class="text-lg font-semibold">Routes</h2>
           <div class="flex items-center gap-2">
-            <input
-              type="text"
-              class="input input-sm input-bordered"
-              placeholder="New Route ID"
-              data-inline-create="route"
-              data-agency-id="${agency_id}"
-              style="width: 150px;"
-            />
+            <button
+              type="button"
+              class="btn btn-sm btn-outline"
+              data-entity-create="route"
+              data-agency-id="${escapeHtml(agency_id)}"
+              title="New route"
+              aria-label="New route"
+            >+</button>
           </div>
         </div>
         <div class="card bg-base-100 shadow-lg">
