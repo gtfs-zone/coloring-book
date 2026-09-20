@@ -75,7 +75,7 @@
     "clusterize.js": "^1.0.0",
     "daisyui": "^5.5.19",
     "idb": "^8.0.3",
-    "interlocking": "git+https://git.kcfam.us/gtfs.zone/interlocking.git#v2.2.0",
+    "interlocking": "git+https://git.kcfam.us/gtfs.zone/interlocking.git#v2.2.1",
     "jszip": "^3.10.1",
     "maplibre-gl": "^5.24.0",
     "papaparse": "^5.5.3",
