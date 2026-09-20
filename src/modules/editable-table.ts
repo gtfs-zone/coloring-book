@@ -33,11 +33,7 @@ import {
   renderPickerTrigger,
   setPickerTriggerContent,
 } from '../utils/picker-trigger';
-import {
-  COLOR_EMPTY,
-  openInlineEditor,
-  openInlineMenu,
-} from '../utils/inline-edit';
+import { openInlineEditor, openInlineMenu } from '../utils/inline-edit';
 import {
   convertValueToGTFS,
   formatValueForDisplay,
@@ -1139,13 +1135,11 @@ function openCellEditor(span: HTMLElement): void {
     return;
   }
 
-  // A color is picked from the browser's swatch, which speaks `#RRGGBB` while
+  // A color is picked from the swatch popover, which speaks `#RRGGBB` while
   // GTFS stores `RRGGBB`, so the hash is added and stripped at this boundary.
   if (mapGTFSTypeString(spec.type) === GTFSFieldType.Color) {
     openInlineEditor(span, {
-      value: current
-        ? formatValueForDisplay(current, GTFSFieldType.Color)
-        : COLOR_EMPTY,
+      value: current ? formatValueForDisplay(current, GTFSFieldType.Color) : '',
       inputType: 'color',
       className: 'w-full',
       onCommit: (value) =>

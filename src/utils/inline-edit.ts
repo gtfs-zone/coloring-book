@@ -20,6 +20,7 @@ import {
   attachCalendarInput,
   ISO_DATE_CODEC,
 } from 'interlocking/ui/calendar-input';
+import { attachColorInput, HEX_COLOR_CODEC } from 'interlocking/ui/color-input';
 import { CONFIG } from '../config';
 import {
   keyToGridDirection,
@@ -63,13 +64,6 @@ export type InlineEditorInputType =
   | 'color'
   | 'date'
   | 'time';
-
-/**
- * A native color input has no empty state: a blank value shows as black. An
- * editor for an empty color field opens on that same black, so closing it
- * without picking commits nothing rather than writing 000000.
- */
-export const COLOR_EMPTY = '#000000';
 
 export interface InlineEditorOptions {
   /**
@@ -169,9 +163,12 @@ export function openInlineEditor(
   const input = document.createElement('input');
   // A date is a text box with our own month grid behind it rather than a
   // native `type="date"`, so it looks like the rest of the app and the week
-  // start is ours to pick. See `calendar-input.ts`.
+  // start is ours to pick. See `calendar-input.ts`. A color is a hex text box
+  // with our own palette behind a swatch, for the same reasons plus an empty
+  // state the native control does not have. See `color-input.ts`.
   const isDate = options.inputType === 'date';
-  input.type = isDate ? 'text' : (options.inputType ?? 'text');
+  const isColor = options.inputType === 'color';
+  input.type = isDate || isColor ? 'text' : (options.inputType ?? 'text');
   input.className =
     `${LIVE_EDITOR_CLASS} input ${options.sizeClass ?? 'input-xs'} ${options.className ?? 'w-full'}`.trim();
   input.value = options.initialValue ?? options.value;
@@ -199,6 +196,23 @@ export function openInlineEditor(
   span.replaceWith(input);
   liveInput = input;
   liveInputDirty = false;
+
+  // Closes whichever picker this editor owns, and for a color also unwraps the
+  // input from the container the swatch sits in.
+  let closePicker: (() => void) | null = null;
+  // Attached before the focus below, because wrapping the input moves it in
+  // the DOM, and a move blurs it.
+  if (isColor) {
+    closePicker = attachColorInput(input, {
+      codec: HEX_COLOR_CODEC,
+      allowEmpty: true,
+      onPick: () => {
+        liveInputDirty = true;
+        input.blur();
+      },
+    });
+  }
+
   input.addEventListener('input', () => {
     liveInputDirty = true;
   });
@@ -216,9 +230,8 @@ export function openInlineEditor(
   // Clicking anywhere in a date box opens the grid. The box stays typeable,
   // which is the keyboard path: the grid takes focus from nobody, so it cannot
   // trip the blur commit below.
-  let closeCalendar: (() => void) | null = null;
   if (isDate) {
-    closeCalendar = attachCalendarInput(input, {
+    closePicker = attachCalendarInput(input, {
       codec: ISO_DATE_CODEC,
       weekStart: CONFIG.WEEK_START,
       allowEmpty: true,
@@ -231,9 +244,11 @@ export function openInlineEditor(
 
   let settled = false;
   const restore = (): void => {
+    // Before the swap: a color teardown moves the input back out of its
+    // wrapper, which would otherwise carry the restored span away with it.
+    closePicker?.();
     input.replaceWith(span);
     datalist?.remove();
-    closeCalendar?.();
     if (liveInput === input) {
       liveInput = null;
     }
