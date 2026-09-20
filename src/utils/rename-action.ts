@@ -32,6 +32,23 @@ let deps: RenameActionDeps | null = null;
 let listenersInstalled = false;
 
 /**
+ * Per-owner re-renders, keyed by the scope a trigger names.
+ *
+ * A trigger inside a container the page-level `onRenamed` does not redraw - an
+ * editable table, which can be sitting in a modal - registers its own redraw
+ * here and names the scope on every trigger it renders.
+ */
+const afterByScope = new Map<string, () => void>();
+
+export function setRenameAfter(scope: string, after: () => void): void {
+  afterByScope.set(scope, after);
+}
+
+export function clearRenameAfter(scope: string): void {
+  afterByScope.delete(scope);
+}
+
+/**
  * Register the writing handle renames commit through, and install the
  * delegated listeners. Calling this again only refreshes the dependencies.
  */
@@ -72,9 +89,13 @@ function findTrigger(target: EventTarget | null): HTMLElement | null {
 }
 
 function activate(trigger: HTMLElement): void {
-  const { renameTable, renameId } = trigger.dataset;
+  const { renameTable, renameId, renameScope } = trigger.dataset;
   if (renameTable && renameId) {
-    void requestRename(renameTable, renameId);
+    void requestRename(
+      renameTable,
+      renameId,
+      renameScope ? afterByScope.get(renameScope) : undefined
+    );
   }
 }
 
@@ -85,7 +106,8 @@ function activate(trigger: HTMLElement): void {
 export function renderRenameTrigger(
   store: string,
   id: string,
-  boxClass: string
+  boxClass: string,
+  scope?: string
 ): string {
   return `<span
       class="${boxClass} block truncate"
@@ -94,6 +116,7 @@ export function renderRenameTrigger(
       title="Rename ${escapeHtml(id)}"
       data-rename-table="${escapeHtml(store)}"
       data-rename-id="${escapeHtml(id)}"
+      ${scope ? `data-rename-scope="${escapeHtml(scope)}"` : ''}
     >${escapeHtml(id)}</span>`;
 }
 
