@@ -75,6 +75,12 @@ the spec description renderer, and the shared `escape-html` / `route-colors` /
 A shared change is a commit in interlocking, a tag, and a bump in each consumer.
 It is not edited here.
 
+Restart the dev server after a bump. The alias resolves through a pnpm symlink
+into the store, and Vite does not watch `node_modules`, so files whose transform
+is still cached keep importing the old store path: the page then holds two
+copies of a shared module, each with its own module-level state. Interlocking's
+`util/module-state` keeps that from corrupting anything and logs `loaded twice`.
+
 ### Configuration
 
 `src/config.ts` exports a single `CONFIG` constant with app-wide tunables (e.g. `SNAPSHOT_INTERVAL`). Import from here rather than hardcoding magic numbers in modules.
