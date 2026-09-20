@@ -27,6 +27,7 @@ import {
 } from '../modules/feed-issues';
 import { escapeHtml } from 'interlocking/util/escape-html';
 import { renderPickerTrigger, setPickerTriggerContent } from './picker-trigger';
+import { renderRenameTrigger } from './rename-action';
 import { openInlineEditor, openInlineMenu } from './inline-edit';
 import type { InlineEditorInputType } from './inline-edit';
 import {
@@ -62,6 +63,10 @@ import type { z } from 'zod';
 
 /** Marks a span this module's delegated listeners are responsible for. */
 const FIELD_CLASS = 'inline-editable-field';
+
+/** The box every activatable field renders as, editor or rename trigger. */
+const FIELD_BOX_CLASS =
+  'w-full cursor-pointer rounded-field border border-base-300 px-3 py-1.5 text-sm hover:bg-base-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary';
 
 export interface InlineEditableFieldDeps {
   /** Reads used to label and pick foreign-ID values, plus the first-row write. */
@@ -189,34 +194,28 @@ function displayHtml(text: string, placeholder: string): string {
 }
 
 /**
- * The Rename button a natural primary key carries.
+ * The rename trigger a natural primary key renders as.
  *
  * Only a single-field natural key gets one: a composite key has no single
  * value to rename, and changing one of its parts is an edit of that field.
  * Renaming cascades to every row that references the ID, so it goes through
  * the impact modal rather than the inline editor.
  */
-function renderRenameButton(config: FieldConfig, raw: string): string {
+function renderIdTrigger(config: FieldConfig, raw: string): string {
   const store = config.tableName ? specStoreName(config.tableName) : '';
   if (!store || raw === '' || getNaturalKeyField(store) !== config.field) {
     return '';
   }
-  return `
-    <button
-      type="button"
-      class="btn btn-xs btn-ghost self-start"
-      data-rename-table="${escapeHtml(store)}"
-      data-rename-id="${escapeHtml(raw)}"
-    >Rename</button>`;
+  return renderRenameTrigger(store, raw, FIELD_BOX_CLASS);
 }
 
 /**
  * Render one field as a label plus an editable display span.
  *
  * Primary keys, which `generateFieldConfigsFromSchema` marks readonly, render
- * as static text plus a Rename button: changing one re-keys the record and
- * every row referencing it, which is a different operation from editing a
- * property.
+ * as a rename trigger rather than an inline editor: changing one re-keys the
+ * record and every row referencing it, which is a different operation from
+ * editing a property.
  */
 export async function renderInlineEditableField(
   config: FieldConfig
@@ -229,7 +228,11 @@ export async function renderInlineEditableField(
   const label = renderFieldLabel(config);
 
   if (!spec || config.readonly || config.recordId === undefined) {
-    return `<fieldset class="fieldset isolate">${label}<span class="px-1 py-1.5 text-sm opacity-70">${displayHtml(raw, '-')}</span>${renderRenameButton(config, raw)}</fieldset>`;
+    const trigger = renderIdTrigger(config, raw);
+    const body =
+      trigger ||
+      `<span class="px-1 py-1.5 text-sm opacity-70">${displayHtml(raw, '-')}</span>`;
+    return `<fieldset class="fieldset isolate">${label}${body}</fieldset>`;
   }
 
   const kind = specFieldKind(spec);
@@ -252,7 +255,7 @@ export async function renderInlineEditableField(
     ? ` title="${escapeHtml(`No record with ${config.field} ${formatIssueValue(raw)} exists`)}"`
     : '';
 
-  const boxClass = `${FIELD_CLASS}${danglingClass} w-full cursor-pointer rounded-field border border-base-300 px-3 py-1.5 text-sm hover:bg-base-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary`;
+  const boxClass = `${FIELD_CLASS}${danglingClass} ${FIELD_BOX_CLASS}`;
   const attrs = `${danglingTitle}
         tabindex="0"
         role="button"

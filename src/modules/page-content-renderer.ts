@@ -66,11 +66,11 @@ import { showModal, renderTrashIcon } from 'interlocking/ui/modal-utils';
 import { renderNavIcon } from 'interlocking/ui/nav-icons';
 import { promptNewEntity } from './entity-form-modal';
 import { showNewServiceModal } from './new-service-modal';
-import { showRenameModal } from './rename-id-modal';
 import type {
   RenameDatabase,
   RenamePatchManager,
 } from '../utils/rename-entity';
+import { installRenameAction } from '../utils/rename-action';
 import { specStoreName } from '../utils/spec-field-edit';
 import { showOptionPickerModal } from './option-picker-modal';
 import {
@@ -82,17 +82,13 @@ import { escapeHtml } from 'interlocking/util/escape-html';
 import {
   getCurrentPageState,
   navigateToHome,
-  navigateToState,
   openModal,
   navigateToLocationGroup,
   navigateToZone,
 } from './navigation-actions';
 import type { GTFSParser } from './gtfs-parser';
 import { renderRouteDiagram, ROUTE_DIAGRAM_ROW } from './route-diagram';
-import {
-  generateCompositeKeyFromRecord,
-  getNaturalKeyField,
-} from '../utils/gtfs-primary-keys';
+import { generateCompositeKeyFromRecord } from '../utils/gtfs-primary-keys';
 import {
   applyZoneFeatures,
   getZoneFeatures,
@@ -250,41 +246,6 @@ export interface ContentRendererDependencies {
 }
 
 /**
- * The same page state with a renamed ID substituted, or null when the rename
- * does not touch it.
- *
- * A page state names its object by the object's own key field (`route_id`,
- * `stop_id`, ...), and the timetable modal names a route and a service on top
- * of that, so both halves are checked.
- */
-function followRename(
-  state: PageState,
-  keyField: string,
-  oldId: string,
-  newId: string
-): PageState | null {
-  const next: Record<string, unknown> = { ...state };
-  let changed = false;
-
-  if (next[keyField] === oldId) {
-    next[keyField] = newId;
-    changed = true;
-  }
-
-  const modal = state.modal;
-  if (
-    modal?.type === 'timetable' &&
-    (keyField === 'route_id' || keyField === 'service_id') &&
-    modal[keyField] === oldId
-  ) {
-    next.modal = { ...modal, [keyField]: newId };
-    changed = true;
-  }
-
-  return changed ? (next as PageState) : null;
-}
-
-/**
  * Page Content Renderer
  */
 export class PageContentRenderer {
@@ -298,9 +259,6 @@ export class PageContentRenderer {
 
   // Time the last applyMapFocus took, folded into the renderHome timing line.
   private lastMapFocusMs = 0;
-
-  // The container the delegated rename listener is already attached to.
-  private renameListenerContainer: HTMLElement | null = null;
 
   constructor(dependencies: ContentRendererDependencies) {
     this.dependencies = dependencies;
@@ -417,6 +375,18 @@ export class PageContentRenderer {
       gtfsDatabase: dependencies.gtfsDatabase,
       patchManager: dependencies.patchManager ?? null,
     });
+
+    // ID triggers open the impact modal from wherever they were rendered,
+    // including inside a modal, so the listeners are document-level. A
+    // read-only database handle installs nothing, and the trigger then reports
+    // that it cannot write.
+    const renameDeps = this.renameDeps();
+    if (renameDeps) {
+      installRenameAction({
+        ...renameDeps,
+        onRenamed: () => dependencies.onEntityCreated?.(),
+      });
+    }
   }
 
   /**
@@ -1531,23 +1501,6 @@ export class PageContentRenderer {
       });
     }
 
-    // Rename buttons on the entity pages' ID fields. Delegated to the
-    // container, which survives the render, so it is attached once per
-    // container rather than on every pass.
-    if (this.renameListenerContainer !== container) {
-      this.renameListenerContainer = container;
-      container.addEventListener('click', (e) => {
-        const btn = (e.target as Element)?.closest?.('[data-rename-table]');
-        if (!(btn instanceof HTMLElement)) {
-          return;
-        }
-        const { renameTable, renameId } = btn.dataset;
-        if (renameTable && renameId) {
-          void this.handleRename(renameTable, renameId);
-        }
-      });
-    }
-
     // Add StopViewController event listeners
     // It will only attach to stop fields (data-table="stops.txt")
     this.stopViewController.addEventListeners(container);
@@ -1780,37 +1733,6 @@ export class PageContentRenderer {
       },
       patchManager: this.dependencies.patchManager ?? null,
     };
-  }
-
-  /**
-   * Rename one entity's ID through the impact modal.
-   *
-   * The URL carries the ID, so a rename of the object the current page is
-   * showing has to take the page with it; anything else only needs the
-   * re-render that picks up the new value.
-   */
-  private async handleRename(table: string, id: string): Promise<void> {
-    const deps = this.renameDeps();
-    if (!deps) {
-      notify.error('Cannot rename: this page cannot write to the feed');
-      console.warn('[PageContentRenderer] no writable database handle');
-      return;
-    }
-
-    const newId = await showRenameModal(deps, { table, id });
-    if (!newId) {
-      return;
-    }
-
-    const keyField = getNaturalKeyField(table);
-    const next = keyField
-      ? followRename(getCurrentPageState(), keyField, id, newId)
-      : null;
-    if (next) {
-      await navigateToState(next);
-      return;
-    }
-    this.dependencies.onEntityCreated?.();
   }
 
   private async handleDeleteRoute(route_id: string): Promise<void> {

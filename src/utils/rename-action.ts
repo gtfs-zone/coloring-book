@@ -1,0 +1,175 @@
+/**
+ * The single entry point for renaming an entity's ID.
+ *
+ * An ID field on an entity page and an ID cell in an editable table both render
+ * a trigger carrying `data-rename-table` / `data-rename-id`, and both open the
+ * impact modal through here. The listeners are bound to `document`, the way
+ * `installInlineEditableFields` binds its own: the containers these triggers
+ * live in have their `innerHTML` replaced wholesale, and a trigger can sit
+ * inside a modal that no page container owns.
+ */
+
+import { notify } from 'interlocking/ui/notification-system';
+import { isOutsideTopModal } from 'interlocking/ui/modal-utils';
+import { escapeHtml } from 'interlocking/util/escape-html';
+import { showRenameModal } from '../modules/rename-id-modal';
+import type { RenameDatabase, RenamePatchManager } from './rename-entity';
+import {
+  getCurrentPageState,
+  navigateToState,
+} from '../modules/navigation-actions';
+import { getNaturalKeyField } from './gtfs-primary-keys';
+import type { PageState } from '../types/page-state';
+
+export interface RenameActionDeps {
+  database: RenameDatabase;
+  patchManager: RenamePatchManager | null;
+  /** Re-render when the rename does not move the page. */
+  onRenamed?: () => void;
+}
+
+let deps: RenameActionDeps | null = null;
+let listenersInstalled = false;
+
+/**
+ * Register the writing handle renames commit through, and install the
+ * delegated listeners. Calling this again only refreshes the dependencies.
+ */
+export function installRenameAction(newDeps: RenameActionDeps): void {
+  deps = newDeps;
+  if (listenersInstalled) {
+    return;
+  }
+  listenersInstalled = true;
+
+  document.addEventListener('click', (e) => {
+    const trigger = findTrigger(e.target);
+    if (trigger) {
+      activate(trigger);
+    }
+  });
+
+  // The trigger is focusable, so it opens on Enter and Space like every other
+  // field.
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' && e.key !== ' ') {
+      return;
+    }
+    const trigger = findTrigger(e.target);
+    if (trigger) {
+      e.preventDefault();
+      activate(trigger);
+    }
+  });
+}
+
+function findTrigger(target: EventTarget | null): HTMLElement | null {
+  if (isOutsideTopModal(target)) {
+    return null;
+  }
+  const el = (target as Element)?.closest?.('[data-rename-table]');
+  return el instanceof HTMLElement ? el : null;
+}
+
+function activate(trigger: HTMLElement): void {
+  const { renameTable, renameId } = trigger.dataset;
+  if (renameTable && renameId) {
+    void requestRename(renameTable, renameId);
+  }
+}
+
+/**
+ * The markup an ID renders as: the same box an editable field gets, minus the
+ * inline editor's own class so its listeners ignore it.
+ */
+export function renderRenameTrigger(
+  store: string,
+  id: string,
+  boxClass: string
+): string {
+  return `<span
+      class="${boxClass} block truncate"
+      tabindex="0"
+      role="button"
+      title="Rename ${escapeHtml(id)}"
+      data-rename-table="${escapeHtml(store)}"
+      data-rename-id="${escapeHtml(id)}"
+    >${escapeHtml(id)}</span>`;
+}
+
+/**
+ * The same page state with a renamed ID substituted, or null when the rename
+ * does not touch it.
+ *
+ * A page state names its object by the object's own key field (`route_id`,
+ * `stop_id`, ...), and the timetable modal names a route and a service on top
+ * of that, so both halves are checked.
+ */
+function followRename(
+  state: PageState,
+  keyField: string,
+  oldId: string,
+  newId: string
+): PageState | null {
+  const next: Record<string, unknown> = { ...state };
+  let changed = false;
+
+  if (next[keyField] === oldId) {
+    next[keyField] = newId;
+    changed = true;
+  }
+
+  const modal = state.modal;
+  if (
+    modal?.type === 'timetable' &&
+    (keyField === 'route_id' || keyField === 'service_id') &&
+    modal[keyField] === oldId
+  ) {
+    next.modal = { ...modal, [keyField]: newId };
+    changed = true;
+  }
+
+  return changed ? (next as PageState) : null;
+}
+
+/**
+ * Rename one entity's ID through the impact modal.
+ *
+ * The URL carries the ID, so a rename of the object the current page is
+ * showing has to take the page with it; anything else only needs the re-render
+ * that picks up the new value, which is `after` when the caller has a narrower
+ * one than the registered fallback.
+ */
+export async function requestRename(
+  table: string,
+  id: string,
+  after?: () => void
+): Promise<void> {
+  if (!deps) {
+    notify.error('Cannot rename: this page cannot write to the feed');
+    console.warn('[RenameAction] no writable database handle');
+    return;
+  }
+
+  const newId = await showRenameModal(
+    { database: deps.database, patchManager: deps.patchManager },
+    { table, id }
+  );
+  if (!newId) {
+    return;
+  }
+
+  const keyField = getNaturalKeyField(table);
+  const next = keyField
+    ? followRename(getCurrentPageState(), keyField, id, newId)
+    : null;
+  if (next) {
+    await navigateToState(next);
+    return;
+  }
+  if (after) {
+    after();
+    return;
+  }
+  deps.onRenamed?.();
+}
