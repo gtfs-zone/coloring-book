@@ -312,7 +312,7 @@ export function openInlineEditor(
     closePicker?.();
     input.replaceWith(span);
     datalist?.remove();
-    document.removeEventListener('pointerdown', onOutsidePointerDown, true);
+    document.removeEventListener('click', onOutsideClick, true);
     if (liveInput === input) {
       liveInput = null;
       liveCommit = null;
@@ -352,12 +352,14 @@ export function openInlineEditor(
     restore();
   };
 
-  // A press anywhere else on the page commits. Blur alone is not enough: a
+  // A click anywhere else on the page commits. Blur alone is not enough: a
   // link does not take focus on mousedown in Firefox, and a re-render that
   // tears the input out of the document fires no blur at all, so the edit
-  // would be lost either way. Capture phase, so the commit runs before the
-  // press turns into whatever the target does with it.
-  function onOutsidePointerDown(e: PointerEvent): void {
+  // would be lost either way. Capture phase, so the commit runs before every
+  // application handler; the propagation path is fixed at dispatch, so a
+  // delegated handler still fires even though the commit's re-render has by
+  // then detached the clicked element.
+  function onOutsideClick(e: MouseEvent): void {
     const target = e.target as Element | null;
     if (!target) {
       return;
@@ -373,7 +375,7 @@ export function openInlineEditor(
   }
 
   liveCommit = commit;
-  document.addEventListener('pointerdown', onOutsidePointerDown, true);
+  document.addEventListener('click', onOutsideClick, true);
 
   input.addEventListener('blur', commit);
   input.addEventListener('keydown', (e) => {
