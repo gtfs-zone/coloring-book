@@ -277,7 +277,7 @@ export class ZoneViewController {
         className: 'w-full',
         placeholder: span.dataset.placeholder,
         onCommit: (value) =>
-          void this.commitProperty(parser, location_id, span, value.trim()),
+          this.commitProperty(parser, location_id, span, value.trim()),
       });
     };
 

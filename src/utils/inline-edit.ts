@@ -39,6 +39,31 @@ export const LIVE_EDITOR_CLASS = 'editor-input-live';
 let liveInput: HTMLInputElement | null = null;
 
 /**
+ * The live editor's commit, so it can be fired from outside the editor - a
+ * navigation, not a blur. Cleared the moment the editor settles, by commit or
+ * by cancel, so it is never fired twice.
+ */
+let liveCommit: (() => void) | null = null;
+
+/**
+ * The write the last commit started, while it is still in flight.
+ *
+ * `onCommit` is free to be async, and a navigation that does not wait for it
+ * re-renders the destination page off rows the write has not landed in yet.
+ */
+let pendingCommit: Promise<void> | null = null;
+
+/** The in-flight flush, which makes `flushInlineEdits` single-flight. */
+let flushInFlight: Promise<void> | null = null;
+
+/**
+ * Popovers that belong to a live editor even though they are body children.
+ * A press inside one is a press inside the editor, not a click away from it.
+ */
+const EDITOR_POPOVER_SELECTOR =
+  '.calendar-input-popover, .color-input-popover, .inline-enum-menu';
+
+/**
  * Whether the live editor has been typed into since it opened. Distinguishes
  * an edit in progress from an editor that was merely navigated to (Enter/Tab
  * moved focus onto it but the user has not typed a key yet), so a caller
@@ -96,8 +121,12 @@ export interface InlineEditorOptions {
   /**
    * Called after the span has been restored, and only when the value changed.
    * Never called on Escape.
+   *
+   * A promise is kept in `pendingCommit`, so `flushInlineEdits` can wait for
+   * the write it started. Callers that write asynchronously should return
+   * their promise rather than discarding it.
    */
-  onCommit: (value: string) => void;
+  onCommit: (value: string) => void | Promise<void>;
   /**
    * Called after the editor has committed and closed, when the user asked to
    * move to another cell. Runs after `onCommit`, and unlike it, runs whether or
@@ -144,6 +173,40 @@ export function getLiveEditorState(): {
  */
 export function hasLiveEditor(): boolean {
   return liveInput !== null;
+}
+
+/**
+ * Commit the live editor, if there is one, and wait for the write it starts.
+ *
+ * Navigation calls this before it leaves the page. Single-flight and
+ * idempotent: committing re-renders, a re-render can navigate, and a
+ * navigation lands back here, so a second call joins the first rather than
+ * committing again.
+ */
+export function flushInlineEdits(): Promise<void> {
+  if (flushInFlight) {
+    return flushInFlight;
+  }
+  if (!liveCommit && !pendingCommit) {
+    return Promise.resolve();
+  }
+
+  // Assigned before the commit runs, because the commit is what re-enters.
+  let release: () => void = () => {};
+  flushInFlight = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+
+  liveCommit?.();
+  // A failed write reports itself; the navigation still has to proceed.
+  void Promise.resolve(pendingCommit)
+    .catch(() => undefined)
+    .then(() => {
+      flushInFlight = null;
+      release();
+    });
+
+  return flushInFlight;
 }
 
 /**
@@ -249,8 +312,10 @@ export function openInlineEditor(
     closePicker?.();
     input.replaceWith(span);
     datalist?.remove();
+    document.removeEventListener('pointerdown', onOutsidePointerDown, true);
     if (liveInput === input) {
       liveInput = null;
+      liveCommit = null;
     }
   };
   const commit = (): void => {
@@ -261,7 +326,22 @@ export function openInlineEditor(
     const newValue = input.value;
     restore();
     if (newValue !== options.value) {
-      options.onCommit(newValue);
+      const result = options.onCommit(newValue);
+      if (result) {
+        pendingCommit = result;
+        void result.then(
+          () => {
+            if (pendingCommit === result) {
+              pendingCommit = null;
+            }
+          },
+          () => {
+            if (pendingCommit === result) {
+              pendingCommit = null;
+            }
+          }
+        );
+      }
     }
   };
   const cancel = (): void => {
@@ -271,6 +351,29 @@ export function openInlineEditor(
     settled = true;
     restore();
   };
+
+  // A press anywhere else on the page commits. Blur alone is not enough: a
+  // link does not take focus on mousedown in Firefox, and a re-render that
+  // tears the input out of the document fires no blur at all, so the edit
+  // would be lost either way. Capture phase, so the commit runs before the
+  // press turns into whatever the target does with it.
+  function onOutsidePointerDown(e: PointerEvent): void {
+    const target = e.target as Element | null;
+    if (!target) {
+      return;
+    }
+    // The swatch and the native color input are siblings of the input inside
+    // the wrapper `attachColorInput` puts around it, so the editor is the
+    // wrapper there, not the input.
+    const root = isColor ? (input.parentElement ?? input) : input;
+    if (root.contains(target) || target.closest?.(EDITOR_POPOVER_SELECTOR)) {
+      return;
+    }
+    commit();
+  }
+
+  liveCommit = commit;
+  document.addEventListener('pointerdown', onOutsidePointerDown, true);
 
   input.addEventListener('blur', commit);
   input.addEventListener('keydown', (e) => {
