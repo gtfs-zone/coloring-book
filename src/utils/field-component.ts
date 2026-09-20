@@ -211,8 +211,7 @@ export function renderSpecFieldLabelContent(
 }
 
 /**
- * Render a field's label: the spec-linked name, its presence badge, and a lock
- * icon for primary keys.
+ * Render a field's label: the spec-linked name and its presence badge.
  *
  * `inputId` is omitted for click-to-edit fields, which have no input to point
  * a `for` attribute at until one is opened.
@@ -224,19 +223,8 @@ export function renderFieldLabel(
 ): string {
   const labelContent = renderFieldLabelContent(config, options);
 
-  let readonlyIcon = '';
-  if (config.readonly) {
-    const specUrl = getSpecUrl(config.tableName);
-    const lockSvg = `<svg class="w-3 h-3 inline-block opacity-60" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-       </svg>`;
-    readonlyIcon = specUrl
-      ? ` <a href="${specUrl}" target="_blank" rel="noopener noreferrer" title="Primary key (read-only)">${lockSvg}</a>`
-      : ` ${lockSvg}`;
-  }
-
   return `
-    <label class="label"${inputId ? ` for="${inputId}"` : ''}>${labelContent}${readonlyIcon}</label>
+    <label class="label"${inputId ? ` for="${inputId}"` : ''}>${labelContent}</label>
   `;
 }
 
