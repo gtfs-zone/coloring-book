@@ -51,7 +51,7 @@ import {
   GTFSFieldType,
   getInputTypeForFieldType,
 } from '../types/gtfs-field-types';
-import { getGTFSPrimaryKey } from './gtfs-primary-keys';
+import { getGTFSPrimaryKey, getNaturalKeyField } from './gtfs-primary-keys';
 import {
   extensionFieldSpec,
   extensionFields,
@@ -189,11 +189,34 @@ function displayHtml(text: string, placeholder: string): string {
 }
 
 /**
+ * The Rename button a natural primary key carries.
+ *
+ * Only a single-field natural key gets one: a composite key has no single
+ * value to rename, and changing one of its parts is an edit of that field.
+ * Renaming cascades to every row that references the ID, so it goes through
+ * the impact modal rather than the inline editor.
+ */
+function renderRenameButton(config: FieldConfig, raw: string): string {
+  const store = config.tableName ? specStoreName(config.tableName) : '';
+  if (!store || raw === '' || getNaturalKeyField(store) !== config.field) {
+    return '';
+  }
+  return `
+    <button
+      type="button"
+      class="btn btn-xs btn-ghost self-start"
+      data-rename-table="${escapeHtml(store)}"
+      data-rename-id="${escapeHtml(raw)}"
+    >Rename</button>`;
+}
+
+/**
  * Render one field as a label plus an editable display span.
  *
  * Primary keys, which `generateFieldConfigsFromSchema` marks readonly, render
- * as static text: changing them re-keys the record, which is a different
- * operation from editing a property.
+ * as static text plus a Rename button: changing one re-keys the record and
+ * every row referencing it, which is a different operation from editing a
+ * property.
  */
 export async function renderInlineEditableField(
   config: FieldConfig
@@ -206,7 +229,7 @@ export async function renderInlineEditableField(
   const label = renderFieldLabel(config);
 
   if (!spec || config.readonly || config.recordId === undefined) {
-    return `<fieldset class="fieldset isolate">${label}<span class="px-1 py-1.5 text-sm opacity-70">${displayHtml(raw, '-')}</span></fieldset>`;
+    return `<fieldset class="fieldset isolate">${label}<span class="px-1 py-1.5 text-sm opacity-70">${displayHtml(raw, '-')}</span>${renderRenameButton(config, raw)}</fieldset>`;
   }
 
   const kind = specFieldKind(spec);
