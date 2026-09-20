@@ -1105,7 +1105,7 @@ function openCellEditor(span: HTMLElement): void {
         openInlineEditor(span, {
           value: current,
           className: 'w-full',
-          onCommit: (value) => void commitCell(state, span, field, spec, value),
+          onCommit: (value) => commitCell(state, span, field, spec, value),
         });
         return;
       }
@@ -1124,7 +1124,7 @@ function openCellEditor(span: HTMLElement): void {
       inputType: 'date',
       className: 'w-full',
       onCommit: (value) =>
-        void commitCell(
+        commitCell(
           state,
           span,
           field,
@@ -1143,7 +1143,7 @@ function openCellEditor(span: HTMLElement): void {
       inputType: 'color',
       className: 'w-full',
       onCommit: (value) =>
-        void commitCell(
+        commitCell(
           state,
           span,
           field,
@@ -1162,7 +1162,7 @@ function openCellEditor(span: HTMLElement): void {
         value: current,
         className: 'w-full',
         suggestions,
-        onCommit: (value) => void commitCell(state, span, field, spec, value),
+        onCommit: (value) => commitCell(state, span, field, spec, value),
       });
     })();
     return;
@@ -1172,7 +1172,7 @@ function openCellEditor(span: HTMLElement): void {
     value: current,
     inputType: span.dataset.kind === 'number' ? 'number' : 'text',
     className: 'w-full',
-    onCommit: (value) => void commitCell(state, span, field, spec, value),
+    onCommit: (value) => commitCell(state, span, field, spec, value),
   });
 }
 

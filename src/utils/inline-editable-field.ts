@@ -467,7 +467,7 @@ function openPlainEditor(
     placeholder: span.dataset.placeholder,
     onCommit: (value) => {
       const stored = type ? convertValueToGTFS(value, type) : value;
-      void commit(span, spec, stored);
+      return commit(span, spec, stored);
     },
   });
 }

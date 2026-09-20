@@ -969,7 +969,7 @@ export class ScheduleController {
             flexId && (flexKind === 'location' || flexKind === 'location_group')
               ? { kind: flexKind, id: flexId }
               : undefined;
-          void this.updateFlexWindow(
+          return this.updateFlexWindow(
             tripId,
             stopSequence,
             windowField,
@@ -978,14 +978,13 @@ export class ScheduleController {
             cellRef,
             stopIndex === undefined ? undefined : Number(stopIndex)
           );
-          return;
         }
         // Enter blurs the input, so nothing in the grid holds focus by the time
         // the re-render captures it. openInlineEditor has already put the span
         // back, so focusing it here is what makes the selection survive the
         // rebuild instead of dropping to the document.
         this.selectTimeCell(span, true);
-        void this.updateArrivalDepartureTime(
+        return this.updateArrivalDepartureTime(
           tripId,
           stopId as string,
           field === 'arrival_time' ? 'arrival' : 'departure',
@@ -1034,9 +1033,8 @@ export class ScheduleController {
         : 'w-24 shrink-0 text-center font-mono',
       title: field,
       arrowNavigation: isGridCell,
-      onCommit: (newValue) => {
-        void this.updateStopTimeField(tripId, stopSequence, field, newValue);
-      },
+      onCommit: (newValue) =>
+        this.updateStopTimeField(tripId, stopSequence, field, newValue),
       // Only a grid cell has neighbours; arrowing out of a flag slot's editor
       // has nowhere to land.
       onNavigate: isGridCell
@@ -1479,7 +1477,7 @@ export class ScheduleController {
       onCommit: (newValue) => {
         span.textContent = newValue || '-';
         span.dataset.value = newValue;
-        void this.updateTripProperty(tripId, field, newValue);
+        return this.updateTripProperty(tripId, field, newValue);
       },
     });
   }
@@ -2411,9 +2409,8 @@ export class ScheduleController {
         fieldKind === 'time'
           ? 'Enter a time, e.g. 9:30 or 09:30:00'
           : 'Seconds between departures',
-      onCommit: (newValue) => {
-        void this.updateFrequencyField(tripId, startTime, field, newValue);
-      },
+      onCommit: (newValue) =>
+        this.updateFrequencyField(tripId, startTime, field, newValue),
     });
   }
 

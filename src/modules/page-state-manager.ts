@@ -19,6 +19,7 @@ import {
 } from '../types/page-state';
 import { BreadcrumbItem } from 'interlocking/ui/breadcrumb-trail';
 import { BreadcrumbLookup, buildBreadcrumbs } from './breadcrumbs';
+import { flushInlineEdits, hasLiveEditor } from '../utils/inline-edit';
 import { CONFIG } from '../config';
 
 /**
@@ -86,6 +87,14 @@ export class PageStateManager {
     if (!isPageState(newState)) {
       throw new Error('Invalid page state provided');
     }
+
+    // Before the already-on-this-page guard: leaving a page with an editor
+    // open has to write what is in it first, and this is the single funnel
+    // every navigation lands in - navigateTo, the back handler, hash changes.
+    if (hasLiveEditor()) {
+      console.log('[PageStateManager] flushing live edit before navigation');
+    }
+    await flushInlineEdits();
 
     // Navigating to the page we are already on is a no-op: every handler
     // re-renders, and re-rendering the current page from here would throw away
