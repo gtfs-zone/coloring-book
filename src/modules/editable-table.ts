@@ -42,7 +42,13 @@ import { GTFSFieldType, mapGTFSTypeString } from '../types/gtfs-field-types';
 import {
   generateCompositeKeyFromRecord,
   getGTFSPrimaryKey,
+  getNaturalKeyField,
 } from '../utils/gtfs-primary-keys';
+import {
+  clearRenameAfter,
+  renderRenameTrigger,
+  setRenameAfter,
+} from '../utils/rename-action';
 import { patchUpdate } from '../utils/patch-utils';
 import {
   generateFieldConfigsFromSchema,
@@ -615,6 +621,21 @@ function renderCell(
     row[field] === undefined || row[field] === null ? '' : String(row[field]);
   const text = cellText(config, field, spec, row, foreignLabels);
 
+  // A natural primary key re-keys every row referencing it, so it opens the
+  // impact modal instead of an inline editor. The trigger carries no
+  // `.editable-cell` class, so `openCellEditor` never sees it.
+  const store = specStoreName(config.tableName);
+  if (raw !== '' && getNaturalKeyField(store) === field) {
+    return `<td class="align-middle p-1">
+    ${renderRenameTrigger(
+      store,
+      raw,
+      `min-w-8 max-w-full cursor-pointer rounded px-1 hover:bg-base-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${override?.widthClass ?? ''}`,
+      config.instanceId
+    )}
+  </td>`;
+  }
+
   if (override?.readonly) {
     return `<td class="align-middle ${override.widthClass ?? ''}">${escapeHtml(text) || '-'}</td>`;
   }
@@ -807,6 +828,9 @@ export function installEditableTableHandlers(
   config: EditableTableConfig
 ): void {
   instances.set(config.instanceId, { config, pending: {} });
+  if (config.onRowsChanged) {
+    setRenameAfter(config.instanceId, () => config.onRowsChanged?.());
+  }
 
   if (listenerInstalled) {
     return;
@@ -897,6 +921,7 @@ function notifyRowHover(row: HTMLElement): void {
 /** Drop an instance's state, e.g. when its modal closes. */
 export function uninstallEditableTableHandlers(instanceId: string): void {
   instances.delete(instanceId);
+  clearRenameAfter(instanceId);
 }
 
 // ─── Extension columns ────────────────────────────────────────────────────────

@@ -131,10 +131,7 @@ export class LevelsController {
       emptyMessage:
         'No levels yet. A level is a floor of a station, named by <code>stops.level_id</code> and used by pathways.',
       columnOverrides: {
-        // Set once from the new row, then fixed: renaming a level would strand
-        // every stops.level_id and pathway that names it. Delete and re-add to
-        // change one.
-        level_id: { readonly: true, widthClass: 'min-w-64' },
+        level_id: { widthClass: 'min-w-64' },
       },
       onInsert: () => void refresh(),
       onRowsChanged: () => void refresh(),
