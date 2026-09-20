@@ -52,6 +52,11 @@ export const CONFIG = {
   CLUSTERIZE_ROWS_IN_BLOCK: 50,
   CLUSTERIZE_BLOCKS_IN_CLUSTER: 4,
 
+  // Renaming an ID: cascade size above which the impact modal warns before
+  // applying. A stop rename on a city feed rewrites every stop_times row that
+  // stops there, which is slow but fine - the patch log holds it.
+  RENAME_CASCADE_WARN: 5_000,
+
   // Navigation history
   MAX_NAVIGATION_HISTORY: 50,
 
