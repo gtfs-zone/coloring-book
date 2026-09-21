@@ -61,23 +61,12 @@ export interface WorkerDoneMessage {
   locationsJson: { [fileName: string]: string };
 }
 
-export interface WorkerOversizeTable {
-  fileName: string;
-  bytes: number;
-  rows: number;
-}
-
 /**
  * The feed is over a warning threshold. The worker stops here until the main
  * thread answers with `proceed`, or terminates it.
  */
 export interface WorkerOversizeMessage {
   type: 'oversize';
-  totalBytes: number;
-  totalRows: number;
-  memoryBytes: number;
-  /** Biggest tables first, so the prompt can name what makes the feed big. */
-  tables: WorkerOversizeTable[];
 }
 
 export interface WorkerProgressMessage {
@@ -204,10 +193,7 @@ function uncompressedSize(entry: JSZip.JSZipObject): number {
 function estimateFeedSize(zip: JSZip): {
   totalBytes: number;
   totalRows: number;
-  memoryBytes: number;
-  tables: WorkerOversizeTable[];
 } {
-  const tables: WorkerOversizeTable[] = [];
   let totalBytes = 0;
   let totalRows = 0;
 
@@ -216,19 +202,11 @@ function estimateFeedSize(zip: JSZip): {
       continue;
     }
     const bytes = uncompressedSize(entry);
-    const rows = Math.round(bytes / CONFIG.FEED_CSV_BYTES_PER_ROW);
     totalBytes += bytes;
-    totalRows += rows;
-    tables.push({ fileName, bytes, rows });
+    totalRows += Math.round(bytes / CONFIG.FEED_CSV_BYTES_PER_ROW);
   }
 
-  tables.sort((a, b) => b.bytes - a.bytes);
-  return {
-    totalBytes,
-    totalRows,
-    memoryBytes: totalRows * CONFIG.FEED_ROW_MEMORY_BYTES,
-    tables,
-  };
+  return { totalBytes, totalRows };
 }
 
 /** Resolver for the `proceed` reply while a large-feed prompt is open. */
@@ -284,7 +262,7 @@ async function runImport(
     estimate.totalBytes > CONFIG.LARGE_FEED_WARN_BYTES ||
     estimate.totalRows > CONFIG.LARGE_FEED_WARN_ROWS
   ) {
-    post({ type: 'oversize', ...estimate });
+    post({ type: 'oversize' });
     // Resolves on `proceed`; a decline terminates this worker instead.
     await new Promise<void>((resolve) => {
       proceed = resolve;

@@ -42,11 +42,6 @@ export const CONFIG = {
   // stop_times.txt (210 MB, 4,494,139 rows).
   FEED_CSV_BYTES_PER_ROW: 48,
 
-  // Feed loading: in-memory cost of one parsed row (the object, its keys and
-  // its string values). Measured against the same table, whose 4.5M rows hold
-  // roughly 1.8 GB. Only used to size the large-feed warning.
-  FEED_ROW_MEMORY_BYTES: 400,
-
   // Editor (table view)
   DEBOUNCE_DELAY: 500, // ms before flushing pending cell updates to IndexedDB
   CLUSTERIZE_ROWS_IN_BLOCK: 50,

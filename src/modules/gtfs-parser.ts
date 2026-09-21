@@ -19,7 +19,6 @@ import type {
   ImportSource,
   WorkerDoneMessage,
   WorkerOutbound,
-  WorkerOversizeMessage,
 } from '../workers/gtfs-parser.worker';
 import { showModal } from 'interlocking/ui/modal-utils';
 import { escapeHtml } from 'interlocking/util/escape-html';
@@ -28,10 +27,7 @@ import { generateCompositeKeyFromRecord } from '../utils/gtfs-primary-keys';
 import { splitInnerZipPath } from 'interlocking/gtfs/feed-url-resolve';
 import { yieldToEventLoop } from '../utils/async-yield';
 import { processParsedData } from '../utils/gtfs-field-values';
-import {
-  LoadCancelledError,
-  formatBytes,
-} from 'interlocking/gtfs/feed-download';
+import { LoadCancelledError } from 'interlocking/gtfs/feed-download';
 
 /**
  * The shell one feed-producing operation runs inside: its progress key, its
@@ -86,29 +82,15 @@ function serializeRowChunks(rows: GTFSDatabaseRecord[]): string[] {
  */
 async function confirmLargeFeed(
   label: string,
-  estimate: WorkerOversizeMessage,
   // Lets the caller take the prompt down if the load is cancelled or dies
   // while it is open.
   onOpen: (close: () => void) => void
 ): Promise<boolean> {
-  const biggest = estimate.tables
-    .slice(0, 3)
-    .map(
-      (t) =>
-        `<li>${escapeHtml(t.fileName)}: ~${t.rows.toLocaleString()} rows (${formatBytes(t.bytes)})</li>`
-    )
-    .join('');
-
   let accepted = false;
   await showModal({
     title: 'Large feed',
     body: `
       <p><strong>${escapeHtml(label)}</strong> is large.</p>
-      <p class="mt-2">Roughly ${estimate.totalRows.toLocaleString()} rows across
-      ${formatBytes(estimate.totalBytes)} of uncompressed data, needing about
-      ${formatBytes(estimate.memoryBytes)} of memory once loaded. Row counts are
-      estimated from file sizes.</p>
-      <ul class="list-disc list-inside mt-2">${biggest}</ul>
       <p class="mt-2">Loading it may take about 30 seconds. Cancelling leaves
       the feed you have loaded now exactly as it is.</p>
     `,
@@ -1607,7 +1589,7 @@ export class GTFSParser {
               25,
               'Waiting for confirmation...'
             );
-            void confirmLargeFeed(label, msg, (close) => {
+            void confirmLargeFeed(label, (close) => {
               closeLargeFeedPrompt = close;
             }).then((accept) => {
               closeLargeFeedPrompt = null;
