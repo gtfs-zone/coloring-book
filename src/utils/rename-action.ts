@@ -144,14 +144,16 @@ export async function requestRename(
     return;
   }
 
+  // A scoped redraw owns a container the page render does not, so it runs
+  // either way.
+  if (after) {
+    after();
+    return;
+  }
   // The page state moved: the follower re-pointed it mid-commit and the patch
   // event queued the render that goes with it. A second one here would only
   // cost the scroll position.
   if (JSON.stringify(getCurrentPageState()) !== before) {
-    return;
-  }
-  if (after) {
-    after();
     return;
   }
   deps.onRenamed?.();
