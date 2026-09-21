@@ -304,7 +304,8 @@ export async function applyRename(
 
   await patchManager.recordBatchMixed(
     ops,
-    `Rename ${table}.${keyField} "${oldId}" to "${newId}"`
+    `Rename ${table}.${keyField} "${oldId}" to "${newId}"`,
+    { rename: { table, keyField, from: oldId, to: newId } }
   );
 
   console.log(

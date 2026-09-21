@@ -18,11 +18,26 @@ export interface SingleGTFSPatch {
   inverse: PatchData;
 }
 
+/**
+ * One entity's ID rename, carried by the batch that performs it.
+ *
+ * The page names its object by that ID, so replaying the batch in either
+ * direction has to take the page with it. Persisted with the patch, so an undo
+ * after a reload still follows.
+ */
+export interface PatchRename {
+  table: string;
+  keyField: string;
+  from: string;
+  to: string;
+}
+
 /** A batch of single-record updates recorded as one undo/redo step. */
 export interface BatchGTFSPatch {
   op: 'batch';
   ops: SingleGTFSPatch[];
   label?: string;
+  rename?: PatchRename;
 }
 
 /** A patch is either a single-record operation or a batch of them. */
