@@ -340,6 +340,15 @@ export class GTFSEditor {
       // Initialize search controller
       this.searchController.initialize();
 
+      // A rename re-points the page from inside the commit: the rows are
+      // written, the patch events have not fired yet, so every listener below
+      // re-renders against the new ID rather than the deleted one.
+      this.patchManager.setRenameFollower(({ keyField, from, to }) => {
+        this.pageStateManager.followRename(keyField, from, to);
+        this.browseNavigation.followRename(keyField, from, to);
+        this.scheduleController.followIdRename(keyField, from, to);
+      });
+
       // Wire undo/redo events to refresh editor and browse navigation.
       // Map updates are handled by MapController's own patch subscription.
       const refreshAfterUndoRedo = async () => {

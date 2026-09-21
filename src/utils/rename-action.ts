@@ -14,12 +14,7 @@ import { isOutsideTopModal } from 'interlocking/ui/modal-utils';
 import { escapeHtml } from 'interlocking/util/escape-html';
 import { showRenameModal } from '../modules/rename-id-modal';
 import type { RenameDatabase, RenamePatchManager } from './rename-entity';
-import {
-  getCurrentPageState,
-  navigateToState,
-} from '../modules/navigation-actions';
-import { getNaturalKeyField } from './gtfs-primary-keys';
-import type { PageState } from '../types/page-state';
+import { getCurrentPageState } from '../modules/navigation-actions';
 
 export interface RenameActionDeps {
   database: RenameDatabase;
@@ -121,47 +116,13 @@ export function renderRenameTrigger(
 }
 
 /**
- * The same page state with a renamed ID substituted, or null when the rename
- * does not touch it.
- *
- * A page state names its object by the object's own key field (`route_id`,
- * `stop_id`, ...), and the timetable modal names a route and a service on top
- * of that, so both halves are checked.
- */
-function followRename(
-  state: PageState,
-  keyField: string,
-  oldId: string,
-  newId: string
-): PageState | null {
-  const next: Record<string, unknown> = { ...state };
-  let changed = false;
-
-  if (next[keyField] === oldId) {
-    next[keyField] = newId;
-    changed = true;
-  }
-
-  const modal = state.modal;
-  if (
-    modal?.type === 'timetable' &&
-    (keyField === 'route_id' || keyField === 'service_id') &&
-    modal[keyField] === oldId
-  ) {
-    next.modal = { ...modal, [keyField]: newId };
-    changed = true;
-  }
-
-  return changed ? (next as PageState) : null;
-}
-
-/**
  * Rename one entity's ID through the impact modal.
  *
- * The URL carries the ID, so a rename of the object the current page is
- * showing has to take the page with it; anything else only needs the re-render
- * that picks up the new value, which is `after` when the caller has a narrower
- * one than the registered fallback.
+ * The URL carries the ID, but a rename of the object the current page shows
+ * takes the page with it from inside the commit, through the patch manager's
+ * rename follower, so there is nothing to navigate to here. What is left is
+ * the re-render for everything else, which is `after` when the caller has a
+ * narrower one than the registered fallback.
  */
 export async function requestRename(
   table: string,
@@ -174,6 +135,7 @@ export async function requestRename(
     return;
   }
 
+  const before = JSON.stringify(getCurrentPageState());
   const newId = await showRenameModal(
     { database: deps.database, patchManager: deps.patchManager },
     { table, id }
@@ -182,12 +144,10 @@ export async function requestRename(
     return;
   }
 
-  const keyField = getNaturalKeyField(table);
-  const next = keyField
-    ? followRename(getCurrentPageState(), keyField, id, newId)
-    : null;
-  if (next) {
-    await navigateToState(next);
+  // The page state moved: the follower re-pointed it mid-commit and the patch
+  // event queued the render that goes with it. A second one here would only
+  // cost the scroll position.
+  if (JSON.stringify(getCurrentPageState()) !== before) {
     return;
   }
   if (after) {

@@ -154,9 +154,8 @@ export async function navigateToLocationGroup(
 /**
  * Navigate to a page state built by the caller.
  *
- * For a move that keeps the state's shape and only changes what it names, such
- * as following a renamed ID, where the per-entity helpers above would drop the
- * modal the state carries.
+ * For a move that keeps the state's shape and only changes what it names,
+ * where the per-entity helpers above would drop the modal the state carries.
  */
 export async function navigateToState(pageState: PageState): Promise<void> {
   await getPageStateManager().navigateTo(pageState);
