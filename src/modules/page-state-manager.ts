@@ -20,6 +20,7 @@ import {
 import { BreadcrumbItem } from 'interlocking/ui/breadcrumb-trail';
 import { BreadcrumbLookup, buildBreadcrumbs } from './breadcrumbs';
 import { flushInlineEdits, hasLiveEditor } from '../utils/inline-edit';
+import { followRenameInState } from '../utils/follow-rename';
 import { CONFIG } from '../config';
 
 /**
@@ -152,6 +153,53 @@ export class PageStateManager {
         console.error('Error in navigation event handler:', error);
       }
     });
+  }
+
+  /**
+   * Re-point the current state at the same object under a new ID.
+   *
+   * Not a navigation: the user did not move, the object was renamed under
+   * them. So no history entry (`history.replaceState` fires no `hashchange`,
+   * which is why `suppressHashUpdate` stays untouched), no navigation
+   * handlers, and no inline-edit flush - this runs inside a patch emit, where
+   * a flush would record a second patch. The re-render is the one the patch
+   * event already triggers.
+   *
+   * Returns true when the current page moved.
+   */
+  followRename(keyField: string, from: string, to: string): boolean {
+    // Entries naming the old ID would send navigateBack to a page that no
+    // longer exists, so they follow too.
+    this.navigationHistory = this.navigationHistory.map((event) => ({
+      ...event,
+      from: followRenameInState(event.from, keyField, from, to) ?? event.from,
+      to: followRenameInState(event.to, keyField, from, to) ?? event.to,
+    }));
+
+    const next = followRenameInState(this.currentState, keyField, from, to);
+    if (!next) {
+      return false;
+    }
+
+    console.log(
+      `[PageStateManager] following rename ${keyField} "${from}" to "${to}"`
+    );
+    this.currentState = next;
+
+    if (this.config.enableUrlSync && typeof window !== 'undefined') {
+      const hash = this.pageStateToURL(next);
+      if (hash !== window.location.hash.slice(1)) {
+        window.history.replaceState(
+          null,
+          '',
+          hash === ''
+            ? window.location.pathname + window.location.search
+            : `#${hash}`
+        );
+      }
+    }
+
+    return true;
   }
 
   /**

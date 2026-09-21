@@ -27,6 +27,7 @@ import {
   ContentRendererDependencies,
 } from './page-content-renderer';
 import type { GTFSParser } from './gtfs-parser';
+import { followRenameInState } from '../utils/follow-rename';
 
 export class BrowseNavigation {
   private relationships: {
@@ -556,5 +557,27 @@ export class BrowseNavigation {
 
   async refresh() {
     await this.render();
+  }
+
+  /**
+   * Take the last rendered state with a renamed ID.
+   *
+   * Without this the next render sees a page state that no longer matches and
+   * treats it as a different page, throwing away the scroll position and the
+   * focus the user is meant to keep across a rename.
+   */
+  followRename(keyField: string, from: string, to: string): void {
+    if (!this.lastRenderedPageState) {
+      return;
+    }
+    const next = followRenameInState(
+      this.lastRenderedPageState,
+      keyField,
+      from,
+      to
+    );
+    if (next) {
+      this.lastRenderedPageState = next;
+    }
   }
 }

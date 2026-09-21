@@ -3220,6 +3220,22 @@ export class ScheduleController {
   }
 
   /**
+   * Take the open timetable's tracked IDs with a renamed route or service.
+   *
+   * The modal rebuilds from these on any patch event, so re-pointing them
+   * rather than passing a target keeps `isRetarget` below false: the grid is
+   * the same timetable, it keeps its scroll and its open editor.
+   */
+  followIdRename(keyField: string, from: string, to: string): void {
+    if (keyField === 'route_id' && this.currentRouteId === from) {
+      this.currentRouteId = to;
+    }
+    if (keyField === 'service_id' && this.currentServiceId === from) {
+      this.currentServiceId = to;
+    }
+  }
+
+  /**
    * Re-render the timetable in place.
    *
    * The timetable modal's only rebuild path. It subscribes this to the patch
