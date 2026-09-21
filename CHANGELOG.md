@@ -1,3 +1,29 @@
+## v0.35.0 (2026-09-21)
+
+### Feat
+
+- keep the page on an object when its ID is renamed or the rename is undone
+- carry an ID rename on its patch and hook its replay
+- rename an ID from an editable table cell instead of editing it
+- make an ID field open the rename modal like any other field
+- create entities from a "+" button and open their page
+- add the Rename action for entity IDs
+- add the entity rename engine
+- use the shared color input for color fields
+
+### Fix
+
+- state an expected load time on the large feed warning instead of a crash risk
+- run a scoped redraw after a rename even when the page followed it
+- do not report a completed rename as failed
+- commit an inline edit on click, not pointerdown
+- save a live inline edit before navigating away
+
+### Refactor
+
+- read the coverage notes and stacked direction sections from interlocking
+- move six modules into interlocking v2.1.0
+
 ## v0.34.1 (2026-09-16)
 
 ### Fix
