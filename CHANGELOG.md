@@ -1,3 +1,9 @@
+## v0.35.1 (2026-09-21)
+
+### Refactor
+
+- drop the size estimate from the large feed prompt
+
 ## v0.35.0 (2026-09-21)
 
 ### Feat
