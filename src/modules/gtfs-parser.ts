@@ -103,15 +103,14 @@ async function confirmLargeFeed(
   await showModal({
     title: 'Large feed',
     body: `
-      <p><strong>${escapeHtml(label)}</strong> is large and may crash the
-      browser on computers with less memory available.</p>
+      <p><strong>${escapeHtml(label)}</strong> is large.</p>
       <p class="mt-2">Roughly ${estimate.totalRows.toLocaleString()} rows across
       ${formatBytes(estimate.totalBytes)} of uncompressed data, needing about
       ${formatBytes(estimate.memoryBytes)} of memory once loaded. Row counts are
       estimated from file sizes.</p>
       <ul class="list-disc list-inside mt-2">${biggest}</ul>
-      <p class="mt-2">Loading it may take several minutes or run the tab out of
-      memory. Cancelling leaves the feed you have loaded now exactly as it is.</p>
+      <p class="mt-2">Loading it may take about 30 seconds. Cancelling leaves
+      the feed you have loaded now exactly as it is.</p>
     `,
     escapeAction: 1,
     onMount: onOpen,
