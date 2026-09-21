@@ -14,6 +14,7 @@ import {
   SingleGTFSPatch,
   BatchGTFSPatch,
   PatchRecord,
+  PatchRename,
   SnapshotRecord,
   GTFSState,
 } from '../types/patch';
@@ -37,6 +38,7 @@ export class PatchManager {
   private headVersion = 0;
   private appliedCount = 0;
   private listeners = new Map<PatchEventType, Set<PatchEventListener>>();
+  private renameFollower: ((rename: PatchRename) => void) | null = null;
 
   constructor(db: GTFSDatabase, parser: GTFSParser) {
     this.db = db;
@@ -306,6 +308,9 @@ export class PatchManager {
    * kept in the order given, which matters when a batch both deletes and
    * inserts rows in the same table: put the deletes first so neither forward
    * replay nor the reversed inverse replay ever holds two rows on one key.
+   *
+   * `meta.rename` marks the batch as an ID rename, so replaying it in either
+   * direction re-points the page at the renamed object.
    */
   async recordBatchMixed(
     ops: Array<
@@ -329,7 +334,8 @@ export class PatchManager {
           after: Record<string, unknown>;
         }
     >,
-    label?: string
+    label?: string,
+    meta?: { rename?: PatchRename }
   ): Promise<void> {
     if (ops.length === 0) {
       return;
@@ -372,7 +378,10 @@ export class PatchManager {
     if (singlePatches.length === 0) {
       return;
     }
-    if (singlePatches.length === 1) {
+    // A rename always has at least a delete and an insert, so the collapse
+    // never fires for one. Guarded anyway: the descriptor only rides on a
+    // batch, and dropping it would leave the page behind on replay.
+    if (singlePatches.length === 1 && !meta?.rename) {
       await this.appendAndPush(singlePatches[0]);
       return;
     }
@@ -380,6 +389,7 @@ export class PatchManager {
       op: 'batch',
       ops: singlePatches,
       label,
+      ...(meta?.rename && { rename: meta.rename }),
     };
     await this.appendAndPush(batchPatch);
   }
@@ -447,6 +457,7 @@ export class PatchManager {
     this.currentVersion--;
     this.appliedCount--;
     await this.db.setVersions(this.currentVersion, this.headVersion);
+    this.followRename(record.patch, 'inverse');
     this.emit('undo', record);
   }
 
@@ -462,6 +473,7 @@ export class PatchManager {
     this.currentVersion++;
     this.appliedCount++;
     await this.db.setVersions(this.currentVersion, this.headVersion);
+    this.followRename(record.patch, 'forward');
     this.emit('redo', record);
   }
 
@@ -505,6 +517,7 @@ export class PatchManager {
         const record = await this.db.getPatch(v);
         if (record) {
           await this.applyPatchInverse(record.patch);
+          this.followRename(record.patch, 'inverse');
         }
       }
     } else {
@@ -512,6 +525,7 @@ export class PatchManager {
         const record = await this.db.getPatch(v);
         if (record) {
           await this.applyPatchForward(record.patch);
+          this.followRename(record.patch, 'forward');
         }
       }
     }
@@ -540,6 +554,16 @@ export class PatchManager {
     this.listeners.get(event)?.delete(listener);
   }
 
+  /**
+   * Register what re-points the UI when a replayed patch renames an ID.
+   *
+   * Called between the rows being written and the event being emitted, so
+   * every listener that re-renders already sees the new ID.
+   */
+  setRenameFollower(fn: (rename: PatchRename) => void): void {
+    this.renameFollower = fn;
+  }
+
   // ===== Private helpers =====
 
   private async appendAndPush(patch: GTFSPatch): Promise<void> {
@@ -561,7 +585,31 @@ export class PatchManager {
     this.appliedCount++;
     await this.db.setVersions(this.currentVersion, this.headVersion);
     await this.maybeSnapshot();
+    this.followRename(patch, 'forward');
     this.emit('change', { version, patch, timestamp });
+  }
+
+  /**
+   * Take the UI with a rename this patch carries.
+   *
+   * Synchronous on purpose: it runs in the window between the write and the
+   * emit, and an await there would let a listener render against the old ID.
+   * Not called from applyPatchForward/applyPatchInverse, because boot replay
+   * goes through those and the URL already names the final ID by then.
+   */
+  private followRename(
+    patch: GTFSPatch,
+    direction: 'forward' | 'inverse'
+  ): void {
+    if (patch.op !== 'batch' || !patch.rename || !this.renameFollower) {
+      return;
+    }
+    const { table, keyField, from, to } = patch.rename;
+    this.renameFollower(
+      direction === 'forward'
+        ? { table, keyField, from, to }
+        : { table, keyField, from: to, to: from }
+    );
   }
 
   private emit(event: PatchEventType, record?: PatchRecord): void {
