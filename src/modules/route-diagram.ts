@@ -28,6 +28,8 @@ import {
   isEndpoint,
   isMinority,
   railCell,
+  renderCoverage,
+  renderDirectionSections,
   rowPaths,
   STRIP_ROW_CLASS,
 } from 'interlocking/gtfs/route-strip';
@@ -131,50 +133,21 @@ function renderRow(
   `;
 }
 
-/** What the strip is and is not showing, when that is not obvious. */
-function renderCoverage(sequence: RouteSequence): string {
-  const notes: string[] = [];
-  if (sequence.totalPatterns > 1) {
-    notes.push(
-      `${sequence.totalPatterns} stop patterns across ${sequence.totalTrips} trips, all of them on the strip. A trip count marks a stop fewer than half the trips call at; a filled dot marks where trips start or end. Platforms are shown under their parent station.`
-    );
-  }
-  if (sequence.isLoop) {
-    notes.push(
-      'Some trips visit a stop more than once. Repeat visits are shown as separate rows rather than collapsed onto one.'
-    );
-  }
-  if (notes.length === 0) {
-    return '';
-  }
-  return `<div class="text-xs opacity-60 space-y-1">${notes
-    .map((note) => `<p>${escapeHtml(note)}</p>`)
-    .join('')}</div>`;
-}
-
 function renderDirection(
   source: GTFSRouteSource,
   sequence: RouteSequence,
-  label: string,
-  showLabel: boolean,
   color: string,
   stopsById: Map<string, Stops>
 ): string {
   if (sequence.stops.length === 0) {
     return '';
   }
-  const heading = showLabel
-    ? `<h3 class="text-sm font-semibold opacity-70">${escapeHtml(label)}</h3>`
-    : '';
   const rows = sequence.stops
     .map((_stop, index) => renderRow(source, sequence, index, color, stopsById))
     .join('');
   return `
-    <div class="space-y-2">
-      ${heading}
-      ${renderCoverage(sequence)}
-      <div>${rows}</div>
-    </div>
+    ${renderCoverage(sequence)}
+    <div>${rows}</div>
   `;
 }
 
@@ -204,20 +177,15 @@ export function renderRouteDiagram(
   }
 
   const color = routeColor(route_id, routeData.route_color);
-  const sections = directions
-    .map((direction) =>
-      renderDirection(
-        source,
-        // service_id omitted: the diagram covers every trip of the route.
-        routeSequence(source, route_id, direction.direction_id),
-        direction.label,
-        directions.length > 1,
-        color,
-        stopsById
-      )
+  const sections = renderDirectionSections(directions, (direction) =>
+    renderDirection(
+      source,
+      // service_id omitted: the diagram covers every trip of the route.
+      routeSequence(source, route_id, direction.direction_id),
+      color,
+      stopsById
     )
-    .filter((html) => html !== '')
-    .join('');
+  );
 
   if (sections === '') {
     return '';
