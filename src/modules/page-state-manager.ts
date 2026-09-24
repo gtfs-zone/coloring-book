@@ -1,19 +1,25 @@
 /**
  * Page State Manager
  *
- * Central state management system for GTFS.zone Browse tab navigation.
- * Provides a single source of truth for page states and breadcrumb generation.
- * Replaces the fragmented navigation logic across multiple modules.
+ * The editor's hash codec and its subclass of `interlocking`'s generic
+ * `PageStateManager`. The shared class owns the current state, the history
+ * and the hash; what is the editor's own is here: the codec for its eight
+ * page variants and seven content modals, the inline-edit flush before every
+ * navigation, the same-page guard, breadcrumbs resolved against IndexedDB,
+ * and the validated boot restore.
  */
 
+import type { PageStateCodec } from 'interlocking/ui/page-state-manager';
+import {
+  PageStateManager as SharedPageStateManager,
+  homeWithModal,
+} from 'interlocking/ui/page-state-manager';
 import {
   PageState,
   ModalState,
   ModalType,
   PaneModalType,
   MODAL_TYPES,
-  NavigationEvent,
-  PageStateManagerConfig,
   StateValidator,
   isPageState,
 } from '../types/page-state';
@@ -23,321 +29,50 @@ import { flushInlineEdits, hasLiveEditor } from '../utils/inline-edit';
 import { followRenameInState } from '../utils/follow-rename';
 import { CONFIG } from '../config';
 
-/**
- * Event handler type for navigation events
- */
-type NavigationEventHandler = (event: NavigationEvent) => void;
-
 export type { BreadcrumbLookup };
 
 /**
- * PageStateManager - Single source of truth for navigation state
+ * Read the modal dimension out of a parsed hash.  An unknown modal name is
+ * dropped rather than throwing: the hash is user-editable.
  */
-export class PageStateManager {
-  private currentState: PageState = { type: 'home' };
-  private navigationHistory: NavigationEvent[] = [];
-  private eventHandlers: NavigationEventHandler[] = [];
-  private config: PageStateManagerConfig;
-  private breadcrumbLookup: BreadcrumbLookup | null = null;
-  private stateValidator: StateValidator | null = null;
-  private suppressHashUpdate = false;
-
-  constructor(config: Partial<PageStateManagerConfig> = {}) {
-    this.config = {
-      enableHistory: true,
-      maxHistoryLength: CONFIG.MAX_NAVIGATION_HISTORY,
-      enableUrlSync: false,
-      ...config,
-    };
-
-    // Set up hash-based URL sync if enabled
-    if (this.config.enableUrlSync && typeof window !== 'undefined') {
-      window.addEventListener('hashchange', () => {
-        void this.handleHashChange();
-      });
-    }
+function parseModalParams(params: URLSearchParams): ModalState | null {
+  const type = params.get('modal');
+  if (type === null) {
+    return null;
   }
-
-  /**
-   * Set the breadcrumb lookup functions for resolving object names
-   */
-  setBreadcrumbLookup(lookup: BreadcrumbLookup): void {
-    this.breadcrumbLookup = lookup;
+  if (!MODAL_TYPES.includes(type as ModalType)) {
+    console.warn(`[PageStateManager] unknown modal in hash: ${type}`);
+    return null;
   }
-
-  /**
-   * Set the async validator used to check whether a restored page state still
-   * refers to an existing object.  Returns false to fall back to home.
-   */
-  setStateValidator(fn: StateValidator): void {
-    this.stateValidator = fn;
-  }
-
-  /**
-   * Get the current page state
-   */
-  getPageState(): PageState {
-    return { ...this.currentState };
-  }
-
-  /**
-   * Update the current page state
-   * Triggers navigation event and updates browser history/URL if configured
-   */
-  async setPageState(newState: PageState): Promise<void> {
-    if (!isPageState(newState)) {
-      throw new Error('Invalid page state provided');
-    }
-
-    // Before the already-on-this-page guard: leaving a page with an editor
-    // open has to write what is in it first, and this is the single funnel
-    // every navigation lands in - navigateTo, the back handler, hash changes.
-    if (hasLiveEditor()) {
-      console.log('[PageStateManager] flushing live edit before navigation');
-    }
-    await flushInlineEdits();
-
-    // Navigating to the page we are already on is a no-op: every handler
-    // re-renders, and re-rendering the current page from here would throw away
-    // scroll and focus for nothing. Guarded on the hash too, so a boot URL
-    // carrying extra params (?load=) still gets rewritten.
-    if (
-      this.config.enableUrlSync &&
-      typeof window !== 'undefined' &&
-      JSON.stringify(this.currentState) === JSON.stringify(newState) &&
-      this.pageStateToURL(newState) === window.location.hash.slice(1)
-    ) {
-      console.log(
-        `[PageStateManager] already on ${newState.type}, skipping navigation`
+  if (type === 'timetable') {
+    const route_id = params.get('modal_route');
+    const service_id = params.get('modal_service');
+    if (route_id === null || service_id === null) {
+      console.warn(
+        '[PageStateManager] timetable modal in hash is missing route or service'
       );
-      return;
+      return null;
     }
-
-    const previousState = this.currentState;
-    this.currentState = { ...newState };
-
-    // Record navigation event
-    const navigationEvent: NavigationEvent = {
-      from: previousState,
-      to: newState,
-      timestamp: Date.now(),
+    const direction_id = params.get('modal_direction');
+    return {
+      type: 'timetable',
+      route_id,
+      service_id,
+      ...(direction_id !== null && { direction_id }),
     };
-
-    if (this.config.enableHistory) {
-      this.navigationHistory.push(navigationEvent);
-
-      // Limit history size
-      if (this.navigationHistory.length > this.config.maxHistoryLength) {
-        this.navigationHistory = this.navigationHistory.slice(
-          -this.config.maxHistoryLength
-        );
-      }
-    }
-
-    // Update browser hash if enabled
-    if (this.config.enableUrlSync && typeof window !== 'undefined') {
-      const hash = this.pageStateToURL(newState);
-      const currentHash = window.location.hash.slice(1);
-      if (hash !== currentHash) {
-        this.suppressHashUpdate = true;
-        window.location.hash = hash;
-        // suppressHashUpdate is reset in handleHashChange once the event fires
-      }
-    }
-
-    // Notify event handlers
-    this.eventHandlers.forEach((handler) => {
-      try {
-        handler(navigationEvent);
-      } catch (error) {
-        console.error('Error in navigation event handler:', error);
-      }
-    });
   }
+  const table = params.get('modal_table');
+  return {
+    type: type as PaneModalType,
+    ...(table !== null && { table }),
+  };
+}
 
-  /**
-   * Re-point the current state at the same object under a new ID.
-   *
-   * Not a navigation: the user did not move, the object was renamed under
-   * them. So no history entry (`history.replaceState` fires no `hashchange`,
-   * which is why `suppressHashUpdate` stays untouched), no navigation
-   * handlers, and no inline-edit flush - this runs inside a patch emit, where
-   * a flush would record a second patch. The re-render is the one the patch
-   * event already triggers.
-   *
-   * Returns true when the current page moved.
-   */
-  followRename(keyField: string, from: string, to: string): boolean {
-    // Entries naming the old ID would send navigateBack to a page that no
-    // longer exists, so they follow too.
-    this.navigationHistory = this.navigationHistory.map((event) => ({
-      ...event,
-      from: followRenameInState(event.from, keyField, from, to) ?? event.from,
-      to: followRenameInState(event.to, keyField, from, to) ?? event.to,
-    }));
+const pageStateCodec: PageStateCodec<PageState> = {
+  isPageState,
 
-    const next = followRenameInState(this.currentState, keyField, from, to);
-    if (!next) {
-      return false;
-    }
-
-    console.log(
-      `[PageStateManager] following rename ${keyField} "${from}" to "${to}"`
-    );
-    this.currentState = next;
-
-    if (this.config.enableUrlSync && typeof window !== 'undefined') {
-      const hash = this.pageStateToURL(next);
-      if (hash !== window.location.hash.slice(1)) {
-        window.history.replaceState(
-          null,
-          '',
-          hash === ''
-            ? window.location.pathname + window.location.search
-            : `#${hash}`
-        );
-      }
-    }
-
-    return true;
-  }
-
-  /**
-   * Generate breadcrumbs for the current page state
-   */
-  async getBreadcrumbs(): Promise<BreadcrumbItem<PageState>[]> {
-    return buildBreadcrumbs(this.currentState, this.breadcrumbLookup);
-  }
-
-  /**
-   * Navigate to a specific page state (convenience method)
-   */
-  async navigateTo(pageState: PageState): Promise<void> {
-    await this.setPageState(pageState);
-  }
-
-  /**
-   * Check if navigation back is possible
-   */
-  canNavigateBack(): boolean {
-    return this.navigationHistory.length > 0;
-  }
-
-  /**
-   * Navigate back to the previous page state
-   */
-  async navigateBack(): Promise<boolean> {
-    if (!this.canNavigateBack()) {
-      return false;
-    }
-
-    // Find the last different state
-    const currentStateStr = JSON.stringify(this.currentState);
-    for (let i = this.navigationHistory.length - 1; i >= 0; i--) {
-      const historyItem = this.navigationHistory[i];
-      const fromStateStr = JSON.stringify(historyItem.from);
-
-      if (fromStateStr !== currentStateStr) {
-        await this.setPageState(historyItem.from);
-        return true;
-      }
-    }
-
-    return false;
-  }
-
-  /**
-   * Add a navigation event handler
-   */
-  addNavigationHandler(handler: NavigationEventHandler): void {
-    this.eventHandlers.push(handler);
-  }
-
-  /**
-   * Remove a navigation event handler
-   */
-  removeNavigationHandler(handler: NavigationEventHandler): void {
-    const index = this.eventHandlers.indexOf(handler);
-    if (index >= 0) {
-      this.eventHandlers.splice(index, 1);
-    }
-  }
-
-  /**
-   * Get navigation history
-   */
-  getNavigationHistory(): NavigationEvent[] {
-    return [...this.navigationHistory];
-  }
-
-  /**
-   * Clear navigation history
-   */
-  clearNavigationHistory(): void {
-    this.navigationHistory = [];
-  }
-
-  /**
-   * What the current hash points at, without validating it against feed data.
-   *
-   * Boot needs the page type before there is a feed to validate against: a
-   * deep link into an object means the stored feed is the one wanted, so the
-   * load modal is skipped entirely.
-   */
-  peekURLPageState(): PageState {
-    if (typeof window === 'undefined') {
-      return { type: 'home' };
-    }
-    const params = new URLSearchParams(window.location.hash.slice(1));
-    params.delete('load');
-    return this.urlToPageState(params.toString());
-  }
-
-  /**
-   * Initialize from URL hash (call this on page load).
-   * Parses the hash, skipping any `load=` command param (handled separately).
-   * Validates the parsed state; falls back to home if the object doesn't exist.
-   * Sets currentState directly without dispatching navigation events.
-   */
-  async initializeFromURL(): Promise<void> {
-    if (typeof window === 'undefined') {
-      return;
-    }
-
-    const rawHash = window.location.hash.slice(1);
-    const params = new URLSearchParams(rawHash);
-    params.delete('load'); // `load=` is a command, not state
-    const cleanHash = params.toString();
-
-    const candidate = this.urlToPageState(cleanHash);
-
-    if (candidate.type !== 'home' && this.stateValidator) {
-      const valid = await this.stateValidator(candidate);
-      if (!valid) {
-        console.warn(
-          '[PageStateManager] initializeFromURL: object not found in current feed, falling back to home'
-        );
-        // The modal survives: it does not depend on the object that is missing.
-        this.currentState = {
-          type: 'home',
-          ...(candidate.modal && { modal: candidate.modal }),
-        };
-        return;
-      }
-    }
-
-    this.currentState = candidate;
-    console.log(
-      '[PageStateManager] initializeFromURL: restored state',
-      candidate
-    );
-  }
-
-  /**
-   * Convert page state to a URL hash string (no leading `#`).
-   * Returns empty string for home state (clears the hash).
-   */
-  pageStateToURL(pageState: PageState): string {
+  /** Returns empty params for home state (clears the hash). */
+  toParams(pageState) {
     const params = new URLSearchParams();
 
     switch (pageState.type) {
@@ -390,18 +125,16 @@ export class PageStateManager {
       }
     }
 
-    return params.toString();
-  }
+    return params;
+  },
 
   /**
-   * Convert a hash string (no leading `#`) to a PageState.
-   * Parses with URLSearchParams.  Priority: stop -> service (no route) ->
-   * route -> agency -> home.
-   * Always returns a valid PageState (never null).
+   * Priority: stop -> pathway -> zone -> location_group -> service (no
+   * route) -> route -> agency -> home. The `load=` command param is not page
+   * state and is ignored with every other unknown param.
    */
-  urlToPageState(hash: string): PageState {
-    const params = new URLSearchParams(hash);
-    const modal = this.parseModalParams(params);
+  fromParams(params) {
+    const modal = parseModalParams(params);
     const withModal = (state: PageState): PageState =>
       modal ? { ...state, modal } : state;
 
@@ -437,51 +170,161 @@ export class PageStateManager {
     }
 
     return withModal({ type: 'home' });
+  },
+};
+
+export interface PageStateManagerOptions {
+  enableHistory?: boolean;
+  maxHistoryLength?: number;
+  enableUrlSync?: boolean;
+}
+
+/**
+ * PageStateManager - Single source of truth for navigation state
+ */
+export class PageStateManager extends SharedPageStateManager<
+  PageState,
+  BreadcrumbItem<PageState>
+> {
+  private breadcrumbLookup: BreadcrumbLookup | null = null;
+  private validator: StateValidator | null = null;
+  private readonly urlSync: boolean;
+
+  constructor(options: PageStateManagerOptions = {}) {
+    super({
+      codec: pageStateCodec,
+      maxHistoryLength: CONFIG.MAX_NAVIGATION_HISTORY,
+      ...options,
+    });
+    this.urlSync = options.enableUrlSync ?? false;
   }
 
   /**
-   * Read the modal dimension out of a parsed hash.  An unknown modal name is
-   * dropped rather than throwing: the hash is user-editable.
+   * Set the breadcrumb lookup functions for resolving object names
    */
-  private parseModalParams(params: URLSearchParams): ModalState | null {
-    const type = params.get('modal');
-    if (type === null) {
-      return null;
+  setBreadcrumbLookup(lookup: BreadcrumbLookup): void {
+    this.breadcrumbLookup = lookup;
+  }
+
+  /**
+   * Set the async validator used to check whether a restored page state still
+   * refers to an existing object.  Returns false to fall back to home.
+   */
+  override setStateValidator(fn: StateValidator): void {
+    this.validator = fn;
+    super.setStateValidator(fn);
+  }
+
+  /**
+   * Update the current page state
+   * Triggers navigation event and updates browser history/URL if configured
+   */
+  override async setPageState(newState: PageState): Promise<void> {
+    if (!isPageState(newState)) {
+      throw new Error('Invalid page state provided');
     }
-    if (!MODAL_TYPES.includes(type as ModalType)) {
-      console.warn(`[PageStateManager] unknown modal in hash: ${type}`);
-      return null;
+
+    // Before the already-on-this-page guard: leaving a page with an editor
+    // open has to write what is in it first, and this is the single funnel
+    // every navigation lands in - navigateTo, the back handler, clearModal.
+    if (hasLiveEditor()) {
+      console.log('[PageStateManager] flushing live edit before navigation');
     }
-    if (type === 'timetable') {
-      const route_id = params.get('modal_route');
-      const service_id = params.get('modal_service');
-      if (route_id === null || service_id === null) {
-        console.warn(
-          '[PageStateManager] timetable modal in hash is missing route or service'
-        );
-        return null;
-      }
-      const direction_id = params.get('modal_direction');
-      return {
-        type: 'timetable',
-        route_id,
-        service_id,
-        ...(direction_id !== null && { direction_id }),
-      };
+    await flushInlineEdits();
+
+    // Navigating to the page we are already on is a no-op: every handler
+    // re-renders, and re-rendering the current page from here would throw away
+    // scroll and focus for nothing. Guarded on the hash too, so a boot URL
+    // carrying extra params (?load=) still gets rewritten.
+    if (
+      this.urlSync &&
+      typeof window !== 'undefined' &&
+      JSON.stringify(this.getPageState()) === JSON.stringify(newState) &&
+      this.buildHash(newState) === window.location.hash.slice(1)
+    ) {
+      console.log(
+        `[PageStateManager] already on ${newState.type}, skipping navigation`
+      );
+      return;
     }
-    const table = params.get('modal_table');
-    return {
-      type: type as PaneModalType,
-      ...(table !== null && { table }),
-    };
+
+    super.setPageState(newState);
+  }
+
+  /**
+   * Re-point the current state at the same object under a new ID.
+   *
+   * Not a navigation: the user did not move, the object was renamed under
+   * them. So no history entry, no navigation handlers, and no inline-edit
+   * flush - this runs inside a patch emit, where a flush would record a
+   * second patch. The re-render is the one the patch event already triggers.
+   *
+   * Returns true when the current page moved.
+   */
+  followRename(keyField: string, from: string, to: string): boolean {
+    const moved = this.rewrite((state) =>
+      followRenameInState(state, keyField, from, to)
+    );
+    if (moved) {
+      console.log(
+        `[PageStateManager] following rename ${keyField} "${from}" to "${to}"`
+      );
+    }
+    return moved;
+  }
+
+  /**
+   * Breadcrumbs for the current page state, with object names resolved
+   * against the database
+   */
+  async resolveBreadcrumbs(): Promise<BreadcrumbItem<PageState>[]> {
+    return buildBreadcrumbs(this.getPageState(), this.breadcrumbLookup);
+  }
+
+  /**
+   * Navigate to a specific page state (convenience method)
+   */
+  async navigateTo(pageState: PageState): Promise<void> {
+    await this.setPageState(pageState);
+  }
+
+  /**
+   * Initialize from URL hash (call this on page load).
+   * Validates the parsed state; falls back to home if the object doesn't exist.
+   * Sets the state without dispatching navigation events.
+   */
+  async initializeFromURL(): Promise<void> {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    const candidate = this.pendingStateFromURL();
+
+    if (
+      candidate.type !== 'home' &&
+      this.validator &&
+      !(await this.validator(candidate))
+    ) {
+      console.warn(
+        '[PageStateManager] initializeFromURL: object not found in current feed, falling back to home'
+      );
+      // The modal survives: it does not depend on the object that is missing.
+      this.adoptState(homeWithModal(candidate));
+      return;
+    }
+
+    this.adoptState(candidate);
+    console.log(
+      '[PageStateManager] initializeFromURL: restored state',
+      candidate
+    );
   }
 
   /**
    * Drop the modal from the current state, leaving the page beneath it.
-   * A no-op when no modal is open, so a modal that navigated away before
-   * closing does not bounce the page.
+   * Awaits the navigation, which here flushes inline edits first.
    */
-  async clearModal(): Promise<void> {
+  override async clearModal(): Promise<void> {
     const current = this.getPageState();
     if (!current.modal) {
       return;
@@ -489,63 +332,6 @@ export class PageStateManager {
     const rest = { ...current };
     delete rest.modal;
     await this.setPageState(rest as PageState);
-  }
-
-  /**
-   * Handle browser hashchange event (user navigated back/forward or changed hash manually).
-   * Ignored when the change was triggered programmatically by setPageState.
-   */
-  private async handleHashChange(): Promise<void> {
-    if (this.suppressHashUpdate) {
-      this.suppressHashUpdate = false;
-      return;
-    }
-
-    const rawHash = window.location.hash.slice(1);
-    const params = new URLSearchParams(rawHash);
-    params.delete('load');
-    const cleanHash = params.toString();
-
-    let newState = this.urlToPageState(cleanHash);
-
-    if (newState.type !== 'home' && this.stateValidator) {
-      const valid = await this.stateValidator(newState);
-      if (!valid) {
-        console.warn(
-          '[PageStateManager] hashchange: object not found, falling back to home'
-        );
-        newState = {
-          type: 'home',
-          ...(newState.modal && { modal: newState.modal }),
-        };
-      }
-    }
-
-    const previousState = this.currentState;
-    this.currentState = { ...newState };
-
-    const navigationEvent: NavigationEvent = {
-      from: previousState,
-      to: newState,
-      timestamp: Date.now(),
-    };
-
-    if (this.config.enableHistory) {
-      this.navigationHistory.push(navigationEvent);
-      if (this.navigationHistory.length > this.config.maxHistoryLength) {
-        this.navigationHistory = this.navigationHistory.slice(
-          -this.config.maxHistoryLength
-        );
-      }
-    }
-
-    this.eventHandlers.forEach((handler) => {
-      try {
-        handler(navigationEvent);
-      } catch (error) {
-        console.error('Error in navigation event handler:', error);
-      }
-    });
   }
 }
 
@@ -568,8 +354,8 @@ export function getPageStateManager(): PageStateManager {
  * Initialize the default PageStateManager instance with custom config
  */
 export function initPageStateManager(
-  config: Partial<PageStateManagerConfig> = {}
+  options: PageStateManagerOptions = {}
 ): PageStateManager {
-  defaultInstance = new PageStateManager(config);
+  defaultInstance = new PageStateManager(options);
   return defaultInstance;
 }

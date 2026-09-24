@@ -1,5 +1,7 @@
 /* Tailwind CSS v4 with DaisyUI plugin */
 @import 'tailwindcss';
+/* The shell layout: grid, drawer, map controls */
+@import '../../node_modules/interlocking/src/ui/app-shell.css';
 @source "../**/*.{html,js,ts}";
 @source "../../node_modules/interlocking/src/**/*.ts";
 
@@ -11,106 +13,11 @@
     night;
 }
 
-html,
-body {
-  overscroll-behavior: none;
-  overflow: hidden;
-}
-
-/* Minimal custom utilities */
-@layer utilities {
-  .h-15 {
-    height: 60px;
-  }
-}
-
-.app-container {
-  grid-template-columns: 1fr var(--panel-width, 650px);
-}
-
-@media (max-width: 767px) {
-  :root {
-    --dock-height: 4rem;
-  }
-
-  .app-container {
-    grid-template-columns: 1fr;
-  }
-
-  .basemap-control {
-    position: fixed !important;
-    bottom: calc(var(--dock-height) + 10px) !important;
-    right: 10px !important;
-    z-index: 40 !important;
-  }
-
-  #right-panel {
-    position: fixed;
-    bottom: var(--dock-height);
-    left: 0;
-    right: 0;
-    height: 0;
-    z-index: 50;
-    border-left: none;
-    border-top: 1px solid oklch(var(--b3));
-    border-radius: 1rem 1rem 0 0;
-    transition: height 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-    overflow: hidden;
-  }
-
-  #right-panel .tab-content {
-    height: 100%;
-    /* Only allow content scroll in half/full states */
-    overflow-y: hidden;
-  }
-
-  #right-panel.sheet-half .tab-content,
-  #right-panel.sheet-full .tab-content {
-    overflow-y: auto;
-  }
-}
-
 @layer components {
   /* File list styles using DaisyUI menu */
   .file-required {
     border-left: 3px solid var(--color-primary);
     padding-left: 0.75rem;
-  }
-}
-
-@layer components {
-  /* DaisyUI Tooltip Enhancement - Handle long text with proper wrapping */
-
-  /* Map controls styling */
-  #map-controls .btn {
-    transition: all 0.2s ease;
-  }
-
-  #map-controls .btn.btn-active {
-    background-color: oklch(var(--p));
-    border-color: oklch(var(--p));
-    color: oklch(var(--pc));
-    box-shadow: 0 0 0 2px oklch(var(--p) / 0.2);
-  }
-
-  #map-controls .btn:hover:not(.btn-active) {
-    background-color: oklch(var(--b3));
-  }
-
-  #map-controls .btn svg {
-    transition: transform 0.2s ease;
-  }
-
-  /* Better tooltip positioning for map controls */
-  #map-controls .tooltip {
-    --tooltip-offset: 0.75rem;
-  }
-
-  /* Square button improvements */
-  #map-controls .btn-square {
-    min-height: 2.5rem;
-    height: 2.5rem;
-    width: 2.5rem;
   }
 }
 
@@ -156,13 +63,5 @@ body {
   #schedule-view thead tr.trip-actions-row {
     position: static;
     z-index: auto;
-  }
-
-  .tooltip:before {
-    max-width: 20rem;
-    white-space: pre-line; /* Preserve newlines, allow wrapping */
-    text-align: left;
-    overflow-wrap: break-word; /* Break long words if needed */
-    font-size: 11px; /* Slightly smaller font size (14px) */
   }
 }

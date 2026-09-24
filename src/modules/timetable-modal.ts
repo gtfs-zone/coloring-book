@@ -18,7 +18,8 @@
 
 import type { ScheduleController } from './schedule-controller';
 import type { PatchManager } from './patch-manager';
-import { NavigationEvent, TimetableModalState } from '../types/page-state';
+import type { NavigationEvent } from 'interlocking/ui/page-state-manager';
+import { PageState, TimetableModalState } from '../types/page-state';
 import { getPageStateManager } from './page-state-manager';
 import { showModal } from 'interlocking/ui/modal-utils';
 import { notify } from 'interlocking/ui/notification-system';
@@ -76,7 +77,7 @@ export async function showTimetableModal(
 
   // A hash change that keeps the modal open but names another timetable: the
   // selector bar, a link, or a back/forward step between two timetables.
-  const onNavigate = (event: NavigationEvent) => {
+  const onNavigate = (event: NavigationEvent<PageState>) => {
     const next = event.to.modal;
     if (next?.type === 'timetable') {
       rebuild(next);

@@ -200,24 +200,6 @@ export function isPageState(value: unknown): value is PageState {
 }
 
 /**
- * Navigation event types for the page state manager
- */
-export type NavigationEvent = {
-  from: PageState;
-  to: PageState;
-  timestamp: number;
-};
-
-/**
- * Configuration options for page state manager
- */
-export type PageStateManagerConfig = {
-  enableHistory: boolean;
-  maxHistoryLength: number;
-  enableUrlSync: boolean;
-};
-
-/**
  * Async validator that checks whether a non-home page state refers to an
  * object that actually exists in the current feed.  Returns true if the state
  * is valid, false if the object is missing (caller falls back to home).
