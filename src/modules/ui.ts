@@ -94,7 +94,7 @@ export class UIController {
   }
 
   setupEventListeners() {
-    // Load button: one modal covering examples, the TransitLand atlas, a
+    // Load button: one modal covering examples, the published feed catalogs, a
     // hand-typed URL, and file upload.
     document.getElementById('load-btn')?.addEventListener('click', () => {
       void this.openLoadModal();
