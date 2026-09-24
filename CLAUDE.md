@@ -69,8 +69,12 @@ modal plumbing (`modal-utils`, `modal-router`, `sidebar-modal`), the load modal
 and its curated examples, the breadcrumb trail, the map layer/icon/basemap
 modules, the route graph/sequence/strip diagram primitives, feed download and
 selection, search, the field label, issue card and calendar input components,
-the spec description renderer, and the shared `escape-html` / `route-colors` /
-`theme-color` / `tooltip-position` helpers.
+the spec description renderer, the shared `escape-html` / `route-colors` /
+`theme-color` / `tooltip-position` helpers, and the app shell: its markup
+(mounted by `src/shell.ts`, which `index.ts` must import first), its stylesheet
+(`@import`ed by `src/styles/main.css`) and the generic page-state manager that
+`src/modules/page-state-manager.ts` subclasses with the editor's hash codec,
+inline-edit flush and async breadcrumbs.
 
 A shared change is a commit in interlocking, a tag, and a bump in each consumer.
 It is not edited here.

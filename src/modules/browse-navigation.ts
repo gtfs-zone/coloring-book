@@ -363,7 +363,7 @@ export class BrowseNavigation {
           JSON.stringify(pageState);
 
       // Get breadcrumbs from PageStateManager
-      const breadcrumbs = await getPageStateManager().getBreadcrumbs();
+      const breadcrumbs = await getPageStateManager().resolveBreadcrumbs();
       document.title = pageTitle(breadcrumbs, APP_NAME);
 
       // Render page content

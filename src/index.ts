@@ -1,3 +1,5 @@
+// Mounts the shell markup; must stay the first import.
+import './shell';
 import { GTFSParser } from './modules/gtfs-parser';
 import { MapController } from './modules/map-controller';
 import { Editor } from './modules/editor';
@@ -272,9 +274,8 @@ export class GTFSEditor {
         renderNavbarActions(navbarActions, NAVBAR_ACTIONS);
       }
       renderDockIcons(DOCK_ICONS);
-      document
-        .getElementById('map-controls')
-        ?.insertAdjacentHTML('beforeend', renderAutoZoomControl());
+      document.getElementById('auto-zoom-mount')!.innerHTML =
+        renderAutoZoomControl();
 
       feedProgressIndicator.startLoading('boot', 'Opening database...');
 
@@ -332,7 +333,7 @@ export class GTFSEditor {
       );
 
       // Initialize Browse navigation
-      this.browseNavigation.initialize('browse-navigation');
+      this.browseNavigation.initialize('panel-content');
 
       // Set up circular references
       this.browseNavigation.uiController = this.uiController;
@@ -615,7 +616,7 @@ export class GTFSEditor {
       return 'loaded';
     }
 
-    const deepLink = this.pageStateManager.peekURLPageState();
+    const deepLink = this.pageStateManager.pendingStateFromURL();
     if (deepLink.type !== 'home' || deepLink.modal) {
       console.log(
         `[boot] skipped modal: deep link to ${deepLink.modal?.type ?? deepLink.type}`
