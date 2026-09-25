@@ -1,3 +1,13 @@
+## v0.36.0 (2026-09-25)
+
+### Feat
+
+- read the feed catalog and examples from data.gtfs.zone
+
+### Refactor
+
+- build the shell on interlocking's shared modules
+
 ## v0.35.1 (2026-09-21)
 
 ### Refactor
