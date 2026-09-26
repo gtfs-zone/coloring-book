@@ -129,7 +129,7 @@ export async function promptForGeojsonUrl(): Promise<{
             placeholder="https://geojson.io/?data=gz:... or https://example.org/shape.geojson" />
         </fieldset>
         <label class="label cursor-pointer justify-start gap-2">
-          <input type="checkbox" class="checkbox checkbox-sm geojson-import-cors" checked />
+          <input type="checkbox" class="toggle toggle-sm geojson-import-cors" checked />
           <span class="label-text">Use CORS proxy</span>
         </label>
       </div>

@@ -131,7 +131,7 @@ function renderInput(field: EntityFormField): string {
     return `<input
       id="${id}"
       type="checkbox"
-      class="checkbox"
+      class="toggle"
       ${field.value ? 'checked' : ''}
     />`;
   }

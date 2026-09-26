@@ -591,7 +591,7 @@ export class ServiceDaysController {
       <label class="label cursor-pointer justify-start gap-2 py-1" title="${title}">
         <input
           type="checkbox"
-          class="checkbox checkbox-xs"
+          class="toggle toggle-xs"
           ${checked ? 'checked' : ''}
           ${holidays.length === 0 ? 'disabled' : ''}
           onchange="window.gtfsEditor.serviceDaysController.toggleFederalHolidays('${service_id}')"

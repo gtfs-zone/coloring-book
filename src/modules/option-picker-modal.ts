@@ -1,5 +1,6 @@
 import uFuzzy from '@leeoniya/ufuzzy';
 import { showModal } from 'interlocking/ui/modal-utils';
+import { SELECTED_ROW_CLASS } from 'interlocking/ui/selectable-row';
 
 export interface OptionPickerItem {
   value: string;
@@ -150,6 +151,14 @@ function mountPicker(
   let shown: OptionPickerItem[] = [];
   let activeIndex = 0;
 
+  // Highlights a multi-select row while its value is in the selection.
+  const markSelected = (row: Element, value: string) => {
+    const on = mode.selected.has(value);
+    for (const cls of SELECTED_ROW_CLASS.split(' ')) {
+      row.classList.toggle(cls, on);
+    }
+  };
+
   const setActive = (index: number) => {
     activeIndex = index;
     const rows = resultsEl.children;
@@ -192,11 +201,11 @@ function mountPicker(
       const row = document.createElement('div');
       row.className =
         'flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-base-200 border-b border-base-200 last:border-0';
-      const check = mode.closeOnPick
-        ? ''
-        : `<input type="checkbox" class="checkbox checkbox-xs shrink-0 pointer-events-none" ${mode.selected.has(item.value) ? 'checked' : ''} />`;
+      if (!mode.closeOnPick) {
+        row.classList.add('rounded-lg');
+        markSelected(row, item.value);
+      }
       row.innerHTML = `
-        ${check}
         <div class="min-w-0 flex-1">
           <div class="flex items-center gap-2">
             <span class="min-w-0 flex-1 truncate text-sm">${escapeHtml(item.primary)}</span>
@@ -209,10 +218,7 @@ function mountPicker(
       row.addEventListener('click', () => {
         mode.onPick(item.value, close);
         if (!mode.closeOnPick) {
-          const box = row.querySelector('input');
-          if (box instanceof HTMLInputElement) {
-            box.checked = mode.selected.has(item.value);
-          }
+          markSelected(row, item.value);
           syncEmpty();
         }
       });
@@ -239,9 +245,9 @@ function mountPicker(
       if (item) {
         mode.onPick(item.value, close);
         if (!mode.closeOnPick) {
-          const box = resultsEl.children[activeIndex]?.querySelector('input');
-          if (box instanceof HTMLInputElement) {
-            box.checked = mode.selected.has(item.value);
+          const row = resultsEl.children[activeIndex];
+          if (row) {
+            markSelected(row, item.value);
           }
           syncEmpty();
         }
