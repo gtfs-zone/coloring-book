@@ -23,8 +23,31 @@
       property="og:description"
       content="Browser-based GTFS transit data editor. Load, inspect and edit a GTFS feed on a map. Everything stays in your browser, with no server and no account."
     />
-    <meta property="og:image" content="https://edit.gtfs.zone/logo.svg" />
-    <meta name="twitter:card" content="summary" />
+    <meta property="og:image" content="https://edit.gtfs.zone/og.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="edit.gtfs.zone: GTFS editor" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "WebApplication",
+        "name": "GTFS editor",
+        "alternateName": "edit.gtfs.zone",
+        "url": "https://edit.gtfs.zone/",
+        "description": "Browser-based GTFS Schedule editor. Load, inspect, edit, validate, and export a GTFS feed on a map, with no server and no account.",
+        "applicationCategory": "DeveloperApplication",
+        "operatingSystem": "Any",
+        "browserRequirements": "Requires JavaScript and WebGL",
+        "isAccessibleForFree": true,
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+        "publisher": {
+          "@type": "Organization",
+          "name": "gtfs.zone",
+          "url": "https://gtfs.zone/"
+        }
+      }
+    </script>
     <link rel="icon" type="image/x-icon" href="icons/favicon.ico" />
     <link
       rel="icon"
@@ -55,6 +78,11 @@
 
   <body class="font-sans h-screen overflow-hidden">
     <!-- The shell markup is mounted by src/shell.ts -->
+
+    <!-- The page's copy without JS; src/shell.ts moves it into the panel. -->
+    <main id="app-intro" class="p-4">
+      <!-- @intro -->
+    </main>
 
     <!-- Hidden File Input -->
     <input type="file" id="file-input" accept=".zip" style="display: none" />

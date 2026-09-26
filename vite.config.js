@@ -2,6 +2,7 @@ import { defineConfig } from 'vite'
 import { resolve } from 'path'
 import gitDescribe from 'git-describe'
 import { execSync } from 'child_process'
+import { readFileSync } from 'fs'
 
 // Get version from git tags using git-describe
 let version = '0.0.0-development'
@@ -28,7 +29,16 @@ try {
   }
 }
 
+// Inlines src/intro.html at `<!-- @intro -->`, so the copy the home panel shows
+// for an empty feed is also in the static HTML.
+const inlineIntro = {
+  name: 'inline-intro',
+  transformIndexHtml: (html) =>
+    html.replace('<!-- @intro -->', readFileSync(resolve(__dirname, 'src/intro.html'), 'utf-8'))
+}
+
 export default defineConfig({
+  plugins: [inlineIntro],
   root: 'src',
   publicDir: '../public',
   define: {

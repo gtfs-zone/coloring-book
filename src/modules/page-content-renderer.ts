@@ -113,6 +113,7 @@ import {
   VIEW_ROUTE_BTN,
   VIEW_SERVICE_BTN,
 } from '../utils/entity-references';
+import introHtml from '../intro.html?raw';
 
 /** Marks the route page's network picker. */
 const ROUTE_NETWORK_FIELD = 'route-network-field';
@@ -652,6 +653,7 @@ export class PageContentRenderer {
 
     const html = `
       <div class="p-4 space-y-4">
+        ${feedIsEmpty ? `<div class="card bg-base-100 shadow-lg"><div class="card-body p-4">${introHtml}</div></div>` : ''}
         ${await this.renderFeedInfoProperties(feedInfo)}
 
         ${await this.renderAttributionsSection()}

@@ -42,3 +42,10 @@ mountAppShell({
     { id: 'dock-changes', label: 'History' },
   ],
 });
+
+// The static intro is the panel's content until the home page renders, and the
+// only content when the map or the app fails to start.
+const intro = document.getElementById('app-intro');
+if (intro) {
+  document.getElementById('panel-content')?.replaceChildren(intro);
+}
