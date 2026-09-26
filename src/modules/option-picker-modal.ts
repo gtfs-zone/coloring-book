@@ -151,21 +151,30 @@ function mountPicker(
   let shown: OptionPickerItem[] = [];
   let activeIndex = 0;
 
-  // Highlights a multi-select row while its value is in the selection.
-  const markSelected = (row: Element, value: string) => {
-    const on = mode.selected.has(value);
-    for (const cls of SELECTED_ROW_CLASS.split(' ')) {
-      row.classList.toggle(cls, on);
+  // A selected row keeps its highlight and never takes the gray active
+  // background; when it is also active it gets an outline instead.
+  const paintRow = (index: number) => {
+    const row = resultsEl.children[index];
+    const item = shown[index];
+    if (!row || !item) {
+      return;
     }
+    const selected = !mode.closeOnPick && mode.selected.has(item.value);
+    const active = index === activeIndex;
+    for (const cls of SELECTED_ROW_CLASS.split(' ')) {
+      row.classList.toggle(cls, selected);
+    }
+    row.classList.toggle('bg-base-200', active && !selected);
+    row.classList.toggle('outline', active && selected);
+    row.classList.toggle('outline-primary', active && selected);
   };
 
   const setActive = (index: number) => {
+    const previous = activeIndex;
     activeIndex = index;
-    const rows = resultsEl.children;
-    for (let i = 0; i < rows.length; i++) {
-      rows[i].classList.toggle('bg-base-200', i === index);
-    }
-    rows[index]?.scrollIntoView({ block: 'nearest' });
+    paintRow(previous);
+    paintRow(index);
+    resultsEl.children[index]?.scrollIntoView({ block: 'nearest' });
   };
 
   const render = (query: string) => {
@@ -200,10 +209,9 @@ function mountPicker(
     shown.forEach((item, i) => {
       const row = document.createElement('div');
       row.className =
-        'flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-base-200 border-b border-base-200 last:border-0';
+        'flex items-center gap-2 px-3 py-2 cursor-pointer border-b border-base-200 last:border-0';
       if (!mode.closeOnPick) {
         row.classList.add('rounded-lg');
-        markSelected(row, item.value);
       }
       row.innerHTML = `
         <div class="min-w-0 flex-1">
@@ -218,7 +226,7 @@ function mountPicker(
       row.addEventListener('click', () => {
         mode.onPick(item.value, close);
         if (!mode.closeOnPick) {
-          markSelected(row, item.value);
+          paintRow(i);
           syncEmpty();
         }
       });
@@ -235,7 +243,9 @@ function mountPicker(
     }
 
     const preselected = shown.findIndex((o) => o.value === mode.selectedValue);
-    setActive(preselected >= 0 ? preselected : 0);
+    activeIndex = preselected >= 0 ? preselected : 0;
+    shown.forEach((_, i) => paintRow(i));
+    resultsEl.children[activeIndex]?.scrollIntoView({ block: 'nearest' });
   };
 
   const onKeyDown = (e: KeyboardEvent) => {
@@ -245,10 +255,7 @@ function mountPicker(
       if (item) {
         mode.onPick(item.value, close);
         if (!mode.closeOnPick) {
-          const row = resultsEl.children[activeIndex];
-          if (row) {
-            markSelected(row, item.value);
-          }
+          paintRow(activeIndex);
           syncEmpty();
         }
       }
