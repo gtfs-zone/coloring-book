@@ -1,3 +1,15 @@
+## v0.37.0 (2026-09-27)
+
+### Feat
+
+- **seo**: static intro, structured data, and a PNG social card
+- **ui**: highlight picked rows and use toggles for on/off settings
+
+### Fix
+
+- **nginx**: return 404 for unknown paths instead of the app
+- **ui**: keep the selected-row highlight on hover in the option picker
+
 ## v0.36.0 (2026-09-25)
 
 ### Feat
