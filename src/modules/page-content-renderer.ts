@@ -1046,6 +1046,7 @@ export class PageContentRenderer {
             `
             )
             .join('')}
+          <option value="" data-new-service>New service…</option>
         </select>
       </div>
     `
@@ -1571,6 +1572,21 @@ export class PageContentRenderer {
     }
   }
 
+  /** Create a service from the route page's service select, then open its timetable. */
+  private async createServiceForRoute(routeId: string): Promise<void> {
+    const service_id = await showNewServiceModal({
+      database: this.dependencies.gtfsDatabase,
+      patchManager: this.dependencies.patchManager ?? null,
+    });
+    if (service_id === null) {
+      return;
+    }
+    console.log(
+      `[PageContentRenderer] Created service ${service_id} for route ${routeId}`
+    );
+    this.dependencies.onTimetableClick(routeId, service_id);
+  }
+
   /**
    * Add event listeners for the "+" buttons on the entity lists
    */
@@ -1690,8 +1706,17 @@ export class PageContentRenderer {
     serviceSelect.addEventListener('change', () => {
       const selectedServiceId = serviceSelect.value;
       const routeId = serviceSelect.getAttribute('data-route-id');
+      if (!routeId) {
+        return;
+      }
 
-      if (!selectedServiceId || !routeId) {
+      if (serviceSelect.selectedOptions[0]?.hasAttribute('data-new-service')) {
+        serviceSelect.value = '';
+        void this.createServiceForRoute(routeId);
+        return;
+      }
+
+      if (!selectedServiceId) {
         return;
       }
 
