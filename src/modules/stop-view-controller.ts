@@ -233,8 +233,15 @@ export class StopViewController {
           <h2 class="text-lg font-semibold">Timetables</h2>
           <div class="card bg-base-100 shadow-lg">
             <div class="card-body p-4">
-              <div class="text-center py-6 opacity-70">
-                This stop is not included in any timetables.
+              <div class="text-center py-6 space-y-3">
+                <p class="opacity-70">
+                  This stop is not in any timetable yet. To add it, open a
+                  route and pick a service, or find the timetable in the
+                  timetable browser.
+                </p>
+                <button type="button" class="btn btn-sm btn-primary open-timetable-browser-btn">
+                  Open timetable browser
+                </button>
               </div>
             </div>
           </div>
@@ -756,6 +763,12 @@ export class StopViewController {
             { type: 'feed_data', table: GTFS_TABLES.TRANSFERS },
             { onClosed: () => this.dependencies.onTransfersChanged?.() }
           );
+          return;
+        }
+
+        if ((e.target as Element).closest('.open-timetable-browser-btn')) {
+          console.log('[StopViewController] Opening timetable browser');
+          await openModal({ type: 'timetables' });
           return;
         }
       },
