@@ -13,6 +13,7 @@
 
 import { showOptionPickerModal } from '../modules/option-picker-modal';
 import { promptNewEntity } from '../modules/entity-form-modal';
+import { nextEntityId } from './inline-entity-creator';
 import { notify } from 'interlocking/ui/notification-system';
 import { isOutsideTopModal } from 'interlocking/ui/modal-utils';
 import { GTFS_TABLES } from '../types/gtfs';
@@ -273,7 +274,7 @@ async function addArea(stop_id: string): Promise<void> {
 
   let area_id = picked;
   if (picked === CREATE_AREA) {
-    const created = await createArea(areas.map((a) => String(a.area_id ?? '')));
+    const created = await createArea(deps);
     if (created === null) {
       return;
     }
@@ -339,30 +340,27 @@ async function removeArea(stop_id: string, area_id: string): Promise<void> {
   }
 }
 
-/** Ask for a new area's id and name, and write it. Returns its id. */
-async function createArea(existingIds: string[]): Promise<string | null> {
+/**
+ * Ask for a new area's name and write it under a generated `area_<n>` ID,
+ * renamed from the Fares modal's Areas table. Returns its ID.
+ */
+async function createArea(
+  areaDeps: StopAreasFieldDeps
+): Promise<string | null> {
+  let area_id: string | null = null;
   const values = await promptNewEntity({
     title: 'New area',
-    fields: [
-      { field: 'area_id', tableName: GTFS_TABLES.AREAS, mono: true },
-      { field: 'area_name', tableName: GTFS_TABLES.AREAS },
-    ],
-    validate: (v) => {
-      if (v.area_id === '') {
-        return 'area_id cannot be empty';
-      }
-      if (existingIds.includes(v.area_id)) {
-        return `Area "${v.area_id}" already exists`;
-      }
-      return null;
-    },
+    fields: [{ field: 'area_name', tableName: GTFS_TABLES.AREAS }],
+    validate: () => null,
     onCreate: async (v) => {
-      const record = { area_id: v.area_id, area_name: v.area_name };
-      await deps?.gtfsDatabase.insertRows('areas', [record]);
-      await deps?.patchManager?.recordInsert('areas', v.area_id, record);
-      console.log(`[Areas] created ${v.area_id}`);
+      const id = await nextEntityId(areaDeps.gtfsDatabase, 'areas', 'area');
+      const record = { area_id: id, area_name: v.area_name };
+      await areaDeps.gtfsDatabase.insertRows('areas', [record]);
+      await areaDeps.patchManager?.recordInsert('areas', id, record);
+      area_id = id;
+      console.log(`[Areas] created ${id}`);
     },
   });
 
-  return values?.area_id ?? null;
+  return values ? area_id : null;
 }

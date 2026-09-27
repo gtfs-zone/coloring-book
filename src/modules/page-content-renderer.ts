@@ -53,7 +53,10 @@ import {
   WHITESPACE_FIX_ACTION,
 } from '../utils/whitespace-fix';
 import { GTFS_TABLES } from '../types/gtfs';
-import { InlineEntityCreator } from '../utils/inline-entity-creator';
+import {
+  InlineEntityCreator,
+  nextEntityId,
+} from '../utils/inline-entity-creator';
 import {
   getAgencyDisplay,
   getEntityDisplay,
@@ -1200,9 +1203,7 @@ export class PageContentRenderer {
 
     let network_id = picked;
     if (picked === CREATE_NETWORK) {
-      const created = await this.createNetwork(
-        networks.map((n) => String(n.network_id ?? ''))
-      );
+      const created = await this.createNetwork();
       if (created === null) {
         return;
       }
@@ -1249,43 +1250,38 @@ export class PageContentRenderer {
     );
   }
 
-  /** Ask for a new network's id and name, and write it. Returns its id. */
-  private async createNetwork(existingIds: string[]): Promise<string | null> {
+  /**
+   * Ask for a new network's name and write it under a generated `network_<n>`
+   * ID, renamed from the Fares modal's Networks table. Returns its ID.
+   */
+  private async createNetwork(): Promise<string | null> {
+    let network_id: string | null = null;
     const values = await promptNewEntity({
       title: 'New network',
       fields: [
-        { field: 'network_id', tableName: GTFS_TABLES.NETWORKS, mono: true },
         {
           field: 'network_name',
           tableName: GTFS_TABLES.NETWORKS,
           note: 'Naming a network makes the feed export networks.txt and route_networks.txt rather than a network_id column on routes.txt.',
         },
       ],
-      validate: (v) => {
-        if (v.network_id === '') {
-          return 'network_id cannot be empty';
-        }
-        if (existingIds.includes(v.network_id)) {
-          return `Network "${v.network_id}" already exists`;
-        }
-        return null;
-      },
+      validate: () => null,
       onCreate: async (v) => {
-        const record = {
-          network_id: v.network_id,
-          network_name: v.network_name,
-        };
-        await this.dependencies.gtfsDatabase.insertRows('networks', [record]);
+        const db = this.dependencies.gtfsDatabase;
+        const id = await nextEntityId(db, 'networks', 'network');
+        const record = { network_id: id, network_name: v.network_name };
+        await db.insertRows('networks', [record]);
         await this.dependencies.patchManager?.recordInsert(
           'networks',
-          v.network_id,
+          id,
           record
         );
-        console.log(`[Networks] created ${v.network_id}`);
+        network_id = id;
+        console.log(`[Networks] created ${id}`);
       },
     });
 
-    return values?.network_id ?? null;
+    return values ? network_id : null;
   }
 
   addEventListeners(container: HTMLElement): void {

@@ -1,8 +1,8 @@
 /**
  * New Service Modal
  *
- * Creates one `calendar.txt` row: a service_id, a weekly pattern and a date
- * range. Opened from the timetable modal's service picker and from the route
+ * Creates one `calendar.txt` row under a generated `service_<n>` ID, with a
+ * weekly pattern and a date range. The service page renames it. Opened from the timetable modal's service picker and from the route
  * page's "no services" empty state, both of which want a service to exist
  * before they can show a timetable for it.
  *
@@ -11,6 +11,7 @@
  */
 
 import { promptNewEntity } from './entity-form-modal';
+import { nextServiceId } from '../utils/inline-entity-creator';
 import { notify } from 'interlocking/ui/notification-system';
 import { createDefaultService } from '../utils/default-values';
 import { feedBounds, type FeedBoundsSource } from '../utils/feed-bounds';
@@ -19,7 +20,6 @@ import { DAYS_OF_WEEK } from './service-days-controller';
 
 export interface NewServiceModalDeps {
   database: FeedBoundsSource & {
-    getRow: (tableName: string, key: string) => Promise<unknown>;
     getAllRows: (tableName: string) => Promise<unknown[]>;
     insertRows: (
       tableName: string,
@@ -72,17 +72,12 @@ export async function showNewServiceModal(
   const endDate = bounds.end ?? defaults.end_date;
 
   const days = new Set<string>();
+  let service_id: string | null = null;
 
   const values = await promptNewEntity({
     title: 'New service',
     boxClassName: 'max-w-lg',
     fields: [
-      {
-        field: 'service_id',
-        tableName: 'calendar',
-        mono: true,
-        placeholder: 'weekday',
-      },
       {
         field: 'start_date',
         tableName: 'calendar',
@@ -120,28 +115,7 @@ export async function showNewServiceModal(
           });
         });
     },
-    validate: async (v) => {
-      const service_id = v.service_id;
-      if (service_id === '') {
-        return 'A service needs an ID.';
-      }
-
-      const existingCalendar = await deps.database.getRow(
-        'calendar',
-        service_id
-      );
-      if (existingCalendar) {
-        return `Service "${service_id}" already exists.`;
-      }
-      const exceptions = (await deps.database.getAllRows(
-        'calendar_dates'
-      )) as Record<string, unknown>[];
-      if (
-        exceptions.some((row) => String(row.service_id ?? '') === service_id)
-      ) {
-        return `Service "${service_id}" already exists in calendar_dates.txt. Open it to give it a weekly pattern.`;
-      }
-
+    validate: (v) => {
       const start_date = v.start_date;
       const end_date = v.end_date;
       if (start_date === '' || end_date === '') {
@@ -158,9 +132,9 @@ export async function showNewServiceModal(
       return null;
     },
     onCreate: async (v) => {
-      const service_id = v.service_id;
+      const id = await nextServiceId(deps.database);
       const row: Record<string, unknown> = {
-        ...createDefaultService(service_id),
+        ...createDefaultService(id),
         ...Object.fromEntries(
           DAYS_OF_WEEK.map(({ key }) => [key, days.has(key) ? 1 : 0])
         ),
@@ -168,19 +142,20 @@ export async function showNewServiceModal(
         end_date: v.end_date,
       };
 
-      console.log('[NewServiceModal] creating service', service_id, row);
+      console.log('[NewServiceModal] creating service', id, row);
       await deps.database.insertRows('calendar', [row]);
       if (deps.patchManager) {
-        await deps.patchManager.recordInsert('calendar', service_id, row);
+        await deps.patchManager.recordInsert('calendar', id, row);
       } else {
         console.warn(
           '[NewServiceModal] no patchManager wired, the insert is not undoable'
         );
       }
 
-      notify.success(`Created service ${service_id}`);
+      service_id = id;
+      notify.success(`Created service ${id}`);
     },
   });
 
-  return values ? values.service_id : null;
+  return values ? service_id : null;
 }
