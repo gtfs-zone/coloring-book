@@ -1,3 +1,10 @@
+import { escapeHtml } from 'interlocking/util/escape-html';
+import {
+  TOOLTIP_TRIGGER_CLASS,
+  tooltipContentAttr,
+} from 'interlocking/ui/field-label';
+import { renderMoonIcon } from 'interlocking/ui/nav-icons';
+
 /**
  * Time Formatter Utility
  *
@@ -63,42 +70,6 @@ export class TimeFormatter {
 
     // Return original if no casting possible
     return trimmed;
-  }
-
-  /**
-   * Format time for display (HH:MM format)
-   *
-   * Converts time strings to display format without seconds.
-   * Preserves 24+ hour times for next-day service visualization.
-   * Handles edge cases and malformed input gracefully.
-   *
-   * @param time - Time string in HH:MM:SS or HH:MM format
-   * @returns Formatted time string in HH:MM format, or empty string if invalid
-   * @example
-   * formatTime('09:30:45') -> '09:30'
-   * formatTime('25:30:00') -> '25:30' (next-day service)
-   * formatTime('') -> ''
-   */
-  static formatTime(time: string): string {
-    if (!time) {
-      return '';
-    }
-
-    // Handle times like "24:30:00" or "25:15:00" (next day)
-    const parts = time.split(':');
-    if (parts.length >= 2) {
-      const hours = parseInt(parts[0]);
-      const minutes = parts[1];
-
-      if (hours >= 24) {
-        // Next day time - show as is for now, could add +1 indicator
-        return `${hours}:${minutes}`;
-      }
-
-      return `${hours.toString().padStart(2, '0')}:${minutes}`;
-    }
-
-    return time;
   }
 
   /**
@@ -175,6 +146,29 @@ export class TimeFormatter {
     const newMins = totalMinutes % 60;
 
     return `${newHours.toString().padStart(2, '0')}:${newMins.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+  }
+
+  /**
+   * Split a GTFS time into its wall-clock time and how many days past the
+   * service day it falls.
+   *
+   * @param time - Time string in HH:MM:SS or HH:MM format
+   * @returns The clock time in HH:MM:SS and the day offset; an unparseable
+   *   value comes back as formatTimeWithSeconds gives it, with offset 0
+   * @example
+   * splitDayOffset('25:10:00') -> { clock: '01:10:00', dayOffset: 1 }
+   * splitDayOffset('09:30') -> { clock: '09:30:00', dayOffset: 0 }
+   */
+  static splitDayOffset(time: string): { clock: string; dayOffset: number } {
+    const seconds = TimeFormatter.timeToSeconds(time);
+    if (seconds === null) {
+      return { clock: TimeFormatter.formatTimeWithSeconds(time), dayOffset: 0 };
+    }
+    const day = 24 * 3600;
+    return {
+      clock: TimeFormatter.secondsToTime(seconds % day),
+      dayOffset: Math.floor(seconds / day),
+    };
   }
 
   /**
@@ -299,4 +293,26 @@ export class TimeFormatter {
     const mm = String(Math.floor((abs % 3600) / 60)).padStart(2, '0');
     return `${sign}${Math.floor(abs / 3600)}:${mm}:${ss}`;
   }
+}
+
+/**
+ * A GTFS time as display HTML: the wrapped clock time, plus a moon `+n` badge
+ * when the time falls on a later day. The badge is aria-hidden and carries the
+ * "Next day" / "+n days" tooltip.
+ *
+ * @param time - Raw GTFS time; empty renders the placeholder
+ * @param placeholder - Text shown for an empty time
+ * @example
+ * renderTimeHtml('25:10:00') -> '01:10:00<span ...>moon +1</span>'
+ */
+export function renderTimeHtml(time: string, placeholder = '--:--:--'): string {
+  if (!time) {
+    return escapeHtml(placeholder);
+  }
+  const { clock, dayOffset } = TimeFormatter.splitDayOffset(time);
+  if (dayOffset === 0) {
+    return escapeHtml(clock);
+  }
+  const tip = dayOffset === 1 ? 'Next day' : `+${dayOffset} days`;
+  return `${escapeHtml(clock)}<span class="${TOOLTIP_TRIGGER_CLASS} ml-1 inline-flex items-center gap-0.5 align-middle text-[10px] leading-none opacity-70" aria-hidden="true" ${tooltipContentAttr(tip)}>${renderMoonIcon('h-3 w-3')}+${dayOffset}</span>`;
 }

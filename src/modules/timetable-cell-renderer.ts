@@ -3,7 +3,7 @@
  * Handles HTML generation for individual stop_time cells
  */
 
-import { TimeFormatter } from '../utils/time-formatter';
+import { TimeFormatter, renderTimeHtml } from '../utils/time-formatter';
 import { EditableStopTime } from './timetable-data-processor';
 import type { StopTimeRef } from 'interlocking/gtfs/types';
 import { escapeHtml } from 'interlocking/util/escape-html';
@@ -296,7 +296,10 @@ export class TimetableCellRenderer {
         data-windowed="${isWindowed}"
         ${editable ? '' : 'data-disabled="true"'}
         title="${escapeHtml(titleParts.join(' - '))}"`;
-    const display = escapeHtml(this.displayValue(field, kind, value));
+    const display =
+      kind === 'time'
+        ? renderTimeHtml(value)
+        : escapeHtml(this.displayValue(field, kind, value));
 
     if (isPicker) {
       return renderPickerTrigger({
@@ -311,14 +314,10 @@ export class TimetableCellRenderer {
   }
 
   /**
-   * What a sub-row shows: times formatted with seconds, enums as
-   * `value - Short Label`, everything else raw. Empty renders as `-`, except a
-   * time, which keeps the `--:--:--` placeholder the grid has always used.
+   * What a non-time sub-row shows: enums as `value - Short Label`, everything
+   * else raw. Empty renders as `-`. Times go through renderTimeHtml instead.
    */
   private displayValue(field: string, kind: string, value: string): string {
-    if (kind === 'time') {
-      return value ? TimeFormatter.formatTimeWithSeconds(value) : '--:--:--';
-    }
     if (value === '') {
       return '-';
     }

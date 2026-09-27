@@ -58,6 +58,7 @@ import {
   extensionFields,
   EXTENSION_FIELD_DESCRIPTION,
 } from './extension-fields';
+import { renderTimeHtml } from './time-formatter';
 import type { GTFSFieldSpec } from '../gtfs-spec/types';
 import type { z } from 'zod';
 
@@ -187,10 +188,17 @@ function displayText(
   return formatValueForDisplay(raw, config.gtfsFieldType);
 }
 
-function displayHtml(text: string, placeholder: string): string {
-  return text
-    ? escapeHtml(text)
-    : `<span class="opacity-40">${escapeHtml(placeholder)}</span>`;
+function displayHtml(
+  text: string,
+  placeholder: string,
+  gtfsType?: string
+): string {
+  if (!text) {
+    return `<span class="opacity-40">${escapeHtml(placeholder)}</span>`;
+  }
+  return gtfsType === GTFSFieldType.Time
+    ? renderTimeHtml(text)
+    : escapeHtml(text);
 }
 
 /**
@@ -266,7 +274,7 @@ export async function renderInlineEditableField(
         data-value="${escapeHtml(raw)}"
         data-placeholder="${escapeHtml(placeholder)}"
         ${config.gtfsFieldType ? `data-gtfs-type="${escapeHtml(config.gtfsFieldType)}"` : ''}`;
-  const content = displayHtml(text, placeholder);
+  const content = displayHtml(text, placeholder, config.gtfsFieldType);
 
   // A foreign ID and a standards code are picked from a modal; an enum drops an
   // inline menu and everything else swaps for an input, so only the modal kinds
@@ -624,6 +632,6 @@ function setDisplay(
 
   setPickerTriggerContent(
     span,
-    displayHtml(text, span.dataset.placeholder ?? '-')
+    displayHtml(text, span.dataset.placeholder ?? '-', gtfsType)
   );
 }

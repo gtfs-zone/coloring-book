@@ -941,8 +941,12 @@ export class ScheduleController {
       return;
     }
 
-    const originalText = span.textContent?.trim() ?? '';
-    const displayValue = originalText === '--:--:--' ? '' : originalText;
+    // Seed from the raw GTFS time, not the rendered text, which shows a
+    // wrapped clock time and a next-day badge.
+    const rawTime = span.dataset.value ?? '';
+    const displayValue = rawTime
+      ? TimeFormatter.formatTimeWithSeconds(rawTime)
+      : '';
 
     this.editingCell = {
       tripId,

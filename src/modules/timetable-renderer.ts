@@ -21,7 +21,7 @@ import {
 import { tooltipContentAttr } from 'interlocking/ui/field-label';
 import { visibleStopTimeFields, WINDOW_FIELDS } from './timetable-fields';
 import { describeFrequency } from '../utils/frequency-rules';
-import { TimeFormatter } from '../utils/time-formatter';
+import { renderTimeHtml } from '../utils/time-formatter';
 import { getEnumOptions } from '../types/gtfs-enums';
 import { TripsSchema, GTFS_TABLES } from '../types/gtfs';
 import {
@@ -687,13 +687,14 @@ export class TimetableRenderer {
   ): string {
     const value = String(period[field] ?? '');
 
-    let display: string;
+    // Escaped HTML: a time carries its next-day badge markup.
+    let displayHtml: string;
     let title: string = field;
     let muted = false;
     if (kind === 'time') {
-      display = value ? TimeFormatter.formatTimeWithSeconds(value) : '--:--:--';
+      displayHtml = renderTimeHtml(value);
     } else if (field === 'headway_secs') {
-      display = value || '-';
+      displayHtml = escapeHtml(value || '-');
       const secs = /^\d+$/.test(value) ? parseInt(value, 10) : null;
       if (secs !== null) {
         title = `${field} - ${secs % 60 === 0 ? `${secs / 60} minutes` : `${secs} seconds`}`;
@@ -705,7 +706,9 @@ export class TimetableRenderer {
       const option = (getEnumOptions('exact_times') ?? []).find(
         (opt) => String(opt.value) === effective
       );
-      display = option ? `${effective} - ${option.label}` : effective;
+      displayHtml = escapeHtml(
+        option ? `${effective} - ${option.label}` : effective
+      );
       muted = value === '';
       title = value === '' ? `${field} - empty, equivalent to 0` : field;
     }
@@ -719,7 +722,7 @@ export class TimetableRenderer {
         data-field-kind="${kind}"
         data-value="${escapeHtml(value)}"
         title="${escapeHtml(title)}"
-      >${escapeHtml(display)}</span>
+      >${displayHtml}</span>
     `;
   }
 
