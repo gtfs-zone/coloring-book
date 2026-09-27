@@ -19,6 +19,7 @@ import {
   type DateCodec,
 } from 'interlocking/ui/calendar-input';
 import { CONFIG } from '../config';
+import { getFeedActiveRange } from '../utils/feed-active-range';
 
 export interface EntityFormField {
   /** Field name. Also the value key and the basis of the input's id. */
@@ -82,6 +83,23 @@ const ERROR_ID = 'entity-form-error';
 
 function inputId(field: string): string {
   return `entity-form-${field}`;
+}
+
+/** The feed active range re-encoded in a field's codec, for the picker band. */
+function highlightIn(
+  codec: DateCodec
+): { start: string; end: string; label: string } | undefined {
+  const range = getFeedActiveRange();
+  const start = range ? ISO_DATE_CODEC.parse(range.start) : null;
+  const end = range ? ISO_DATE_CODEC.parse(range.end) : null;
+  if (!range || !start || !end) {
+    return undefined;
+  }
+  return {
+    start: codec.format(start),
+    end: codec.format(end),
+    label: range.label,
+  };
 }
 
 /**
@@ -228,11 +246,13 @@ export async function promptNewEntity(
         }
         const input = document.getElementById(inputId(field.field));
         if (input instanceof HTMLInputElement) {
+          const codec = field.dateCodec ?? ISO_DATE_CODEC;
           closeCalendars.push(
             attachCalendarInput(input, {
-              codec: field.dateCodec ?? ISO_DATE_CODEC,
+              codec,
               weekStart: CONFIG.WEEK_START,
               allowEmpty: true,
+              highlight: highlightIn(codec),
             })
           );
         }

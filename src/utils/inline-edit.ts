@@ -22,6 +22,7 @@ import {
 } from 'interlocking/ui/calendar-input';
 import { attachColorInput, HEX_COLOR_CODEC } from 'interlocking/ui/color-input';
 import { CONFIG } from '../config';
+import { getFeedActiveRange } from './feed-active-range';
 import {
   keyToGridDirection,
   isVerticalArrow,
@@ -285,6 +286,7 @@ export function openInlineEditor(
       codec: ISO_DATE_CODEC,
       weekStart: CONFIG.WEEK_START,
       allowEmpty: true,
+      highlight: getFeedActiveRange() ?? undefined,
       onPick: () => {
         liveInputDirty = true;
         input.blur();

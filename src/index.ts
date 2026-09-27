@@ -38,11 +38,13 @@ import { editorShortcuts } from './modules/shortcut-list';
 import { showModal } from 'interlocking/ui/modal-utils';
 import { showTimetableModal } from './modules/timetable-modal';
 import type { ModalState, PageState } from './types/page-state';
+import type { PatchRecord } from './types/patch';
 import { PatchManager } from './modules/patch-manager';
 import { HistoryController } from './modules/history-controller';
 import { TabLockController } from './modules/tab-lock';
 import { humanLabel } from './utils/patch-label';
 import { loadExtensionColumns } from './utils/extension-fields';
+import { refreshFeedActiveRange } from './utils/feed-active-range';
 import { runWhenIdle } from './utils/run-when-idle';
 import {
   setHelpPages,
@@ -401,6 +403,26 @@ export class GTFSEditor {
         this.updateUndoRedoState();
       });
 
+      // The date pickers' feed range band follows feed_info edits. A jump
+      // carries no patch, so it always refreshes.
+      const refreshActiveRange = () => {
+        refreshFeedActiveRange(this.gtfsParser.gtfsDatabase).catch(
+          (e: unknown) =>
+            console.error('[GTFSEditor] failed to refresh feed range:', e)
+        );
+      };
+      const onFeedInfoPatch = (r?: PatchRecord) => {
+        const patch = r?.patch;
+        const ops = !patch ? [] : patch.op === 'batch' ? patch.ops : [patch];
+        if (!patch || ops.some((op) => op.source.table === 'feed_info')) {
+          refreshActiveRange();
+        }
+      };
+      this.patchManager.on('change', onFeedInfoPatch);
+      this.patchManager.on('undo', onFeedInfoPatch);
+      this.patchManager.on('redo', onFeedInfoPatch);
+      this.patchManager.on('jump', onFeedInfoPatch);
+
       // Every feed-scoped cache invalidation, in one place. Before this signal
       // existed each swap path had to remember these by hand, and the boot
       // paths did not. The parser fires it only once the new rows are final.
@@ -432,6 +454,7 @@ export class GTFSEditor {
         loadExtensionColumns(this.gtfsParser.gtfsDatabase).catch((e: unknown) =>
           console.error('[GTFSEditor] failed to reload extension columns:', e)
         );
+        refreshActiveRange();
       });
 
       // Initialize keyboard shortcuts
