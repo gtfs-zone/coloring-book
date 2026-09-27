@@ -5,7 +5,7 @@
  */
 
 import { Calendar, CalendarDates, GTFSTableMap } from '../types/gtfs-entities';
-import { GTFS_TABLES } from '../types/gtfs';
+import { GTFSSchemas, GTFS_TABLES } from '../types/gtfs';
 import { notify } from 'interlocking/ui/notification-system';
 import { patchUpdate } from '../utils/patch-utils';
 import {
@@ -24,7 +24,15 @@ import {
   type EditableTableDeps,
   type EditableTablePatchManager,
 } from './editable-table';
-import { renderInlineEntityFields } from '../utils/inline-editable-field';
+import {
+  renderInlineEditableField,
+  renderInlineEntityFields,
+} from '../utils/inline-editable-field';
+import {
+  generateFieldConfigsFromSchema,
+  renderFieldLabel,
+} from '../utils/field-component';
+import { escapeHtml } from 'interlocking/util/escape-html';
 
 // Days of the week in US format (Sunday first)
 export const DAYS_OF_WEEK = [
@@ -311,6 +319,7 @@ export class ServiceDaysController {
     calendar: Calendar | null,
     exceptions: CalendarDates[]
   ): Promise<string> {
+    const serviceIdHTML = await this.renderServiceId(service_id, calendar);
     const weeklyPatternHTML = this.renderWeeklyPattern(service_id, calendar);
     const dateRangeHTML = await this.renderDateRange(service_id, calendar);
     const exceptionsHTML = await this.renderExceptions(
@@ -322,6 +331,8 @@ export class ServiceDaysController {
     return `
       <div class="service-days-editor bg-base-200/50 p-4 rounded-lg">
         <div class="space-y-4">
+          <div class="max-w-md">${serviceIdHTML}</div>
+
           <!-- Weekly Pattern -->
           <div class="weekly-pattern">
             <h4 class="text-sm font-semibold mb-2 text-base-content/80">Weekly Pattern</h4>
@@ -377,6 +388,43 @@ export class ServiceDaysController {
       <div class="day-toggles flex gap-1 text-xs">
         ${dayToggles}
       </div>
+    `;
+  }
+
+  /**
+   * The service_id field, as a rename trigger.
+   *
+   * The rename cascade starts from the calendar.txt row, so a service that
+   * lives only in calendar_dates.txt shows its ID read-only.
+   */
+  private async renderServiceId(
+    service_id: string,
+    calendar: Calendar | null
+  ): Promise<string> {
+    const config = generateFieldConfigsFromSchema(
+      GTFSSchemas[GTFS_TABLES.CALENDAR],
+      { service_id },
+      GTFS_TABLES.CALENDAR
+    ).find((c) => c.field === 'service_id');
+    if (!config) {
+      throw new Error('[ServiceDaysController] calendar has no service_id');
+    }
+
+    if (calendar) {
+      return renderInlineEditableField({ ...config, recordId: service_id });
+    }
+
+    console.log(
+      `[ServiceDaysController] ${service_id} has no calendar.txt row, so its service_id renders read-only`
+    );
+    return `
+      <fieldset class="fieldset isolate">
+        ${renderFieldLabel(config)}
+        <span
+          class="px-1 py-1.5 text-sm opacity-70"
+          title="Only a service with a calendar.txt row can be renamed. Toggle a weekday to create one."
+        >${escapeHtml(service_id)}</span>
+      </fieldset>
     `;
   }
 

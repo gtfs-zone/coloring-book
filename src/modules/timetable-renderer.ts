@@ -31,6 +31,7 @@ import {
   renderOptionLabel,
 } from '../utils/entity-display';
 import { escapeHtml } from 'interlocking/util/escape-html';
+import { renderRenameTrigger } from '../utils/rename-action';
 import { renderPickerTrigger } from '../utils/picker-trigger';
 import {
   TIMETABLE_ADD_DIRECTION,
@@ -382,7 +383,7 @@ export class TimetableRenderer {
 
     // Filter out fields that shouldn't be editable in the timetable
     // route_id and service_id are fixed (timetable is already filtered by these)
-    // trip_id is the primary key
+    // trip_id is the column header, rendered as its rename trigger
     const editableConfigs = allConfigs.filter(
       (config) => !['route_id', 'service_id', 'trip_id'].includes(config.field)
     );
@@ -848,11 +849,11 @@ export class TimetableRenderer {
             : '';
         return `
           <td class="trip-header text-center p-2 text-xs font-mono" style="${columnStyle}">
-            <span
-              class="inline-block max-w-full truncate align-middle field-tooltip-trigger"
-              tabindex="0"
-              ${tooltipContentAttr(`<div><code>${escapeHtml(trip.trip_id)}</code></div>`)}
-            >${escapeHtml(trip.trip_id)}</span>${badge}
+            ${renderRenameTrigger(
+              'trips',
+              trip.trip_id,
+              'inline-block! max-w-full align-middle cursor-pointer rounded px-1 hover:bg-base-200'
+            )}${badge}
           </td>
         `;
       })
