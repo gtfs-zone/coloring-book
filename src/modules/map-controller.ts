@@ -21,6 +21,8 @@ import { Stops, Routes, Pathways, Agency, GTFS_TABLES } from '../types/gtfs';
 import { agencyRouteFilter, normalizeAgencyId } from '../utils/agency-helpers';
 import { BasemapControl } from 'interlocking/map/basemap-control';
 import { AutoZoom } from 'interlocking/map/auto-zoom';
+import { MAP_MAX_ZOOM } from 'interlocking/map/basemap-styles';
+import { fitPadding } from 'interlocking/map/fit-padding';
 import { notify } from 'interlocking/ui/notification-system';
 import type { PatchRecord, SingleGTFSPatch } from '../types/patch';
 import { getZoneFeature, listZones, zoneBounds } from './zone-store';
@@ -312,6 +314,7 @@ export class MapController {
       },
       center: [-74.006, 40.7128], // NYC default
       zoom: 10,
+      maxZoom: MAP_MAX_ZOOM,
     });
   }
 
@@ -735,12 +738,7 @@ export class MapController {
     }
 
     const options: FitBoundsOptions = {
-      padding: {
-        top: 50,
-        bottom: 50 + this.bottomPadding,
-        left: 50,
-        right: 50,
-      },
+      padding: fitPadding(this.map!, 50, this.bottomPadding),
     };
     if (force) {
       this.map!.fitBounds(bounds, options);
@@ -831,12 +829,7 @@ export class MapController {
         zoom: CONFIG.STOP_FOCUS_ZOOM,
         duration: 1000,
         essential: true,
-        padding: {
-          top: 80,
-          bottom: 80 + this.bottomPadding,
-          left: 80,
-          right: 80,
-        },
+        padding: fitPadding(this.map!, 80, this.bottomPadding),
       });
     } else {
       const bounds = coords
@@ -846,12 +839,7 @@ export class MapController {
           new LngLatBounds(coords[0], coords[0])
         );
       this.autoFit(bounds, {
-        padding: {
-          top: 80,
-          bottom: 80 + this.bottomPadding,
-          left: 80,
-          right: 80,
-        },
+        padding: fitPadding(this.map!, 80, this.bottomPadding),
         maxZoom: CONFIG.STOP_FOCUS_ZOOM,
         duration: 1000,
         essential: true,
@@ -1272,12 +1260,7 @@ export class MapController {
       zoom: CONFIG.STOP_FOCUS_ZOOM,
       duration: 1500,
       essential: true,
-      padding: {
-        top: 50,
-        bottom: 50 + this.bottomPadding,
-        left: 50,
-        right: 50,
-      },
+      padding: fitPadding(this.map!, 50, this.bottomPadding),
     });
   }
 
@@ -1291,12 +1274,7 @@ export class MapController {
       return;
     }
     this.autoFit(bounds, {
-      padding: {
-        top: 80,
-        bottom: 80 + this.bottomPadding,
-        left: 80,
-        right: 80,
-      },
+      padding: fitPadding(this.map, 80, this.bottomPadding),
       maxZoom: CONFIG.STOP_FOCUS_ZOOM,
     });
   }
@@ -1312,12 +1290,7 @@ export class MapController {
       return;
     }
     this.autoFit(bounds, {
-      padding: {
-        top: 80,
-        bottom: 80 + this.bottomPadding,
-        left: 80,
-        right: 80,
-      },
+      padding: fitPadding(this.map, 80, this.bottomPadding),
       maxZoom: CONFIG.STOP_FOCUS_ZOOM,
       duration: 1000,
       essential: true,
@@ -1379,12 +1352,7 @@ export class MapController {
     }
 
     this.autoFit(bounds, {
-      padding: {
-        top: 80,
-        bottom: 80 + this.bottomPadding,
-        left: 80,
-        right: 80,
-      },
+      padding: fitPadding(this.map!, 80, this.bottomPadding),
       duration: 2000,
       essential: true,
     });
@@ -1416,12 +1384,7 @@ export class MapController {
     }
 
     this.autoFit(bounds, {
-      padding: {
-        top: 50,
-        bottom: 50 + this.bottomPadding,
-        left: 50,
-        right: 50,
-      },
+      padding: fitPadding(this.map!, 50, this.bottomPadding),
     });
   }
 

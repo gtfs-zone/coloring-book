@@ -194,7 +194,7 @@ export function deriveFeedIssues(
     // Hidden whitespace is the one issue with a mechanical fix, and it always
     // arrives in bulk. The button clears every one of them, not just this row.
     if (group.code === 'UNCLEAN_VALUE') {
-      row.action = { label: 'Fix all', dataAction: WHITESPACE_FIX_ACTION };
+      row.actions = [{ label: 'Fix all', dataAction: WHITESPACE_FIX_ACTION }];
     }
     return row;
   });
