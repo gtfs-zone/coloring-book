@@ -126,12 +126,10 @@ export class AgencyViewController {
           <div class="flex items-center gap-2">
             <button
               type="button"
-              class="btn btn-sm btn-outline"
+              class="btn btn-sm btn-primary"
               data-entity-create="route"
               data-agency-id="${escapeHtml(agency_id)}"
-              title="New route"
-              aria-label="New route"
-            >+</button>
+            >+ New route</button>
           </div>
         </div>
         <div class="card bg-base-100 shadow-lg">

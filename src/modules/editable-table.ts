@@ -777,27 +777,33 @@ export async function renderEditableTable(
 
   // The trailing blank row is how rows are added: typing into any of its cells
   // starts a record, and it is written as soon as every required field is set.
+  // Each empty cell shows its field name as a placeholder; `data-value` stays
+  // empty, so the placeholder never reaches the record.
   const newRowCells = fields
     .map((field) => {
-      const kind = specFieldKind(specFor(config.tableName, field));
+      const spec = specFor(config.tableName, field);
+      const kind = specFieldKind(spec);
+      const required = spec.presence === 'Required';
       const attrs = `
             tabindex="0"
             data-et="${escapeHtml(config.instanceId)}"
             data-key=""
             data-field="${escapeHtml(field)}"
             data-kind="${kind}"
-            data-value=""`;
+            data-value=""${required ? '\n            data-required="1"' : ''}`;
+      const placeholderClass = newRowPlaceholderClass(required);
       const span =
         kind === 'foreign'
           ? renderPickerTrigger({
-              content: '+',
-              className: 'editable-cell min-w-8 text-base-content/40',
+              content: escapeHtml(field),
+              className: `editable-cell min-w-8 ${placeholderClass}`,
               attrs,
             })
-          : `<span class="editable-cell inline-block min-w-8 max-w-full truncate cursor-pointer rounded px-1 text-base-content/40 hover:bg-base-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary" ${attrs}>+</span>`;
+          : `<span class="editable-cell inline-block min-w-8 max-w-full truncate cursor-pointer rounded px-1 ${placeholderClass} hover:bg-base-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary" ${attrs}>${escapeHtml(field)}</span>`;
       return `<td class="align-middle p-1">${span}</td>`;
     })
     .join('');
+  const newRowStart = `<button class="editable-table-new-row-start btn btn-xs btn-primary whitespace-nowrap" data-et="${escapeHtml(config.instanceId)}">+ New</button>`;
 
   // A host that pins its columns has decided what the table shows, so a new
   // column would be created and then not rendered.
@@ -809,7 +815,7 @@ export async function renderEditableTable(
     <div class="overflow-x-auto">
       <table class="table table-xs table-pin-rows">
         <thead><tr>${headerHtml}${joinHeaderHtml}<th class="align-bottom text-right">${addFieldHtml}</th></tr></thead>
-        <tbody>${emptyHtml}${bodyHtml}<tr class="editable-table-new-row">${newRowCells}${joinColumns.map(() => '<td></td>').join('')}<td></td></tr></tbody>
+        <tbody>${emptyHtml}${bodyHtml}<tr class="editable-table-new-row bg-base-200/50 border-t border-dashed border-base-content/20">${newRowCells}${joinColumns.map(() => '<td></td>').join('')}<td class="align-middle">${newRowStart}</td></tr></tbody>
       </table>
     </div>
   `;
@@ -858,6 +864,13 @@ export function installEditableTableHandlers(
     );
     if (addFieldBtn instanceof HTMLElement) {
       void addFieldColumn(addFieldBtn);
+      return;
+    }
+    const newRowBtn = (e.target as Element)?.closest?.(
+      '.editable-table-new-row-start'
+    );
+    if (newRowBtn instanceof HTMLElement) {
+      startNewRow(newRowBtn);
     }
   });
 
@@ -1324,6 +1337,30 @@ async function commitCell(
   }
 }
 
+/**
+ * Muted text for a blank-row placeholder. Required fields are upright, so they
+ * stand out from the optional ones.
+ */
+function newRowPlaceholderClass(required: boolean): string {
+  return required ? 'text-base-content/40' : 'text-base-content/40 italic';
+}
+
+/** Open the blank row's first required cell, else its first cell. */
+function startNewRow(button: HTMLElement): void {
+  const row = button.closest('tr');
+  const cell =
+    row?.querySelector<HTMLElement>('.editable-cell[data-required="1"]') ??
+    row?.querySelector<HTMLElement>('.editable-cell');
+  if (!cell) {
+    console.warn(
+      `[EditableTable] no cell to start a new row in ${button.dataset.et}`
+    );
+    return;
+  }
+  cell.focus();
+  openCellEditor(cell);
+}
+
 /** Reflect a committed value in the span, without waiting for a re-render. */
 function setCellDisplay(
   span: HTMLElement,
@@ -1333,12 +1370,18 @@ function setCellDisplay(
   span.dataset.value = value === '' ? '' : String(value);
   const kind = (span.dataset.kind ?? 'text') as SpecFieldKind;
   const label = formatSpecValue(spec, kind, value, undefined);
+  const isNewRow = span.dataset.key === '';
   setPickerTriggerContent(
     span,
-    escapeHtml(label) || (span.dataset.key === '' ? '+' : '-')
+    escapeHtml(label) || (isNewRow ? escapeHtml(span.dataset.field ?? '') : '-')
   );
+  const placeholder = newRowPlaceholderClass(
+    span.dataset.required === '1'
+  ).split(' ');
   if (label) {
-    span.classList.remove('text-base-content/40');
+    span.classList.remove(...placeholder);
+  } else if (isNewRow) {
+    span.classList.add(...placeholder);
   }
 }
 

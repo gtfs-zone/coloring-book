@@ -664,11 +664,9 @@ export class PageContentRenderer {
             <div class="flex items-center gap-2">
               <button
                 type="button"
-                class="btn btn-sm btn-outline"
+                class="btn btn-sm btn-primary"
                 data-entity-create="agency"
-                title="New agency"
-                aria-label="New agency"
-              >+</button>
+              >+ New agency</button>
             </div>
           </div>
           ${
@@ -710,11 +708,9 @@ export class PageContentRenderer {
               >Extend all to feed end</button>
               <button
                 type="button"
-                class="btn btn-sm btn-outline"
+                class="btn btn-sm btn-primary"
                 data-entity-create="service"
-                title="New service"
-                aria-label="New service"
-              >+</button>
+              >+ New service</button>
             </div>
           </div>
           ${
