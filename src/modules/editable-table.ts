@@ -710,7 +710,7 @@ export async function renderEditableTable(
         )}</th>`;
       }
       if (!fieldConfig) {
-        return `<th class="${widthClass}">${escapeHtml(override?.label ?? field)}</th>`;
+        return `<th class="${widthClass}"><span class="field-label font-normal">${escapeHtml(override?.label ?? field)}</span></th>`;
       }
       return `<th class="align-bottom ${widthClass}">${renderFieldLabelContent(
         override?.label
@@ -732,7 +732,7 @@ export async function renderEditableTable(
                 column.spec.field,
                 column.label
               )
-            : escapeHtml(column.label)
+            : `<span class="field-label font-normal">${escapeHtml(column.label)}</span>`
         }</th>`
     )
     .join('');

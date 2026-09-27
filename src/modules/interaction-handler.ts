@@ -15,6 +15,7 @@ import { hasLiveEditor } from '../utils/inline-edit';
 import { promptNewEntity } from './entity-form-modal';
 import { nextEntityId } from '../utils/inline-entity-creator';
 import { GTFS_TABLES } from '../types/gtfs';
+import { renderSpecFieldLabelContent } from '../utils/field-component';
 
 export interface InteractionCallbacks {
   onRouteClick?: (route_id: string) => void;
@@ -410,11 +411,11 @@ export class InteractionHandler {
     const pathwayId = generateId();
     const endpoints = `
       <div>
-        <div class="label-text text-sm opacity-70 mb-1">From Stop</div>
+        <div class="label">${renderSpecFieldLabelContent(GTFS_TABLES.PATHWAYS, 'from_stop_id', 'From Stop')}</div>
         <div class="font-mono text-sm bg-base-200 px-3 py-2 rounded">${fromStopId}</div>
       </div>
       <div>
-        <div class="label-text text-sm opacity-70 mb-1">To Stop</div>
+        <div class="label">${renderSpecFieldLabelContent(GTFS_TABLES.PATHWAYS, 'to_stop_id', 'To Stop')}</div>
         <div class="font-mono text-sm bg-base-200 px-3 py-2 rounded">${toStopId}</div>
       </div>
     `;

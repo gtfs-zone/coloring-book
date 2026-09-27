@@ -190,11 +190,12 @@ export function renderFieldLabelContent(
     : labelText;
   const badge = renderPresenceBadge(config.presence, options);
   const presenceMark = badge ? ` ${badge}` : '';
+  const content = tipContent
+    ? renderTooltipTrigger(tipContent, `${linkContent}${presenceMark}`)
+    : `${linkContent}${presenceMark}`;
 
-  if (tipContent) {
-    return renderTooltipTrigger(tipContent, `${linkContent}${presenceMark}`);
-  }
-  return `${linkContent}${presenceMark}`;
+  // Sets its own weight so a bold container (a table <th>) cannot change it.
+  return `<span class="field-label font-normal">${content}</span>`;
 }
 
 /**
