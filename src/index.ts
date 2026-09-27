@@ -15,6 +15,8 @@ import {
   refreshFeedIssuesIfStale,
   setFeedIssueRevalidator,
 } from './modules/feed-issues';
+import { showFeedIssuesModal } from './modules/feed-issues-modal';
+import type { EditableTableDeps } from './modules/editable-table';
 import {
   KeyboardShortcuts,
   describeShortcuts,
@@ -828,6 +830,21 @@ export class GTFSEditor {
     );
 
     router.register('levels', () => this.levelsController.showLevelsModal());
+
+    router.register('feed_issues', async (modal, _transient, cancelled) => {
+      await refreshFeedIssuesIfStale();
+      if (cancelled()) {
+        return;
+      }
+      await showFeedIssuesModal(
+        {
+          gtfsDatabase: this.gtfsParser
+            .gtfsDatabase as EditableTableDeps['gtfsDatabase'],
+          patchManager: this.patchManager,
+        },
+        modal.table
+      );
+    });
 
     this.pageStateManager.addNavigationHandler((event) => {
       router.sync(event.to);

@@ -4,6 +4,7 @@
  * Turns the validator's per-row messages into the grouped label/count rows the
  * home panel renders, and holds the latest set so the panel can draw without
  * re-running validation on every render (a full pass walks stop_times).
+ * `ISSUE_KINDS` gives each validator code its label, note and row actions.
  *
  * Only errors and warnings are grouped: the info level carries row counts
  * (ROUTE_COUNT, STOP_COUNT, ...), which are not problems.
@@ -12,7 +13,12 @@
 import type { ValidationEntity, ValidationResults } from './gtfs-validator';
 import { renderIssueCard } from 'interlocking/ui/issue-card';
 import type { IssueItem, IssueRow } from 'interlocking/ui/issue-card';
-import { WHITESPACE_FIX_ACTION } from '../utils/whitespace-fix';
+import type { EditableTableDeps } from './editable-table';
+import {
+  applyWhitespaceFix,
+  describeWhitespaceFix,
+} from '../utils/whitespace-fix';
+import { deleteTrips, describeTripDelete } from '../utils/trip-delete';
 import { getEntityDisplay, renderOptionLabel } from '../utils/entity-display';
 import { generateCompositeKeyFromRecord } from '../utils/gtfs-primary-keys';
 
@@ -50,62 +56,185 @@ const ENTITY_PAGES: Record<string, { nav: string; idField: string }> = {
   'pathways.txt': { nav: 'pathway', idField: 'pathway_id' },
 };
 
-const CODE_LABELS: Record<string, string> = {
-  MISSING_REQUIRED_FIELD: 'missing a required field',
-  MISSING_REQUIRED_FILE: 'missing a required file',
-  INVALID_REFERENCE: 'referencing a record that does not exist',
-  EMPTY_FILE: 'empty',
-  DUPLICATE_ID: 'duplicate id',
-  INVALID_COORDINATE: 'invalid coordinate',
-  INVALID_DATE_FORMAT: 'invalid date',
-  INVALID_TIME_FORMAT: 'invalid time',
-  INVALID_NUMBER: 'invalid number',
-  INVALID_URL: 'invalid URL',
-  CONDITIONAL_PRESENCE: 'missing a conditionally required field',
-  UNKNOWN_ROUTE_TYPE: 'unknown route_type',
-  UNKNOWN_LOCATION_TYPE: 'unknown location_type',
-  INVALID_EXCEPTION_TYPE: 'invalid exception_type',
-  INVALID_AREA_ASSIGNMENT: 'invalid area assignment',
-  TRIP_WITHOUT_STOP_TIMES: 'without any stop_times',
-  ORPHANED_STOP: 'not served by any trip',
-  NETWORK_ID_CONFLICT: 'conflicting network_id',
-  MISSING_CALENDAR_FILE: 'missing calendar file',
-  MISSING_COORDS_INHERITED: 'inheriting coordinates from a parent',
-  UNCLEAN_VALUE: 'with hidden whitespace in a value',
-  DUPLICATE_KEY: 'sharing a primary key with another row',
-  FREQUENCY_OVERLAP: 'with overlapping headway periods',
-  FREQUENCY_END_AMBIGUOUS: 'whose end_time lands on a departure',
-};
+/** One button on an issue row, run on that row's group only. */
+export interface IssueKindAction {
+  /** Value of the button's `data-issue-action`. */
+  id: string;
+  label: string;
+  /** Deletes rows, so the confirm button is red. */
+  destructive?: boolean;
+  /** The confirm modal's body, stating how many rows the run touches. */
+  confirm(entities: ValidationEntity[]): string;
+  /** Writes one patch and returns the result notification's text. */
+  run(entities: ValidationEntity[], deps: EditableTableDeps): Promise<string>;
+}
 
-// Wording worth spelling out per group, keyed by `${file}:${code}:${field}`.
-const OVERRIDES: Record<string, { label?: string; note?: string }> = {
-  'routes.txt:INVALID_REFERENCE:agency_id': {
-    label: 'routes with an agency_id not in agency.txt',
-    note: "These routes won't appear under any agency until agency_id is fixed.",
+export interface IssueKind {
+  label(group: IssueGroup): string;
+  note?(group: IssueGroup): string | undefined;
+  actions?: IssueKindAction[];
+}
+
+/** `${file} rows ${text}`, the shape most labels take. */
+function rowsLabel(text: string): IssueKind['label'] {
+  return (group) => `${group.file} rows ${text}`;
+}
+
+function plural(count: number, noun: string): string {
+  return `${count} ${noun}${count === 1 ? '' : 's'}`;
+}
+
+const ISSUE_KINDS: Record<string, IssueKind> = {
+  MISSING_REQUIRED_FIELD: { label: rowsLabel('missing a required field') },
+  MISSING_REQUIRED_FILE: { label: rowsLabel('missing a required file') },
+  INVALID_REFERENCE: {
+    label: (group) => {
+      if (group.file === 'routes.txt' && group.field === 'agency_id') {
+        return 'routes with an agency_id not in agency.txt';
+      }
+      return group.field
+        ? `${group.file} rows with a ${group.field} that does not exist`
+        : `${group.file} rows referencing a record that does not exist`;
+    },
+    note: (group) =>
+      group.file === 'routes.txt' && group.field === 'agency_id'
+        ? "These routes won't appear under any agency until agency_id is fixed."
+        : undefined,
+  },
+  EMPTY_FILE: { label: rowsLabel('empty') },
+  DUPLICATE_ID: { label: rowsLabel('duplicate id') },
+  INVALID_COORDINATE: { label: rowsLabel('invalid coordinate') },
+  INVALID_DATE_FORMAT: { label: rowsLabel('invalid date') },
+  INVALID_TIME_FORMAT: { label: rowsLabel('invalid time') },
+  INVALID_NUMBER: { label: rowsLabel('invalid number') },
+  INVALID_URL: { label: rowsLabel('invalid URL') },
+  INVALID_CODE: {
+    label: (group) =>
+      `${group.file} rows whose ${group.field || 'value'} is not a valid code`,
+  },
+  INVALID_GEOMETRY: {
+    label: (group) => `${group.file} zones with an invalid geometry`,
+  },
+  CONDITIONAL_PRESENCE: {
+    label: rowsLabel('missing a conditionally required field'),
+  },
+  UNKNOWN_ROUTE_TYPE: { label: rowsLabel('unknown route_type') },
+  UNKNOWN_LOCATION_TYPE: { label: rowsLabel('unknown location_type') },
+  INVALID_EXCEPTION_TYPE: { label: rowsLabel('invalid exception_type') },
+  INVALID_AREA_ASSIGNMENT: { label: rowsLabel('invalid area assignment') },
+  TRIP_WITHOUT_STOP_TIMES: {
+    label: rowsLabel('without any stop_times'),
+    actions: [
+      {
+        id: 'delete-trips',
+        label: 'Delete trips',
+        destructive: true,
+        confirm: (entities) =>
+          `Delete ${plural(entities.length, 'trip')} with no stop_times, and any frequencies rows of those trips? This is one undo step.`,
+        run: async (entities, deps) =>
+          describeTripDelete(
+            await deleteTrips(
+              entities.map((entity) => entity.id),
+              deps
+            )
+          ),
+      },
+    ],
+  },
+  ORPHANED_STOP: {
+    label: rowsLabel('with no coordinates of their own or from a parent'),
+    note: () =>
+      'These are not drawn on the map. Give each one coordinates, or a parent_station that has them.',
+  },
+  UNPAIRED_FLEX_ROW: {
+    label: rowsLabel('with an unpaired pickup/drop-off window'),
+    note: () =>
+      'Other trips on the route pair this window with a second row for the other direction of travel.',
+  },
+  RIDER_CATEGORY_DEFAULT: {
+    label: () => 'fare products without exactly one default rider category',
+  },
+  NETWORK_ID_CONFLICT: { label: rowsLabel('conflicting network_id') },
+  MISSING_CALENDAR_FILE: { label: rowsLabel('missing calendar file') },
+  MISSING_COORDS_INHERITED: {
+    label: rowsLabel('inheriting coordinates from a parent'),
+  },
+  UNCLEAN_VALUE: {
+    label: (group) =>
+      group.field
+        ? `${group.file} rows whose ${group.field} carries hidden whitespace`
+        : rowsLabel('with hidden whitespace in a value')(group),
+    note: () =>
+      'A quoted CSV field that swallowed the line ending. The extra characters are invisible but count, so an id carrying them matches nothing.',
+    actions: [
+      {
+        id: 'fix-whitespace',
+        label: 'Fix',
+        confirm: (entities) =>
+          `Clean the hidden whitespace in ${plural(entities.length, 'value')}? This is one undo step.`,
+        run: async (entities, deps) =>
+          describeWhitespaceFix(await applyWhitespaceFix(entities, deps)),
+      },
+    ],
+  },
+  DUPLICATE_KEY: { label: rowsLabel('sharing a primary key with another row') },
+  FREQUENCY_OVERLAP: { label: rowsLabel('with overlapping headway periods') },
+  FREQUENCY_END_AMBIGUOUS: {
+    label: rowsLabel('whose end_time lands on a departure'),
   },
 };
 
-/** One label/count row, before the entity list is turned into markup. */
-interface IssueGroup {
-  file: string;
-  code: string;
-  field: string;
-  count: number;
-  entities: ValidationEntity[];
+/** Codes already warned about for having no kind, so each warns once. */
+const warnedCodes = new Set<string>();
+
+/** The kind for a code, or a generic one built from the code itself. */
+function issueKind(code: string): IssueKind {
+  const kind = ISSUE_KINDS[code];
+  if (kind) {
+    return kind;
+  }
+  if (!warnedCodes.has(code)) {
+    warnedCodes.add(code);
+    console.warn(
+      `[FeedIssues] no issue kind for ${code}, using a generic label`
+    );
+  }
+  return { label: rowsLabel(code.toLowerCase().replace(/_/g, ' ')) };
 }
 
 let currentIssues: IssueRow[] = [];
 
 /**
- * Every entity the last pass flagged, keyed by code, for the bulk fixes.
- * The issue rows cap their item lists at MAX_ITEMS for display; a fix has to
- * see all of them, so it reads this instead.
+ * Every group the last pass produced, keyed by `file:code:field`, with its full
+ * entity list. The issue rows cap their item lists at MAX_ITEMS for display;
+ * an action and the full list have to see all of them, so they read this.
  */
-const entitiesByCode = new Map<string, ValidationEntity[]>();
+const groupsByKey = new Map<string, IssueGroup>();
 
-/** Every entity the last pass flagged under one code, uncapped. */
-export function getFeedIssueEntities(code: string): ValidationEntity[] {
-  return entitiesByCode.get(code) ?? [];
+/** The rows the published groups were labelled from. */
+let publishedSource: FeedIssueRowSource | undefined;
+
+/** One group of the last pass, uncapped. */
+export function getFeedIssueGroup(key: string): IssueGroup | undefined {
+  return groupsByKey.get(key);
+}
+
+/** Every group of the last pass, largest first. */
+export function getFeedIssueGroups(): IssueGroup[] {
+  return [...groupsByKey.values()];
+}
+
+/** The actions a group's row offers. None without entities to act on. */
+export function getIssueActions(group: IssueGroup): IssueKindAction[] {
+  return group.entities.length > 0 ? (issueKind(group.code).actions ?? []) : [];
+}
+
+/** A group's action, by the id its button carries. */
+export function getIssueAction(
+  group: IssueGroup,
+  actionId: string
+): IssueKindAction | undefined {
+  return getIssueActions(group).find((action) => action.id === actionId);
 }
 
 /**
@@ -119,6 +248,20 @@ let validatedKey: string | null = null;
 /** The pass currently running, if any. */
 let pending: Promise<void> | null = null;
 
+/** One label/count row, before the entity list is turned into markup. */
+export interface IssueGroup {
+  file: string;
+  code: string;
+  field: string;
+  count: number;
+  entities: ValidationEntity[];
+}
+
+/** `data-issue-key` of a group's row, its buttons and its full-list pane. */
+export function groupKey(group: IssueGroup): string {
+  return `${group.file}:${group.code}:${group.field}`;
+}
+
 /**
  * Groups messages by file, code and field. Field is part of the key because a
  * single file raises INVALID_REFERENCE for several different columns, and
@@ -130,17 +273,15 @@ export function deriveFeedIssueGroups(
 ): IssueGroup[] {
   const groups = new Map<string, IssueGroup>();
   for (const message of [...results.errors, ...results.warnings]) {
-    const file = message.file ?? 'feed';
-    const code = message.code ?? 'UNKNOWN';
-    const field = message.field ?? '';
-    const key = `${file}:${code}:${field}`;
-    const group = groups.get(key) ?? {
-      file,
-      code,
-      field,
+    const candidate: IssueGroup = {
+      file: message.file ?? 'feed',
+      code: message.code ?? 'UNKNOWN',
+      field: message.field ?? '',
       count: 0,
       entities: [],
     };
+    const key = groupKey(candidate);
+    const group = groups.get(key) ?? candidate;
     group.count += 1;
     if (message.entity) {
       group.entities.push(message.entity);
@@ -151,53 +292,44 @@ export function deriveFeedIssueGroups(
   return [...groups.values()].sort((a, b) => b.count - a.count);
 }
 
+/** A group's label and note, from its kind. */
 export function feedIssueGroupLabel(group: IssueGroup): {
   label: string;
   note?: string;
 } {
-  const override = OVERRIDES[`${group.file}:${group.code}:${group.field}`];
-  if (override?.label) {
-    return { label: override.label, note: override.note };
-  }
-  if (group.code === 'INVALID_REFERENCE' && group.field) {
-    return {
-      label: `${group.file} rows with a ${group.field} that does not exist`,
-      note: override?.note,
-    };
-  }
-  if (group.code === 'UNCLEAN_VALUE' && group.field) {
-    return {
-      label: `${group.file} rows whose ${group.field} carries hidden whitespace`,
-      note:
-        override?.note ??
-        'A quoted CSV field that swallowed the line ending. The extra characters are invisible but count, so an id carrying them matches nothing.',
-    };
-  }
-  const generic =
-    CODE_LABELS[group.code] ?? group.code.toLowerCase().replace(/_/g, ' ');
-  return { label: `${group.file} rows ${generic}`, note: override?.note };
+  const kind = issueKind(group.code);
+  return { label: kind.label(group), note: kind.note?.(group) };
 }
 
 export function deriveFeedIssues(
-  results: ValidationResults,
+  groups: IssueGroup[],
   source?: FeedIssueRowSource
 ): IssueRow[] {
   const index = new RowIndex(source);
-  return deriveFeedIssueGroups(results).map((group) => {
+  return groups.map((group) => {
     const shown = group.entities.slice(0, MAX_ITEMS);
     const row: IssueRow = {
       ...feedIssueGroupLabel(group),
+      key: groupKey(group),
       count: group.count,
       items: shown.map((entity) => buildIssueItem(entity, index)),
       moreCount: group.entities.length - shown.length,
     };
-    // Hidden whitespace is the one issue with a mechanical fix, and it always
-    // arrives in bulk. The button clears every one of them, not just this row.
-    if (group.code === 'UNCLEAN_VALUE') {
-      row.actions = [{ label: 'Fix all', dataAction: WHITESPACE_FIX_ACTION }];
+    const actions = getIssueActions(group);
+    if (actions.length > 0) {
+      row.actions = actions.map((action) => ({
+        label: action.label,
+        dataAction: action.id,
+      }));
     }
     return row;
   });
+}
+
+/** Every item of one group, uncapped, for the full list. */
+export function getFeedIssueItems(group: IssueGroup): IssueItem[] {
+  const index = new RowIndex(publishedSource);
+  return group.entities.map((entity) => buildIssueItem(entity, index));
 }
 
 /**
@@ -346,15 +478,6 @@ function publishFeedIssues(
 ): IssueRow[] {
   danglingByValue.clear();
   danglingByRow.clear();
-  entitiesByCode.clear();
-  for (const message of [...results.errors, ...results.warnings]) {
-    if (message.entity && message.code) {
-      entitiesByCode.set(message.code, [
-        ...(entitiesByCode.get(message.code) ?? []),
-        message.entity,
-      ]);
-    }
-  }
   for (const message of results.errors) {
     const entity = message.entity;
     if (!entity || message.code !== 'INVALID_REFERENCE') {
@@ -365,7 +488,14 @@ function publishFeedIssues(
     danglingByRow.set(key, [...(danglingByRow.get(key) ?? []), entity]);
   }
 
-  const issues = deriveFeedIssues(results, source);
+  const groups = deriveFeedIssueGroups(results);
+  groupsByKey.clear();
+  for (const group of groups) {
+    groupsByKey.set(groupKey(group), group);
+  }
+  publishedSource = source;
+
+  const issues = deriveFeedIssues(groups, source);
   setFeedIssues(issues);
   validatedKey = revalidator?.getStalenessKey() ?? null;
   return issues;

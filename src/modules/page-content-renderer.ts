@@ -42,16 +42,8 @@ import type {
 } from './editable-table';
 import { renderIssueCard } from 'interlocking/ui/issue-card';
 import { installGuideButtons } from 'interlocking/ui/help-modal';
-import {
-  getFeedIssueEntities,
-  getFeedIssues,
-  refreshFeedIssuesIfStale,
-} from './feed-issues';
-import {
-  applyWhitespaceFix,
-  describeWhitespaceFix,
-  WHITESPACE_FIX_ACTION,
-} from '../utils/whitespace-fix';
+import { getFeedIssues, refreshFeedIssuesIfStale } from './feed-issues';
+import { navigateToIssueItem, runFeedIssueAction } from './feed-issues-modal';
 import { GTFS_TABLES } from '../types/gtfs';
 import { nextEntityId } from '../utils/inline-entity-creator';
 import {
@@ -424,32 +416,22 @@ export class PageContentRenderer {
   }
 
   /**
-   * Clean every value the last validation pass flagged as carrying hidden
-   * whitespace, as one patch.
+   * Run one issue row's action on that row's group.
    *
-   * The button is disabled for the duration rather than left clickable: the
-   * fix reads the published issue list, so a second run while the first is in
-   * flight would work from entities that have already been rewritten.
+   * The button is disabled for the duration rather than left clickable: a
+   * second run while the first is in flight would work from entities that
+   * have already been rewritten.
    */
-  private async runWhitespaceFix(button: HTMLButtonElement): Promise<void> {
+  private async runIssueAction(button: HTMLButtonElement): Promise<void> {
     const deps = this.editableDeps();
     if (!deps) {
       notify.error('This feed is open read-only, so it cannot be fixed');
       return;
     }
-    const entities = getFeedIssueEntities('UNCLEAN_VALUE');
+    const key = button.getAttribute('data-issue-key') ?? '';
+    const actionId = button.getAttribute('data-issue-action') ?? '';
     button.disabled = true;
-    try {
-      const result = await applyWhitespaceFix(entities, deps);
-      const message = describeWhitespaceFix(result);
-      if (result.rows === 0) {
-        notify.warning(message);
-      } else {
-        notify.success(message);
-      }
-    } catch (error) {
-      console.error('[PageContentRenderer] whitespace fix failed:', error);
-      notify.error('Could not clean the whitespace, see the console');
+    if (!(await runFeedIssueAction(key, actionId, deps))) {
       button.disabled = false;
       return;
     }
@@ -1418,50 +1400,32 @@ export class PageContentRenderer {
 
     // Feed issue card items: navigate to the offending object's own page.
     container.querySelectorAll('[data-issue-nav]').forEach((item) => {
-      item.addEventListener('click', () => {
-        const nav = item.getAttribute('data-issue-nav');
-        // A trip opens its route+service timetable, not a page of its own.
-        if (nav === 'timetable') {
-          const route_id = item.getAttribute('data-issue-route-id');
-          const service_id = item.getAttribute('data-issue-service-id');
-          if (route_id && service_id) {
-            this.dependencies.onTimetableClick(
-              route_id,
-              service_id,
-              item.getAttribute('data-issue-direction-id') ?? undefined
-            );
-          }
-          return;
-        }
-        const id = item.getAttribute('data-issue-id');
-        if (!id) {
-          return;
-        }
-        if (nav === 'agency') {
-          this.dependencies.onAgencyClick(id);
-        } else if (nav === 'route') {
-          this.dependencies.onRouteClick(id);
-        } else if (nav === 'stop') {
-          this.dependencies.onStopClick(id);
-        } else if (nav === 'service') {
-          this.dependencies.onServiceClick?.(id);
-        } else if (nav === 'pathway') {
-          this.dependencies.onPathwayClick?.(id);
-        }
-      });
+      item.addEventListener('click', () => navigateToIssueItem(item));
     });
 
-    // Feed issue card row actions: a bulk fix for a whole group of issues.
+    // Feed issue card row actions: a fix for that row's group only.
     container.querySelectorAll('[data-issue-action]').forEach((button) => {
       button.addEventListener('click', (event) => {
         // The button sits inside a <summary>, which would otherwise toggle.
         event.preventDefault();
         event.stopPropagation();
-        if (
-          button.getAttribute('data-issue-action') === WHITESPACE_FIX_ACTION
-        ) {
-          void this.runWhitespaceFix(button as HTMLButtonElement);
-        }
+        void this.runIssueAction(button as HTMLButtonElement);
+      });
+    });
+
+    // Feed issue card "Show all n": the group's full list in a modal.
+    container.querySelectorAll('[data-issue-show-all]').forEach((button) => {
+      button.addEventListener('click', () => {
+        void openModal(
+          {
+            type: 'feed_issues',
+            table: button.getAttribute('data-issue-key') ?? undefined,
+          },
+          {
+            // An action run from the modal changes what the card shows.
+            onClosed: () => this.dependencies.onEntityCreated?.(),
+          }
+        );
       });
     });
 

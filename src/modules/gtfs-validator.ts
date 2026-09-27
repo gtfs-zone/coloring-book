@@ -785,7 +785,13 @@ export class GTFSValidator {
             `Row ${rowNum}: stop has no own coords and no coord-having parent_station, will not render`,
             'ORPHANED_STOP',
             GTFS_TABLES.STOPS,
-            rowNum
+            rowNum,
+            {
+              file: GTFS_TABLES.STOPS,
+              id: this.rowId('stops', stop),
+              field: 'stop_lat',
+              value: '',
+            }
           );
         }
       }
@@ -1179,7 +1185,14 @@ export class GTFSValidator {
           this.addWarning(
             `Trip '${trip_id}' has no stop times`,
             'TRIP_WITHOUT_STOP_TIMES',
-            GTFS_TABLES.TRIPS
+            GTFS_TABLES.TRIPS,
+            null,
+            {
+              file: GTFS_TABLES.TRIPS,
+              id: String(trip_id),
+              field: 'trip_id',
+              value: String(trip_id),
+            }
           );
         }
       });

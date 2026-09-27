@@ -1,10 +1,10 @@
 /**
- * Feed-wide whitespace autofix.
+ * Whitespace autofix.
  *
  * The validator's UNCLEAN_VALUE warnings all have the same cause (a quoted CSV
  * field that swallowed its line ending) and the same fix, so clearing them one
- * cell at a time is busywork. This applies every one of them as a single patch,
- * which keeps the whole clean-up to one undo step.
+ * cell at a time is busywork. This applies the given ones as a single patch,
+ * which keeps the clean-up to one undo step.
  *
  * Anything it will not fix is counted rather than forced: a required field that
  * would be emptied, a re-keyed row that would collide with an existing one, and
@@ -19,9 +19,6 @@ import {
   generateCompositeKeyFromRecord,
   getGTFSPrimaryKey,
 } from './gtfs-primary-keys';
-
-/** `data-issue-action` value of the "Fix all" button on an UNCLEAN_VALUE row. */
-export const WHITESPACE_FIX_ACTION = 'fix-whitespace';
 
 export interface WhitespaceFixResult {
   /** Cells whose value was rewritten. */
