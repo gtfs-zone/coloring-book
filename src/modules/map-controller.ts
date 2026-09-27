@@ -27,6 +27,13 @@ import { notify } from 'interlocking/ui/notification-system';
 import type { PatchRecord, SingleGTFSPatch } from '../types/patch';
 import { getZoneFeature, listZones, zoneBounds } from './zone-store';
 import { stopTimeRef } from '../utils/stop-time-ref';
+import type { PlacePayload } from './place-search';
+import { resolveThemeColor } from 'interlocking/util/theme-color';
+
+const PLACE_SOURCE = 'search-place';
+const PLACE_RING_LAYER = 'search-place-ring';
+const PLACE_EXTENT_LAYER = 'search-place-extent';
+const PLACE_MAX_ZOOM = 17;
 
 // Map interaction modes
 export enum MapMode {
@@ -84,6 +91,8 @@ export class MapController {
   private resizeTimeout: NodeJS.Timeout | null = null;
   private basemapChangeHandlerSet = false;
   private focusedObject: FocusedObject = { type: 'none' };
+  // The place picked from search, drawn as a ring until cleared.
+  private searchPlace: PlacePayload | null = null;
   // Sole owner of the route spotlight (line dimming + revealed stops). Null when cleared.
   private spotlightRouteIds: string[] | null = null;
   // Identity of the stops filter currently on the map, so applyStopsFilter can
@@ -167,6 +176,7 @@ export class MapController {
 
     this.gtfsParser = gtfsParser;
     this.initializeMap();
+    this.map!.on('click', () => this.clearSearchPlace());
     await this.initializeModules();
     this.setupModuleCallbacks();
     this.subscribeToPatchEvents(patchManager);
@@ -389,6 +399,7 @@ export class MapController {
 
     this.map.on('basemap:changed', async () => {
       console.log('Re-adding GTFS layers after basemap change...');
+      this.drawSearchPlace();
 
       // Check if we have GTFS data loaded
       if (!this.gtfsParser || !this.gtfsParser.getFileDataSync('stops.txt')) {
@@ -441,6 +452,8 @@ export class MapController {
               ...counterparts,
             ]);
           }
+          // Back on top of the feed layers just re-added.
+          this.drawSearchPlace();
           console.log('GTFS layers re-added after basemap change');
         } catch (error) {
           console.error('Failed to re-add GTFS layers:', error);
@@ -514,6 +527,7 @@ export class MapController {
     this.focusedObject = { type: 'none' };
     this.spotlightRouteIds = null;
     this.appliedStopsFilterKey = '';
+    this.clearSearchPlace();
     this.layerManager?.setStopsFilter(null);
     this.layerManager?.clearAllLayers();
     this.routeRenderer?.clearRoutes();
@@ -926,6 +940,7 @@ export class MapController {
    */
   public refreshAccentColor(): void {
     this.layerManager?.refreshAccentColor();
+    this.drawSearchPlace();
   }
 
   /**
@@ -1294,6 +1309,126 @@ export class MapController {
       maxZoom: CONFIG.STOP_FOCUS_ZOOM,
       duration: 1000,
       essential: true,
+    });
+  }
+
+  public getCenter(): { lng: number; lat: number } | null {
+    return this.map ? this.map.getCenter() : null;
+  }
+
+  /**
+   * Move to a place picked from search and ring it. A direct camera move: the
+   * user asked to go there, so the auto-zoom preference does not apply.
+   */
+  public focusPlace(place: PlacePayload): void {
+    if (!this.map) {
+      return;
+    }
+    console.log(
+      `[MapController] Focusing place "${place.name}" at ${place.lon},${place.lat}`
+    );
+    this.searchPlace = place;
+    this.drawSearchPlace();
+    if (place.extent) {
+      const [west, south, east, north] = place.extent;
+      this.map.fitBounds(new LngLatBounds([west, south], [east, north]), {
+        padding: fitPadding(this.map, 50, this.bottomPadding),
+        maxZoom: PLACE_MAX_ZOOM,
+      });
+    } else {
+      this.map.flyTo({
+        center: [place.lon, place.lat],
+        zoom: PLACE_MAX_ZOOM,
+        padding: fitPadding(this.map, 50, this.bottomPadding),
+        essential: true,
+      });
+    }
+  }
+
+  private clearSearchPlace(): void {
+    if (!this.searchPlace) {
+      return;
+    }
+    console.log('[MapController] Clearing search place');
+    this.searchPlace = null;
+    this.removeSearchPlaceLayers();
+  }
+
+  private removeSearchPlaceLayers(): void {
+    if (!this.map) {
+      return;
+    }
+    for (const layerId of [PLACE_RING_LAYER, PLACE_EXTENT_LAYER]) {
+      if (this.map.getLayer(layerId)) {
+        this.map.removeLayer(layerId);
+      }
+    }
+    if (this.map.getSource(PLACE_SOURCE)) {
+      this.map.removeSource(PLACE_SOURCE);
+    }
+  }
+
+  /** (Re)draw the search place on top of every other layer. */
+  private drawSearchPlace(): void {
+    if (!this.map) {
+      return;
+    }
+    this.removeSearchPlaceLayers();
+    const place = this.searchPlace;
+    if (!place) {
+      return;
+    }
+    const features: GeoJSON.Feature[] = [
+      {
+        type: 'Feature',
+        properties: {},
+        geometry: { type: 'Point', coordinates: [place.lon, place.lat] },
+      },
+    ];
+    if (place.extent) {
+      const [west, south, east, north] = place.extent;
+      features.push({
+        type: 'Feature',
+        properties: {},
+        geometry: {
+          type: 'LineString',
+          coordinates: [
+            [west, south],
+            [east, south],
+            [east, north],
+            [west, north],
+            [west, south],
+          ],
+        },
+      });
+    }
+    const accent = resolveThemeColor('--color-primary', '#3b82f6');
+    this.map.addSource(PLACE_SOURCE, {
+      type: 'geojson',
+      data: { type: 'FeatureCollection', features },
+    });
+    this.map.addLayer({
+      id: PLACE_EXTENT_LAYER,
+      type: 'line',
+      source: PLACE_SOURCE,
+      filter: ['==', ['geometry-type'], 'LineString'],
+      paint: {
+        'line-color': accent,
+        'line-width': 2,
+        'line-dasharray': [2, 2],
+      },
+    });
+    this.map.addLayer({
+      id: PLACE_RING_LAYER,
+      type: 'circle',
+      source: PLACE_SOURCE,
+      filter: ['==', ['geometry-type'], 'Point'],
+      paint: {
+        'circle-radius': 12,
+        'circle-color': 'rgba(0,0,0,0)',
+        'circle-stroke-color': accent,
+        'circle-stroke-width': 3,
+      },
     });
   }
 

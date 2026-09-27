@@ -10,6 +10,7 @@ import { BrowseNavigation } from './modules/browse-navigation';
 import { InfoDisplay } from './modules/info-display';
 import { SearchController } from 'interlocking/ui/search-controller';
 import { buildSearchEntries } from './modules/search-entries';
+import { searchPlaces, type SearchPayload } from './modules/place-search';
 import { GTFSValidator } from './modules/gtfs-validator';
 import {
   refreshFeedIssuesIfStale,
@@ -131,7 +132,7 @@ export class GTFSEditor {
   public relationships: GTFSRelationships;
   public infoDisplay: InfoDisplay;
   public browseNavigation: BrowseNavigation;
-  public searchController: SearchController<PageState>;
+  public searchController: SearchController<SearchPayload>;
   public validator: GTFSValidator;
   public keyboardShortcuts: KeyboardShortcuts;
   private shortcutCommands: ShortcutCommand[];
@@ -164,9 +165,17 @@ export class GTFSEditor {
       this.serviceDaysController,
       this.gtfsParser
     );
-    this.searchController = new SearchController<PageState>({
+    this.searchController = new SearchController<SearchPayload>({
       getEntries: () => buildSearchEntries(this.gtfsParser),
-      onSelect: (state) => this.focusSearchResult(state),
+      getRemoteEntries: (query, signal) =>
+        searchPlaces(query, this.mapController.getCenter(), signal),
+      onSelect: (payload) => {
+        if (payload.kind === 'entity') {
+          this.focusSearchResult(payload.state);
+        } else {
+          this.mapController.focusPlace(payload);
+        }
+      },
     });
     this.validator = new GTFSValidator(this.gtfsParser);
     this.shortcutCommands = editorShortcuts(this);

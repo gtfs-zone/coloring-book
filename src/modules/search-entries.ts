@@ -1,12 +1,12 @@
 /**
  * Turns the loaded feed into search entries for `SearchController`.
  *
- * The payload is a `PageState`, so selecting a result can go straight through
- * the normal navigation path and leave the sidebar and URL correct.
+ * The payload wraps a `PageState`, so selecting a result can go straight
+ * through the normal navigation path and leave the sidebar and URL correct.
  */
 
 import { GTFS_TABLES } from '../types/gtfs';
-import type { PageState } from '../types/page-state';
+import type { SearchPayload } from './place-search';
 import {
   getAgencyDisplay,
   getRouteDisplay,
@@ -30,7 +30,7 @@ type Row = Record<string, string>;
 
 export async function buildSearchEntries(
   parser: GTFSParser
-): Promise<SearchEntry<PageState>[]> {
+): Promise<SearchEntry<SearchPayload>[]> {
   const [stops, routes, agencies, locationGroups] = (await Promise.all([
     parser.getFileData(GTFS_TABLES.STOPS),
     parser.getFileData(GTFS_TABLES.ROUTES),
@@ -38,7 +38,7 @@ export async function buildSearchEntries(
     parser.getFileData(GTFS_TABLES.LOCATION_GROUPS),
   ])) as [Row[] | null, Row[] | null, Row[] | null, Row[] | null];
 
-  const entries: SearchEntry<PageState>[] = [];
+  const entries: SearchEntry<SearchPayload>[] = [];
 
   for (const stop of stops ?? []) {
     const stop_id = stop['stop_id'];
@@ -46,7 +46,7 @@ export async function buildSearchEntries(
       continue;
     }
     entries.push({
-      payload: { type: 'stop', stop_id },
+      payload: { kind: 'entity', state: { type: 'stop', stop_id } },
       icon: stopMarker(stop['location_type']),
       primary: getStopDisplay(stop).primary,
       secondary: stop['stop_code'] || stop_id,
@@ -68,7 +68,7 @@ export async function buildSearchEntries(
     }
     const display = getRouteDisplay(route);
     entries.push({
-      payload: { type: 'route', route_id },
+      payload: { kind: 'entity', state: { type: 'route', route_id } },
       icon: routeMarker(route['route_color']),
       primary: display.primary,
       secondary:
@@ -91,7 +91,7 @@ export async function buildSearchEntries(
       continue;
     }
     entries.push({
-      payload: { type: 'agency', agency_id },
+      payload: { kind: 'entity', state: { type: 'agency', agency_id } },
       icon: neutralMarker(),
       primary: getAgencyDisplay(agency).primary,
       secondary: agency_id,
@@ -106,7 +106,7 @@ export async function buildSearchEntries(
     const location_id = String(feature.id);
     const name = zoneName(feature);
     entries.push({
-      payload: { type: 'zone', location_id },
+      payload: { kind: 'entity', state: { type: 'zone', location_id } },
       icon: neutralMarker(),
       primary: name || location_id,
       secondary: location_id,
@@ -122,7 +122,10 @@ export async function buildSearchEntries(
     }
     const name = group['location_group_name'];
     entries.push({
-      payload: { type: 'location_group', location_group_id },
+      payload: {
+        kind: 'entity',
+        state: { type: 'location_group', location_group_id },
+      },
       icon: neutralMarker(),
       primary: name || location_group_id,
       secondary: location_group_id,
