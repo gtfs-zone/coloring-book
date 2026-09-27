@@ -38,7 +38,12 @@ import {
   validateBookingRuleRow,
   validateLocationGroupId,
 } from '../utils/flex-rules';
-import { LOCATIONS_TABLE } from './zone-store';
+import {
+  locationIdClash,
+  readIdOwners,
+  readNewLocationIdOwners,
+  readZoneFeatures,
+} from '../utils/location-id-owners';
 import { GTFS_TABLES } from '../types/gtfs';
 
 export interface OnDemandModalDeps extends EditableTableDeps {
@@ -129,15 +134,6 @@ async function groupStopOptions(
 
 // ─── Zones pane ───────────────────────────────────────────────────────────────
 
-/** The stored FeatureCollection's features, or an empty list. */
-async function readZoneFeatures(
-  deps: OnDemandModalDeps
-): Promise<GeoJSON.Feature[]> {
-  const rows = await deps.gtfsDatabase.getAllRows(LOCATIONS_TABLE);
-  const stored = rows[0] as Partial<GeoJSON.FeatureCollection> | undefined;
-  return Array.isArray(stored?.features) ? stored.features : [];
-}
-
 /**
  * Zones, read-only.
  *
@@ -146,7 +142,7 @@ async function readZoneFeatures(
  * place and so a zone is reachable from here.
  */
 async function renderZonesPane(deps: OnDemandModalDeps): Promise<string> {
-  const features = await readZoneFeatures(deps);
+  const features = await readZoneFeatures(deps.gtfsDatabase);
   if (features.length === 0) {
     return emptyState(
       ZONES_ENTRY_ID,
@@ -233,9 +229,9 @@ async function promptNewZone(
       if (v.location_id === '') {
         return 'location_id is required.';
       }
-      const owner = taken.get(v.location_id);
-      if (owner) {
-        return `"${v.location_id}" is already used as ${owner}; the ID must be unique across stops.txt, locations.geojson and location_groups.txt.`;
+      const clash = locationIdClash(taken, v.location_id);
+      if (clash) {
+        return clash;
       }
       geometry = await readNewZoneGeometry(instanceId);
       // readNewZoneGeometry reports into the exchange block's own error slot.
@@ -341,52 +337,6 @@ const ON_DEMAND_ENTRIES: OnDemandEntry[] = [
 
 const GROUP_ORDER: OnDemandGroup[] = ['Booking', 'Geography'];
 
-/** Every id already claimed by stops.txt or locations.geojson, and by which. */
-async function readIdOwners(
-  deps: OnDemandModalDeps
-): Promise<Map<string, string>> {
-  const owners = new Map<string, string>();
-  const stops = await deps.gtfsDatabase.getAllRows(
-    specStoreName(GTFS_TABLES.STOPS)
-  );
-  for (const stop of stops) {
-    const id = String(stop.stop_id ?? '').trim();
-    if (id !== '') {
-      owners.set(id, 'a stops.txt stop_id');
-    }
-  }
-  for (const feature of await readZoneFeatures(deps)) {
-    const id = String(feature.id ?? '').trim();
-    if (id !== '') {
-      owners.set(id, 'a locations.geojson id');
-    }
-  }
-  return owners;
-}
-
-/**
- * Every id a new zone may not take.
- *
- * `readIdOwners` covers stops and existing zones, which is all the location
- * group validator may see (it must not flag a row against its own id). A new
- * zone is checked against the whole namespace, so the location groups go on top.
- */
-async function readNewZoneIdOwners(
-  deps: OnDemandModalDeps
-): Promise<Map<string, string>> {
-  const owners = await readIdOwners(deps);
-  const groups = await deps.gtfsDatabase.getAllRows(
-    specStoreName(GTFS_TABLES.LOCATION_GROUPS)
-  );
-  for (const group of groups) {
-    const id = String(group.location_group_id ?? '').trim();
-    if (id !== '' && !owners.has(id)) {
-      owners.set(id, 'a location_groups.txt location_group_id');
-    }
-  }
-  return owners;
-}
-
 const INTRO = `On-demand service (GTFS Flex): the rules a rider books under, the
   groups of stops they can be served at, and the zones they can be served in. A
   trip becomes on-demand in its timetable, by giving a stop_time a pickup and
@@ -421,7 +371,9 @@ export async function showOnDemandModal(
     if (entry.render) {
       return entry.render(deps);
     }
-    const context: OnDemandContext = { idOwners: await readIdOwners(deps) };
+    const context: OnDemandContext = {
+      idOwners: await readIdOwners(deps.gtfsDatabase),
+    };
     tableConfig.tableName = entry.table;
     tableConfig.emptyMessage = entry.emptyMessage;
     tableConfig.columnOverrides = entry.columnOverrides?.(deps);
@@ -437,14 +389,16 @@ export async function showOnDemandModal(
 
   const countEntry = async (entry: OnDemandEntry): Promise<number> => {
     if (entry.table === ZONES_ENTRY_ID) {
-      return (await readZoneFeatures(deps)).length;
+      return (await readZoneFeatures(deps.gtfsDatabase)).length;
     }
     return (await deps.gtfsDatabase.getAllRows(specStoreName(entry.table)))
       .length;
   };
 
   const createZone = async (close: () => void): Promise<void> => {
-    const created = await promptNewZone(await readNewZoneIdOwners(deps));
+    const created = await promptNewZone(
+      await readNewLocationIdOwners(deps.gtfsDatabase)
+    );
     if (!created) {
       return;
     }

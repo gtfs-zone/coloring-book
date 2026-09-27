@@ -13,9 +13,18 @@ import { showModal } from 'interlocking/ui/modal-utils';
 import { generateId } from '../utils/uuid';
 import { hasLiveEditor } from '../utils/inline-edit';
 import { promptNewEntity } from './entity-form-modal';
-import { nextEntityId } from '../utils/inline-entity-creator';
+import { firstFreeId } from '../utils/inline-entity-creator';
+import {
+  locationIdClash,
+  readNewLocationIdOwners,
+} from '../utils/location-id-owners';
+import { resolveThemeColor } from 'interlocking/util/theme-color';
 import { GTFS_TABLES } from '../types/gtfs';
 import { renderSpecFieldLabelContent } from '../utils/field-component';
+
+/** The marker shown while the New stop modal is open. */
+const PENDING_STOP_SOURCE = 'pending-stop';
+const PENDING_STOP_LAYER = 'pending-stop';
 
 export interface InteractionCallbacks {
   onRouteClick?: (route_id: string) => void;
@@ -328,25 +337,83 @@ export class InteractionHandler {
     // while this one is still being written.
     this.setMapMode(MapMode.NAVIGATE);
 
-    const stop_id = await nextEntityId(
-      this.gtfsParser.gtfsDatabase,
-      'stops',
-      'stop'
-    );
-    const newStop: Stops = {
-      stop_id,
-      stop_name: '',
-      stop_lat: parseFloat(lat.toFixed(6)),
-      stop_lon: parseFloat(lng.toFixed(6)),
-      parent_station: expandedStationId ?? '',
-      location_type: 0,
-    };
-    console.log('[InteractionHandler] creating stop:', newStop);
-    await this.addStopToData(newStop);
+    const database = this.gtfsParser.gtfsDatabase;
+    const owners = await readNewLocationIdOwners(database);
+    this.showPendingStopMarker(lng, lat);
+    let stop_id: string | null = null;
+    try {
+      await promptNewEntity({
+        title: 'New stop',
+        id: {
+          table: 'stops',
+          suggested: firstFreeId('stop', owners.keys()),
+          taken: async (id) => locationIdClash(owners, id),
+        },
+        fields: [],
+        validate: () => null,
+        onCreate: async (v) => {
+          const newStop: Stops = {
+            stop_id: v.stop_id,
+            stop_name: '',
+            stop_lat: parseFloat(lat.toFixed(6)),
+            stop_lon: parseFloat(lng.toFixed(6)),
+            parent_station: expandedStationId ?? '',
+            location_type: 0,
+          };
+          console.log('[InteractionHandler] creating stop:', newStop);
+          await this.addStopToData(newStop);
+          stop_id = v.stop_id;
+        },
+      });
+    } finally {
+      this.removePendingStopMarker();
+    }
+
+    if (stop_id === null) {
+      console.log('[InteractionHandler] new stop cancelled');
+      return;
+    }
     this.callbacks.onStopClick?.(stop_id);
     console.log(
       `[InteractionHandler] created stop ${stop_id} at ${lat.toFixed(6)}, ${lng.toFixed(6)}`
     );
+  }
+
+  /**
+   * Draw a marker where the stop being created will go, until the New stop
+   * modal closes.
+   */
+  private showPendingStopMarker(lng: number, lat: number): void {
+    this.removePendingStopMarker();
+    const accent = resolveThemeColor('--color-primary', '#3b82f6');
+    this.map.addSource(PENDING_STOP_SOURCE, {
+      type: 'geojson',
+      data: {
+        type: 'Feature',
+        geometry: { type: 'Point', coordinates: [lng, lat] },
+        properties: {},
+      },
+    });
+    this.map.addLayer({
+      id: PENDING_STOP_LAYER,
+      type: 'circle',
+      source: PENDING_STOP_SOURCE,
+      paint: {
+        'circle-radius': 7,
+        'circle-color': accent,
+        'circle-stroke-color': '#ffffff',
+        'circle-stroke-width': 2,
+      },
+    });
+  }
+
+  private removePendingStopMarker(): void {
+    if (this.map.getLayer(PENDING_STOP_LAYER)) {
+      this.map.removeLayer(PENDING_STOP_LAYER);
+    }
+    if (this.map.getSource(PENDING_STOP_SOURCE)) {
+      this.map.removeSource(PENDING_STOP_SOURCE);
+    }
   }
 
   /**

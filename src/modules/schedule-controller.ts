@@ -3340,9 +3340,9 @@ export class ScheduleController {
   }
 
   /**
-   * Create a trip with a generated `trip_<n>` ID in the current timetable.
-   * Called from the "New trip" and "Add first trip" buttons. The ID is
-   * renamed afterwards from the trip column header.
+   * Ask for a new trip's ID, suggested as `trip_<n>`, and create the trip in
+   * the current timetable. Called from the "New trip" and "Add first trip"
+   * buttons.
    */
   public async createNewTrip(): Promise<void> {
     if (!this.currentRouteId || !this.currentServiceId) {
@@ -3350,17 +3350,20 @@ export class ScheduleController {
       return;
     }
 
-    try {
-      const trip_id = await nextEntityId(
-        this.gtfsParser.gtfsDatabase,
-        'trips',
-        'trip'
-      );
-      await this.insertTrip(trip_id);
-    } catch (error) {
-      console.error('Failed to create trip:', error);
-      notify.error('Failed to create trip');
-    }
+    await promptNewEntity({
+      title: 'New trip',
+      id: {
+        table: 'trips',
+        suggested: await nextEntityId(
+          this.gtfsParser.gtfsDatabase,
+          'trips',
+          'trip'
+        ),
+      },
+      fields: [],
+      validate: () => null,
+      onCreate: async (values) => this.insertTrip(values.trip_id),
+    });
   }
 
   /**
@@ -3374,14 +3377,12 @@ export class ScheduleController {
    */
   private async insertTrip(trip_id: string): Promise<void> {
     if (!this.currentRouteId || !this.currentServiceId) {
-      notify.error('No timetable loaded');
-      return;
+      throw new Error('No timetable loaded');
     }
 
     const validation = await this.validateTripId(trip_id);
     if (!validation.isValid) {
-      notify.error(validation.errorMessage || 'Invalid trip ID');
-      return;
+      throw new Error(validation.errorMessage || 'Invalid trip ID');
     }
 
     const tripData = {
@@ -3760,6 +3761,10 @@ export class ScheduleController {
     await promptNewEntity({
       title: `Copy trip ${trip_id}`,
       createLabel: 'Copy trip',
+      id: {
+        table: 'trips',
+        suggested: await nextEntityId(db, 'trips', 'trip'),
+      },
       fields: [
         offsetField(),
         {
@@ -3777,7 +3782,7 @@ export class ScheduleController {
       onCreate: async (values) =>
         this.writeTripCopy(
           source,
-          await nextEntityId(db, 'trips', 'trip'),
+          values.trip_id,
           TimeFormatter.parseSignedDuration(values.offset) ?? 0,
           values.flip === 'true'
         ),
@@ -3788,7 +3793,7 @@ export class ScheduleController {
    * Write a trip copy and record it as one batch insert.
    *
    * @param source - The trip row being copied
-   * @param newId - trip_id of the copy, generated as unique
+   * @param newId - trip_id of the copy, confirmed free
    * @param offsetSeconds - Seconds added to every time of the copy
    * @param flip - Whether to reverse the stop order and flip direction_id
    */
