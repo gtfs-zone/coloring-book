@@ -82,8 +82,13 @@ export interface EntityFormOptions {
   extraBody?: string;
   /** Extra classes for the modal box, for a form that wants a narrower one. */
   boxClassName?: string;
+  /**
+   * Draft keys no field renders, seeded before the fields' own values. Set
+   * them through `setDraftValue` with the draft id `onMount` receives.
+   */
+  draft?: Record<string, unknown>;
   /** Runs once the form is in the DOM, after the first input is focused. */
-  onMount?: (close: () => void) => void;
+  onMount?: (close: () => void, draftId: string) => void;
   /**
    * Returns an error message to show inline, or null to accept the values.
    *
@@ -95,10 +100,14 @@ export interface EntityFormOptions {
   ) => string | null | Promise<string | null>;
   /**
    * Writes the entity. Throwing here leaves the form open with the message.
+   * `draft` is the whole draft record, `draft` keys included.
    *
    * Omitted by callers that only want the collected values back.
    */
-  onCreate?: (values: Record<string, string>) => Promise<void>;
+  onCreate?: (
+    values: Record<string, string>,
+    draft: Record<string, unknown>
+  ) => Promise<void>;
 }
 
 const ERROR_ID = 'entity-form-error';
@@ -304,12 +313,12 @@ export async function promptNewEntity(
     rendered.push(await renderField(field, draftId));
   }
 
-  openDraft(
-    draftId,
-    Object.fromEntries(
+  openDraft(draftId, {
+    ...options.draft,
+    ...Object.fromEntries(
       fields.filter(isDraftField).map((f) => [f.field, f.value ?? ''])
-    )
-  );
+    ),
+  });
   const body = `
     <div class="space-y-3" data-entity-form="${draftId}">
       ${options.intro ?? ''}
@@ -345,7 +354,7 @@ export async function promptNewEntity(
           input?.focus();
         }
       }
-      options.onMount?.(close);
+      options.onMount?.(close, draftId);
     },
     actions: [
       {
@@ -384,7 +393,7 @@ export async function promptNewEntity(
             return true;
           }
           try {
-            await options.onCreate?.(values);
+            await options.onCreate?.(values, readDraft(draftId).values);
           } catch (error) {
             console.error('[entity-form-modal] create failed', error);
             showError(

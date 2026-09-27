@@ -126,6 +126,15 @@ export function readDraft(id: string): Draft {
   return { values: { ...draft.values }, errors: { ...draft.errors } };
 }
 
+/** Set a draft key that no field renders, such as a toggle's. */
+export function setDraftValue(id: string, key: string, value: unknown): void {
+  const draft = drafts.get(id);
+  if (!draft) {
+    throw new Error(`[InlineField] draft ${id} is not open`);
+  }
+  draft.values[key] = value;
+}
+
 export function closeDraft(id: string): void {
   drafts.delete(id);
   console.log(`[InlineField] draft ${id} closed`);

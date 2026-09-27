@@ -5,6 +5,7 @@
 
 import type { Agency, Routes, Calendar } from '../types/gtfs';
 import { toGtfsDateLocal, todayGtfsDate } from './gtfs-date';
+import { feedBounds, type FeedBoundsSource } from './feed-bounds';
 
 /**
  * Get date one year from now in YYYYMMDD format
@@ -27,21 +28,44 @@ export function createDefaultAgency(agency_id: string): Agency {
   };
 }
 
+/** A new service's date range. */
+export interface ServiceRange {
+  start: string;
+  end: string;
+}
+
 /**
- * Create a new service (calendar entry) with default values
+ * The date range a new service starts with: the feed_info bounds, each
+ * falling back to today and today +1 year.
  */
-export function createDefaultService(service_id: string): Calendar {
+export async function defaultServiceRange(
+  db: FeedBoundsSource
+): Promise<ServiceRange> {
+  const bounds = await feedBounds(db);
+  return {
+    start: bounds.start ?? todayGtfsDate(),
+    end: bounds.end ?? getOneYearFromNowYYYYMMDD(),
+  };
+}
+
+/**
+ * Create a new service (calendar entry) running on no weekdays
+ */
+export function createDefaultService(
+  service_id: string,
+  range: ServiceRange
+): Calendar {
   return {
     service_id,
-    monday: 1,
-    tuesday: 1,
-    wednesday: 1,
-    thursday: 1,
-    friday: 1,
-    saturday: 1,
-    sunday: 1,
-    start_date: todayGtfsDate(),
-    end_date: getOneYearFromNowYYYYMMDD(),
+    monday: 0,
+    tuesday: 0,
+    wednesday: 0,
+    thursday: 0,
+    friday: 0,
+    saturday: 0,
+    sunday: 0,
+    start_date: range.start,
+    end_date: range.end,
   };
 }
 

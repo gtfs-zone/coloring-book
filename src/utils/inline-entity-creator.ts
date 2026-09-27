@@ -6,11 +6,7 @@
 import type { GTFSDatabase } from '../modules/gtfs-database';
 import { notify } from 'interlocking/ui/notification-system';
 import { getNaturalKeyField } from './gtfs-primary-keys';
-import {
-  createDefaultAgency,
-  createDefaultRoute,
-  createDefaultService,
-} from './default-values';
+import { createDefaultAgency, createDefaultRoute } from './default-values';
 
 interface PatchManagerLike {
   recordInsert: (
@@ -102,31 +98,6 @@ export class InlineEntityCreator {
       console.error('Error creating agency:', error);
       notify.error(
         `Failed to create agency: ${error instanceof Error ? error.message : 'Unknown error'}`
-      );
-      return null;
-    }
-  }
-
-  /**
-   * Create a new service (calendar entry) under a generated ID
-   */
-  async createService(): Promise<string | null> {
-    try {
-      const service_id = await nextServiceId(this.database);
-      const newService = createDefaultService(service_id);
-      await this.database.insertRows('calendar', [newService]);
-      await this.patchManager?.recordInsert(
-        'calendar',
-        service_id,
-        newService as unknown as Record<string, unknown>
-      );
-
-      this.onEntityCreated();
-      return service_id;
-    } catch (error) {
-      console.error('Error creating service:', error);
-      notify.error(
-        `Failed to create service: ${error instanceof Error ? error.message : 'Unknown error'}`
       );
       return null;
     }

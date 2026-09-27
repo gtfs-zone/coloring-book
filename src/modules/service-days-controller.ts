@@ -12,11 +12,7 @@ import {
   getUsFederalDates,
   getUsFederalHolidays,
 } from '../calendar-patterns/us-federal';
-import {
-  formatGtfsDateWithWeekday,
-  fromInputValue,
-  toGtfsDateLocal,
-} from '../utils/gtfs-date';
+import { formatGtfsDateWithWeekday, fromInputValue } from '../utils/gtfs-date';
 import {
   installEditableTableHandlers,
   renderEditableTable,
@@ -33,17 +29,12 @@ import {
   renderFieldLabel,
 } from '../utils/field-component';
 import { escapeHtml } from 'interlocking/util/escape-html';
-
-// Days of the week in US format (Sunday first)
-export const DAYS_OF_WEEK = [
-  { key: 'sunday', label: 'Sun' },
-  { key: 'monday', label: 'Mon' },
-  { key: 'tuesday', label: 'Tue' },
-  { key: 'wednesday', label: 'Wed' },
-  { key: 'thursday', label: 'Thu' },
-  { key: 'friday', label: 'Fri' },
-  { key: 'saturday', label: 'Sat' },
-] as const;
+import {
+  DAYS_OF_WEEK,
+  renderWeekdayToggles,
+  setWeekdayToggle,
+} from '../utils/weekday-toggles';
+import { defaultServiceRange } from '../utils/default-values';
 
 interface GTFSParserInterface {
   gtfsDatabase: {
@@ -164,7 +155,8 @@ export class ServiceDaysController {
       let calendar = calendarRows[0];
 
       if (!calendar) {
-        // Derive date range from existing calendar_dates, fall back to today/+1yr
+        // Derive date range from existing calendar_dates, fall back to the
+        // default service range
         const existingDates = await this.gtfsParser.gtfsDatabase.queryRows(
           'calendar_dates',
           { service_id }
@@ -176,11 +168,9 @@ export class ServiceDaysController {
           startDate = sorted[0];
           endDate = sorted[sorted.length - 1];
         } else {
-          const today = new Date();
-          startDate = toGtfsDateLocal(today);
-          endDate = toGtfsDateLocal(
-            new Date(today.getTime() + 365 * 24 * 60 * 60 * 1000)
-          );
+          const range = await defaultServiceRange(this.gtfsParser.gtfsDatabase);
+          startDate = range.start;
+          endDate = range.end;
         }
 
         calendar = {
@@ -362,33 +352,23 @@ export class ServiceDaysController {
     service_id: string,
     calendar: Calendar | null
   ): string {
-    const dayToggles = DAYS_OF_WEEK.map(({ key, label }) => {
-      // Handle both string and number values from database
-      const isActive = calendar
-        ? Number((calendar as Record<string, unknown>)[key]) === 1
-        : false;
-      const activeClass = isActive ? 'btn-primary' : 'btn-outline';
-
-      return `
-        <button
-          class="btn ${activeClass} btn-xs day-toggle"
-          data-service-id="${service_id}"
-          data-day="${key}"
-          onclick="window.gtfsEditor.serviceDaysController.toggleDay('${service_id}', '${key}')"
-        >
-          <span class="saving-indicator" id="saving-day-${key}-${service_id}" style="display: none;">
-            <span class="loading loading-spinner loading-xs"></span>
-          </span>
-          ${label}
-        </button>
-      `;
-    }).join('');
-
-    return `
-      <div class="day-toggles flex gap-1 text-xs">
-        ${dayToggles}
-      </div>
-    `;
+    // Handle both string and number values from database
+    const active = new Set<string>(
+      DAYS_OF_WEEK.filter(
+        ({ key }) =>
+          calendar && Number((calendar as Record<string, unknown>)[key]) === 1
+      ).map(({ key }) => key)
+    );
+    return renderWeekdayToggles(
+      active,
+      (key) =>
+        `data-service-id="${service_id}" onclick="window.gtfsEditor.serviceDaysController.toggleDay('${service_id}', '${key}')"`,
+      (key) => `
+        <span class="saving-indicator" id="saving-day-${key}-${service_id}" style="display: none;">
+          <span class="loading loading-spinner loading-xs"></span>
+        </span>
+      `
+    );
   }
 
   /**
@@ -914,10 +894,7 @@ export class ServiceDaysController {
       ) as HTMLButtonElement;
 
       if (button) {
-        // Remove both classes first
-        button.classList.remove('btn-primary', 'btn-outline');
-        // Add the appropriate class based on current state
-        button.classList.add(isActive ? 'btn-primary' : 'btn-outline');
+        setWeekdayToggle(button, isActive);
       }
     } catch (error) {
       console.error(`Failed to update day button UI for ${dayKey}:`, error);

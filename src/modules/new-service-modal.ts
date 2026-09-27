@@ -1,10 +1,10 @@
 /**
  * New Service Modal
  *
- * Creates one `calendar.txt` row under a generated `service_<n>` ID, with a
- * weekly pattern and a date range. The service page renames it. Opened from the timetable modal's service picker and from the route
- * page's "no services" empty state, both of which want a service to exist
- * before they can show a timetable for it.
+ * Asks for a new `calendar.txt` row: its service_id (prefilled with the next
+ * free `service_<n>`), its date range and its weekly pattern. The fields and
+ * toggles are the service page's own, committing into a draft record that
+ * Create writes as one insert.
  *
  * The row is written and recorded here, so the caller only has to deal with the
  * new service_id it resolves with.
@@ -13,9 +13,16 @@
 import { promptNewEntity } from './entity-form-modal';
 import { nextServiceId } from '../utils/inline-entity-creator';
 import { notify } from 'interlocking/ui/notification-system';
-import { createDefaultService } from '../utils/default-values';
-import { feedBounds, type FeedBoundsSource } from '../utils/feed-bounds';
-import { DAYS_OF_WEEK } from './service-days-controller';
+import {
+  createDefaultService,
+  defaultServiceRange,
+} from '../utils/default-values';
+import type { FeedBoundsSource } from '../utils/feed-bounds';
+import {
+  renderWeekdayToggles,
+  setWeekdayToggle,
+} from '../utils/weekday-toggles';
+import { setDraftValue } from '../utils/inline-editable-field';
 
 export interface NewServiceModalDeps {
   database: FeedBoundsSource & {
@@ -34,27 +41,6 @@ export interface NewServiceModalDeps {
   } | null;
 }
 
-/** The weekly pattern, which has no single field of its own to render into. */
-function renderDayToggles(): string {
-  const dayToggles = DAYS_OF_WEEK.map(
-    ({ key, label }) => `
-      <button
-        type="button"
-        class="btn btn-xs btn-outline new-service-day"
-        data-day="${key}"
-        aria-pressed="false"
-      >${label}</button>
-    `
-  ).join('');
-
-  return `
-    <div class="flex flex-col gap-1">
-      <span class="text-sm opacity-60">Runs on</span>
-      <div class="flex gap-1">${dayToggles}</div>
-    </div>
-  `;
-}
-
 /**
  * Ask for a new service and write it.
  *
@@ -65,33 +51,53 @@ function renderDayToggles(): string {
 export async function showNewServiceModal(
   deps: NewServiceModalDeps
 ): Promise<string | null> {
-  const bounds = await feedBounds(deps.database);
-  const defaults = createDefaultService('');
-  const startDate = bounds.start ?? defaults.start_date;
-  const endDate = bounds.end ?? defaults.end_date;
+  const suggested = await nextServiceId(deps.database);
+  const defaults = createDefaultService(
+    suggested,
+    await defaultServiceRange(deps.database)
+  );
 
-  const days = new Set<string>();
   let service_id: string | null = null;
 
   const values = await promptNewEntity({
     title: 'New service',
     boxClassName: 'max-w-lg',
+    id: {
+      table: 'calendar',
+      suggested,
+      // nextServiceId skips these, so a typed ID has to as well.
+      taken: async (id) => {
+        const exceptions = (await deps.database.getAllRows(
+          'calendar_dates'
+        )) as Record<string, unknown>[];
+        return exceptions.some((row) => String(row.service_id ?? '') === id)
+          ? `calendar_dates already has exceptions for service "${id}"`
+          : null;
+      },
+    },
     fields: [
       {
         field: 'start_date',
         tableName: 'calendar.txt',
-        value: startDate,
+        value: defaults.start_date,
       },
       {
         field: 'end_date',
         tableName: 'calendar.txt',
-        value: endDate,
+        value: defaults.end_date,
       },
     ],
-    extraBody: renderDayToggles(),
-    onMount: () => {
+    draft: defaults as unknown as Record<string, unknown>,
+    extraBody: `
+      <div class="new-service-days">
+        <h4 class="text-sm font-semibold mb-2 text-base-content/80">Weekly Pattern</h4>
+        ${renderWeekdayToggles(new Set(), () => '')}
+      </div>
+    `,
+    onMount: (_close, draftId) => {
+      const days = new Set<string>();
       document
-        .querySelectorAll<HTMLButtonElement>('.new-service-day')
+        .querySelectorAll<HTMLButtonElement>('.new-service-days .day-toggle')
         .forEach((btn) => {
           btn.addEventListener('click', () => {
             const key = btn.dataset.day;
@@ -104,39 +110,22 @@ export async function showNewServiceModal(
             } else {
               days.delete(key);
             }
-            btn.classList.toggle('btn-primary', on);
-            btn.classList.toggle('btn-outline', !on);
-            btn.setAttribute('aria-pressed', String(on));
+            setDraftValue(draftId, key, on ? 1 : 0);
+            setWeekdayToggle(btn, on);
           });
         });
     },
     validate: (v) => {
-      const start_date = v.start_date;
-      const end_date = v.end_date;
-      if (start_date === '' || end_date === '') {
+      if (v.start_date === '' || v.end_date === '') {
         return 'A service needs both a start and an end date.';
       }
-      // The box is typeable as well as pickable, so a hand-typed date has to
-      // be checked here rather than trusted to the input's type.
-      if (!/^\d{8}$/.test(start_date) || !/^\d{8}$/.test(end_date)) {
-        return 'Enter dates as YYYYMMDD.';
-      }
-      if (end_date < start_date) {
+      if (v.end_date < v.start_date) {
         return 'The end date is before the start date.';
       }
       return null;
     },
-    onCreate: async (v) => {
-      const id = await nextServiceId(deps.database);
-      const row: Record<string, unknown> = {
-        ...createDefaultService(id),
-        ...Object.fromEntries(
-          DAYS_OF_WEEK.map(({ key }) => [key, days.has(key) ? 1 : 0])
-        ),
-        start_date: v.start_date,
-        end_date: v.end_date,
-      };
-
+    onCreate: async (v, row) => {
+      const id = v.service_id;
       console.log('[NewServiceModal] creating service', id, row);
       await deps.database.insertRows('calendar', [row]);
       if (deps.patchManager) {

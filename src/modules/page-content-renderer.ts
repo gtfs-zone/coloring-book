@@ -1630,8 +1630,12 @@ export class PageContentRenderer {
     }
 
     if (entityType === 'service') {
-      const service_id = await inlineCreator.createService();
-      if (service_id) {
+      const service_id = await showNewServiceModal({
+        database: this.dependencies.gtfsDatabase,
+        patchManager: this.dependencies.patchManager ?? null,
+      });
+      if (service_id !== null) {
+        this.dependencies.onEntityCreated?.();
         this.dependencies.onServiceClick?.(service_id);
       }
       return;
