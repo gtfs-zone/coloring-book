@@ -341,8 +341,7 @@ async function removeArea(stop_id: string, area_id: string): Promise<void> {
 }
 
 /**
- * Ask for a new area's name and write it under a generated `area_<n>` ID,
- * renamed from the Fares modal's Areas table. Returns its ID.
+ * Ask for a new area's ID and name and write it. Returns its ID.
  */
 async function createArea(
   areaDeps: StopAreasFieldDeps
@@ -350,10 +349,14 @@ async function createArea(
   let area_id: string | null = null;
   const values = await promptNewEntity({
     title: 'New area',
+    id: {
+      table: 'areas',
+      suggested: await nextEntityId(areaDeps.gtfsDatabase, 'areas', 'area'),
+    },
     fields: [{ field: 'area_name', tableName: GTFS_TABLES.AREAS }],
     validate: () => null,
     onCreate: async (v) => {
-      const id = await nextEntityId(areaDeps.gtfsDatabase, 'areas', 'area');
+      const id = v.area_id;
       const record = { area_id: id, area_name: v.area_name };
       await areaDeps.gtfsDatabase.insertRows('areas', [record]);
       await areaDeps.patchManager?.recordInsert('areas', id, record);

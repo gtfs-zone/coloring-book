@@ -53,10 +53,11 @@ import {
   WHITESPACE_FIX_ACTION,
 } from '../utils/whitespace-fix';
 import { GTFS_TABLES } from '../types/gtfs';
+import { nextEntityId } from '../utils/inline-entity-creator';
 import {
-  InlineEntityCreator,
-  nextEntityId,
-} from '../utils/inline-entity-creator';
+  createDefaultAgency,
+  createDefaultRoute,
+} from '../utils/default-values';
 import {
   getAgencyDisplay,
   getEntityDisplay,
@@ -1252,13 +1253,17 @@ export class PageContentRenderer {
   }
 
   /**
-   * Ask for a new network's name and write it under a generated `network_<n>`
-   * ID, renamed from the Fares modal's Networks table. Returns its ID.
+   * Ask for a new network's ID and name and write it. Returns its ID.
    */
   private async createNetwork(): Promise<string | null> {
+    const db = this.dependencies.gtfsDatabase;
     let network_id: string | null = null;
     const values = await promptNewEntity({
       title: 'New network',
+      id: {
+        table: 'networks',
+        suggested: await nextEntityId(db, 'networks', 'network'),
+      },
       fields: [
         {
           field: 'network_name',
@@ -1268,8 +1273,7 @@ export class PageContentRenderer {
       ],
       validate: () => null,
       onCreate: async (v) => {
-        const db = this.dependencies.gtfsDatabase;
-        const id = await nextEntityId(db, 'networks', 'network');
+        const id = v.network_id;
         const record = { network_id: id, network_name: v.network_name };
         await db.insertRows('networks', [record]);
         await this.dependencies.patchManager?.recordInsert(
@@ -1591,24 +1595,12 @@ export class PageContentRenderer {
    * Add event listeners for the "+" buttons on the entity lists
    */
   private addEntityCreationListeners(container: HTMLElement): void {
-    const inlineCreator = new InlineEntityCreator(
-      this.dependencies
-        .gtfsDatabase as unknown as import('./gtfs-database').GTFSDatabase,
-      () => {
-        // Refresh the page after entity creation
-        if (this.dependencies.onEntityCreated) {
-          this.dependencies.onEntityCreated();
-        }
-      },
-      this.dependencies.patchManager
-    );
-
     container
       .querySelectorAll<HTMLElement>('[data-entity-create]')
       .forEach((button) => {
         const entityType = button.dataset.entityCreate;
         button.addEventListener('click', () => {
-          void this.createEntity(inlineCreator, entityType, button);
+          void this.createEntity(entityType, button);
         });
       });
   }
@@ -1617,13 +1609,13 @@ export class PageContentRenderer {
    * Create the entity behind a "+" button and open its page
    */
   private async createEntity(
-    inlineCreator: InlineEntityCreator,
     entityType: string | undefined,
     button: HTMLElement
   ): Promise<void> {
     if (entityType === 'agency') {
-      const agency_id = await inlineCreator.createAgency();
+      const agency_id = await this.createAgency();
       if (agency_id) {
+        this.dependencies.onEntityCreated?.();
         this.dependencies.onAgencyClick(agency_id);
       }
       return;
@@ -1642,10 +1634,11 @@ export class PageContentRenderer {
     }
 
     if (entityType === 'route') {
-      const route_id = await inlineCreator.createRoute(
+      const route_id = await this.createRoute(
         button.dataset.agencyId || undefined
       );
       if (route_id) {
+        this.dependencies.onEntityCreated?.();
         this.dependencies.onRouteClick(route_id);
       }
       return;
@@ -1654,6 +1647,85 @@ export class PageContentRenderer {
     console.warn(
       `[PageContentRenderer] unknown data-entity-create value: ${entityType}`
     );
+  }
+
+  /**
+   * Ask for a new agency's ID and write a default agency under it. Returns
+   * its ID, or null when cancelled.
+   */
+  private async createAgency(): Promise<string | null> {
+    const db = this.dependencies.gtfsDatabase;
+    let agency_id: string | null = null;
+    const values = await promptNewEntity({
+      title: 'New agency',
+      id: {
+        table: 'agency',
+        suggested: await nextEntityId(db, 'agency', 'agency'),
+      },
+      fields: [],
+      validate: () => null,
+      onCreate: async (v) => {
+        const record = createDefaultAgency(v.agency_id) as unknown as Record<
+          string,
+          unknown
+        >;
+        await db.insertRows('agency', [record]);
+        await this.dependencies.patchManager?.recordInsert(
+          'agency',
+          v.agency_id,
+          record
+        );
+        agency_id = v.agency_id;
+        console.log(`[PageContentRenderer] created agency ${agency_id}`);
+      },
+    });
+
+    return values ? agency_id : null;
+  }
+
+  /**
+   * Ask for a new route's ID and write a default route under it, on the given
+   * agency or the first one. Returns its ID, or null when cancelled.
+   */
+  private async createRoute(agencyId?: string): Promise<string | null> {
+    const db = this.dependencies.gtfsDatabase;
+    let route_id: string | null = null;
+    const values = await promptNewEntity({
+      title: 'New route',
+      id: {
+        table: 'routes',
+        suggested: await nextEntityId(db, 'routes', 'route'),
+      },
+      fields: [],
+      validate: () => null,
+      onCreate: async (v) => {
+        let agency = agencyId;
+        if (!agency) {
+          const agencies = await db.getAllRows('agency');
+          if (agencies.length > 0) {
+            agency = String(
+              (agencies[0] as Record<string, unknown>).agency_id ?? ''
+            );
+          }
+        }
+        const record = createDefaultRoute(
+          v.route_id,
+          agency || undefined
+        ) as unknown as Record<string, unknown>;
+        await db.insertRows('routes', [record]);
+        await this.dependencies.patchManager?.recordInsert(
+          'routes',
+          v.route_id,
+          record
+        );
+        route_id = v.route_id;
+        console.log(
+          `[PageContentRenderer] created route ${route_id} on agency ${agency ?? '(none)'}`
+        );
+      },
+    });
+
+    return values ? route_id : null;
   }
 
   /**
