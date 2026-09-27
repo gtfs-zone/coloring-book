@@ -6,11 +6,10 @@ import {
   Point,
   MapGeoJSONFeature,
 } from 'maplibre-gl';
-import { Stops } from '../types/gtfs-entities';
+import { Pathways, Stops } from '../types/gtfs-entities';
 import { MapMode } from './map-controller';
 import type { GTFSParser } from './gtfs-parser';
 import { showModal } from 'interlocking/ui/modal-utils';
-import { generateId } from '../utils/uuid';
 import { hasLiveEditor } from '../utils/inline-edit';
 import { promptNewEntity } from './entity-form-modal';
 import { firstFreeId } from '../utils/inline-entity-creator';
@@ -475,7 +474,8 @@ export class InteractionHandler {
       return;
     }
 
-    const pathwayId = generateId();
+    const pathways =
+      this.gtfsParser.getFileDataSyncTyped<Pathways>('pathways.txt') || [];
     const endpoints = `
       <div>
         <div class="label">${renderSpecFieldLabelContent(GTFS_TABLES.PATHWAYS, 'from_stop_id', 'From Stop')}</div>
@@ -491,6 +491,13 @@ export class InteractionHandler {
       title: 'New Pathway',
       createLabel: 'Create Pathway',
       intro: endpoints,
+      id: {
+        table: 'pathways',
+        suggested: firstFreeId(
+          'pathway',
+          pathways.map((p) => p.pathway_id)
+        ),
+      },
       fields: [
         {
           field: 'pathway_mode',
@@ -512,6 +519,7 @@ export class InteractionHandler {
         return null;
       },
       onCreate: async (v) => {
+        const pathwayId = v.pathway_id;
         await this.gtfsParser.createPathway({
           pathway_id: pathwayId,
           from_stop_id: fromStopId,

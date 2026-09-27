@@ -100,6 +100,17 @@ function fieldIsPartOfKey(table: string, field: string): boolean {
   return config.fields.includes(field);
 }
 
+/** The empty and whitespace checks every new ID must pass. */
+export function validateIdText(id: string): string | null {
+  if (id === '') {
+    return 'ID cannot be empty';
+  }
+  if (id !== id.trim()) {
+    return 'ID cannot start or end with whitespace';
+  }
+  return null;
+}
+
 /**
  * Check an ID for a new or renamed row of `table`. Returns an error message, or
  * null if it is usable.
@@ -109,11 +120,9 @@ export async function validateNewId(
   table: string,
   id: string
 ): Promise<string | null> {
-  if (id === '') {
-    return 'ID cannot be empty';
-  }
-  if (id !== id.trim()) {
-    return 'ID cannot start or end with whitespace';
+  const textError = validateIdText(id);
+  if (textError) {
+    return textError;
   }
   const clash = await db.getRow(table, id);
   if (clash) {

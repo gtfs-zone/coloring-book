@@ -29,7 +29,7 @@ import {
 } from '../utils/inline-editable-field';
 import { flushInlineEdits } from '../utils/inline-edit';
 import { getNaturalKeyField } from '../utils/gtfs-primary-keys';
-import { validateNewId } from '../utils/rename-entity';
+import { validateIdText, validateNewId } from '../utils/rename-entity';
 import type { z } from 'zod';
 
 export interface EntityFormField {
@@ -61,6 +61,11 @@ export interface EntityFormField {
 export interface EntityFormId {
   /** Store name of the table whose natural key the ID is (`calendar`). */
   table: string;
+  /**
+   * The ID column, for a table without a single-field natural key
+   * (`shapes`). The same-table clash check is then left to `taken`.
+   */
+  keyField?: string;
   suggested: string;
   /**
    * Extra check on top of the empty, whitespace and same-table clash rules.
@@ -129,7 +134,7 @@ function isDraftField(field: EntityFormField): boolean {
  * Only a single-field natural key has one value to suggest.
  */
 function idField(id: EntityFormId): EntityFormField {
-  const keyField = getNaturalKeyField(id.table);
+  const keyField = id.keyField ?? getNaturalKeyField(id.table);
   if (!keyField) {
     throw new Error(`[entity-form-modal] ${id.table} has no natural key`);
   }
@@ -373,11 +378,13 @@ export async function promptNewEntity(
           if (options.id) {
             const id = values[fields[0].field];
             const idError =
-              (await validateNewId(
-                inlineFieldDatabase(),
-                options.id.table,
-                id
-              )) ??
+              (options.id.keyField
+                ? validateIdText(id)
+                : await validateNewId(
+                    inlineFieldDatabase(),
+                    options.id.table,
+                    id
+                  )) ??
               (await options.id.taken?.(id)) ??
               null;
             if (idError) {

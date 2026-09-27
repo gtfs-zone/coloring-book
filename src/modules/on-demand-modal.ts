@@ -45,6 +45,7 @@ import {
   readZoneFeatures,
 } from '../utils/location-id-owners';
 import { GTFS_TABLES } from '../types/gtfs';
+import { firstFreeId } from '../utils/inline-entity-creator';
 
 export interface OnDemandModalDeps extends EditableTableDeps {
   /** Opens a zone's browse page. The modal closes first. */
@@ -200,6 +201,7 @@ async function promptNewZone(
         presence: 'Required',
         mono: true,
         placeholder: 'e.g. zone_north',
+        value: firstFreeId('zone', taken.keys()),
       },
       {
         field: 'stop_name',

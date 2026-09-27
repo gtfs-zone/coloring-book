@@ -40,7 +40,7 @@ import {
 } from '../utils/shape-geojson';
 import { notify } from 'interlocking/ui/notification-system';
 import { promptNewEntity } from './entity-form-modal';
-import { GTFS_TABLES } from '../types/gtfs';
+import { firstFreeId } from '../utils/inline-entity-creator';
 
 /**
  * The stops of the simplify slider, in metres of allowed deviation. The
@@ -292,8 +292,6 @@ interface ShapeSource {
   kind: 'gpx' | 'gtfs' | 'geojson';
   /** Subheading for the naming modal: the filename, plus the source shape for a zip. */
   label: string;
-  /** Suggested id: the source shape_id, or the filename without its extension. */
-  defaultId: string;
   buildRows(shapeId: string): Promise<Shapes[]>;
 }
 
@@ -412,13 +410,11 @@ async function pickShapeUploadTarget(
  * Textarea and URL import for a pasted line, validated before the modal closes
  * so a bad paste can be fixed in place rather than re-opened.
  */
-async function pickPastedShapePoints(): Promise<{
-  points: Array<[number, number]>;
-  defaultId: string;
-} | null> {
+async function pickPastedShapePoints(): Promise<Array<
+  [number, number]
+> | null> {
   const instanceId = 'shape-paste';
-  let result: { points: Array<[number, number]>; defaultId: string } | null =
-    null;
+  let result: Array<[number, number]> | null = null;
 
   await showModal({
     title: 'Paste GeoJSON or link',
@@ -442,10 +438,7 @@ async function pickPastedShapePoints(): Promise<{
               input?.value ?? '',
               pickLoneFeature
             );
-            result = {
-              points: shapeFeatureToPoints(feature),
-              defaultId: String(feature.id ?? ''),
-            };
+            result = shapeFeatureToPoints(feature);
           } catch (error) {
             showGeojsonExchangeError(
               document,
@@ -494,10 +487,9 @@ async function pickShapeSource(): Promise<ShapeSource | null> {
     }
     return {
       kind: 'geojson',
-      label: `Pasted GeoJSON (${pasted.points.length} pts)`,
-      defaultId: pasted.defaultId,
+      label: `Pasted GeoJSON (${pasted.length} pts)`,
       buildRows: (shapeId) =>
-        Promise.resolve(pointsToShapeRows(shapeId, pasted.points)),
+        Promise.resolve(pointsToShapeRows(shapeId, pasted)),
     };
   }
 
@@ -519,7 +511,6 @@ async function pickShapeSource(): Promise<ShapeSource | null> {
     return {
       kind: 'geojson',
       label: `${file.name} (${points.length} pts)`,
-      defaultId: file.name.replace(/\.(geojson|json)$/i, ''),
       buildRows: (shapeId) =>
         Promise.resolve(pointsToShapeRows(shapeId, points)),
     };
@@ -529,7 +520,6 @@ async function pickShapeSource(): Promise<ShapeSource | null> {
     return {
       kind: 'gpx',
       label: file.name,
-      defaultId: file.name.replace(/\.gpx$/i, ''),
       buildRows: (shapeId) => parseGPX(file, shapeId),
     };
   }
@@ -549,7 +539,6 @@ async function pickShapeSource(): Promise<ShapeSource | null> {
   return {
     kind: 'gtfs',
     label: `${file.name} - shape ${source.shapeId} (${source.points.length} pts)`,
-    defaultId: source.shapeId,
     buildRows: (shapeId) =>
       Promise.resolve(renumberPoints(source.points, shapeId)),
   };
@@ -574,24 +563,15 @@ async function promptNewShapeId(opts: {
   const values = await promptNewEntity({
     title: opts.title,
     intro: `<p class="text-base-content/60 text-sm">${escapeHtml(opts.source.label)}</p>`,
-    fields: [
-      {
-        field: 'shape_id',
-        tableName: GTFS_TABLES.SHAPES,
-        mono: true,
-        placeholder: 'e.g. shape_1',
-        value: opts.source.defaultId,
-      },
-    ],
-    validate: (v) => {
-      if (!v.shape_id) {
-        return 'Shape ID is required.';
-      }
-      if (opts.existing.has(v.shape_id)) {
-        return `Shape "${v.shape_id}" already exists.`;
-      }
-      return null;
+    id: {
+      table: 'shapes',
+      keyField: 'shape_id',
+      suggested: firstFreeId('shape', opts.existing.keys()),
+      taken: async (id) =>
+        opts.existing.has(id) ? `Shape "${id}" already exists.` : null,
     },
+    fields: [],
+    validate: () => null,
     onCreate: async (v) => {
       // buildRows throws on a source the shape cannot be built from; the form
       // catches it and shows the message inline.
