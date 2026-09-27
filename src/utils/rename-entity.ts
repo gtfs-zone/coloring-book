@@ -101,6 +101,28 @@ function fieldIsPartOfKey(table: string, field: string): boolean {
 }
 
 /**
+ * Check an ID for a new or renamed row of `table`. Returns an error message, or
+ * null if it is usable.
+ */
+export async function validateNewId(
+  db: { getRow(tableName: string, key: string): Promise<unknown> },
+  table: string,
+  id: string
+): Promise<string | null> {
+  if (id === '') {
+    return 'ID cannot be empty';
+  }
+  if (id !== id.trim()) {
+    return 'ID cannot start or end with whitespace';
+  }
+  const clash = await db.getRow(table, id);
+  if (clash) {
+    return `${table} already has a row with ID "${id}"`;
+  }
+  return null;
+}
+
+/**
  * Check a proposed new ID. Returns an error message, or null if it is usable.
  * Exported so the modal can validate as the user types.
  */
@@ -110,20 +132,10 @@ export async function validateRenameTarget(
   oldId: string,
   newId: string
 ): Promise<string | null> {
-  if (newId === '') {
-    return 'ID cannot be empty';
-  }
-  if (newId !== newId.trim()) {
-    return 'ID cannot start or end with whitespace';
-  }
-  if (newId === oldId) {
+  if (newId !== '' && newId === oldId) {
     return 'ID is unchanged';
   }
-  const clash = await db.getRow(table, newId);
-  if (clash) {
-    return `${table} already has a row with ID "${newId}"`;
-  }
-  return null;
+  return validateNewId(db, table, newId);
 }
 
 /**

@@ -15,7 +15,6 @@ import { nextServiceId } from '../utils/inline-entity-creator';
 import { notify } from 'interlocking/ui/notification-system';
 import { createDefaultService } from '../utils/default-values';
 import { feedBounds, type FeedBoundsSource } from '../utils/feed-bounds';
-import { GTFS_DATE_CODEC } from '../utils/gtfs-date';
 import { DAYS_OF_WEEK } from './service-days-controller';
 
 export interface NewServiceModalDeps {
@@ -80,16 +79,12 @@ export async function showNewServiceModal(
     fields: [
       {
         field: 'start_date',
-        tableName: 'calendar',
-        type: 'date',
-        dateCodec: GTFS_DATE_CODEC,
+        tableName: 'calendar.txt',
         value: startDate,
       },
       {
         field: 'end_date',
-        tableName: 'calendar',
-        type: 'date',
-        dateCodec: GTFS_DATE_CODEC,
+        tableName: 'calendar.txt',
         value: endDate,
       },
     ],

@@ -24,6 +24,16 @@ interface RowSource {
   getAllRows: (tableName: string) => Promise<unknown[]>;
 }
 
+/** First `<prefix>_<n>` not in `taken`, counting from 1. */
+export function firstFreeId(prefix: string, taken: Iterable<string>): string {
+  const used = new Set(taken);
+  let n = 1;
+  while (used.has(`${prefix}_${n}`)) {
+    n += 1;
+  }
+  return `${prefix}_${n}`;
+}
+
 /**
  * First free `<prefix>_<n>` ID in a naturally-keyed table, counting from 1.
  * `alsoTaken` holds IDs in use outside the table's own rows.
@@ -43,16 +53,10 @@ export async function nextEntityId(
     string,
     unknown
   >[];
-  const taken = new Set(rows.map((row) => String(row[keyField])));
-  for (const id of alsoTaken) {
-    taken.add(id);
-  }
-
-  let n = 1;
-  while (taken.has(`${prefix}_${n}`)) {
-    n += 1;
-  }
-  return `${prefix}_${n}`;
+  return firstFreeId(prefix, [
+    ...rows.map((row) => String(row[keyField])),
+    ...alsoTaken,
+  ]);
 }
 
 /**

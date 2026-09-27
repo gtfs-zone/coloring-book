@@ -84,6 +84,11 @@ export interface FieldConfig {
    * marked so it is not mistaken for a field the reference defines.
    */
   isExtension?: boolean;
+  /**
+   * An open draft (`openDraft` in `inline-editable-field`) this field commits
+   * into instead of the database.
+   */
+  draftId?: string;
 }
 
 /**

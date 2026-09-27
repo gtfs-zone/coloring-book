@@ -100,6 +100,45 @@ export interface InlineEditableFieldDeps {
 let deps: InlineEditableFieldDeps | null = null;
 let listenerInstalled = false;
 
+/** An in-memory record that draft fields commit into, plus their rejections. */
+export interface Draft {
+  values: Record<string, unknown>;
+  /** The last rejected value's message, per field, until a valid commit. */
+  errors: Record<string, string>;
+}
+
+const drafts = new Map<string, Draft>();
+
+/** Start a draft record for fields rendered with this `draftId`. */
+export function openDraft(id: string, initial: Record<string, unknown>): void {
+  if (drafts.has(id)) {
+    throw new Error(`[InlineField] draft ${id} is already open`);
+  }
+  drafts.set(id, { values: { ...initial }, errors: {} });
+  console.log(`[InlineField] draft ${id} opened`);
+}
+
+export function readDraft(id: string): Draft {
+  const draft = drafts.get(id);
+  if (!draft) {
+    throw new Error(`[InlineField] draft ${id} is not open`);
+  }
+  return { values: { ...draft.values }, errors: { ...draft.errors } };
+}
+
+export function closeDraft(id: string): void {
+  drafts.delete(id);
+  console.log(`[InlineField] draft ${id} closed`);
+}
+
+/** The database the fields read from, for checks made outside a commit. */
+export function inlineFieldDatabase(): InlineEditableFieldDeps['gtfsDatabase'] {
+  if (!deps) {
+    throw new Error('[InlineField] not installed');
+  }
+  return deps.gtfsDatabase;
+}
+
 /**
  * Register the database and patch manager the editors commit through, and
  * install the delegated listeners.
@@ -140,7 +179,10 @@ export function installInlineEditableFields(
     }
     const span = (e.target as Element)?.closest?.(`.${FIELD_CLASS}`);
     if (span instanceof HTMLElement) {
+      // The key is spent on opening the field: a modal's Enter action, bound
+      // to document after this listener, must not fire as well.
       e.preventDefault();
+      e.stopImmediatePropagation();
       openFieldEditor(span);
     }
   });
@@ -224,6 +266,10 @@ function renderIdTrigger(config: FieldConfig, raw: string): string {
  * as a rename trigger rather than an inline editor: changing one re-keys the
  * record and every row referencing it, which is a different operation from
  * editing a property.
+ *
+ * A draft field (`config.draftId`) has no row behind it: it commits into the
+ * draft record, and its key edits like any other field since nothing
+ * references it yet.
  */
 export async function renderInlineEditableField(
   config: FieldConfig
@@ -234,8 +280,9 @@ export async function renderInlineEditableField(
       ? ''
       : String(config.value);
   const label = renderFieldLabel(config);
+  const draft = config.draftId !== undefined;
 
-  if (!spec || config.readonly || config.recordId === undefined) {
+  if (!spec || (!draft && (config.readonly || config.recordId === undefined))) {
     const trigger = renderIdTrigger(config, raw);
     const body =
       trigger ||
@@ -253,11 +300,8 @@ export async function renderInlineEditableField(
 
   // A reference the last validation pass could not resolve reads as an error,
   // but stays editable: clicking it opens the picker that repoints it.
-  const dangling = isDanglingReference(
-    config.tableName ?? '',
-    config.field,
-    raw
-  );
+  const dangling =
+    !draft && isDanglingReference(config.tableName ?? '', config.field, raw);
   const danglingClass = dangling ? ' text-error border-error' : '';
   const danglingTitle = dangling
     ? ` title="${escapeHtml(`No record with ${config.field} ${formatIssueValue(raw)} exists`)}"`
@@ -268,7 +312,8 @@ export async function renderInlineEditableField(
         tabindex="0"
         role="button"
         data-table="${escapeHtml(config.tableName ?? '')}"
-        data-record-id="${escapeHtml(config.recordId)}"
+        data-record-id="${escapeHtml(config.recordId ?? '')}"
+        ${draft ? `data-draft="${escapeHtml(config.draftId)}"` : ''}
         data-field="${escapeHtml(config.field)}"
         data-kind="${kind}"
         data-value="${escapeHtml(raw)}"
@@ -306,12 +351,15 @@ export async function renderInlineEditableField(
  *
  * `exclude` drops fields the page edits some other way, such as
  * `routes.network_id`, which is written from the canonical networks tables.
+ *
+ * `draftId` renders every field in draft mode, committing into that draft.
  */
 export async function renderInlineEntityFields(
   tableName: string,
   record: Record<string, string | number | undefined>,
   recordId: string,
-  exclude: string[] = []
+  exclude: string[] = [],
+  draftId?: string
 ): Promise<string> {
   const schema = GTFSSchemas[tableName as keyof typeof GTFSSchemas] as
     | z.ZodObject<z.ZodRawShape>
@@ -323,7 +371,7 @@ export async function renderInlineEntityFields(
 
   const configs = generateFieldConfigsFromSchema(schema, record, tableName)
     .filter((c) => !exclude.includes(c.field))
-    .map<FieldConfig>((c) => ({ ...c, recordId }));
+    .map<FieldConfig>((c) => ({ ...c, recordId, draftId }));
 
   const fieldsHtml: string[] = [];
   for (const config of configs) {
@@ -350,6 +398,7 @@ export async function renderInlineEntityFields(
           recordId,
           isExtension: true,
           tooltip: EXTENSION_FIELD_DESCRIPTION,
+          draftId,
         })
       );
     }
@@ -379,6 +428,22 @@ function editorInputType(
   return getInputTypeForFieldType(
     gtfsFieldType as GTFSFieldType
   ) as InlineEditorInputType;
+}
+
+/**
+ * Open one rendered field's editor, with its text selected.
+ *
+ * Used to put the cursor in a form's first field on mount.
+ */
+export function openFieldForEdit(container: ParentNode, field: string): void {
+  const span = container.querySelector<HTMLElement>(
+    `.${FIELD_CLASS}[data-field="${CSS.escape(field)}"]`
+  );
+  if (!span) {
+    console.warn(`[InlineField] no field ${field} to open`);
+    return;
+  }
+  openFieldEditor(span);
 }
 
 function openFieldEditor(span: HTMLElement): void {
@@ -515,19 +580,47 @@ async function foreignOptions(
   return buildForeignKeyOptions(deps.gtfsDatabase, spec);
 }
 
+/** The open draft a span commits into, or undefined for a database field. */
+function spanDraft(span: HTMLElement): Draft | undefined {
+  const id = span.dataset.draft;
+  if (id === undefined) {
+    return undefined;
+  }
+  const draft = drafts.get(id);
+  if (!draft) {
+    throw new Error(`[InlineField] draft ${id} is not open`);
+  }
+  return draft;
+}
+
+/**
+ * Show a rejected value. A draft also keeps the message, so the form that
+ * owns it refuses to submit the last accepted value in its place.
+ */
 function markError(span: HTMLElement, message: string): void {
   span.classList.add('border-error', 'text-error');
   span.title = message;
+  const field = span.dataset.field;
+  const draft = spanDraft(span);
+  if (draft && field) {
+    draft.errors[field] = message;
+  }
   notify.error(message, { duration: 4000 });
 }
 
 function clearError(span: HTMLElement): void {
   span.classList.remove('border-error', 'text-error');
   span.removeAttribute('title');
+  const field = span.dataset.field;
+  const draft = spanDraft(span);
+  if (draft && field) {
+    delete draft.errors[field];
+  }
 }
 
 /**
- * Validate a committed value and record it as a patch.
+ * Validate a committed value and record it as a patch, or write it into the
+ * span's draft.
  *
  * On a validation failure nothing is written and the span keeps its pre-edit
  * value, which is the honest thing to show.
@@ -570,6 +663,18 @@ async function commit(
 
   clearError(span);
   setDisplay(span, spec, coerced.value, label);
+
+  // Before any await: a form's Enter action reads the draft straight after the
+  // editor commits.
+  const draft = spanDraft(span);
+  if (draft) {
+    draft.values[field] = coerced.value;
+    console.log(
+      `[InlineField] draft ${span.dataset.draft}.${field}`,
+      coerced.value
+    );
+    return;
+  }
 
   // The old value was the broken one, so the row is no longer dangling on this
   // field. Drop the red now rather than waiting for the next validation pass.

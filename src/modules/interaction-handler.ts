@@ -428,28 +428,13 @@ export class InteractionHandler {
           field: 'pathway_mode',
           tableName: GTFS_TABLES.PATHWAYS,
           label: 'Pathway Mode',
-          type: 'select',
           value: '1',
-          options: [
-            { value: '1', label: '1: Walkway' },
-            { value: '2', label: '2: Stairs' },
-            { value: '3', label: '3: Moving Sidewalk' },
-            { value: '4', label: '4: Escalator' },
-            { value: '5', label: '5: Elevator' },
-            { value: '6', label: '6: Fare Gate' },
-            { value: '7', label: '7: Exit Gate' },
-          ],
         },
         {
           field: 'is_bidirectional',
           tableName: GTFS_TABLES.PATHWAYS,
           label: 'Bidirectional',
-          type: 'select',
           value: '1',
-          options: [
-            { value: '0', label: '0: One way' },
-            { value: '1', label: '1: Both ways' },
-          ],
         },
       ],
       validate: (v) => {

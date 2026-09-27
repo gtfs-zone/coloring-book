@@ -1,52 +1,72 @@
 /**
  * The shared "New X" creation form.
  *
- * Every label goes through `renderFieldLabel`, so presence badges, spec links
- * and hover tooltips are rendered the one standard way and an Optional field
- * carries no badge at all. Callers keep their own persistence and only supply
- * the field list, the validation and the commit.
+ * A field with a spec table renders through `renderInlineEditableField` in
+ * draft mode, so its label, editor, display and validation are the entity
+ * page's own. Its commits land in an in-memory draft, and nothing is written
+ * until Create. Fields the spec has no entry for are plain inputs, labelled
+ * through `renderFieldLabel`. Callers keep their own persistence and only
+ * supply the field list, the validation and the commit.
  */
 
 import { showModal } from 'interlocking/ui/modal-utils';
-import { renderFieldLabel, type FieldConfig } from '../utils/field-component';
+import {
+  generateFieldConfigsFromSchema,
+  renderFieldLabel,
+  type FieldConfig,
+} from '../utils/field-component';
 import { escapeHtml } from 'interlocking/util/escape-html';
-import { GTFS_FIELD_SPECS } from '../types/gtfs';
+import { GTFSSchemas } from '../types/gtfs';
 import type { GTFSPresence } from '../gtfs-spec/types';
 import { getEnumOptions, isEnumField } from '../types/gtfs-enums';
 import {
-  attachCalendarInput,
-  ISO_DATE_CODEC,
-  type DateCodec,
-} from 'interlocking/ui/calendar-input';
-import { CONFIG } from '../config';
-import { getFeedActiveRange } from '../utils/feed-active-range';
+  closeDraft,
+  inlineFieldDatabase,
+  openDraft,
+  openFieldForEdit,
+  readDraft,
+  renderInlineEditableField,
+} from '../utils/inline-editable-field';
+import { flushInlineEdits } from '../utils/inline-edit';
+import { getNaturalKeyField } from '../utils/gtfs-primary-keys';
+import { validateNewId } from '../utils/rename-entity';
+import type { z } from 'zod';
 
 export interface EntityFormField {
   /** Field name. Also the value key and the basis of the input's id. */
   field: string;
   /** Defaults to `field`. */
   label?: string;
-  /** Spec table to read presence, condition, description and the link from. */
+  /**
+   * Spec file (`*.txt`) the field belongs to. Set, the field is a draft field
+   * and `type`, `options` and `mono` do not apply.
+   */
   tableName?: string;
   /** Presence for a field the spec layer has no entry for. */
   presence?: GTFSPresence;
   /** Defaults to `select` for enum fields, `text` otherwise. */
-  type?: 'text' | 'date' | 'select' | 'checkbox';
+  type?: 'text' | 'select' | 'checkbox';
   /** Select options. Derived from the enum registry when omitted. */
   options?: Array<{ value: string; label: string }>;
+  /** Initial value, in stored form (`YYYYMMDD` for a GTFS date). */
   value?: string;
   placeholder?: string;
   /** Renders the input in the monospace face, for id fields. */
   mono?: boolean;
   /** A line of explanation under the input. */
   note?: string;
+}
+
+/** The new row's ID, rendered first and opened for editing on mount. */
+export interface EntityFormId {
+  /** Store name of the table whose natural key the ID is (`calendar`). */
+  table: string;
+  suggested: string;
   /**
-   * For `date`. How the field's stored string becomes a day and back.
-   *
-   * Defaults to `YYYY-MM-DD`. A caller storing GTFS `YYYYMMDD` passes its own
-   * rather than converting on the way in and out.
+   * Extra check on top of the empty, whitespace and same-table clash rules.
+   * Returns an error message, or null if the ID is free.
    */
-  dateCodec?: DateCodec;
+  taken?: (id: string) => Promise<string | null>;
 }
 
 export interface EntityFormOptions {
@@ -55,6 +75,8 @@ export interface EntityFormOptions {
   createLabel?: string;
   /** HTML shown above the fields. */
   intro?: string;
+  /** The ID field. Its value is keyed by the table's key field name. */
+  id?: EntityFormId;
   fields: EntityFormField[];
   /** HTML shown after the fields, for anything a plain field cannot express. */
   extraBody?: string;
@@ -81,47 +103,71 @@ export interface EntityFormOptions {
 
 const ERROR_ID = 'entity-form-error';
 
+/** Makes each form's draft id unique. */
+let draftSeq = 0;
+
 function inputId(field: string): string {
   return `entity-form-${field}`;
 }
 
-/** The feed active range re-encoded in a field's codec, for the picker band. */
-function highlightIn(
-  codec: DateCodec
-): { start: string; end: string; label: string } | undefined {
-  const range = getFeedActiveRange();
-  const start = range ? ISO_DATE_CODEC.parse(range.start) : null;
-  const end = range ? ISO_DATE_CODEC.parse(range.end) : null;
-  if (!range || !start || !end) {
-    return undefined;
+function isDraftField(field: EntityFormField): boolean {
+  return field.tableName !== undefined;
+}
+
+/**
+ * The spec file and key field an ID option points at.
+ *
+ * Only a single-field natural key has one value to suggest.
+ */
+function idField(id: EntityFormId): EntityFormField {
+  const keyField = getNaturalKeyField(id.table);
+  if (!keyField) {
+    throw new Error(`[entity-form-modal] ${id.table} has no natural key`);
+  }
+  return { field: keyField, tableName: `${id.table}.txt`, value: id.suggested };
+}
+
+/** The config the entity page would render this field with. */
+function draftFieldConfig(
+  field: EntityFormField,
+  draftId: string
+): FieldConfig {
+  const tableName = field.tableName ?? '';
+  const schema = GTFSSchemas[tableName as keyof typeof GTFSSchemas] as
+    | z.ZodObject<z.ZodRawShape>
+    | undefined;
+  if (!schema) {
+    throw new Error(`[entity-form-modal] no schema for ${tableName}`);
+  }
+  const config = generateFieldConfigsFromSchema(
+    schema,
+    { [field.field]: field.value },
+    tableName
+  ).find((c) => c.field === field.field);
+  if (!config) {
+    throw new Error(
+      `[entity-form-modal] ${tableName} has no field ${field.field}`
+    );
   }
   return {
-    start: codec.format(start),
-    end: codec.format(end),
-    label: range.label,
+    ...config,
+    label: field.label ?? config.label,
+    placeholder: field.placeholder ?? config.placeholder,
+    draftId,
   };
 }
 
 /**
- * The `FieldConfig` a label needs.
- *
- * Presence comes from the spec when the field has an entry there, and from the
- * caller otherwise; `locations.geojson` is the case that needs the second path,
- * since it is a GeoJSON file the reference defines no field table for.
+ * The `FieldConfig` a plain input's label needs. Presence comes from the
+ * caller, since the spec has no entry for the field.
  */
 function fieldConfig(field: EntityFormField): FieldConfig {
-  const spec = field.tableName
-    ? GTFS_FIELD_SPECS[field.tableName]?.[field.field]
-    : undefined;
-
   return {
     field: field.field,
     label: field.label ?? field.field,
     // A checkbox has no FieldConfig type of its own; its label renders the same.
     type: field.type === 'checkbox' ? 'text' : (field.type ?? 'text'),
-    tableName: field.tableName,
-    presence: spec?.presence ?? field.presence,
-    presenceCondition: spec?.presenceCondition,
+    presence: field.presence,
   };
 }
 
@@ -155,11 +201,9 @@ function renderInput(field: EntityFormField): string {
   }
 
   const mono = field.mono ? ' font-mono' : '';
-  // A date is a text box: the month grid behind it is ours, not the browser's,
-  // and it is wired up on mount. See `calendar-input.ts`.
   return `<input
     id="${id}"
-    type="${type === 'date' ? 'text' : type}"
+    type="${type}"
     class="input input-bordered w-full${mono}"
     value="${escapeHtml(field.value ?? '')}"
     placeholder="${escapeHtml(field.placeholder ?? '')}"
@@ -167,10 +211,16 @@ function renderInput(field: EntityFormField): string {
   />`;
 }
 
-function renderField(field: EntityFormField): string {
+async function renderField(
+  field: EntityFormField,
+  draftId: string
+): Promise<string> {
   const note = field.note
     ? `<p class="text-xs opacity-60">${field.note}</p>`
     : '';
+  if (isDraftField(field)) {
+    return `${await renderInlineEditableField(draftFieldConfig(field, draftId))}${note}`;
+  }
   return `<fieldset class="fieldset">
     ${renderFieldLabel(fieldConfig(field), inputId(field.field))}
     ${renderInput(field)}
@@ -178,9 +228,33 @@ function renderField(field: EntityFormField): string {
   </fieldset>`;
 }
 
-function readValues(fields: EntityFormField[]): Record<string, string> {
+/**
+ * Every field's value: draft fields from the draft, the rest from their
+ * inputs. Returns an error message instead when a draft field holds a value
+ * it rejected.
+ */
+function readValues(
+  fields: EntityFormField[],
+  draftId: string
+): { values: Record<string, string> } | { error: string } {
+  const draft = readDraft(draftId);
+  const rejected = fields.find(
+    (field) => isDraftField(field) && field.field in draft.errors
+  );
+  if (rejected) {
+    return {
+      error: `${rejected.label ?? rejected.field}: ${draft.errors[rejected.field]}`,
+    };
+  }
+
   const values: Record<string, string> = {};
   for (const field of fields) {
+    if (isDraftField(field)) {
+      const value = draft.values[field.field];
+      values[field.field] =
+        value === undefined || value === null ? '' : String(value);
+      continue;
+    }
     const el = document.getElementById(inputId(field.field)) as
       | HTMLInputElement
       | HTMLSelectElement
@@ -197,7 +271,7 @@ function readValues(fields: EntityFormField[]): Record<string, string> {
           : ''
         : el.value.trim();
   }
-  return values;
+  return { values };
 }
 
 function showError(message: string): void {
@@ -220,14 +294,26 @@ export async function promptNewEntity(
   options: EntityFormOptions
 ): Promise<Record<string, string> | null> {
   let created: Record<string, string> | null = null;
-  // The calendar popovers are body children, so they outlive the modal box and
-  // have to be closed when it goes.
-  const closeCalendars: Array<() => void> = [];
+  const draftId = `entity-form-${++draftSeq}`;
+  const fields = options.id
+    ? [idField(options.id), ...options.fields]
+    : options.fields;
 
+  const rendered: string[] = [];
+  for (const field of fields) {
+    rendered.push(await renderField(field, draftId));
+  }
+
+  openDraft(
+    draftId,
+    Object.fromEntries(
+      fields.filter(isDraftField).map((f) => [f.field, f.value ?? ''])
+    )
+  );
   const body = `
-    <div class="space-y-3">
+    <div class="space-y-3" data-entity-form="${draftId}">
       ${options.intro ?? ''}
-      ${options.fields.map(renderField).join('')}
+      ${rendered.join('')}
       ${options.extraBody ?? ''}
       <p id="${ERROR_ID}" class="text-error text-sm hidden"></p>
     </div>
@@ -240,30 +326,24 @@ export async function promptNewEntity(
     enterAction: 0,
     boxClassName: options.boxClassName,
     onMount: (close) => {
-      for (const field of options.fields) {
-        if (field.type !== 'date') {
-          continue;
-        }
-        const input = document.getElementById(inputId(field.field));
-        if (input instanceof HTMLInputElement) {
-          const codec = field.dateCodec ?? ISO_DATE_CODEC;
-          closeCalendars.push(
-            attachCalendarInput(input, {
-              codec,
-              weekStart: CONFIG.WEEK_START,
-              allowEmpty: true,
-              highlight: highlightIn(codec),
-            })
-          );
-        }
-      }
-      // After the calendars attach, so a date first field opens its grid.
-      const first = document.getElementById(inputId(options.fields[0].field));
-      if (first instanceof HTMLInputElement) {
-        first.focus();
-        first.select();
+      const form = document.querySelector(`[data-entity-form="${draftId}"]`);
+      const first = fields[0];
+      if (options.id && form) {
+        openFieldForEdit(form, first.field);
+      } else if (isDraftField(first)) {
+        form
+          ?.querySelector<HTMLElement>(
+            `[data-field="${CSS.escape(first.field)}"]`
+          )
+          ?.focus();
       } else {
-        first?.focus();
+        const input = document.getElementById(inputId(first.field));
+        if (input instanceof HTMLInputElement) {
+          input.focus();
+          input.select();
+        } else {
+          input?.focus();
+        }
       }
       options.onMount?.(close);
     },
@@ -272,7 +352,30 @@ export async function promptNewEntity(
         label: options.createLabel ?? 'Create',
         className: 'btn-primary',
         onClick: async () => {
-          const values = readValues(options.fields);
+          // A draft field still open (Enter, or a click straight on Create)
+          // has to land in the draft before it is read.
+          await flushInlineEdits();
+          const read = readValues(fields, draftId);
+          if ('error' in read) {
+            showError(read.error);
+            return true;
+          }
+          const values = read.values;
+          if (options.id) {
+            const id = values[fields[0].field];
+            const idError =
+              (await validateNewId(
+                inlineFieldDatabase(),
+                options.id.table,
+                id
+              )) ??
+              (await options.id.taken?.(id)) ??
+              null;
+            if (idError) {
+              showError(idError);
+              return true;
+            }
+          }
           const message = await options.validate(values);
           if (message !== null) {
             if (message) {
@@ -297,6 +400,8 @@ export async function promptNewEntity(
     ],
   });
 
-  closeCalendars.forEach((close) => close());
+  // Every close path (action, Escape, backdrop, a navigation tearing the
+  // modal down) resolves showModal, so the draft cannot outlive the form.
+  closeDraft(draftId);
   return created;
 }
