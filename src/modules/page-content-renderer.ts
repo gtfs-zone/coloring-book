@@ -1627,10 +1627,14 @@ export class PageContentRenderer {
       fields: [],
       validate: () => null,
       onCreate: async (v) => {
-        const record = createDefaultAgency(v.agency_id) as unknown as Record<
+        const agencies = (await db.getAllRows('agency')) as Record<
           string,
           unknown
-        >;
+        >[];
+        const record = createDefaultAgency(
+          v.agency_id,
+          agencies[0] ? String(agencies[0].agency_timezone ?? '') : ''
+        ) as unknown as Record<string, unknown>;
         await db.insertRows('agency', [record]);
         await this.dependencies.patchManager?.recordInsert(
           'agency',
@@ -1749,7 +1753,10 @@ export class PageContentRenderer {
       }
 
       if (serviceSelect.selectedOptions[0]?.hasAttribute('data-new-service')) {
+        // A focused select takes focus back from the modal's ID editor,
+        // which commits and closes it.
         serviceSelect.value = '';
+        serviceSelect.blur();
         void this.createServiceForRoute(routeId);
         return;
       }

@@ -17,14 +17,19 @@ function getOneYearFromNowYYYYMMDD(): string {
 }
 
 /**
- * Create a new agency with default values
+ * Create a new agency with an empty name and URL. The timezone is the given
+ * one (an existing agency's), else the browser's.
  */
-export function createDefaultAgency(agency_id: string): Agency {
+export function createDefaultAgency(
+  agency_id: string,
+  timezone: string
+): Agency {
   return {
     agency_id,
-    agency_name: agency_id, // Use ID as name initially
-    agency_url: 'https://example.com',
-    agency_timezone: 'America/New_York',
+    agency_name: '',
+    agency_url: '',
+    agency_timezone:
+      timezone || Intl.DateTimeFormat().resolvedOptions().timeZone,
   };
 }
 
@@ -78,7 +83,7 @@ export function createDefaultRoute(
 ): Routes {
   const route: Partial<Routes> = {
     route_id,
-    route_short_name: route_id,
+    route_short_name: '',
     route_long_name: '',
     route_type: 3, // Bus
   };
