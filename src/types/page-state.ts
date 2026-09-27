@@ -30,6 +30,7 @@ export type PageLocation =
  */
 export const MODAL_TYPES = [
   'timetable',
+  'timetables',
   'shapes',
   'calendar',
   'fares',

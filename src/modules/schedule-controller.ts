@@ -433,7 +433,12 @@ export class ScheduleController {
         `.${TIMETABLE_SERVICE_PICKER}`
       );
       if (servicePicker instanceof HTMLElement) {
-        void this.openServicePicker();
+        if (this.currentRouteId) {
+          void this.pickTimetableService(
+            this.currentRouteId,
+            this.currentServiceId
+          );
+        }
         return;
       }
 
@@ -3157,20 +3162,19 @@ export class ScheduleController {
   }
 
   /**
-   * Repoint the timetable at another service, or create one.
+   * Open `route_id`'s timetable on a picked service, or on a new one.
    *
    * Lists every service the feed defines, not just the ones this route runs:
    * picking one the route has no trips for is how a new timetable is started,
    * and it lands on the empty "add the first trip" state. The footer action
    * covers the case where the service does not exist yet either.
    */
-  private async openServicePicker(): Promise<void> {
-    if (!this.currentRouteId) {
-      return;
-    }
-
+  async pickTimetableService(
+    route_id: string,
+    current_service_id?: string
+  ): Promise<void> {
     const services = this.allServices();
-    const onRoute = this.servicesForRoute(this.currentRouteId);
+    const onRoute = this.servicesForRoute(route_id);
     const onRouteSet = new Set(onRoute);
     const ordered = [
       ...onRoute,
@@ -3205,7 +3209,7 @@ export class ScheduleController {
           createNew = true;
         },
       },
-      ...(this.currentServiceId && { selectedValue: this.currentServiceId }),
+      ...(current_service_id && { selectedValue: current_service_id }),
     });
 
     if (createNew) {
@@ -3214,15 +3218,15 @@ export class ScheduleController {
         patchManager: this.patchManager,
       });
       if (service_id !== null) {
-        await openTimetable(this.currentRouteId, service_id);
+        await openTimetable(route_id, service_id);
       }
       return;
     }
 
-    if (picked === null || picked === '' || picked === this.currentServiceId) {
+    if (picked === null || picked === '' || picked === current_service_id) {
       return;
     }
-    await openTimetable(this.currentRouteId, picked);
+    await openTimetable(route_id, picked);
   }
 
   /**

@@ -18,7 +18,7 @@ export const NAVBAR_ACTIONS: NavbarAction[] = [
   {
     kind: 'icon',
     id: 'timetable-btn',
-    label: 'Timetable',
+    label: 'Timetables',
     icon: renderNavIcon('timetable'),
     desktopOnly: true,
   },

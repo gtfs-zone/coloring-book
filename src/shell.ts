@@ -38,7 +38,7 @@ mountAppShell({
   dock: [
     { id: 'dock-browse', label: 'Browse', active: true },
     { id: 'dock-files', label: 'Files' },
-    { id: 'dock-timetable', label: 'Timetable' },
+    { id: 'dock-timetable', label: 'Timetables' },
     { id: 'dock-changes', label: 'History' },
   ],
 });

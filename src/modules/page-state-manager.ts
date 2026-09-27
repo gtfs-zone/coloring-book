@@ -4,7 +4,7 @@
  * The editor's hash codec and its subclass of `interlocking`'s generic
  * `PageStateManager`. The shared class owns the current state, the history
  * and the hash; what is the editor's own is here: the codec for its eight
- * page variants and seven content modals, the inline-edit flush before every
+ * page variants and nine content modals, the inline-edit flush before every
  * navigation, the same-page guard, breadcrumbs resolved against IndexedDB,
  * and the validated boot restore.
  */

@@ -31,7 +31,7 @@ import {
   takeLoadCommand,
 } from './modules/page-state-integration';
 import { PageStateManager } from './modules/page-state-manager';
-import { openModal, openTimetable } from './modules/navigation-actions';
+import { openModal } from './modules/navigation-actions';
 import {
   createModalRouter,
   getModalRouter,
@@ -39,6 +39,7 @@ import {
 import { editorShortcuts } from './modules/shortcut-list';
 import { showModal } from 'interlocking/ui/modal-utils';
 import { showTimetableModal } from './modules/timetable-modal';
+import { showTimetableBrowserModal } from './modules/timetable-browser-modal';
 import type { ModalState, PageState } from './types/page-state';
 import type { PatchRecord } from './types/patch';
 import { PatchManager } from './modules/patch-manager';
@@ -470,10 +471,14 @@ export class GTFSEditor {
 
       document
         .getElementById('timetable-btn')
-        ?.addEventListener('click', () => void this.openDefaultTimetable());
+        ?.addEventListener('click', () => {
+          void openModal({ type: 'timetables' });
+        });
       document
         .getElementById('dock-timetable')
-        ?.addEventListener('click', () => void this.openDefaultTimetable());
+        ?.addEventListener('click', () => {
+          void openModal({ type: 'timetables' });
+        });
       document.getElementById('shapes-btn')?.addEventListener('click', () => {
         void openModal({ type: 'shapes' });
       });
@@ -758,6 +763,17 @@ export class GTFSEditor {
       )
     );
 
+    router.register('timetables', () => {
+      const state = this.pageStateManager.getPageState();
+      return showTimetableBrowserModal(
+        {
+          gtfsParser: this.gtfsParser,
+          scheduleController: this.scheduleController,
+        },
+        state.type === 'route' ? state.route_id : null
+      );
+    });
+
     router.register('shapes', async (_modal, _transient, cancelled) => {
       if (
         (await showHelpPageOnce('shapes', {
@@ -849,24 +865,6 @@ export class GTFSEditor {
     this.pageStateManager.addNavigationHandler((event) => {
       router.sync(event.to);
     });
-  }
-
-  /**
-   * The navbar and dock buttons name the route the browse page is on, so the
-   * controller only has to pick that route's first service and busiest
-   * direction. Anywhere else it picks the whole target: the first route with
-   * trips, its first service, its busiest direction.
-   */
-  private async openDefaultTimetable(): Promise<void> {
-    const state = this.pageStateManager.getPageState();
-    const target = await this.scheduleController.resolveTimetableTarget(
-      state.type === 'route' ? { route_id: state.route_id } : {}
-    );
-    if (!target) {
-      notify.warning('This feed has no trips yet, so there is no timetable.');
-      return;
-    }
-    await openTimetable(target.route_id, target.service_id);
   }
 
   /** Deps for the On-Demand modal, which several affordances can open. */
