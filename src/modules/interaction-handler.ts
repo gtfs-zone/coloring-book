@@ -12,7 +12,8 @@ import type { GTFSParser } from './gtfs-parser';
 import { showModal } from 'interlocking/ui/modal-utils';
 import { generateId } from '../utils/uuid';
 import { hasLiveEditor } from '../utils/inline-edit';
-import { promptNewEntity, type EntityFormField } from './entity-form-modal';
+import { promptNewEntity } from './entity-form-modal';
+import { nextEntityId } from '../utils/inline-entity-creator';
 import { GTFS_TABLES } from '../types/gtfs';
 
 export interface InteractionCallbacks {
@@ -210,7 +211,7 @@ export class InteractionHandler {
 
     switch (this.currentMode) {
       case MapMode.ADD_STOP:
-        this.handleAddStopClick(e);
+        void this.handleAddStopClick(e);
         break;
       case MapMode.ADD_PATHWAY:
         void this.handleAddPathwayClick(e);
@@ -313,7 +314,7 @@ export class InteractionHandler {
   /**
    * Handle add stop mode clicks
    */
-  private handleAddStopClick(e: MapMouseEvent): void {
+  private async handleAddStopClick(e: MapMouseEvent): Promise<void> {
     if (!this.gtfsParser) {
       console.error('Cannot add stop: GTFSParser not initialized');
       return;
@@ -322,78 +323,29 @@ export class InteractionHandler {
     const { lng, lat } = e.lngLat;
     const expandedStationId = this.getExpandedStationId?.() ?? null;
 
-    // A child of an expanded station can be any of the non-station types; a
-    // standalone stop is always a platform, so the field is not offered.
-    const locationTypeField: EntityFormField[] = expandedStationId
-      ? [
-          {
-            field: 'location_type',
-            tableName: GTFS_TABLES.STOPS,
-            label: 'Location Type',
-            type: 'select',
-            options: [
-              { value: '0', label: '0: Platform (stop within a station)' },
-              { value: '2', label: '2: Entrance / Exit' },
-              { value: '3', label: '3: Generic Node' },
-              { value: '4', label: '4: Boarding Area' },
-            ],
-          },
-        ]
-      : [];
+    // Leave add-stop mode first so a second click cannot place a second stop
+    // while this one is still being written.
+    this.setMapMode(MapMode.NAVIGATE);
 
-    const parentInfo = expandedStationId
-      ? `<p class="text-xs opacity-60">Will be added as a child of station <code>${expandedStationId}</code>.</p>`
-      : '';
-
-    void promptNewEntity({
-      title: expandedStationId ? 'New Child Stop' : 'New Stop',
-      createLabel: 'Create Stop',
-      fields: [
-        {
-          field: 'stop_id',
-          tableName: GTFS_TABLES.STOPS,
-          label: 'Stop ID',
-          mono: true,
-          value: generateId(),
-          note: 'The Stop ID cannot be changed after creation. Examples: <code>1234</code>, <code>STOP_1</code>, <code>place-gilman</code>.',
-        },
-        ...locationTypeField,
-      ],
-      extraBody: parentInfo,
-      validate: (v) => {
-        if (!v.stop_id) {
-          return 'Stop ID is required.';
-        }
-        const stops =
-          this.gtfsParser.getFileDataSyncTyped<Stops>('stops.txt') || [];
-        if (stops.some((s) => s.stop_id === v.stop_id)) {
-          return 'Stop ID already exists.';
-        }
-        return null;
-      },
-      onCreate: async (v) => {
-        const newStop: Stops = {
-          stop_id: v.stop_id,
-          stop_name: '',
-          stop_lat: parseFloat(lat.toFixed(6)),
-          stop_lon: parseFloat(lng.toFixed(6)),
-          parent_station: expandedStationId ?? '',
-          location_type: parseInt(v.location_type ?? '0', 10),
-        };
-        console.log('Creating new stop:', newStop);
-        await this.addStopToData(newStop);
-        this.setMapMode(MapMode.NAVIGATE);
-        this.callbacks.onStopClick?.(v.stop_id);
-        console.log(
-          `Created stop ${v.stop_id} at ${lat.toFixed(6)}, ${lng.toFixed(6)}`
-        );
-      },
-    }).then((values) => {
-      // Cancelling leaves add-stop mode, as the old Cancel action did.
-      if (!values) {
-        this.setMapMode(MapMode.NAVIGATE);
-      }
-    });
+    const stop_id = await nextEntityId(
+      this.gtfsParser.gtfsDatabase,
+      'stops',
+      'stop'
+    );
+    const newStop: Stops = {
+      stop_id,
+      stop_name: '',
+      stop_lat: parseFloat(lat.toFixed(6)),
+      stop_lon: parseFloat(lng.toFixed(6)),
+      parent_station: expandedStationId ?? '',
+      location_type: 0,
+    };
+    console.log('[InteractionHandler] creating stop:', newStop);
+    await this.addStopToData(newStop);
+    this.callbacks.onStopClick?.(stop_id);
+    console.log(
+      `[InteractionHandler] created stop ${stop_id} at ${lat.toFixed(6)}, ${lng.toFixed(6)}`
+    );
   }
 
   /**
