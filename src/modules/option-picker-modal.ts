@@ -26,6 +26,8 @@ export interface OptionPickerOptions {
    * without choosing anything, so the caller's edit is left untouched.
    */
   footerAction?: { label: string; onClick: () => void };
+  /** A short note shown under the results list. */
+  hint?: string;
 }
 
 export interface MultiOptionPickerOptions {
@@ -84,7 +86,8 @@ interface PickerMode {
 function pickerBody(
   searchable: boolean,
   placeholder: string,
-  emptyOption?: { label: string; hint?: string }
+  emptyOption?: { label: string; hint?: string },
+  hint?: string
 ): string {
   return `
     <div class="flex flex-col gap-3">
@@ -116,6 +119,7 @@ function pickerBody(
         class="overflow-y-auto max-h-96 border border-base-200 rounded"
         tabindex="0"
       ></div>
+      ${hint ? `<div class="text-xs text-base-content/50 p-2">${escapeHtml(hint)}</div>` : ''}
     </div>
   `;
 }
@@ -302,7 +306,12 @@ export async function showOptionPickerModal(
 
   await showModal({
     title: opts.title,
-    body: pickerBody(searchable, opts.placeholder ?? 'Search…'),
+    body: pickerBody(
+      searchable,
+      opts.placeholder ?? 'Search…',
+      undefined,
+      opts.hint
+    ),
     actions: [
       ...(footer
         ? [

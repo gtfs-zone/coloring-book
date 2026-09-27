@@ -1430,6 +1430,7 @@ export class ScheduleController {
       title: 'Add stop or zone',
       options,
       searchable: true,
+      hint: 'Stop not listed? Add it with the stop tool on the map.',
       // Two of the three kinds this lists are authored in the On-Demand modal.
       // Stops have no list page to send anyone to, so the label names what the
       // button actually opens.
