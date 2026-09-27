@@ -201,7 +201,8 @@ export interface GTFSDBSchema extends DBSchema {
     value: SnapshotRecord;
   };
   // Version pointer store: supports 'versions', 'blobVersion', 'networksMode',
-  // 'extensionColumns', 'feedSummary' and 'activeFeedGen' keys
+  // 'extensionColumns', 'feedSummary', 'importFeedVersion' and 'activeFeedGen'
+  // keys
   meta: {
     key: string;
     value:
@@ -210,6 +211,7 @@ export interface GTFSDBSchema extends DBSchema {
       | { key: 'networksMode'; mode: NetworksMode }
       | ({ key: 'feedSummary' } & FeedSummary)
       | { key: 'activeFeedGen'; gen: number }
+      | { key: 'importFeedVersion'; version: string }
       | {
           key: 'extensionColumns';
           columns: Record<string, string[]>;
@@ -1535,6 +1537,7 @@ export class GTFSDatabase {
       blobVersion: number;
       networksMode: NetworksMode;
       feedSummary: FeedSummary;
+      importFeedVersion: string;
       locationsRow: GTFSDatabaseRecord | null;
     }
   ): Promise<void> {
@@ -1559,6 +1562,10 @@ export class GTFSDatabase {
     await meta.put({ key: 'blobVersion', version: options.blobVersion });
     await meta.put({ key: 'networksMode', mode: options.networksMode });
     await meta.put({ key: 'feedSummary', ...options.feedSummary });
+    await meta.put({
+      key: 'importFeedVersion',
+      version: options.importFeedVersion,
+    });
 
     // locations.geojson is one row holding a whole FeatureCollection and has no
     // virtual table, so it is the one table whose rows live in a real store and
@@ -2346,6 +2353,24 @@ export class GTFSDatabase {
     await tx.store.put({ key: 'blobVersion', version });
     await tx.store.put({ key: 'feedSummary', ...summary });
     await tx.done;
+  }
+
+  /**
+   * `feed_info.feed_version` as the feed arrived, or `''` when it had none.
+   *
+   * Export compares against it to catch a feed going out under the version
+   * it came in with. Null when the feed was stored before this key existed.
+   */
+  async getImportFeedVersion(): Promise<string | null> {
+    if (!this.db) {
+      throw new Error('Database not initialized');
+    }
+    const entry = await this.db.get('meta', 'importFeedVersion');
+    if (entry?.key !== 'importFeedVersion') {
+      console.warn('[GTFSDatabase] meta has no importFeedVersion');
+      return null;
+    }
+    return entry.version;
   }
 
   /**

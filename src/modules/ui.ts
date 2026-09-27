@@ -19,6 +19,17 @@ import { BrowseNavigation } from './browse-navigation';
 import { buildExportFilename } from '../utils/export-filename';
 import { runWhenIdle } from '../utils/run-when-idle';
 import { showHelpPageOnce } from 'interlocking/ui/help-modal';
+import type { PatchManager } from './patch-manager';
+import { GTFSSchemas } from '../types/gtfs';
+import { generateFieldConfigsFromSchema } from '../utils/field-component';
+import {
+  closeDraft,
+  openDraft,
+  openFieldForEdit,
+  readDraft,
+  renderInlineEditableField,
+} from '../utils/inline-editable-field';
+import { flushInlineEdits } from '../utils/inline-edit';
 
 function escapeHtml(text: string): string {
   return text
@@ -54,6 +65,7 @@ export class UIController {
   currentSelection: FeedSelection | null;
   /** Cancels a map update scheduled for a feed that has since been replaced. */
   private cancelPendingMapUpdate: (() => void) | null = null;
+  private patchManager: PatchManager | null = null;
 
   constructor() {
     this.gtfsParser = null;
@@ -78,6 +90,10 @@ export class UIController {
     // Boot paths other than a fresh load never touch the tool buttons, so the
     // persisted auto-zoom state has to be applied here.
     this.updateMapToolButtonState();
+  }
+
+  setPatchManager(pm: PatchManager): void {
+    this.patchManager = pm;
   }
 
   setupEventListeners() {
@@ -680,6 +696,116 @@ export class UIController {
       : undefined;
   }
 
+  /**
+   * Ask for a new feed_version when it still matches the imported one.
+   *
+   * Resolves true to go on with the export, false when cancelled. A feed with
+   * no feed_info row exports without asking.
+   */
+  private async confirmFeedVersion(): Promise<boolean> {
+    const db = this.gtfsParser!.gtfsDatabase;
+    const feedInfo = await db.getAllRows('feed_info');
+    if (feedInfo.length === 0) {
+      return true;
+    }
+    const current = String(feedInfo[0].feed_version ?? '');
+    const imported = await db.getImportFeedVersion();
+    if (imported !== null && current !== imported) {
+      return true;
+    }
+
+    const config = generateFieldConfigsFromSchema(
+      GTFSSchemas[GTFS_TABLES.FEED_INFO],
+      feedInfo[0],
+      GTFS_TABLES.FEED_INFO
+    ).find((c) => c.field === 'feed_version');
+    if (!config) {
+      throw new Error('[UI] feed_info has no feed_version field');
+    }
+    const draftId = 'export-feed-version';
+    const errorId = 'export-feed-version-error';
+    const field = await renderInlineEditableField({ ...config, draftId });
+    openDraft(draftId, { feed_version: current });
+
+    let proceed = false;
+    const showError = (message: string) => {
+      const el = document.getElementById(errorId);
+      if (el) {
+        el.textContent = message;
+        el.classList.remove('hidden');
+      }
+    };
+    await showModal({
+      title: 'feed_version has not changed since import',
+      body: `
+        <div class="space-y-3" data-export-feed-version>
+          <p class="text-sm">Consumers use feed_version to tell one release of a feed from the next. Set a new one before publishing.</p>
+          ${field}
+          <p id="${errorId}" class="text-error text-sm hidden"></p>
+        </div>
+      `,
+      enterAction: 0,
+      escapeAction: 2,
+      onMount: () => {
+        const container = document.querySelector('[data-export-feed-version]');
+        if (container) {
+          openFieldForEdit(container, 'feed_version');
+        }
+      },
+      actions: [
+        {
+          label: 'Save and export',
+          className: 'btn-primary',
+          onClick: async () => {
+            await flushInlineEdits();
+            const draft = readDraft(draftId);
+            if (draft.errors.feed_version) {
+              showError(draft.errors.feed_version);
+              return true;
+            }
+            const next = String(draft.values.feed_version ?? '');
+            if (next === current) {
+              showError('Enter a new feed_version, or export anyway.');
+              return true;
+            }
+            if (!this.patchManager) {
+              throw new Error('[UI] no patch manager to record feed_version');
+            }
+            await this.patchManager.recordUpdate(
+              'feed_info',
+              'feed_info',
+              { feed_version: current },
+              { feed_version: next }
+            );
+            console.log(
+              `[UI] Export: feed_version "${current}" -> "${next}", exporting`
+            );
+            proceed = true;
+            return false;
+          },
+        },
+        {
+          label: 'Export anyway',
+          onClick: () => {
+            console.log(
+              `[UI] Export: feed_version "${current}" kept, exporting anyway`
+            );
+            proceed = true;
+          },
+        },
+        {
+          label: 'Cancel',
+          className: 'btn-ghost',
+          onClick: () => {
+            console.log('[UI] Export: cancelled at the feed_version prompt');
+          },
+        },
+      ],
+    });
+    closeDraft(draftId);
+    return proceed;
+  }
+
   async exportGTFS() {
     let loadingNotificationId = null;
 
@@ -694,13 +820,17 @@ export class UIController {
         return;
       }
 
+      // Save current file changes
+      this.editor!.saveCurrentFileChanges();
+
+      if (!(await this.confirmFeedVersion())) {
+        return;
+      }
+
       console.log('Exporting GTFS data...');
 
       // Show loading notification
       loadingNotificationId = notify.loading('Preparing GTFS export...');
-
-      // Save current file changes
-      this.editor!.saveCurrentFileChanges();
 
       // Generate ZIP blob
       const blob = await this.gtfsParser!.exportAsZip();

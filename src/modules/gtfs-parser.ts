@@ -1476,6 +1476,9 @@ export class GTFSParser {
         blobVersion: 0,
         networksMode: 'inline',
         feedSummary: this.computeFeedSummary(pendingFeed, this.feedLabel),
+        importFeedVersion: String(
+          pendingFeed[GTFS_TABLES.FEED_INFO]?.data[0]?.feed_version ?? ''
+        ),
         locationsRow: null,
       });
 
@@ -1709,6 +1712,9 @@ export class GTFSParser {
         blobVersion: 0,
         networksMode,
         feedSummary: this.computeFeedSummary(pendingFeed, this.feedLabel),
+        importFeedVersion: String(
+          pendingFeed[GTFS_TABLES.FEED_INFO]?.data[0]?.feed_version ?? ''
+        ),
         locationsRow,
       });
 

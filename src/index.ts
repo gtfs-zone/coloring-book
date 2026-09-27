@@ -216,6 +216,7 @@ export class GTFSEditor {
     // Inject patchManager so edit operations are recorded
     this.gtfsParser.setPatchManager(this.patchManager);
     this.editor.setPatchManager(this.patchManager);
+    this.uiController.setPatchManager(this.patchManager);
     this.levelsController.setPatchManager(this.patchManager);
     this.browseNavigation.setPatchManager(this.patchManager);
     this.scheduleController.setPatchManager(this.patchManager);
