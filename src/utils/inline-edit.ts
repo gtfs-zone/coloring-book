@@ -276,6 +276,22 @@ export function openInlineEditor(
     });
   }
 
+  // Clicking anywhere in a date box opens the grid. The box stays typeable,
+  // which is the keyboard path: the grid takes focus from nobody, so it cannot
+  // trip the blur commit below. Attached before the focus below, which is what
+  // opens the grid on the first click.
+  if (isDate) {
+    closePicker = attachCalendarInput(input, {
+      codec: ISO_DATE_CODEC,
+      weekStart: CONFIG.WEEK_START,
+      allowEmpty: true,
+      onPick: () => {
+        liveInputDirty = true;
+        input.blur();
+      },
+    });
+  }
+
   input.addEventListener('input', () => {
     liveInputDirty = true;
   });
@@ -288,21 +304,6 @@ export function openInlineEditor(
     }
   } else {
     input.select();
-  }
-
-  // Clicking anywhere in a date box opens the grid. The box stays typeable,
-  // which is the keyboard path: the grid takes focus from nobody, so it cannot
-  // trip the blur commit below.
-  if (isDate) {
-    closePicker = attachCalendarInput(input, {
-      codec: ISO_DATE_CODEC,
-      weekStart: CONFIG.WEEK_START,
-      allowEmpty: true,
-      onPick: () => {
-        liveInputDirty = true;
-        input.blur();
-      },
-    });
   }
 
   let settled = false;

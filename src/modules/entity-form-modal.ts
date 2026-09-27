@@ -222,13 +222,6 @@ export async function promptNewEntity(
     enterAction: 0,
     boxClassName: options.boxClassName,
     onMount: (close) => {
-      const first = document.getElementById(inputId(options.fields[0].field));
-      if (first instanceof HTMLInputElement) {
-        first.focus();
-        first.select();
-      } else {
-        first?.focus();
-      }
       for (const field of options.fields) {
         if (field.type !== 'date') {
           continue;
@@ -243,6 +236,14 @@ export async function promptNewEntity(
             })
           );
         }
+      }
+      // After the calendars attach, so a date first field opens its grid.
+      const first = document.getElementById(inputId(options.fields[0].field));
+      if (first instanceof HTMLInputElement) {
+        first.focus();
+        first.select();
+      } else {
+        first?.focus();
       }
       options.onMount?.(close);
     },
