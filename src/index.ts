@@ -221,11 +221,10 @@ export class GTFSEditor {
     this.scheduleController.setPatchManager(this.patchManager);
     this.serviceDaysController.setPatchManager(this.patchManager);
 
-    // Timetable stop column -> map: click the rail dot to focus, hover the row
-    // to light up whatever it references. A null ref clears all three kinds:
-    // the row is already gone, so its kind is no longer readable.
+    // Timetable stop column -> map: hover the row to light up whatever it
+    // references. A null ref clears all three kinds: the row is already gone,
+    // so its kind is no longer readable.
     this.scheduleController.setStopHighlightHandlers({
-      onStopFocus: (stop_id) => this.mapController.highlightStop(stop_id),
       onRefHover: (ref) => {
         if (ref === null) {
           this.mapController.hoverStop(null);

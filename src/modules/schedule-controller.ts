@@ -45,6 +45,7 @@ import { showOptionPickerModal, OptionPickerItem } from './option-picker-modal';
 import { getEnumOptions } from '../types/gtfs-enums';
 import {
   navigateToLocationGroup,
+  navigateToStop,
   navigateToZone,
   openTimetable,
 } from './navigation-actions';
@@ -320,7 +321,6 @@ export class ScheduleController {
   } | null = null;
 
   // Map wiring for the stop column, injected by index.ts
-  private stopFocus: ((stop_id: string) => void) | null = null;
   private refHover: ((ref: StopTimeRef | null) => void) | null = null;
   private onDemandOpen: ((target: OnDemandTarget) => void) | null = null;
   private shapesOpen: (() => void) | null = null;
@@ -395,7 +395,7 @@ export class ScheduleController {
       if (stopDot instanceof HTMLElement) {
         const stop_id = stopDot.dataset.stopId;
         if (stop_id) {
-          this.stopFocus?.(stop_id);
+          void navigateToStop(stop_id);
         }
         return;
       }
@@ -789,16 +789,13 @@ export class ScheduleController {
   }
 
   /**
-   * Wire the timetable stop column to the map: clicking a stop's rail dot
-   * focuses it, hovering a row lights whatever it references (stop, zone or
-   * location group). Injected from `index.ts` because ScheduleController has
-   * no map or navigation reference of its own.
+   * Wire the timetable stop column to the map: hovering a row lights whatever
+   * it references (stop, zone or location group). Injected from `index.ts`
+   * because ScheduleController has no map reference of its own.
    */
   public setStopHighlightHandlers(handlers: {
-    onStopFocus: (stop_id: string) => void;
     onRefHover: (ref: StopTimeRef | null) => void;
   }): void {
-    this.stopFocus = handlers.onStopFocus;
     this.refHover = handlers.onRefHover;
   }
 
@@ -1435,7 +1432,7 @@ export class ScheduleController {
       title: 'Add stop or zone',
       options,
       searchable: true,
-      hint: 'Stop not listed? Add it with the stop tool on the map.',
+      hint: "Stop not listed? It is easiest to add all of a route's stops on the map with the stop tool first, then add them here.",
       // Two of the three kinds this lists are authored in the On-Demand modal.
       // Stops have no list page to send anyone to, so the label names what the
       // button actually opens.

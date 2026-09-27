@@ -551,13 +551,15 @@ export function renderServiceTimeline(
           })()
         : '';
 
-      // Only needed where the row itself goes somewhere else: without a route
+      // Only active where the row itself goes somewhere else: without a route
       // context the row already opens the service page.
       const editCell = options.route_id
         ? `<td class="w-8 min-w-8 px-1 py-1 border-b border-base-300/30 text-center">
           <button type="button" class="btn btn-ghost btn-xs px-1 field-tooltip-trigger ${SERVICE_EDIT_BTN}" data-service-id="${escapeHtml(sid)}" data-tooltip-content="${escapeHtml(`Edit service ${sid}`)}">${renderPencilIcon('h-3 w-3')}</button>
         </td>`
-        : '';
+        : `<td class="w-8 min-w-8 px-1 py-1 border-b border-base-300/30 text-center">
+          <button type="button" class="btn btn-ghost btn-xs px-1" disabled title="Click the row to open the service">${renderPencilIcon('h-3 w-3')}</button>
+        </td>`;
 
       return `<tr class="timeline-row cursor-pointer hover:bg-base-300/20" data-service-id="${escapeHtml(sid)}"${routeAttr}>${labelCell}${dotCell}${tripCell}${editCell}${cells}</tr>`;
     })
@@ -571,9 +573,7 @@ export function renderServiceTimeline(
     ? `<div class="text-xs opacity-70 mb-2">Select a service to show the timetable for that service, or use the pencil to edit the service itself.</div>`
     : '';
 
-  const editHeader = options.route_id
-    ? `<th class="w-8 min-w-8 border-b border-base-300"></th>`
-    : '';
+  const editHeader = `<th class="w-8 min-w-8 border-b border-base-300"></th>`;
 
   const tripHeader = options.tripCounts
     ? `<th class="w-12 min-w-12 px-1 py-0.5 border-b border-base-300 text-right whitespace-nowrap"><span class="text-base-content/50 text-xs font-medium">Trips</span></th>`

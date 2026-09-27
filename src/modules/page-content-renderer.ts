@@ -1007,10 +1007,9 @@ export class PageContentRenderer {
       </div>
     `;
 
-    // Render new service selector
-    const newServiceSelectorHTML =
-      allServices.length > 0
-        ? `
+    // Render new service selector, disabled while there are no services
+    const noServices = allServices.length === 0;
+    const newServiceSelectorHTML = `
       <div class="space-y-2">
         <label class="label" for="new-service-select">
           Add timetable for service:
@@ -1019,6 +1018,7 @@ export class PageContentRenderer {
           id="new-service-select"
           class="select select-bordered w-full"
           data-route-id="${route_id}"
+          ${noServices ? 'disabled title="No services yet: create one first"' : ''}
         >
           <option value="">Choose a service...</option>
           ${allServices
@@ -1032,8 +1032,7 @@ export class PageContentRenderer {
           <option value="" data-new-service>New service…</option>
         </select>
       </div>
-    `
-        : '';
+    `;
 
     // Timeline scoped to the services this route actually runs. The fixed
     // route context makes a row click land on that route's timetable.
@@ -1055,8 +1054,7 @@ export class PageContentRenderer {
           <div class="card-body p-4">
             ${newServiceSelectorHTML}
             ${
-              Object.keys(serviceGroups).length === 0 &&
-              allServices.length === 0
+              Object.keys(serviceGroups).length === 0 && noServices
                 ? `<div class="text-center py-6 opacity-70">
                     No services found.
                     <button type="button" class="link link-primary create-service-link">Create one</button>.
@@ -1065,7 +1063,7 @@ export class PageContentRenderer {
                   ? `<div class="text-center py-6 opacity-70 mt-4">
                     No timetables yet. Select a service above to create one.
                   </div>`
-                  : `<div class="max-h-96 overflow-y-auto ${newServiceSelectorHTML ? 'mt-4' : ''}">
+                  : `<div class="max-h-96 overflow-y-auto mt-4">
                     ${renderServiceTimeline(routeServiceData, { route_id, tripCounts: routeTripCounts })}
                   </div>`
             }

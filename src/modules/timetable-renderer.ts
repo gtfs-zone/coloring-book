@@ -288,8 +288,8 @@ export class TimetableRenderer {
       })
       .join('');
 
-    // GTFS only defines direction_id 0 and 1, so the "+" tab appears only
-    // while one of them is still unused.
+    // GTFS only defines direction_id 0 and 1, so the "+" tab is disabled once
+    // both are in use.
     const nextDirectionId = ['0', '1'].find(
       (id) => !directions.some((direction) => direction.id === id)
     );
@@ -301,7 +301,13 @@ export class TimetableRenderer {
             +
           </a>
         `
-      : '';
+      : `
+          <button type="button" class="tab tab-disabled" disabled
+             aria-label="Add direction"
+             title="Both directions already exist: GTFS only defines direction_id 0 and 1">
+            +
+          </button>
+        `;
 
     return `
       <div class="flex items-center gap-2 text-sm">
@@ -470,7 +476,7 @@ export class TimetableRenderer {
           `<div class="opacity-70">Routes this trip's ${tripStops.length} stops in BRouter in a new tab, to draw or check a shape against the road or rail network. Nothing in the feed changes.</div>`;
         const brouterLink = brouterUrl
           ? `<a href="${brouterUrl}" target="_blank" rel="noopener" class="btn btn-xs btn-outline field-tooltip-trigger" ${tooltipContentAttr(brouterTip)}>${renderRouteWaypointsIcon('h-3 w-3')}</a>`
-          : '';
+          : `<button type="button" class="btn btn-xs btn-outline" disabled title="Open in BRouter needs at least two stops with coordinates on this trip">${renderRouteWaypointsIcon('h-3 w-3')}</button>`;
 
         const uploadTip =
           '<div>Upload shape for this trip</div>' +
@@ -912,7 +918,7 @@ export class TimetableRenderer {
     // Always add a "new trip" column on the right.
     const newTripHeader = `
       <td class="trip-header text-center p-2 text-xs" style="width:${NEW_TRIP_COLUMN_REM}rem">
-        <button class="new-trip-btn btn btn-xs btn-outline">New trip</button>
+        <button class="new-trip-btn btn btn-xs btn-primary">New trip</button>
       </td>
     `;
 
@@ -1296,7 +1302,7 @@ export class TimetableRenderer {
       <tr>
         <th class="stop-name p-2 border-r border-base-300 bg-base-100" style="${this.labelColumnStyle()}">
           <button
-            class="add-stop-btn btn btn-ghost btn-sm w-full justify-start opacity-70 hover:opacity-100"
+            class="add-stop-btn btn btn-primary btn-sm w-full justify-start"
             ${noTrips ? 'disabled title="Add a trip first: stop times belong to a trip"' : ''}
           >Add stop or zone...</button>
         </th>
