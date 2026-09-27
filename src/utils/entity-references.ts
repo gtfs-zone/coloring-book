@@ -1,4 +1,5 @@
 import {
+  getAgencyDisplay,
   getRouteDisplay,
   getServiceDisplay,
   getStopDisplay,
@@ -8,6 +9,7 @@ import {
 import { escapeHtml } from 'interlocking/util/escape-html';
 import { formatGtfsDateRange } from './gtfs-date';
 import { routeColor } from 'interlocking/gtfs/route-colors';
+import { normalizeAgencyId } from './agency-helpers';
 
 function escapeAttr(text: unknown): string {
   const div = document.createElement('div');
@@ -168,6 +170,22 @@ export function renderRouteReference(
   </div>
   ${badge}
   ${viewBtn}
+</div>`;
+}
+
+export function renderAgencyReference(
+  agency: Record<string, unknown>,
+  routeCount: number
+): string {
+  const label = renderCardLabel(
+    getAgencyDisplay(agency as Record<string, string>)
+  );
+
+  return `<div class="flex items-center gap-3 p-3 rounded-lg hover:bg-base-200 cursor-pointer transition-colors agency-card" data-agency-id="${escapeAttr(normalizeAgencyId(agency.agency_id as string))}">
+  <div class="flex-1 min-w-0">
+    ${label}
+  </div>
+  <div class="badge badge-outline badge-sm">${routeCount} route${routeCount !== 1 ? 's' : ''}</div>
 </div>`;
 }
 

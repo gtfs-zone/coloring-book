@@ -102,6 +102,7 @@ import {
 import { normalizeAgencyId } from '../utils/agency-helpers';
 import { feedBounds, trimOrExtendServices } from '../utils/feed-bounds';
 import {
+  renderAgencyReference,
   STOP_REF_ROW,
   PATHWAY_REF_ROW,
   ENTITY_REF_BTN,
@@ -575,7 +576,10 @@ export class PageContentRenderer {
     await refreshFeedIssuesIfStale();
     const tIssues = performance.now();
 
-    const agencies = await this.dependencies.relationships.getAgenciesAsync();
+    const agencies =
+      (await this.dependencies.relationships.getAgenciesAsync()) as Array<
+        Record<string, string>
+      >;
 
     // Get feed_info data
     const feedInfo = await this.getFeedInfo();
@@ -603,19 +607,26 @@ export class PageContentRenderer {
         ? `Set every service's end_date to ${bounds.end}, and remove every exception after it`
         : 'feed_info has no feed_end_date';
 
+    // Routes without agency_id belong to the agency when there is only one
+    const routeCounts = new Map<string, number>();
+    const routeRows = (await this.dependencies.gtfsDatabase.getAllRows(
+      'routes'
+    )) as Array<Record<string, unknown>>;
+    for (const route of routeRows) {
+      let agency_id = normalizeAgencyId(route.agency_id as string);
+      if (agency_id === '' && agencies.length === 1) {
+        agency_id = normalizeAgencyId(agencies[0].agency_id);
+      }
+      routeCounts.set(agency_id, (routeCounts.get(agency_id) ?? 0) + 1);
+    }
     const agencyItems = agencies
-      .map((agency: unknown) => {
-        const agencyData = agency as Record<string, string>;
-
-        return `
-          <div class="flex items-center gap-3 p-3 rounded-lg hover:bg-base-200 cursor-pointer transition-colors agency-card"
-               data-agency-id="${normalizeAgencyId(agencyData.agency_id as string)}">
-            <div class="flex-1 min-w-0">
-              <div class="font-semibold">${renderCardLabel(getAgencyDisplay(agencyData))}</div>
-            </div>
-          </div>
-        `;
-      })
+      .map((agency) => ({
+        agency,
+        count: routeCounts.get(agency.agency_id) ?? 0,
+        name: getAgencyDisplay(agency).primary,
+      }))
+      .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name))
+      .map(({ agency, count }) => renderAgencyReference(agency, count))
       .join('');
 
     const tTimelineStart = performance.now();
