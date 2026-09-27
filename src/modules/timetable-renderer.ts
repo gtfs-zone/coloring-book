@@ -107,8 +107,8 @@ function buildBrouterUrl(
 
 /** Width of one trip column, and of the field-label sub-column, in rem. */
 const TRIP_COLUMN_REM = 11;
-/** Width of the trailing new-trip column, wide enough for a typed trip id. */
-const NEW_TRIP_COLUMN_REM = 16;
+/** Width of the trailing new-trip column, which holds the New trip button. */
+const NEW_TRIP_COLUMN_REM = 8;
 const LABEL_COLUMN_REM = 10;
 /** The stop-name half of the frozen first column. */
 const STOP_NAME_COLUMN_REM = 20;
@@ -877,7 +877,7 @@ export class TimetableRenderer {
           '<div class="opacity-70">Renumbers this trip\'s stop_times into chronological order. Stops can change column on the strip. Undoable from the Changes panel.</div>';
         const copyTip =
           `<div>Copy trip <code>${escapeHtml(trip.trip_id)}</code></div>` +
-          '<div class="opacity-70">Asks for a new trip ID, a time offset and whether to reverse the stop order. Copies the stop_times and frequencies too.</div>';
+          '<div class="opacity-70">Asks for a time offset and whether to reverse the stop order, then creates the copy with a generated trip ID. Copies the stop_times and frequencies too.</div>';
         return `
           <td class="trip-header text-center p-2 text-xs" style="${columnStyle}">
             <div class="flex items-center justify-center gap-1">
@@ -909,25 +909,10 @@ export class TimetableRenderer {
       })
       .join('');
 
-    // Always add a "new trip" column on the right. It is wider than a trip
-    // column so a typed trip id is readable while being entered.
-    //
-    // The input states its own width rather than taking `w-full`, so the cell
-    // is the right size even if the table ever loses its fixed layout: a
-    // `w-full` input contributes nothing to a content-sized column, which then
-    // collapses to its padding. Subtract the cell's `p-2` (1rem).
-    const newTripColumnStyle = `width:${NEW_TRIP_COLUMN_REM}rem`;
-    const newTripInputStyle = `width:${NEW_TRIP_COLUMN_REM - 1}rem`;
+    // Always add a "new trip" column on the right.
     const newTripHeader = `
-      <td class="trip-header text-center p-2 text-xs" style="${newTripColumnStyle}">
-        <input
-          type="text"
-          class="input input-xs text-center"
-          style="${newTripInputStyle}"
-          placeholder="New trip ID..."
-          id="new-trip-input"
-          onchange="gtfsEditor.scheduleController.createTripFromInput(this.value)"
-        />
+      <td class="trip-header text-center p-2 text-xs" style="width:${NEW_TRIP_COLUMN_REM}rem">
+        <button class="new-trip-btn btn btn-xs btn-outline">New trip</button>
       </td>
     `;
 
@@ -1331,7 +1316,7 @@ export class TimetableRenderer {
   /**
    * The stop-row area for a route/service/direction with no trips.
    *
-   * Replaces the stop rows only: the trip-property rows and the new-trip input
+   * Replaces the stop rows only: the trip-property rows and the new-trip button
    * column stay, and the "Add stop or zone" row renders disabled above.
    */
   private renderNoTripsRow(): string {

@@ -65,6 +65,7 @@ import { renderSpecDescriptionPlain } from 'interlocking/gtfs/spec-markup';
 import { escapeHtml } from 'interlocking/util/escape-html';
 import { setPickerTriggerContent } from '../utils/picker-trigger';
 import { getGTFSFieldDescription } from '../utils/zod-tooltip-helper';
+import { nextEntityId } from '../utils/inline-entity-creator';
 import { GTFS_TABLES } from '../types/gtfs';
 import type { LocationGroups } from '../types/gtfs-entities';
 import {
@@ -489,11 +490,11 @@ export class ScheduleController {
         return;
       }
 
-      const addFirstTripBtn = (e.target as Element)?.closest?.(
-        '.add-first-trip-btn'
+      const newTripBtn = (e.target as Element)?.closest?.(
+        '.new-trip-btn, .add-first-trip-btn'
       );
-      if (addFirstTripBtn instanceof HTMLElement) {
-        void this.createFirstTrip();
+      if (newTripBtn instanceof HTMLElement) {
+        void this.createNewTrip();
         return;
       }
 
@@ -3338,52 +3339,26 @@ export class ScheduleController {
   }
 
   /**
-   * Create a new trip from the input field
-   *
-   * Called when user types a trip ID in the always-visible new trip input.
-   * Saves trip to database immediately with no stop_times.
-   *
-   * @param trip_id - User-entered trip ID
+   * Create a trip with a generated `trip_<n>` ID in the current timetable.
+   * Called from the "New trip" and "Add first trip" buttons. The ID is
+   * renamed afterwards from the trip column header.
    */
-  public async createTripFromInput(trip_id: string): Promise<void> {
-    const trimmedId = trip_id.trim();
-
-    // Clear the input first
-    const inputElement = document.getElementById(
-      'new-trip-input'
-    ) as HTMLInputElement;
-    if (inputElement) {
-      inputElement.value = '';
-    }
-
-    if (!trimmedId) {
-      // Empty input, just ignore
+  public async createNewTrip(): Promise<void> {
+    if (!this.currentRouteId || !this.currentServiceId) {
+      notify.error('No timetable loaded');
       return;
     }
 
     try {
-      if (!this.currentRouteId || !this.currentServiceId) {
-        notify.error('No timetable loaded');
-        return;
-      }
-
-      await this.insertTrip(trimmedId);
+      const trip_id = await nextEntityId(
+        this.gtfsParser.gtfsDatabase,
+        'trips',
+        'trip'
+      );
+      await this.insertTrip(trip_id);
     } catch (error) {
       console.error('Failed to create trip:', error);
       notify.error('Failed to create trip');
-    }
-  }
-
-  /**
-   * The entry point from the empty timetable's "Add first trip" button.
-   * Focuses the "New trip ID..." input rather than creating a trip directly,
-   * so the trip gets a meaningful id instead of a generated one.
-   */
-  public async createFirstTrip(): Promise<void> {
-    const input = document.getElementById('new-trip-input');
-    if (input instanceof HTMLInputElement) {
-      input.scrollIntoView({ block: 'nearest', inline: 'nearest' });
-      input.focus();
     }
   }
 
@@ -3785,13 +3760,6 @@ export class ScheduleController {
       title: `Copy trip ${trip_id}`,
       createLabel: 'Copy trip',
       fields: [
-        {
-          field: 'trip_id',
-          label: 'New trip ID',
-          tableName: 'trips',
-          mono: true,
-          value: `${trip_id}-copy`,
-        },
         offsetField(),
         {
           field: 'flip',
@@ -3801,22 +3769,14 @@ export class ScheduleController {
           note: 'Mirrors the times so the copy still runs forward. Clears shape_id and shape_dist_traveled.',
         },
       ],
-      validate: async (values) => {
-        if (!values.trip_id) {
-          return 'Enter a trip ID';
-        }
-        if (TimeFormatter.parseSignedDuration(values.offset) === null) {
-          return OFFSET_ERROR;
-        }
-        const validation = await this.validateTripId(values.trip_id);
-        return validation.isValid
-          ? null
-          : (validation.errorMessage ?? 'Invalid trip ID');
-      },
+      validate: (values) =>
+        TimeFormatter.parseSignedDuration(values.offset) === null
+          ? OFFSET_ERROR
+          : null,
       onCreate: async (values) =>
         this.writeTripCopy(
           source,
-          values.trip_id,
+          await nextEntityId(db, 'trips', 'trip'),
           TimeFormatter.parseSignedDuration(values.offset) ?? 0,
           values.flip === 'true'
         ),
@@ -3827,7 +3787,7 @@ export class ScheduleController {
    * Write a trip copy and record it as one batch insert.
    *
    * @param source - The trip row being copied
-   * @param newId - trip_id of the copy, already validated as unique
+   * @param newId - trip_id of the copy, generated as unique
    * @param offsetSeconds - Seconds added to every time of the copy
    * @param flip - Whether to reverse the stop order and flip direction_id
    */
