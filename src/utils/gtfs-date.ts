@@ -140,16 +140,6 @@ export function formatGtfsDateRange(start: string, end?: string): string {
 }
 
 /**
- * A GTFS date as the calendar input speaks it: `YYYYMMDD` in, a UTC-midnight
- * `Date` out. Structurally a `DateCodec`, without importing the DOM module
- * that declares the type - this file has no dependencies and keeps none.
- */
-export const GTFS_DATE_CODEC = {
-  parse: parseGtfsDate,
-  format: toGtfsDate,
-};
-
-/**
  * GTFS date to the `YYYY-MM-DD` value an `<input type="date">` requires.
  *
  * @example
