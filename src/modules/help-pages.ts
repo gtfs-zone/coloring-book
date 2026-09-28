@@ -18,6 +18,7 @@ import {
   renderVersionAndSource,
   renderProjectSection,
   renderResourcesSection,
+  renderDataSourcesSection,
   renderFeedbackSection,
   renderExternalLink,
   TRANSITLAND_URL,
@@ -395,6 +396,7 @@ const aboutPage: HelpPage = {
       renderVersionAndSource(ABOUT_APP, helpRuntimeData.version),
       renderProjectSection(ABOUT_APP),
       renderResourcesSection(),
+      renderDataSourcesSection(),
       renderFeedbackSection(ABOUT_APP),
     ].join('\n'),
 };
@@ -473,6 +475,12 @@ const publishingPage: HelpPage = {
           term: 'Validate with the canonical GTFS validator',
           termHtml: `Validate with the ${renderExternalLink('https://gtfs-validator.mobilitydata.org/', 'canonical GTFS validator')}`,
           description: 'Catch anything this editor does not check.',
+        },
+        {
+          icon: ICON_CHECK,
+          term: "Keep the source feed's license",
+          description:
+            "If you started from someone else's feed, their license still covers what you publish. Credit them in attributions.txt.",
         },
         {
           icon: ICON_EXPORT,
