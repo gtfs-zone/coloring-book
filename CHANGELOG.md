@@ -1,3 +1,41 @@
+## v0.38.0 (2026-09-28)
+
+### Feat
+
+- **search**: place search via Photon, zooms to the place with a ring
+- **stop**: empty timetables section explains how to add the stop and opens the timetable browser
+- **ui**: visible add controls: tinted new row with placeholders, primary create buttons
+- **home**: agency list shows route counts, sorted by count
+- **export**: prompt for a new feed_version when it matches the imported one
+- **creation**: no invented route/agency values, blur service select before New service
+- **timetable**: stop dot opens the stop page, primary buttons, disabled instead of hidden controls
+- **timetable**: timetable browser modal
+- **issues**: per-code issue registry, row-scoped actions, full issue list
+- **map**: bump interlocking to v3.5.0, pad fits below the map controls, cap max zoom
+- **forms**: shape, zone and pathway creation confirm the ID first
+- **forms**: stop and trip creation confirm the ID first
+- **forms**: agency, route, network and area creation confirm the ID first
+- **services**: one new service modal with the service page's fields and defaults
+- **forms**: one field label weight in every container
+- **forms**: draft mode for inline fields in the new entity modal
+- **dates**: shade the feed_info active range in date pickers
+- **timetable**: hint under the "Add stop or zone" picker
+- **routes**: create a new service from the route page service select
+- **trips**: create and copy trips with a generated trip_id
+- **ids**: create services, networks and areas with a generated ID
+- **stops**: create new stops with a generated stop_id instead of a modal
+- **ids**: show service_id on the service page and make trip_id renameable
+- **timetable**: show next-day times as clock time plus a moon +n badge
+
+### Fix
+
+- **dates**: open the date picker on the first click
+- **map**: open pointer and add-stop tooltips below the toolbar
+
+### Refactor
+
+- **dates**: remove unused GTFS_DATE_CODEC
+
 ## v0.37.1 (2026-09-27)
 
 ## v0.37.0 (2026-09-27)
