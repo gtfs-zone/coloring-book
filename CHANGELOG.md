@@ -1,3 +1,9 @@
+## v0.39.0 (2026-09-29)
+
+### Feat
+
+- **about**: credit the feed catalogs and their licenses
+
 ## v0.38.0 (2026-09-28)
 
 ### Feat
