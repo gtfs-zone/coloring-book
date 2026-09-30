@@ -93,6 +93,9 @@ export class RouteRenderer {
   // The index build in flight, if any. Shared so a synchronous reader finishes
   // the same pass rather than starting a second one over the same rows.
   private buildIterator: Iterator<void> | null = null;
+  // Bumped by invalidateAll, so an async build can tell being replaced apart
+  // from being finished early by a synchronous reader.
+  private buildGeneration = 0;
 
   // RAF-based coalescing
   private dirtyFlag = false;
@@ -249,6 +252,7 @@ export class RouteRenderer {
     // Drops any build in flight: its drain loop sees the swap and stops rather
     // than writing rows of the old feed into the fresh maps.
     this.buildIterator = null;
+    this.buildGeneration++;
     this.shapeIndex = null;
     this.stopSeqIndex = null;
     this.tripsByGeomKey = null;
@@ -305,11 +309,20 @@ export class RouteRenderer {
   /** The same build, yielding to the event loop between chunks. */
   private async createRouteFeaturesAsync(): Promise<void> {
     const iterator = this.startFeatureBuild();
+    const generation = this.buildGeneration;
     for (;;) {
       // A feed swap during a yield replaces the iterator. Throwing rather than
       // returning is the point: the caller must not draw what was built.
-      if (this.buildIterator !== iterator) {
+      if (this.buildGeneration !== generation) {
         throw new BuildSupersededError();
+      }
+      // A synchronous reader (getRouteFeatures) drained this same build during
+      // a yield: the features are complete.
+      if (this.buildIterator !== iterator) {
+        console.log(
+          '[RouteRenderer] Build finished by a synchronous reader during a yield'
+        );
+        return;
       }
       if (iterator.next().done) {
         break;

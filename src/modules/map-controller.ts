@@ -562,6 +562,10 @@ export class MapController {
     if (this.feedSuperseded(gen, 'renderRoutes')) {
       return;
     }
+    // A page render during the build spotlit routes that had no features yet
+    if (this.spotlightRouteIds) {
+      this.routeRenderer!.highlightRoutes(this.spotlightRouteIds);
+    }
 
     // Invalidate cached coord resolver so it rebuilds with the current feed's stops
     this.layerManager!.invalidateCoordResolver();
