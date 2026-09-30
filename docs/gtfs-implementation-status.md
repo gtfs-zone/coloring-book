@@ -33,7 +33,7 @@ UI support levels:
 | `rider_categories.txt` | Optional | Full | Fares v2 editor |
 | `areas.txt` | Optional | Full | Fares v2 editor, with the stops in each area |
 | `stop_areas.txt` | Optional | Full | Edited from the stop page; platforms inherit their station's areas |
-| `networks.txt` | Conditionally Forbidden | Full | Fares v2 editor; canonical in-app form, see the networks invariant in CLAUDE.md |
+| `networks.txt` | Conditionally Forbidden | Full | Fares v2 editor; canonical in-app form, see [docs/architecture.md](architecture.md#networks) |
 | `route_networks.txt` | Conditionally Forbidden | Full | Assigned from the route page; canonical in-app form |
 | `location_groups.txt` | Optional | Partial | Flex transit: table editor only |
 | `location_group_stops.txt` | Optional | Partial | Flex transit: table editor only |

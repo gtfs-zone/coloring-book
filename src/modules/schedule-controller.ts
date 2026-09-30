@@ -2478,6 +2478,9 @@ export class ScheduleController {
           { [field]: value }
         );
       } else {
+        // start_time is part of the key: an update would leave the patch's
+        // source.id stale and undo would silently drop, so re-key as one
+        // delete + insert batch.
         const newKey = frequencyPeriodKey(after);
         await this.gtfsParser.gtfsDatabase.deleteRow('frequencies', oldKey);
         await this.gtfsParser.gtfsDatabase.insertRows('frequencies', [after]);
@@ -2829,8 +2832,7 @@ export class ScheduleController {
       // Capture before value from in-memory data
       const allTrips = this.gtfsParser.getFileDataSync('trips.txt');
       const currentTrip = allTrips.find((t) => t.trip_id === trip_id) as
-        | Record<string, unknown>
-        | undefined;
+        Record<string, unknown> | undefined;
       const storedValue = currentTrip?.[field] ?? null;
       const before = { [field]: storedValue };
 
@@ -3890,8 +3892,7 @@ export class ScheduleController {
   private async clearTripShape(trip_id: string): Promise<boolean> {
     const db = this.gtfsParser.gtfsDatabase;
     const trip = (await db.queryRows('trips', { trip_id }))[0] as
-      | Record<string, unknown>
-      | undefined;
+      Record<string, unknown> | undefined;
     if (!trip?.shape_id) {
       return false;
     }

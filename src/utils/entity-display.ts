@@ -19,6 +19,11 @@ export function getAgencyDisplay(
   return { primary: id || 'Not specified' };
 }
 
+/**
+ * Every user-visible stop label goes through here. Child stops (non-empty
+ * parent_station) show `Name (stop_id)`; stations and standalone stops show
+ * just the name.
+ */
 export function getStopDisplay(
   record: Record<string, string>
 ): EntityDisplayInfo {
