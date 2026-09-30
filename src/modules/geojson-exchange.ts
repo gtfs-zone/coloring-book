@@ -85,7 +85,8 @@ export async function readIncomingFeature(
   } catch (error) {
     // The SyntaxError message already carries the character offset.
     throw new Error(
-      `Not valid JSON: ${error instanceof Error ? error.message : String(error)}`
+      `Not valid JSON: ${error instanceof Error ? error.message : String(error)}`,
+      { cause: error }
     );
   }
 

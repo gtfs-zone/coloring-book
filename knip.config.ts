@@ -17,14 +17,8 @@ const config: KnipConfig = {
     "daisyui",
     // TypeScript compiler helpers: used implicitly by tsc with importHelpers
     "tslib",
-    // @types/jszip augments the jszip package; no direct import needed
-    "@types/jszip",
-    // Used by @lhci/cli internally
-    "lighthouse",
   ],
   ignoreBinaries: [
-    "live-server", // invoked in serve script; not a direct package dep
-    "rollup", // invoked in build:watch; not a direct package dep
     "cz", // commitizen CLI
   ],
   // Suppress noise from exports that are defined for internal cohesion

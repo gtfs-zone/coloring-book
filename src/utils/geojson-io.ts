@@ -110,7 +110,8 @@ async function decodeDataParam(data: string): Promise<string> {
       return await gunzip(fromBase64Url(data.slice(GZ_PREFIX.length)));
     } catch (error) {
       throw new Error(
-        `Could not decompress the geojson.io payload: ${error instanceof Error ? error.message : String(error)}`
+        `Could not decompress the geojson.io payload: ${error instanceof Error ? error.message : String(error)}`,
+        { cause: error }
       );
     }
   }
@@ -160,7 +161,8 @@ export async function parseGeojsonIoInput(
     parsed = JSON.parse(json);
   } catch (error) {
     throw new Error(
-      `Not valid JSON: ${error instanceof Error ? error.message : String(error)}`
+      `Not valid JSON: ${error instanceof Error ? error.message : String(error)}`,
+      { cause: error }
     );
   }
 

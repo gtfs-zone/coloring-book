@@ -19,7 +19,10 @@ import { hasValidCoords } from '../utils/stop-coords';
 import { CONFIG } from '../config';
 import { Stops, Routes, Pathways, Agency, GTFS_TABLES } from '../types/gtfs';
 import { agencyRouteFilter, normalizeAgencyId } from '../utils/agency-helpers';
-import { BasemapControl } from 'interlocking/map/basemap-control';
+import {
+  BasemapControl,
+  onBasemapChanged,
+} from 'interlocking/map/basemap-control';
 import { AutoZoom } from 'interlocking/map/auto-zoom';
 import { MAP_MAX_ZOOM } from 'interlocking/map/basemap-styles';
 import { fitPadding } from 'interlocking/map/fit-padding';
@@ -394,7 +397,7 @@ export class MapController {
 
     this.basemapChangeHandlerSet = true;
 
-    this.map.on('basemap:changed', async () => {
+    onBasemapChanged(this.map, async () => {
       console.log('Re-adding GTFS layers after basemap change...');
       this.placeMarker?.redraw();
 

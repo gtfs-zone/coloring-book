@@ -1,9 +1,9 @@
 {
   "compilerOptions": {
-    "target": "ES2020",
+    "target": "ES2022",
     "module": "ESNext",
     "moduleResolution": "Node",
-    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "allowSyntheticDefaultImports": true,
     "esModuleInterop": true,
     "allowJs": true,

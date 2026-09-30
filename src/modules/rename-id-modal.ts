@@ -177,7 +177,7 @@ export async function showRenameModal(
             return true;
           }
 
-          let rows = 0;
+          let rows: number;
           try {
             // Planned again rather than reusing the preview: the preview was
             // built for a different target, and the feed may have moved since.

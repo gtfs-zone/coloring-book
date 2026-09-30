@@ -34,7 +34,7 @@ try {
 const inlineIntro = {
   name: 'inline-intro',
   transformIndexHtml: (html) =>
-    html.replace('<!-- @intro -->', readFileSync(resolve(__dirname, 'src/intro.html'), 'utf-8'))
+    html.replace('<!-- @intro -->', readFileSync(resolve(import.meta.dirname, 'src/intro.html'), 'utf-8'))
 }
 
 export default defineConfig({
@@ -47,8 +47,8 @@ export default defineConfig({
   build: {
     outDir: '../dist',
     emptyOutDir: true,
-    rollupOptions: {
-      input: resolve(__dirname, 'src/index.html')
+    rolldownOptions: {
+      input: resolve(import.meta.dirname, 'src/index.html')
     }
   },
   server: {
@@ -61,7 +61,7 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      interlocking: resolve(__dirname, 'node_modules/interlocking/src')
+      interlocking: resolve(import.meta.dirname, 'node_modules/interlocking/src')
     }
   },
   optimizeDeps: {

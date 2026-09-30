@@ -1,5 +1,5 @@
 import { Map as MapLibreMap } from 'maplibre-gl';
-import type { ExpressionSpecification } from 'maplibre-gl';
+import type { ExpressionSpecification, GeoJSONSource } from 'maplibre-gl';
 import {
   Routes,
   Trips,
@@ -274,9 +274,7 @@ export class RouteRenderer {
     this.dirtyFlag = true;
     requestAnimationFrame(() => {
       this.dirtyFlag = false;
-      const source = this.map.getSource(
-        ROUTES_SOURCE
-      ) as maplibregl.GeoJSONSource;
+      const source = this.map.getSource(ROUTES_SOURCE) as GeoJSONSource;
       if (!source) {
         return;
       }
@@ -468,7 +466,7 @@ export class RouteRenderer {
           yield;
         }
         let geometryKey: string;
-        let coords: [number, number][] | null = null;
+        let coords: [number, number][];
 
         // Determine geometry_key and coords
         if (
@@ -497,8 +495,8 @@ export class RouteRenderer {
           geometryKey = `stops:${stopIds.join('|')}`;
 
           if (!this.stopSeqIndex.has(geometryKey)) {
-            const coordArr = stopIds.map(
-              (sid) => this.stopsLookupCache!.get(sid)!
+            const coordArr = stopIds.map((sid) =>
+              this.stopsLookupCache!.get(sid)!
             );
             this.stopSeqIndex.set(geometryKey, coordArr);
 
@@ -599,9 +597,7 @@ export class RouteRenderer {
       return;
     }
 
-    const source = this.map.getSource(
-      ROUTES_SOURCE
-    ) as maplibregl.GeoJSONSource;
+    const source = this.map.getSource(ROUTES_SOURCE) as GeoJSONSource;
     source.setData({
       type: 'FeatureCollection' as const,
       features: [...this.routeFeatures.values()],
@@ -612,9 +608,7 @@ export class RouteRenderer {
   }
 
   public clearRoutes(): void {
-    const source = this.map.getSource(
-      ROUTES_SOURCE
-    ) as maplibregl.GeoJSONSource;
+    const source = this.map.getSource(ROUTES_SOURCE) as GeoJSONSource;
     if (source) {
       source.setData({
         type: 'FeatureCollection',
@@ -821,7 +815,7 @@ export class RouteRenderer {
 
     const route_id = trip.route_id;
     let geometryKey: string;
-    let coords: [number, number][] | null = null;
+    let coords: [number, number][];
 
     if (
       this.renderMode === 'shapes' &&

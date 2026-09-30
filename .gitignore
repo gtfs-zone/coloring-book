@@ -85,11 +85,6 @@ jspm_packages/
 .yarn/install-state.gz
 .pnp.*
 
-# Playwright test results and reports
-test-results/
-playwright-report/
-playwright/.cache/
-
 # MacOS
 .DS_Store
 
@@ -118,12 +113,6 @@ Desktop.ini
 # GTFS test files (keep the test ZIP but ignore downloaded ones)
 tests/fixtures/*.zip
 !tests/fixtures/test-gtfs.zip
-
-# Rollup cache
-.rollup.cache/
-
-# Live server cache
-.live-server/
 
 # OS generated files
 .DS_Store?

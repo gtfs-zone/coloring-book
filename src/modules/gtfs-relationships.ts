@@ -652,7 +652,9 @@ export class GTFSRelationships {
       };
     } catch (error) {
       console.error('Error getting stop by ID from IndexedDB:', error);
-      throw new Error(`Failed to get stop ${stop_id} from database: ${error}`);
+      throw new Error(`Failed to get stop ${stop_id} from database: ${error}`, {
+        cause: error,
+      });
     }
   }
 
