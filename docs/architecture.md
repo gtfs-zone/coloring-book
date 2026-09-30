@@ -14,7 +14,7 @@ references explicitly.
 |-------|---------|
 | Data | `gtfs-parser.ts`, `gtfs-database.ts`, `gtfs-validator.ts`, `gtfs-relationships.ts` |
 | Map | `map-controller.ts`, `route-renderer.ts`, `layer-manager.ts`, `interaction-handler.ts` |
-| Editor | `editor.ts` (CodeMirror 6), `ui.ts` (file list / editor / preview state machine), `patch-manager.ts` (append-only patch log + undo/redo), `history-controller.ts` (Changes panel UI) |
+| Editor | `editor.ts` (Files table viewer, Clusterize grid), `ui.ts` (file list / editor / preview state machine), `patch-manager.ts` (append-only patch log + undo/redo), `history-controller.ts` (Changes panel UI) |
 | Navigation | `page-state-manager.ts`, `breadcrumbs.ts`, `objects-navigation.ts`, `page-content-renderer.ts` |
 | Views | `schedule-controller.ts`, `service-days-controller.ts`, `stop-view-controller.ts`, `timetable-*.ts` |
 | UI | `navbar-action-list.ts`, `shortcut-list.ts`, `help-pages.ts`, `tab-lock.ts` |

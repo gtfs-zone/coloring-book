@@ -9,10 +9,16 @@ This project uses [Conventional Commits](https://www.conventionalcommits.org/) t
 Instead of `git commit`, use:
 
 ```bash
-npm run commit
+pnpm commit
 ```
 
-This will prompt you to fill out the commit message following the conventional format.
+This will prompt you to fill out the commit message following the conventional format. `git commit` also works, as long as the message is valid.
+
+`cz` is the Python [Commitizen](https://commitizen-tools.github.io/commitizen/), not the npm package. Install it with:
+
+```bash
+pipx install commitizen
+```
 
 ### Commit Message Format
 
@@ -70,19 +76,38 @@ This will:
 - Update `CHANGELOG.md`
 - Create a git tag
 
+Then push the commit and the tag to both remotes:
+
+```bash
+git push --follow-tags origin main
+git push --follow-tags github main
+```
+
+Pushing a version tag to Forgejo (`origin`) triggers the deploy workflow in `.forgejo/workflows/deploy.yml`, which builds the app into a container image and records its digest in the deploy repo.
+
 ## Development Workflow
 
 1. Create a feature branch from `main`
 2. Make your changes
-3. Commit using `npm run commit` (this ensures proper commit format)
+3. Commit using `pnpm commit` (this ensures proper commit format)
 4. Push your branch and create a pull request
 5. After merge to `main`, run `cz bump` for releases when ready
+
+## Changing interlocking
+
+Modules shared with the other gtfs.zone apps live in [interlocking](https://github.com/gtfs-zone/interlocking) and are not edited here. A shared change is:
+
+1. A commit in interlocking
+2. A new tag in interlocking, pushed to GitHub
+3. A bump of the `interlocking` tag in `package.json` here (and in each other consumer), then `pnpm install`
+
+Restart the dev server after the bump: Vite does not watch `node_modules`, so a running server can keep serving the old copy.
 
 ## Git Hooks
 
 This project uses Husky to enforce quality standards:
 
-- **pre-commit**: Runs linting and formatting on staged files
+- **pre-commit**: Runs linting and formatting on staged files, then `pnpm check-spec`
 - **commit-msg**: Validates commit message format using commitlint
 
 If your commit message doesn't follow the conventional format, the commit will be rejected with a helpful error message.

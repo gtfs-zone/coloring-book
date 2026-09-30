@@ -357,9 +357,9 @@ export class GTFSValidator {
         this.stopTimesCache.store(passCache);
       }
     } finally {
-      // A pass called on its own (the timing snippet in
-      // docs/validation-performance.md does exactly that) must run cold and
-      // must not append to the stored cache, so nothing outlives the run.
+      // A pass called on its own (e.g. to time it from the console) must run
+      // cold and must not append to the stored cache, so nothing outlives the
+      // run.
       this.passCache = null;
       this.warm = null;
       this.touchedRows = new Map();
@@ -427,8 +427,7 @@ export class GTFSValidator {
     // of those forces a sweep before it gets here.
     for (const id of warm.flexSensitive) {
       const row = this.touchedRows.get(id)?.row as
-        | Record<string, unknown>
-        | undefined;
+        Record<string, unknown> | undefined;
       if (!row) {
         continue;
       }
