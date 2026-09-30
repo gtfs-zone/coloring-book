@@ -1,0 +1,60 @@
+publiccodeYmlVersion: "0.4"
+
+name: GTFS.zone Editor
+url: "https://github.com/gtfs-zone/coloring-book"
+landingURL: "https://edit.gtfs.zone"
+
+platforms:
+  - web
+
+categories:
+  - data-visualization
+  - geographic-information-systems
+
+developmentStatus: beta
+
+softwareType: "standalone/web"
+
+description:
+  en:
+    shortDescription: >
+      A browser-based, map-focused editor for GTFS transit feeds, with no
+      backend and no lock-in.
+    longDescription: >
+      GTFS.zone Editor loads a GTFS Schedule feed from a ZIP file or a URL,
+      shows it on a map, and lets a small bus or rail operator inspect and edit
+      routes, stops, trips, timetables, calendars, fares and zones in terms
+      they understand. Every edit is recorded and can be undone, and the
+      result is exported as a standard GTFS ZIP that works with any other
+      GTFS tool. It is a static single-page app: all data stays in the
+      browser in IndexedDB, and there is no login and no server. The field
+      definitions follow the official GTFS Schedule reference.
+    features:
+      - Import GTFS feeds from a ZIP file or a URL
+      - Map view of routes, stops, shapes and zones
+      - Editing of every GTFS Schedule file, as forms or raw CSV
+      - Timetable and service calendar editors
+      - Validation against the GTFS Schedule reference
+      - Undo and redo of every edit
+      - Export to a standard GTFS ZIP
+
+legal:
+  license: AGPL-3.0-or-later
+
+maintenance:
+  type: community
+  contacts:
+    - name: Max Katz-Christy
+      email: maxkatzchristy@gmail.com
+
+localisation:
+  localisationReady: false
+  availableLanguages:
+    - en
+
+businessCapabilities:
+  profile: railway
+  capabilities:
+    - inform-customer/passenger-timetable
+    - inform-customer/trip-planning
+    - capacity/long-term
