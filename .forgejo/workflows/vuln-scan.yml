@@ -22,10 +22,13 @@ jobs:
       - name: Install dependencies
         run: apk add --no-cache nodejs git curl jq
 
+      # The runner's server URL is the internal http://forgejo:3000, which does
+      # not resolve inside the job container.
       - name: Checkout
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           persist-credentials: false
+          github-server-url: https://${{ vars.REGISTRY_DOMAIN }}
 
       - name: Install osv-scanner
         run: |
