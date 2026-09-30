@@ -15,7 +15,6 @@ export default tseslint.config(
         window: 'readonly',
         document: 'readonly',
         console: 'readonly',
-        L: 'readonly', // Leaflet global
         alert: 'readonly',
         fetch: 'readonly',
         URL: 'readonly',
