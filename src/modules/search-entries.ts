@@ -13,6 +13,7 @@ import {
   getStopDisplay,
 } from '../utils/entity-display';
 import type { GTFSParser } from './gtfs-parser';
+import { normalizeAgencyId } from '../utils/agency-helpers';
 import { listZones, zoneName } from './zone-store';
 import {
   neutralMarker,
@@ -86,10 +87,8 @@ export async function buildSearchEntries(
   }
 
   for (const agency of agencies ?? []) {
-    const agency_id = agency['agency_id'];
-    if (!agency_id) {
-      continue;
-    }
+    // An empty agency_id is the feed's single agency, keyed as ''
+    const agency_id = normalizeAgencyId(agency['agency_id']);
     entries.push({
       payload: { kind: 'entity', state: { type: 'agency', agency_id } },
       icon: neutralMarker(),

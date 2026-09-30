@@ -223,7 +223,7 @@ export class AgencyViewController {
     if (deleteBtn) {
       deleteBtn.addEventListener('click', () => {
         const agency_id = deleteBtn.getAttribute('data-agency-id');
-        if (agency_id && this.dependencies.onDeleteAgency) {
+        if (agency_id !== null && this.dependencies.onDeleteAgency) {
           this.dependencies.onDeleteAgency(agency_id);
         }
       });

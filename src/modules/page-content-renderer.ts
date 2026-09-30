@@ -1285,7 +1285,7 @@ export class PageContentRenderer {
     agencyCards.forEach((card) => {
       card.addEventListener('click', () => {
         const agency_id = card.getAttribute('data-agency-id');
-        if (agency_id) {
+        if (agency_id !== null) {
           this.dependencies.onAgencyClick(agency_id);
         }
       });

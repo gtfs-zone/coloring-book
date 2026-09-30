@@ -8,6 +8,10 @@
 import { BreadcrumbLookup, StopAncestor } from './breadcrumbs';
 import { GTFSDatabase } from './gtfs-database';
 import { getStopDisplay, renderOptionLabel } from '../utils/entity-display';
+import {
+  normalizeAgencyId,
+  UNSPECIFIED_AGENCY_ID,
+} from '../utils/agency-helpers';
 
 /** A stops row carries location_type as a string; blank means a plain stop. */
 function parseLocationType(value: unknown): number | undefined {
@@ -263,9 +267,16 @@ export class GTFSBreadcrumbLookup implements BreadcrumbLookup {
       });
 
       if (routes.length > 0) {
-        const route = routes[0];
-        const agency_id = (route.agency_id as string) || 'default';
-        return agency_id;
+        const agency_id = normalizeAgencyId(routes[0].agency_id as string);
+        if (agency_id !== UNSPECIFIED_AGENCY_ID) {
+          return agency_id;
+        }
+        // A route without agency_id belongs to the feed's single agency
+        const agencies = await this.database.getAllRows('agency');
+        if (agencies.length === 1) {
+          return normalizeAgencyId(agencies[0].agency_id as string);
+        }
+        return 'default';
       }
     } catch (error) {
       console.warn(`Failed to lookup agency for route ID ${route_id}:`, error);

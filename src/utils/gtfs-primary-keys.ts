@@ -5,6 +5,8 @@
  * reference/gtfs-reference.md.
  */
 
+import { normalizeAgencyId } from './agency-helpers';
+
 export interface GTFSTablePrimaryKey {
   /** The table name (filename without .txt) */
   tableName: string;
@@ -276,6 +278,11 @@ export function generateCompositeKeyFromRecord(
   if (config.type === 'natural') {
     const field = config.fields[0];
     const value = record[field];
+    // agency_id is only required with multiple agencies; an empty one keys the
+    // feed's single agency as ''.
+    if (tableName === 'agency') {
+      return normalizeAgencyId(value as string | undefined);
+    }
     if (value === undefined || value === null || value === '') {
       throw new Error(
         `Missing required primary key field '${field}' for table '${tableName}'`
