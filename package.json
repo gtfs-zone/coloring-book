@@ -22,7 +22,8 @@
     "format": "prettier --write src/",
     "prepare": "husky",
     "pre-commit": "lint-staged",
-    "commit": "cz commit"
+    "commit": "cz commit",
+    "vuln": "sh scripts/vuln-gate.sh"
   },
   "keywords": [
     "gtfs",

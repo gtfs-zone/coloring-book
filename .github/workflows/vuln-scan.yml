@@ -1,0 +1,34 @@
+name: Vulnerability scan
+
+# Scans pnpm-lock.yaml with osv-scanner and fails on any critical finding.
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  OSV_SCANNER_VERSION: 2.6.0
+  OSV_SCANNER_SHA256: ca69b3d3cd08f889a49dc0a383122f71cc528b83803671df5fd874d97485b108
+
+jobs:
+  vuln-scan:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+
+      - name: Install osv-scanner
+        run: |
+          curl -fsSL -o /usr/local/bin/osv-scanner \
+            "https://github.com/google/osv-scanner/releases/download/v${OSV_SCANNER_VERSION}/osv-scanner_linux_amd64"
+          echo "${OSV_SCANNER_SHA256}  /usr/local/bin/osv-scanner" | sha256sum -c -
+          chmod +x /usr/local/bin/osv-scanner
+
+      - name: Scan
+        run: sh scripts/vuln-gate.sh
