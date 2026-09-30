@@ -1,3 +1,18 @@
+## v0.40.0 (2026-09-30)
+
+### Feat
+
+- **agency**: set a blank agency_id through the rename modal
+
+### Fix
+
+- **map**: keep route lines after a build finished early by a synchronous reader
+- **agency**: key a blank agency_id as ''
+
+### Refactor
+
+- **map**: use interlocking's place search and search ring
+
 ## v0.39.0 (2026-09-29)
 
 ### Feat
