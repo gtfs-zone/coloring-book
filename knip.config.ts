@@ -8,9 +8,6 @@ const config: KnipConfig = {
   ],
   project: ["src/**/*.{ts,js}", "scripts/**/*.ts"],
   ignoreDependencies: [
-    // Used in postcss.config.js as string plugin names, not ESM imports
-    "@tailwindcss/postcss",
-    "autoprefixer",
     // Referenced from src/styles/main.css (`@import 'tailwindcss'`, `@plugin "daisyui"`),
     // which knip does not read
     "tailwindcss",

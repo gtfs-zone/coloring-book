@@ -58,17 +58,7 @@ export type {
   Trips,
   StopTimes,
   Calendar,
-  Shapes,
-  Frequencies,
-  Transfers,
   Pathways,
-  Levels,
-  LocationGroups,
-  LocationGroupStops,
-  BookingRules,
-  Translations,
-  FeedInfo,
-  Attributions,
 } from './gtfs-entities';
 
 // ─── Table name constants ──────────────────────────────────────────────────────
