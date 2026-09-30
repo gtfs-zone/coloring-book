@@ -6,12 +6,8 @@ const config: KnipConfig = {
     // Standalone scripts invoked directly (not imported by other modules)
     "scripts/**/*.ts",
   ],
-  project: ["src/**/*.{ts,js}", "scripts/**/*.ts"],
+  project: ["src/**/*.{ts,js,css}", "scripts/**/*.ts"],
   ignoreDependencies: [
-    // Referenced from src/styles/main.css (`@import 'tailwindcss'`, `@plugin "daisyui"`),
-    // which knip does not read
-    "tailwindcss",
-    "daisyui",
     // TypeScript compiler helpers: used implicitly by tsc with importHelpers
     "tslib",
   ],
