@@ -3,8 +3,10 @@ import {
   LngLatBounds,
   type FitBoundsOptions,
   type FlyToOptions,
+  setWorkerUrl,
 } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
+import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
 
 import { RouteRenderer } from './route-renderer';
 import { DEFAULT_STOPS_FILTER, LayerManager } from './layer-manager';
@@ -301,6 +303,9 @@ export class MapController {
    * Initialize MapLibre GL map
    */
   private initializeMap(): void {
+    // maplibre resolves its worker relative to its own module URL, which
+    // breaks once Vite bundles or pre-bundles it; point it at a Vite-built copy.
+    setWorkerUrl(maplibreWorkerUrl);
     this.map = new MapLibreMap({
       container: this.mapElementId,
       style: {
