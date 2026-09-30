@@ -1,3 +1,9 @@
+## v0.40.1 (2026-10-01)
+
+### Fix
+
+- load the maplibre worker from a Vite-built URL
+
 ## v0.40.0 (2026-09-30)
 
 ### Feat
