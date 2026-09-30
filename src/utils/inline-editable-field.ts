@@ -262,7 +262,11 @@ function displayHtml(
  */
 function renderIdTrigger(config: FieldConfig, raw: string): string {
   const store = config.tableName ? specStoreName(config.tableName) : '';
-  if (!store || raw === '' || getNaturalKeyField(store) !== config.field) {
+  if (!store || getNaturalKeyField(store) !== config.field) {
+    return '';
+  }
+  // A single-agency feed may leave agency_id blank; setting one is a rename
+  if (raw === '' && store !== 'agency') {
     return '';
   }
   return renderRenameTrigger(store, raw, FIELD_BOX_CLASS);

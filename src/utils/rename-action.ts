@@ -85,7 +85,7 @@ function findTrigger(target: EventTarget | null): HTMLElement | null {
 
 function activate(trigger: HTMLElement): void {
   const { renameTable, renameId, renameScope } = trigger.dataset;
-  if (renameTable && renameId) {
+  if (renameTable && renameId !== undefined) {
     void requestRename(
       renameTable,
       renameId,
@@ -104,15 +104,18 @@ export function renderRenameTrigger(
   boxClass: string,
   scope?: string
 ): string {
+  // A blank ID (a single-agency feed's agency_id) shows a placeholder
+  const title = id === '' ? 'Set ID' : `Rename ${id}`;
+  const text = id === '' ? '<span class="opacity-40">-</span>' : escapeHtml(id);
   return `<span
       class="${boxClass} block truncate"
       tabindex="0"
       role="button"
-      title="Rename ${escapeHtml(id)}"
+      title="${escapeHtml(title)}"
       data-rename-table="${escapeHtml(store)}"
       data-rename-id="${escapeHtml(id)}"
       ${scope ? `data-rename-scope="${escapeHtml(scope)}"` : ''}
-    >${escapeHtml(id)}</span>`;
+    >${text}</span>`;
 }
 
 /**

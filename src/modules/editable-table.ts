@@ -625,7 +625,11 @@ function renderCell(
   // impact modal instead of an inline editor. The trigger carries no
   // `.editable-cell` class, so `openCellEditor` never sees it.
   const store = specStoreName(config.tableName);
-  if (raw !== '' && getNaturalKeyField(store) === field) {
+  // A single-agency feed may leave agency_id blank; setting one is a rename
+  if (
+    (raw !== '' || store === 'agency') &&
+    getNaturalKeyField(store) === field
+  ) {
     return `<td class="align-middle p-1">
     ${renderRenameTrigger(
       store,

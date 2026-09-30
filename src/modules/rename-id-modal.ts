@@ -143,7 +143,7 @@ export async function showRenameModal(
   let renamed: string | null = null;
 
   await showModal({
-    title: `Rename ${keyField} "${id}"`,
+    title: id === '' ? `Set ${keyField}` : `Rename ${keyField} "${id}"`,
     body,
     boxClassName: 'max-w-lg',
     enterAction: 0,

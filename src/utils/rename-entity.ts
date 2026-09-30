@@ -195,9 +195,16 @@ export async function renamePlan(
       continue;
     }
 
+    // A blank attributions.agency_id applies to the whole dataset, not to the
+    // feed's single agency, so setting that agency's ID leaves it alone.
+    if (table === 'agency' && oldId === '' && ref.file === 'attributions.txt') {
+      continue;
+    }
+
     const refTable = tableNameForFile(ref.file);
-    // Strict equality on the stored value, so an implicitly-resolved blank
-    // agency_id in a single-agency feed is left alone.
+    // Strict equality on the stored value. Renaming a named agency leaves the
+    // implicitly-resolved blank agency_id rows of a single-agency feed alone;
+    // setting the ID of a blank agency rewrites them, since they are its rows.
     const matches = await db.queryRows(refTable, { [ref.field]: oldId });
     const rekeys = fieldIsPartOfKey(refTable, ref.field);
 
