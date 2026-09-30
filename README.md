@@ -43,14 +43,17 @@ See [SECURITY.md](SECURITY.md) for how to report a vulnerability.
 
 ## License
 
-GNU Affero General Public License v3.0, see [LICENSE.txt](LICENSE.txt).
+GNU Affero General Public License v3.0 or later (`AGPL-3.0-or-later`), see
+[LICENSE.txt](LICENSE.txt). Per-file licensing is declared in
+[REUSE.toml](REUSE.toml), with the license texts in [LICENSES/](LICENSES/).
 
 ### Third-party content
 
 `reference/gtfs-reference.md`, `src/gtfs-spec/files/` and
 `src/assets/gtfs-spec/` are derived from the
 [GTFS Schedule reference](https://github.com/google/transit), Copyright Google
-Inc. and contributors, licensed under the Apache License 2.0.
+Inc. and contributors (maintained by MobilityData), licensed under the
+[Apache License 2.0](LICENSES/Apache-2.0.txt).
 
 ## Links
 

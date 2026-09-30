@@ -33,7 +33,7 @@
     "map"
   ],
   "author": "gtfs.zone contributors",
-  "license": "AGPL-3.0",
+  "license": "AGPL-3.0-or-later",
   "devDependencies": {
     "@commitlint/cli": "^21.2.3",
     "@commitlint/config-conventional": "^21.2.3",

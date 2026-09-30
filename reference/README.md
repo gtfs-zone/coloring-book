@@ -4,6 +4,9 @@
 
 - Source: https://raw.githubusercontent.com/google/transit/master/gtfs/spec/en/reference.md
 - Revision: **April 27, 2026**
+- License: Apache-2.0, Copyright Google Inc. and contributors (maintained by
+  MobilityData). The same applies to `src/gtfs-spec/files/` and the diagrams in
+  `src/assets/gtfs-spec/`; see `REUSE.toml`.
 
 It is the single source of truth for every file name, field name, type string,
 presence value, and description in `src/gtfs-spec/`. `pnpm check-spec` diffs the

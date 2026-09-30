@@ -1,0 +1,18 @@
+version = 1
+
+[[annotations]]
+path = "**"
+precedence = "aggregate"
+SPDX-FileCopyrightText = "Max Katz-Christy and gtfs.zone contributors"
+SPDX-License-Identifier = "AGPL-3.0-or-later"
+
+# Vendored from google/transit (GTFS Schedule reference), maintained by MobilityData
+[[annotations]]
+path = [
+  "reference/gtfs-reference.md",
+  "src/gtfs-spec/files/**",
+  "src/assets/gtfs-spec/*.svg",
+]
+precedence = "override"
+SPDX-FileCopyrightText = "Google Inc. and contributors"
+SPDX-License-Identifier = "Apache-2.0"
