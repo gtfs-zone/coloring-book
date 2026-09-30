@@ -9,8 +9,11 @@ import { GTFSRelationships } from './modules/gtfs-relationships';
 import { BrowseNavigation } from './modules/browse-navigation';
 import { InfoDisplay } from './modules/info-display';
 import { SearchController } from 'interlocking/ui/search-controller';
-import { buildSearchEntries } from './modules/search-entries';
-import { searchPlaces, type SearchPayload } from './modules/place-search';
+import {
+  buildSearchEntries,
+  type SearchPayload,
+} from './modules/search-entries';
+import { searchPlaces } from 'interlocking/map/place-search';
 import { GTFSValidator } from './modules/gtfs-validator';
 import {
   refreshFeedIssuesIfStale,

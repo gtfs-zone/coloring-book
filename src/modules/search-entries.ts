@@ -6,7 +6,8 @@
  */
 
 import { GTFS_TABLES } from '../types/gtfs';
-import type { SearchPayload } from './place-search';
+import type { PlacePayload } from 'interlocking/map/place-search';
+import type { PageState } from '../types/page-state';
 import {
   getAgencyDisplay,
   getRouteDisplay,
@@ -28,6 +29,9 @@ function haystack(...parts: (string | undefined)[]): string {
 }
 
 type Row = Record<string, string>;
+
+/** A search pick: an entity page, or a place from the remote search. */
+export type SearchPayload = { kind: 'entity'; state: PageState } | PlacePayload;
 
 export async function buildSearchEntries(
   parser: GTFSParser
