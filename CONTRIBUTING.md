@@ -76,14 +76,13 @@ This will:
 - Update `CHANGELOG.md`
 - Create a git tag
 
-Then push the commit and the tag to both remotes:
+Then push the commit and the tag:
 
 ```bash
 git push --follow-tags origin main
-git push --follow-tags github main
 ```
 
-Pushing a version tag to Forgejo (`origin`) triggers the deploy workflow in `.forgejo/workflows/deploy.yml`, which builds the app into a container image and records its digest in the deploy repo.
+Pushing a version tag triggers `.github/workflows/pages.yml`, which builds the app and publishes it to GitHub Pages.
 
 ## Development Workflow
 

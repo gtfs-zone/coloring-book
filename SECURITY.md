@@ -20,6 +20,5 @@ Only the latest release is supported. That is the version deployed at <https://e
 ## Dependency scanning
 
 Every push and pull request runs [osv-scanner](https://github.com/google/osv-scanner)
-against `pnpm-lock.yaml` on both GitHub Actions and Forgejo Actions. The
-build fails on any critical finding. Run the same check locally with
+against `pnpm-lock.yaml` on GitHub Actions. The build fails on any critical finding. Run the same check locally with
 `pnpm vuln`.
