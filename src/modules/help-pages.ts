@@ -11,19 +11,27 @@ import {
   lede,
   footnote,
   glyphList,
-  type HelpPageEntry,
 } from 'gtfs-zone-web-common/ui/help-modal';
 import {
-  renderBlurb,
-  renderVersionAndSource,
-  renderProjectSection,
-  renderResourcesSection,
-  renderDataSourcesSection,
-  renderFeedbackSection,
   renderExternalLink,
   TRANSITLAND_URL,
   type AboutApp,
 } from 'gtfs-zone-web-common/ui/about-links';
+import {
+  aboutPage,
+  helpIcon as icon,
+  shortcutsPage,
+  ICON_CHECK,
+  ICON_LEG,
+  ICON_LOAD,
+  ICON_MAP,
+  type HelpPage,
+} from 'gtfs-zone-web-common/ui/help-pages';
+import {
+  mapKeyLine,
+  mapKeyRow,
+  renderMapKey,
+} from 'gtfs-zone-web-common/gtfs/map-key';
 import {
   PATHWAY_CATEGORIES,
   PATHWAY_CATEGORY_ORDER,
@@ -41,31 +49,8 @@ function specLink(tableName: string, label: string): string {
   return `<a href="${getSpecUrl(tableName)}" target="_blank" rel="noopener noreferrer" class="link link-primary">${label}</a>`;
 }
 
-export type HelpGroup = 'Getting Started' | 'Reference';
-
-/** This app's pages, narrowing the viewer's `group` to the groups it has. */
-export interface HelpPage extends HelpPageEntry {
-  group: HelpGroup;
-}
-
-/** The order the viewer's sidebar groups these in. */
-export const HELP_GROUP_ORDER: HelpGroup[] = ['Getting Started', 'Reference'];
-
-function icon(paths: string): string {
-  return `<svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">${paths}</svg>`;
-}
-
-const ICON_LOAD = icon(
-  '<path d="M16 4v16M9 13l7 7 7-7"/><path d="M6 24v3a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-3"/>'
-);
 const ICON_TABLE = icon(
   '<rect x="5" y="6" width="22" height="20" rx="2"/><path d="M5 13h22M5 20h22M13 6v20M21 6v20"/>'
-);
-const ICON_MAP = icon(
-  '<path d="M16 5c-4.4 0-8 3.4-8 7.6C8 18.4 16 27 16 27s8-8.6 8-14.4C24 8.4 20.4 5 16 5z"/><circle cx="16" cy="12.5" r="2.5"/>'
-);
-const ICON_CHECK = icon(
-  '<path d="M16 4l9 4v7c0 6.6-4 11.4-9 13-5-1.6-9-6.4-9-13v-7z"/><path d="M12 16l3 3 5-6"/>'
 );
 const ICON_EXPORT = icon(
   '<rect x="5" y="14" width="22" height="13" rx="2"/><path d="M16 4v13M10 11l6-7 6 7"/>'
@@ -96,9 +81,6 @@ const ICON_TICKET = icon(
 );
 const ICON_CARD = icon(
   '<rect x="4" y="8" width="24" height="16" rx="2"/><path d="M4 13h24"/><circle cx="10" cy="19" r="1.5" fill="currentColor"/>'
-);
-const ICON_LEG = icon(
-  '<circle cx="6" cy="26" r="2"/><circle cx="24" cy="8" r="2"/><path d="M6.5 24c5.5-9 8-11 8-16 0 5 2.5 7 8 16"/>'
 );
 const ICON_BELL = icon(
   '<path d="M10 24c-3 0-4-1.5-4-3 2-2 2-4 2-8 0-4.5 3.5-8 8-8s8 3.5 8 8c0 4 0 6 2 8 0 1.5-1 3-4 3z"/><path d="M13 27a3 3 0 006 0"/>'
@@ -348,112 +330,28 @@ const ABOUT_APP: AboutApp = {
   },
 };
 
-/**
- * Version and keyboard-shortcuts data aren't known when this module loads
- * (they come from `__APP_VERSION__` and the live `KeyboardShortcuts`
- * instance), so `index.ts` pushes them in once during boot.
- */
-let helpRuntimeData: {
-  version: string;
-  shortcuts: Array<{ key: string; description: string }>;
-} = { version: '', shortcuts: [] };
-
-export function setHelpRuntimeData(data: {
-  version: string;
-  shortcuts: Array<{ key: string; description: string }>;
-}): void {
-  helpRuntimeData = data;
-}
-
-function buildShortcutsTable(
-  shortcuts: Array<{ key: string; description: string }>
-): string {
-  const rows = shortcuts
-    .map((s) => {
-      const keyHtml = s.key
-        .split('+')
-        .map((token) => `<kbd class="kbd kbd-xs">${token}</kbd>`)
-        .join('+');
-      return `<tr><td class="whitespace-nowrap">${keyHtml}</td><td>${s.description}</td></tr>`;
-    })
-    .join('');
-  return `
-    <table class="table table-xs w-full">
-      <thead><tr><th>Key</th><th>Action</th></tr></thead>
-      <tbody>${rows}</tbody>
-    </table>
-  `;
-}
-
-const aboutPage: HelpPage = {
-  id: 'about',
-  label: 'About',
-  group: 'Reference',
-  title: 'About edit.gtfs.zone',
-  render: () =>
-    [
-      renderBlurb(ABOUT_APP),
-      renderVersionAndSource(ABOUT_APP, helpRuntimeData.version),
-      renderProjectSection(ABOUT_APP),
-      renderResourcesSection(),
-      renderDataSourcesSection(),
-      renderFeedbackSection(ABOUT_APP),
-    ].join('\n'),
-};
-
 // ─── Reference: Map Key ────────────────────────────────────────────────────
-
-function circle(fill: string, stroke: string, dot?: boolean): string {
-  const inner = dot ? `<circle cx="7" cy="7" r="2.5" fill="#000000"/>` : '';
-  return `<svg width="14" height="14" viewBox="0 0 14 14" style="flex-shrink:0"><circle cx="7" cy="7" r="5" fill="${fill}" stroke="${stroke}" stroke-width="1.5"/>${inner}</svg>`;
-}
-
-function swatchLine(color: string, dash: number[] | null): string {
-  // The map's dasharray is in line widths; the swatch stroke is 3px wide.
-  const dashAttr = dash
-    ? ` stroke-dasharray="${dash.map((d) => d * 3).join(' ')}"`
-    : ' stroke-linecap="round"';
-  return `<svg width="20" height="14" viewBox="0 0 20 14" style="flex-shrink:0"><line x1="2" y1="7" x2="18" y2="7" stroke="${color}" stroke-width="3"${dashAttr}/></svg>`;
-}
 
 const mapKeyPage: HelpPage = {
   id: 'map-key',
   label: 'Map Key',
   group: 'Reference',
   title: 'Reading the map symbols',
-  render: () => {
-    const row = (swatch: string, label: string) =>
-      `<div class="flex items-center gap-2">${swatch}<span>${label}</span></div>`;
-
-    const stops = [
-      row(circle('#ffffff', '#000000'), 'Stop'),
-      row(circle('#ffffff', '#000000', true), 'Station'),
-      row(circle('#f59e0b', '#000000'), 'Entrance'),
-      row(circle('#8b5cf6', '#000000'), 'Generic node'),
-      row(circle('#10b981', '#000000'), 'Boarding area'),
-      row(circle('#ffffff', '#9ca3af'), 'Node with no location'),
-    ].join('');
-
-    // Built from the same table the map styles itself from, so the key
-    // cannot drift from what is drawn.
-    const pathways = PATHWAY_CATEGORY_ORDER.map((category) => {
-      const { color, dash } = PATHWAY_CATEGORIES[category];
-      return modesInCategory(category)
-        .map((mode) => row(swatchLine(color, dash), PATHWAY_MODES[mode].label))
-        .join('');
-    }).join('');
-
-    return `
-      <div class="grid grid-cols-2 gap-x-6 gap-y-1 text-sm">
-        <div class="col-span-2 grid grid-cols-2 gap-x-6">
-          <div class="font-semibold text-xs opacity-60 mb-1">Stops</div>
-          <div class="font-semibold text-xs opacity-60 mb-1">Pathways</div>
-        </div>
-        <div class="flex flex-col gap-1">${stops}</div>
-        <div class="flex flex-col gap-1">${pathways}</div>
-      </div>
-    `;
-  },
+  // Built from the same table the map styles itself from, so the key
+  // cannot drift from what is drawn.
+  render: () =>
+    renderMapKey({
+      unlocatedLabel: 'Node with no location',
+      title: 'Pathways',
+      rows: PATHWAY_CATEGORY_ORDER.map((category) => {
+        const { color, dash } = PATHWAY_CATEGORIES[category];
+        return modesInCategory(category)
+          .map((mode) =>
+            mapKeyRow(mapKeyLine(color, dash), PATHWAY_MODES[mode].label)
+          )
+          .join('');
+      }).join(''),
+    }),
 };
 
 // ─── Getting Started: Publishing, shown once after a successful export ────
@@ -509,16 +407,6 @@ const publishingPage: HelpPage = {
     ].join(''),
 };
 
-// ─── Reference: Keyboard Shortcuts ─────────────────────────────────────────
-
-const shortcutsPage: HelpPage = {
-  id: 'shortcuts',
-  label: 'Keyboard Shortcuts',
-  group: 'Reference',
-  title: 'Using keyboard shortcuts',
-  render: () => buildShortcutsTable(helpRuntimeData.shortcuts),
-};
-
 export const HELP_PAGES: HelpPage[] = [
   welcomePage,
   gettingStartedPage,
@@ -526,7 +414,7 @@ export const HELP_PAGES: HelpPage[] = [
   faresPage,
   onDemandPage,
   publishingPage,
-  aboutPage,
+  aboutPage(ABOUT_APP),
   mapKeyPage,
   shortcutsPage,
 ];

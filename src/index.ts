@@ -60,9 +60,9 @@ import {
 } from 'gtfs-zone-web-common/ui/help-modal';
 import {
   HELP_GROUP_ORDER,
-  HELP_PAGES,
   setHelpRuntimeData,
-} from './modules/help-pages';
+} from 'gtfs-zone-web-common/ui/help-pages';
+import { HELP_PAGES } from './modules/help-pages';
 import { showFaresModal } from './modules/fares-modal';
 import { showFeedDataModal } from './modules/feed-data-modal';
 import { showOnDemandModal } from './modules/on-demand-modal';
