@@ -21,7 +21,9 @@
     "lint:fix": "eslint src/ --fix",
     "format": "prettier --write src/",
     "commit": "cz commit",
-    "vuln": "sh scripts/vuln-gate.sh"
+    "vuln": "sh scripts/vuln-gate.sh",
+    "screenshots:feed": "tsx scripts/screenshots/build-demo-feed.ts",
+    "screenshots": "playwright test -c scripts/screenshots/playwright.config.ts"
   },
   "keywords": [
     "gtfs",
@@ -34,6 +36,7 @@
   "license": "AGPL-3.0-or-later",
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.63.0",
     "@types/clusterize.js": "^0.18.3",
     "@types/geojson": "^7946.0.16",
     "@types/node": "^26.6.3",
