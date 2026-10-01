@@ -35,6 +35,7 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@types/clusterize.js": "^0.18.3",
+    "@types/geojson": "^7946.0.16",
     "@types/node": "^26.6.3",
     "@types/papaparse": "^5.5.2",
     "autoprefixer": "^10.6.1",
@@ -55,8 +56,8 @@
     "@tailwindcss/postcss": "^4.3.3",
     "clusterize.js": "^1.0.0",
     "daisyui": "^5.7.46",
-    "idb": "^8.0.3",
     "gtfs-zone-web-common": "github:gtfs-zone/gtfs-zone-web-common#v5.0.2",
+    "idb": "^8.0.3",
     "jszip": "^3.10.2",
     "maplibre-gl": "^6.11.2",
     "papaparse": "^5.7.0",

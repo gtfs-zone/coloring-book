@@ -10,6 +10,8 @@ const config: KnipConfig = {
   ignoreDependencies: [
     // TypeScript compiler helpers: used implicitly by tsc with importHelpers
     "tslib",
+    // Provides the global GeoJSON namespace; used without an import
+    "@types/geojson",
   ],
   ignoreBinaries: [
     "cz", // commitizen CLI
