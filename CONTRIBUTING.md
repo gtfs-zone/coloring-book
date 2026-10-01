@@ -104,9 +104,14 @@ Restart the dev server after the bump: Vite does not watch `node_modules`, so a 
 
 ## Git Hooks
 
-This project uses Husky to enforce quality standards:
+Hooks are defined in `.pre-commit-config.yaml` and run by [prek](https://github.com/j178/prek). Install them once per clone:
 
-- **pre-commit**: Runs linting and formatting on staged files, then `pnpm check-spec`
-- **commit-msg**: Validates commit message format using commitlint
+```bash
+uv tool install prek
+prek install
+```
+
+- **pre-commit**: Runs the repo's checks
+- **commit-msg**: Validates commit message format using commitizen
 
 If your commit message doesn't follow the conventional format, the commit will be rejected with a helpful error message.

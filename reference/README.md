@@ -11,7 +11,7 @@
 It is the single source of truth for every file name, field name, type string,
 presence value, and description in `src/gtfs-spec/`. `pnpm check-spec` diffs the
 two and fails on any difference that is not listed in the script's
-`KNOWN_DIVERGENCES`. It runs from `.husky/pre-commit`, so drift blocks a commit.
+`KNOWN_DIVERGENCES`. It runs from `pnpm check` in the pre-commit hook, so drift blocks a commit.
 
 ## Refreshing the snapshot
 

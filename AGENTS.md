@@ -49,7 +49,7 @@ Invariants (details in [docs/architecture.md](docs/architecture.md)):
 
 ## Conventions
 
-- **Commits**: Conventional Commits, enforced by `commitlint` in the `commit-msg` hook. `pnpm commit` helps build one; plain `git commit` works too.
+- **Commits**: Conventional Commits, enforced by commitizen in the `commit-msg` hook. `pnpm commit` helps build one; plain `git commit` works too.
 - **TypeScript**: strict mode, with `noUnusedLocals` and `noUnusedParameters`. Remove unused code rather than suppressing.
 - **CSS**: Tailwind CSS v4 + DaisyUI v5, configured in `src/styles/main.css` (no `tailwind.config.js`). The `@source` pointing into `node_modules/gtfs-zone-web-common/src` is what styles the shared modules. Write styles with Tailwind utility classes.
 - **UI**: conventions live in gtfs-zone-web-common's `AGENTS.md`.

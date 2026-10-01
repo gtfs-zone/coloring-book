@@ -20,8 +20,6 @@
     "lint": "eslint src/ --max-warnings 0",
     "lint:fix": "eslint src/ --fix",
     "format": "prettier --write src/",
-    "prepare": "husky",
-    "pre-commit": "lint-staged",
     "commit": "cz commit",
     "vuln": "sh scripts/vuln-gate.sh"
   },
@@ -35,8 +33,6 @@
   "author": "gtfs.zone contributors",
   "license": "AGPL-3.0-or-later",
   "devDependencies": {
-    "@commitlint/cli": "^21.2.3",
-    "@commitlint/config-conventional": "^21.2.3",
     "@eslint/js": "^10.0.1",
     "@types/clusterize.js": "^0.18.3",
     "@types/node": "^26.6.3",
@@ -45,9 +41,7 @@
     "eslint": "^10.11.0",
     "eslint-config-prettier": "^10.1.8",
     "git-describe": "^4.1.1",
-    "husky": "^9.1.7",
     "knip": "^6.38.0",
-    "lint-staged": "^17.6.0",
     "prettier": "^3.9.9",
     "tailwindcss": "^4.3.3",
     "tslib": "^2.8.1",
@@ -67,14 +61,5 @@
     "maplibre-gl": "^6.11.2",
     "papaparse": "^5.7.0",
     "zod": "^4.6.5"
-  },
-  "lint-staged": {
-    "src/**/*.{js,ts,jsx,tsx}": [
-      "eslint --fix",
-      "prettier --write"
-    ],
-    "src/**/*.{css,scss,html}": [
-      "prettier --write"
-    ]
   }
 }
