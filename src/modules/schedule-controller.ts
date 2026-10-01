@@ -5,8 +5,8 @@
  */
 
 import { Stops, StopTimes, Trips } from '../types/gtfs-entities';
-import type { StopTimeRef } from 'interlocking/gtfs/types';
-import { notify } from 'interlocking/ui/notification-system';
+import type { StopTimeRef } from 'gtfs-zone-web-common/gtfs/types';
+import { notify } from 'gtfs-zone-web-common/ui/notification-system';
 import {
   formatIssueValue,
   markReferenceResolved,
@@ -40,7 +40,10 @@ import {
   arrowToGridDirection,
   type GridDirection,
 } from '../utils/grid-navigation';
-import { showModal, isOutsideTopModal } from 'interlocking/ui/modal-utils';
+import {
+  showModal,
+  isOutsideTopModal,
+} from 'gtfs-zone-web-common/ui/modal-utils';
 import { showOptionPickerModal, OptionPickerItem } from './option-picker-modal';
 import { getEnumOptions } from '../types/gtfs-enums';
 import {
@@ -62,8 +65,8 @@ import { promptNewEntity, type EntityFormField } from './entity-form-modal';
 import { mirrorTripTimes, shiftRowTimes } from '../utils/stop-time-shift';
 import { listZones, zoneName } from './zone-store';
 import { validateFlexStopTimeRow } from '../utils/flex-rules';
-import { renderSpecDescriptionPlain } from 'interlocking/gtfs/spec-markup';
-import { escapeHtml } from 'interlocking/util/escape-html';
+import { renderSpecDescriptionPlain } from 'gtfs-zone-web-common/gtfs/spec-markup';
+import { escapeHtml } from 'gtfs-zone-web-common/util/escape-html';
 import { setPickerTriggerContent } from '../utils/picker-trigger';
 import { getGTFSFieldDescription } from '../utils/zod-tooltip-helper';
 import { nextEntityId } from '../utils/inline-entity-creator';

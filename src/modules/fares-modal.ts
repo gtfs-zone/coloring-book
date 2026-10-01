@@ -7,7 +7,7 @@
  * an entry in `FARES_ENTRIES` rather than a renderer plus an add/edit modal.
  */
 
-import { showSidebarModal } from 'interlocking/ui/sidebar-modal';
+import { showSidebarModal } from 'gtfs-zone-web-common/ui/sidebar-modal';
 import {
   renderEditableTable,
   installEditableTableHandlers,
@@ -18,7 +18,7 @@ import {
   type EditableTableJoinColumn,
 } from './editable-table';
 import type { OptionPickerItem } from './option-picker-modal';
-import { escapeHtml } from 'interlocking/util/escape-html';
+import { escapeHtml } from 'gtfs-zone-web-common/util/escape-html';
 import { specStoreName } from '../utils/spec-field-edit';
 import {
   getEntityDisplay,
@@ -33,7 +33,7 @@ import {
   validateFareTransferRuleRow,
   validateTimeframeRow,
 } from '../utils/fares-rules';
-import { renderSpecDescription } from 'interlocking/gtfs/spec-markup';
+import { renderSpecDescription } from 'gtfs-zone-web-common/gtfs/spec-markup';
 import { gtfsSpec } from '../gtfs-spec/index';
 import { GTFS_TABLES } from '../types/gtfs';
 

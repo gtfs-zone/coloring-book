@@ -11,8 +11,8 @@
  */
 
 import type { ValidationEntity, ValidationResults } from './gtfs-validator';
-import { renderIssueCard } from 'interlocking/ui/issue-card';
-import type { IssueItem, IssueRow } from 'interlocking/ui/issue-card';
+import { renderIssueCard } from 'gtfs-zone-web-common/ui/issue-card';
+import type { IssueItem, IssueRow } from 'gtfs-zone-web-common/ui/issue-card';
 import type { EditableTableDeps } from './editable-table';
 import {
   applyWhitespaceFix,

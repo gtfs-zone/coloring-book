@@ -12,8 +12,8 @@ import Papa from 'papaparse';
 import { GTFS_FILES } from '../types/gtfs';
 import { CONFIG } from '../config';
 import { databaseFallbackManager } from './database-fallback-manager';
-import { showModal } from 'interlocking/ui/modal-utils';
-import { notify } from 'interlocking/ui/notification-system';
+import { showModal } from 'gtfs-zone-web-common/ui/modal-utils';
+import { notify } from 'gtfs-zone-web-common/ui/notification-system';
 import { withTimeout, deleteDatabaseWithTimeout } from '../utils/idb-request';
 import { PatchRecord, SnapshotRecord } from '../types/patch';
 import {
@@ -1117,8 +1117,7 @@ export class GTFSDatabase {
 
     try {
       return (await this.db.get(tableName as GTFSStoreName, key)) as
-        | GTFSDatabaseRecord
-        | undefined;
+        GTFSDatabaseRecord | undefined;
     } catch (error) {
       console.error(`Failed to get row ${key} from ${tableName}:`, error);
       throw error;

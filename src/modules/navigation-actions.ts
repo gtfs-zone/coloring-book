@@ -8,7 +8,10 @@
 
 import { ModalState, PageState } from '../types/page-state';
 import { getPageStateManager } from './page-state-manager';
-import { ModalTransient, getModalRouter } from 'interlocking/ui/modal-router';
+import {
+  ModalTransient,
+  getModalRouter,
+} from 'gtfs-zone-web-common/ui/modal-router';
 
 /**
  * Navigate to home page (agencies list)

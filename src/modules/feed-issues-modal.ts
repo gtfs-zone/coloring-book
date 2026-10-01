@@ -10,11 +10,11 @@
  * modal because the new page state no longer names it.
  */
 
-import { showModal } from 'interlocking/ui/modal-utils';
-import { showSidebarModal } from 'interlocking/ui/sidebar-modal';
-import type { IssueItem } from 'interlocking/ui/issue-card';
-import { notify } from 'interlocking/ui/notification-system';
-import { escapeHtml } from 'interlocking/util/escape-html';
+import { showModal } from 'gtfs-zone-web-common/ui/modal-utils';
+import { showSidebarModal } from 'gtfs-zone-web-common/ui/sidebar-modal';
+import type { IssueItem } from 'gtfs-zone-web-common/ui/issue-card';
+import { notify } from 'gtfs-zone-web-common/ui/notification-system';
+import { escapeHtml } from 'gtfs-zone-web-common/util/escape-html';
 import type { EditableTableDeps } from './editable-table';
 import {
   feedIssueGroupLabel,

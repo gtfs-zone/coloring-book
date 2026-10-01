@@ -3,7 +3,7 @@
  * exists before any other module is evaluated and looks up an element id.
  */
 
-import { mountAppShell } from 'interlocking/ui/app-shell';
+import { mountAppShell } from 'gtfs-zone-web-common/ui/app-shell';
 
 // Pointer, add-stop and add-pathway tools, beside the auto-zoom toggle.
 const MAP_TOOLS = `

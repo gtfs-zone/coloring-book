@@ -1,5 +1,5 @@
-import { showHelpModal } from 'interlocking/ui/help-modal';
-import type { ShortcutCommand } from 'interlocking/ui/keyboard-shortcuts';
+import { showHelpModal } from 'gtfs-zone-web-common/ui/help-modal';
+import type { ShortcutCommand } from 'gtfs-zone-web-common/ui/keyboard-shortcuts';
 
 /**
  * This app's keyboard commands.

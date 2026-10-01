@@ -18,7 +18,7 @@ import {
   renderSpecFieldLabelContent,
   buildFieldTooltipContent,
 } from '../utils/field-component';
-import { tooltipContentAttr } from 'interlocking/ui/field-label';
+import { tooltipContentAttr } from 'gtfs-zone-web-common/ui/field-label';
 import { visibleStopTimeFields, WINDOW_FIELDS } from './timetable-fields';
 import { describeFrequency } from '../utils/frequency-rules';
 import { renderTimeHtml } from '../utils/time-formatter';
@@ -30,7 +30,7 @@ import {
   renderCardLabel,
   renderOptionLabel,
 } from '../utils/entity-display';
-import { escapeHtml } from 'interlocking/util/escape-html';
+import { escapeHtml } from 'gtfs-zone-web-common/util/escape-html';
 import { renderRenameTrigger } from '../utils/rename-action';
 import { renderPickerTrigger } from '../utils/picker-trigger';
 import {
@@ -48,8 +48,8 @@ import {
   renderReverseIcon,
   renderShiftTimeIcon,
   renderUploadIcon,
-} from 'interlocking/ui/modal-utils';
-import { routeColor } from 'interlocking/gtfs/route-colors';
+} from 'gtfs-zone-web-common/ui/modal-utils';
+import { routeColor } from 'gtfs-zone-web-common/gtfs/route-colors';
 import {
   railCell,
   rowPaths,
@@ -58,10 +58,10 @@ import {
   isEndpoint,
   gutterWidth,
   STRIP_ROW_CLASS,
-} from 'interlocking/gtfs/route-strip';
-import { RouteSequence } from 'interlocking/gtfs/route-sequence';
-import { RouteGraph } from 'interlocking/gtfs/route-graph';
-import type { StopTimeRef } from 'interlocking/gtfs/types';
+} from 'gtfs-zone-web-common/gtfs/route-strip';
+import { RouteSequence } from 'gtfs-zone-web-common/gtfs/route-sequence';
+import { RouteGraph } from 'gtfs-zone-web-common/gtfs/route-graph';
+import type { StopTimeRef } from 'gtfs-zone-web-common/gtfs/types';
 
 function getBrouterProfile(routeType: string | number): string {
   const t = Number(routeType);

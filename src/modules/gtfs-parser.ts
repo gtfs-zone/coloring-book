@@ -8,8 +8,8 @@ import {
   type NetworksMode,
 } from './gtfs-database';
 import { GTFS_FILES, GTFS_TABLES } from '../types/gtfs';
-import { feedProgressIndicator } from 'interlocking/ui/progress-indicator';
-import { notify } from 'interlocking/ui/notification-system';
+import { feedProgressIndicator } from 'gtfs-zone-web-common/ui/progress-indicator';
+import { notify } from 'gtfs-zone-web-common/ui/notification-system';
 import {
   ALL_GTFS_FILES,
   makeHeaderOnlyCSV,
@@ -20,14 +20,14 @@ import type {
   WorkerDoneMessage,
   WorkerOutbound,
 } from '../workers/gtfs-parser.worker';
-import { showModal } from 'interlocking/ui/modal-utils';
-import { escapeHtml } from 'interlocking/util/escape-html';
+import { showModal } from 'gtfs-zone-web-common/ui/modal-utils';
+import { escapeHtml } from 'gtfs-zone-web-common/util/escape-html';
 import { GTFSTableMap, StopTimes } from '../types/gtfs-entities';
 import { generateCompositeKeyFromRecord } from '../utils/gtfs-primary-keys';
-import { splitInnerZipPath } from 'interlocking/gtfs/feed-url-resolve';
+import { splitInnerZipPath } from 'gtfs-zone-web-common/gtfs/feed-url-resolve';
 import { yieldToEventLoop } from '../utils/async-yield';
 import { processParsedData } from '../utils/gtfs-field-values';
-import { LoadCancelledError } from 'interlocking/gtfs/feed-download';
+import { LoadCancelledError } from 'gtfs-zone-web-common/gtfs/feed-download';
 
 /**
  * The shell one feed-producing operation runs inside: its progress key, its

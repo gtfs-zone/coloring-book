@@ -40,8 +40,8 @@ import type {
   EditableTableDeps,
   EditableTablePatchManager,
 } from './editable-table';
-import { renderIssueCard } from 'interlocking/ui/issue-card';
-import { installGuideButtons } from 'interlocking/ui/help-modal';
+import { renderIssueCard } from 'gtfs-zone-web-common/ui/issue-card';
+import { installGuideButtons } from 'gtfs-zone-web-common/ui/help-modal';
 import { getFeedIssues, refreshFeedIssuesIfStale } from './feed-issues';
 import { navigateToIssueItem, runFeedIssueAction } from './feed-issues-modal';
 import { GTFS_TABLES } from '../types/gtfs';
@@ -58,8 +58,11 @@ import {
   renderCardLabel,
   renderOptionLabel,
 } from '../utils/entity-display';
-import { showModal, renderTrashIcon } from 'interlocking/ui/modal-utils';
-import { renderNavIcon } from 'interlocking/ui/nav-icons';
+import {
+  showModal,
+  renderTrashIcon,
+} from 'gtfs-zone-web-common/ui/modal-utils';
+import { renderNavIcon } from 'gtfs-zone-web-common/ui/nav-icons';
 import { promptNewEntity } from './entity-form-modal';
 import { showNewServiceModal } from './new-service-modal';
 import type {
@@ -73,8 +76,8 @@ import {
   renderPickerTrigger,
   setPickerTriggerContent,
 } from '../utils/picker-trigger';
-import { notify } from 'interlocking/ui/notification-system';
-import { escapeHtml } from 'interlocking/util/escape-html';
+import { notify } from 'gtfs-zone-web-common/ui/notification-system';
+import { escapeHtml } from 'gtfs-zone-web-common/util/escape-html';
 import {
   getCurrentPageState,
   navigateToHome,
@@ -1205,8 +1208,7 @@ export class PageContentRenderer {
     const db = this.dependencies.gtfsDatabase;
     const pm = this.dependencies.patchManager;
     const existing = (await db.getRow('route_networks', route_id)) as
-      | Record<string, unknown>
-      | undefined;
+      Record<string, unknown> | undefined;
 
     if (network_id === '') {
       if (existing) {
@@ -1949,8 +1951,7 @@ export class PageContentRenderer {
     })) as Record<string, unknown>[];
 
     const calendarRow = (await db.getRow('calendar', service_id)) as
-      | Record<string, unknown>
-      | undefined;
+      Record<string, unknown> | undefined;
 
     const doDelete = async () => {
       for (const st of allStopTimes) {

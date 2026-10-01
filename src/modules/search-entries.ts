@@ -6,7 +6,7 @@
  */
 
 import { GTFS_TABLES } from '../types/gtfs';
-import type { PlacePayload } from 'interlocking/map/place-search';
+import type { PlacePayload } from 'gtfs-zone-web-common/map/place-search';
 import type { PageState } from '../types/page-state';
 import {
   getAgencyDisplay,
@@ -21,7 +21,7 @@ import {
   routeMarker,
   stopMarker,
   type SearchEntry,
-} from 'interlocking/ui/search-controller';
+} from 'gtfs-zone-web-common/ui/search-controller';
 
 /** Non-empty values only, so the haystack has no runs of blanks to match into. */
 function haystack(...parts: (string | undefined)[]): string {

@@ -10,13 +10,13 @@ import {
 import type { GTFSParser } from './gtfs-parser';
 import type { PatchOp } from '../types/patch';
 import { CONFIG } from '../config';
-import { routeSortKey } from 'interlocking/gtfs/route-sort';
+import { routeSortKey } from 'gtfs-zone-web-common/gtfs/route-sort';
 import { yieldToEventLoop } from '../utils/async-yield';
-import { ensureMapIcons } from 'interlocking/map/icons';
+import { ensureMapIcons } from 'gtfs-zone-web-common/map/icons';
 import {
   routeColor as deriveRouteColor,
   casingColor as deriveCasingColor,
-} from 'interlocking/gtfs/route-colors';
+} from 'gtfs-zone-web-common/gtfs/route-colors';
 import {
   NO_ROUTE_FILTER,
   ROUTES_BACKGROUND_LAYER,
@@ -30,7 +30,7 @@ import {
   routeSortKeyExpression,
   routeSpotlightOpacity,
   zoomWidth,
-} from 'interlocking/map/layer-specs';
+} from 'gtfs-zone-web-common/map/layer-specs';
 
 /**
  * Thrown by an async feature build that a newer one has replaced.

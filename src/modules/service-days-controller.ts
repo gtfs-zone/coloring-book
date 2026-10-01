@@ -6,7 +6,7 @@
 
 import { Calendar, CalendarDates, GTFSTableMap } from '../types/gtfs-entities';
 import { GTFSSchemas, GTFS_TABLES } from '../types/gtfs';
-import { notify } from 'interlocking/ui/notification-system';
+import { notify } from 'gtfs-zone-web-common/ui/notification-system';
 import { patchUpdate } from '../utils/patch-utils';
 import {
   getUsFederalDates,
@@ -28,7 +28,7 @@ import {
   generateFieldConfigsFromSchema,
   renderFieldLabel,
 } from '../utils/field-component';
-import { escapeHtml } from 'interlocking/util/escape-html';
+import { escapeHtml } from 'gtfs-zone-web-common/util/escape-html';
 import {
   DAYS_OF_WEEK,
   renderWeekdayToggles,

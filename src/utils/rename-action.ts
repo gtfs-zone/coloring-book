@@ -9,9 +9,9 @@
  * inside a modal that no page container owns.
  */
 
-import { notify } from 'interlocking/ui/notification-system';
-import { isOutsideTopModal } from 'interlocking/ui/modal-utils';
-import { escapeHtml } from 'interlocking/util/escape-html';
+import { notify } from 'gtfs-zone-web-common/ui/notification-system';
+import { isOutsideTopModal } from 'gtfs-zone-web-common/ui/modal-utils';
+import { escapeHtml } from 'gtfs-zone-web-common/util/escape-html';
 import { showRenameModal } from '../modules/rename-id-modal';
 import type { RenameDatabase, RenamePatchManager } from './rename-entity';
 import { getCurrentPageState } from '../modules/navigation-actions';

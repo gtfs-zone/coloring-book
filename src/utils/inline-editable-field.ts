@@ -17,15 +17,15 @@ import {
   showOptionPickerModal,
   type OptionPickerItem,
 } from '../modules/option-picker-modal';
-import { notify } from 'interlocking/ui/notification-system';
-import { isOutsideTopModal } from 'interlocking/ui/modal-utils';
+import { notify } from 'gtfs-zone-web-common/ui/notification-system';
+import { isOutsideTopModal } from 'gtfs-zone-web-common/ui/modal-utils';
 import {
   formatIssueValue,
   isDanglingReference,
   markReferenceResolved,
   renderEntityIssueNote,
 } from '../modules/feed-issues';
-import { escapeHtml } from 'interlocking/util/escape-html';
+import { escapeHtml } from 'gtfs-zone-web-common/util/escape-html';
 import { renderPickerTrigger, setPickerTriggerContent } from './picker-trigger';
 import { renderRenameTrigger } from './rename-action';
 import { openInlineEditor, openInlineMenu } from './inline-edit';
@@ -375,8 +375,7 @@ export async function renderInlineEntityFields(
   draftId?: string
 ): Promise<string> {
   const schema = GTFSSchemas[tableName as keyof typeof GTFSSchemas] as
-    | z.ZodObject<z.ZodRawShape>
-    | undefined;
+    z.ZodObject<z.ZodRawShape> | undefined;
   if (!schema) {
     console.warn(`[InlineField] no schema for ${tableName}`);
     return '';

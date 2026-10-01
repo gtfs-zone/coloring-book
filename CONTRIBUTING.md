@@ -92,13 +92,13 @@ Pushing a version tag triggers `.github/workflows/pages.yml`, which builds the a
 4. Push your branch and create a pull request
 5. After merge to `main`, run `cz bump` for releases when ready
 
-## Changing interlocking
+## Changing gtfs-zone-web-common
 
-Modules shared with the other gtfs.zone apps live in [interlocking](https://github.com/gtfs-zone/interlocking) and are not edited here. A shared change is:
+Modules shared with the other gtfs.zone apps live in [gtfs-zone-web-common](https://github.com/gtfs-zone/gtfs-zone-web-common) and are not edited here. A shared change is:
 
-1. A commit in interlocking
-2. A new tag in interlocking, pushed to GitHub
-3. A bump of the `interlocking` tag in `package.json` here (and in each other consumer), then `pnpm install`
+1. A commit in gtfs-zone-web-common
+2. A new tag in gtfs-zone-web-common, pushed to GitHub
+3. A bump of the `gtfs-zone-web-common` tag in `package.json` here (and in each other consumer), then `pnpm install`
 
 Restart the dev server after the bump: Vite does not watch `node_modules`, so a running server can keep serving the old copy.
 

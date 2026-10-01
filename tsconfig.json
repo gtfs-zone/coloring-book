@@ -23,7 +23,7 @@
     "resolveJsonModule": true,
     "baseUrl": ".",
     "paths": {
-      "interlocking/*": ["node_modules/interlocking/src/*"]
+      "gtfs-zone-web-common/*": ["node_modules/gtfs-zone-web-common/src/*"]
     }
   },
   "include": [

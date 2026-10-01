@@ -6,9 +6,9 @@ import {
   renderCardLabel,
   renderOptionLabel,
 } from './entity-display';
-import { escapeHtml } from 'interlocking/util/escape-html';
+import { escapeHtml } from 'gtfs-zone-web-common/util/escape-html';
 import { formatGtfsDateRange } from './gtfs-date';
-import { routeColor } from 'interlocking/gtfs/route-colors';
+import { routeColor } from 'gtfs-zone-web-common/gtfs/route-colors';
 import { normalizeAgencyId } from './agency-helpers';
 
 function escapeAttr(text: unknown): string {

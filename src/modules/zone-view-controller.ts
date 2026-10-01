@@ -10,12 +10,12 @@
 
 import type { GTFSParser } from './gtfs-parser';
 import { GTFS_TABLES } from '../types/gtfs';
-import { escapeHtml } from 'interlocking/util/escape-html';
+import { escapeHtml } from 'gtfs-zone-web-common/util/escape-html';
 import { getRouteDisplay, renderCardLabel } from '../utils/entity-display';
 import { renderFieldLabel, type FieldConfig } from '../utils/field-component';
 import { openInlineEditor } from '../utils/inline-edit';
-import { renderTrashIcon } from 'interlocking/ui/modal-utils';
-import { notify } from 'interlocking/ui/notification-system';
+import { renderTrashIcon } from 'gtfs-zone-web-common/ui/modal-utils';
+import { notify } from 'gtfs-zone-web-common/ui/notification-system';
 import {
   attachZoneGeometryHandlers,
   renderZoneGeometrySection,
@@ -204,9 +204,7 @@ export class ZoneViewController {
     const rows: string[] = [];
     for (const [route_id, count] of counts) {
       const route = (await this.dependencies.getRouteAsync?.(route_id)) as
-        | Record<string, string>
-        | null
-        | undefined;
+        Record<string, string> | null | undefined;
       const label = route
         ? renderCardLabel(getRouteDisplay(route))
         : `<span class="font-mono">${escapeHtml(route_id)}</span>`;

@@ -23,7 +23,7 @@ pnpm build    # production build into dist/
 - Tailwind CSS v4 + DaisyUI 5
 - IndexedDB (via `idb`)
 - Zod
-- [interlocking](https://github.com/gtfs-zone/interlocking), the UI, map and
+- [gtfs-zone-web-common](https://github.com/gtfs-zone/gtfs-zone-web-common), the UI, map and
   GTFS modules shared with the other gtfs.zone apps
 
 ## GTFS support

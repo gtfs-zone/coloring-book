@@ -12,7 +12,7 @@
 
 import { promptNewEntity } from './entity-form-modal';
 import { nextServiceId } from '../utils/inline-entity-creator';
-import { notify } from 'interlocking/ui/notification-system';
+import { notify } from 'gtfs-zone-web-common/ui/notification-system';
 import {
   createDefaultService,
   defaultServiceRange,

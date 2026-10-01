@@ -5,13 +5,13 @@
 
 import { TimeFormatter, renderTimeHtml } from '../utils/time-formatter';
 import { EditableStopTime } from './timetable-data-processor';
-import type { StopTimeRef } from 'interlocking/gtfs/types';
-import { escapeHtml } from 'interlocking/util/escape-html';
+import type { StopTimeRef } from 'gtfs-zone-web-common/gtfs/types';
+import { escapeHtml } from 'gtfs-zone-web-common/util/escape-html';
 import { getEnumOptions } from '../types/gtfs-enums';
 import { stopTimeFieldKind } from './timetable-fields';
 import { FieldPresence, stopTimeFieldPresence } from '../utils/flex-rules';
 import { formatIssueValue, isDanglingReference } from './feed-issues';
-import { tooltipContentAttr } from 'interlocking/ui/field-label';
+import { tooltipContentAttr } from 'gtfs-zone-web-common/ui/field-label';
 import { renderPickerTrigger } from '../utils/picker-trigger';
 
 /** Everything one cell needs to render its stack of sub-rows. */

@@ -9,12 +9,12 @@
  */
 
 import { getGTFSFieldDescription } from './zod-tooltip-helper';
-import { renderSpecDescription } from 'interlocking/gtfs/spec-markup';
+import { renderSpecDescription } from 'gtfs-zone-web-common/gtfs/spec-markup';
 import {
   renderPresenceBadge,
   renderTooltipTrigger,
   type FieldLabelOptions,
-} from 'interlocking/ui/field-label';
+} from 'gtfs-zone-web-common/ui/field-label';
 import {
   GTFS_PRIMARY_KEYS,
   GTFS_FIELD_TYPES,

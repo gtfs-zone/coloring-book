@@ -9,11 +9,11 @@
  * router closes this one when the page state switches to it.
  */
 
-import { showModal } from 'interlocking/ui/modal-utils';
-import { escapeHtml } from 'interlocking/util/escape-html';
-import { routeColor } from 'interlocking/gtfs/route-colors';
-import { routeSortKey } from 'interlocking/gtfs/route-sort';
-import { SELECTED_ROW_CLASS } from 'interlocking/ui/selectable-row';
+import { showModal } from 'gtfs-zone-web-common/ui/modal-utils';
+import { escapeHtml } from 'gtfs-zone-web-common/util/escape-html';
+import { routeColor } from 'gtfs-zone-web-common/gtfs/route-colors';
+import { routeSortKey } from 'gtfs-zone-web-common/gtfs/route-sort';
+import { SELECTED_ROW_CLASS } from 'gtfs-zone-web-common/ui/selectable-row';
 import type { GTFSParser } from './gtfs-parser';
 import type { ScheduleController } from './schedule-controller';
 import { GTFS_TABLES } from '../types/gtfs';

@@ -41,8 +41,11 @@ jobs:
       - name: Install node modules
         run: pnpm install --frozen-lockfile
 
+      # Unset falls back to web-common's default proxy.
       - name: Build
         run: pnpm build
+        env:
+          VITE_CORS_PROXY: ${{ vars.VITE_CORS_PROXY }}
 
       - name: Configure Pages
         uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0

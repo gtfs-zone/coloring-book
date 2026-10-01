@@ -1,24 +1,24 @@
-import { notify } from 'interlocking/ui/notification-system';
-import { showModal } from 'interlocking/ui/modal-utils';
-import { showLoadModal } from 'interlocking/ui/load-modal';
+import { notify } from 'gtfs-zone-web-common/ui/notification-system';
+import { showModal } from 'gtfs-zone-web-common/ui/modal-utils';
+import { showLoadModal } from 'gtfs-zone-web-common/ui/load-modal';
 import { showFilesModal } from './files-modal';
-import type { ContinueOffer } from 'interlocking/ui/load-modal';
-import type { FeedSelection } from 'interlocking/gtfs/feed-selection';
-import { resolvedScheduledUrl } from 'interlocking/gtfs/feed-selection';
+import type { ContinueOffer } from 'gtfs-zone-web-common/ui/load-modal';
+import type { FeedSelection } from 'gtfs-zone-web-common/gtfs/feed-selection';
+import { resolvedScheduledUrl } from 'gtfs-zone-web-common/gtfs/feed-selection';
 import { navigateToHome } from './navigation-actions';
 import { GTFS_TABLES } from '../types/gtfs';
 import { MapMode, MapController } from './map-controller';
 import {
   syncAutoZoomControl,
   wireAutoZoomControl,
-} from 'interlocking/map/auto-zoom';
+} from 'gtfs-zone-web-common/map/auto-zoom';
 import { GTFSParser } from './gtfs-parser';
-import { LoadCancelledError } from 'interlocking/gtfs/feed-download';
+import { LoadCancelledError } from 'gtfs-zone-web-common/gtfs/feed-download';
 import { Editor } from './editor';
 import { BrowseNavigation } from './browse-navigation';
 import { buildExportFilename } from '../utils/export-filename';
 import { runWhenIdle } from '../utils/run-when-idle';
-import { showHelpPageOnce } from 'interlocking/ui/help-modal';
+import { showHelpPageOnce } from 'gtfs-zone-web-common/ui/help-modal';
 import type { PatchManager } from './patch-manager';
 import { GTFSSchemas } from '../types/gtfs';
 import { generateFieldConfigsFromSchema } from '../utils/field-component';

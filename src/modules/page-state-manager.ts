@@ -1,7 +1,7 @@
 /**
  * Page State Manager
  *
- * The editor's hash codec and its subclass of `interlocking`'s generic
+ * The editor's hash codec and its subclass of `gtfs-zone-web-common`'s generic
  * `PageStateManager`. The shared class owns the current state, the history
  * and the hash; what is the editor's own is here: the codec for its eight
  * page variants and nine content modals, the inline-edit flush before every
@@ -9,11 +9,11 @@
  * and the validated boot restore.
  */
 
-import type { PageStateCodec } from 'interlocking/ui/page-state-manager';
+import type { PageStateCodec } from 'gtfs-zone-web-common/ui/page-state-manager';
 import {
   PageStateManager as SharedPageStateManager,
   homeWithModal,
-} from 'interlocking/ui/page-state-manager';
+} from 'gtfs-zone-web-common/ui/page-state-manager';
 import {
   PageState,
   ModalState,
@@ -23,7 +23,7 @@ import {
   StateValidator,
   isPageState,
 } from '../types/page-state';
-import { BreadcrumbItem } from 'interlocking/ui/breadcrumb-trail';
+import { BreadcrumbItem } from 'gtfs-zone-web-common/ui/breadcrumb-trail';
 import { BreadcrumbLookup, buildBreadcrumbs } from './breadcrumbs';
 import { flushInlineEdits, hasLiveEditor } from '../utils/inline-edit';
 import { followRenameInState } from '../utils/follow-rename';

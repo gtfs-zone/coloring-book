@@ -9,7 +9,7 @@ import {
 import { Pathways, Stops } from '../types/gtfs-entities';
 import { MapMode } from './map-controller';
 import type { GTFSParser } from './gtfs-parser';
-import { showModal } from 'interlocking/ui/modal-utils';
+import { showModal } from 'gtfs-zone-web-common/ui/modal-utils';
 import { hasLiveEditor } from '../utils/inline-edit';
 import { promptNewEntity } from './entity-form-modal';
 import { firstFreeId } from '../utils/inline-entity-creator';
@@ -17,7 +17,7 @@ import {
   locationIdClash,
   readNewLocationIdOwners,
 } from '../utils/location-id-owners';
-import { resolveThemeColor } from 'interlocking/util/theme-color';
+import { resolveThemeColor } from 'gtfs-zone-web-common/util/theme-color';
 import { GTFS_TABLES } from '../types/gtfs';
 import { renderSpecFieldLabelContent } from '../utils/field-component';
 
@@ -761,7 +761,8 @@ export class InteractionHandler {
    * Show the persistent ADD_PATHWAY hint notification, replacing any prior one.
    */
   private async showAddPathwayNotification(message: string): Promise<void> {
-    const { notify } = await import('interlocking/ui/notification-system');
+    const { notify } =
+      await import('gtfs-zone-web-common/ui/notification-system');
     if (this.addPathwayNotificationId !== null) {
       notify.removeNotification(this.addPathwayNotificationId);
     }
@@ -775,7 +776,8 @@ export class InteractionHandler {
     if (this.addPathwayNotificationId === null) {
       return;
     }
-    const { notify } = await import('interlocking/ui/notification-system');
+    const { notify } =
+      await import('gtfs-zone-web-common/ui/notification-system');
     notify.removeNotification(this.addPathwayNotificationId);
     this.addPathwayNotificationId = null;
   }

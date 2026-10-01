@@ -18,11 +18,11 @@
 
 import type { ScheduleController } from './schedule-controller';
 import type { PatchManager } from './patch-manager';
-import type { NavigationEvent } from 'interlocking/ui/page-state-manager';
+import type { NavigationEvent } from 'gtfs-zone-web-common/ui/page-state-manager';
 import { PageState, TimetableModalState } from '../types/page-state';
 import { getPageStateManager } from './page-state-manager';
-import { showModal } from 'interlocking/ui/modal-utils';
-import { notify } from 'interlocking/ui/notification-system';
+import { showModal } from 'gtfs-zone-web-common/ui/modal-utils';
+import { notify } from 'gtfs-zone-web-common/ui/notification-system';
 
 export interface TimetableModalDeps {
   scheduleController: ScheduleController;

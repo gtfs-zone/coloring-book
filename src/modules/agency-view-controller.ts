@@ -14,8 +14,8 @@ import {
   renderRouteReference,
   ROUTE_REF_ROW,
 } from '../utils/entity-references';
-import { renderTrashIcon } from 'interlocking/ui/modal-utils';
-import { escapeHtml } from 'interlocking/util/escape-html';
+import { renderTrashIcon } from 'gtfs-zone-web-common/ui/modal-utils';
+import { escapeHtml } from 'gtfs-zone-web-common/util/escape-html';
 
 export interface AgencyViewDependencies {
   gtfsDatabase?: QueryOnlyDatabase;

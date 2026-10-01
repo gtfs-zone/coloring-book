@@ -1,6 +1,6 @@
 import uFuzzy from '@leeoniya/ufuzzy';
-import { showModal } from 'interlocking/ui/modal-utils';
-import { SELECTED_ROW_CLASS } from 'interlocking/ui/selectable-row';
+import { showModal } from 'gtfs-zone-web-common/ui/modal-utils';
+import { SELECTED_ROW_CLASS } from 'gtfs-zone-web-common/ui/selectable-row';
 
 export interface OptionPickerItem {
   value: string;

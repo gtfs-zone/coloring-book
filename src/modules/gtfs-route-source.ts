@@ -3,10 +3,10 @@ import type {
   RouteSource,
   RouteSourceTrip,
   RouteSourceStopTime,
-} from 'interlocking/gtfs/route-source';
+} from 'gtfs-zone-web-common/gtfs/route-source';
 import { GTFS_TABLES } from '../types/gtfs';
 import type { LocationGroups, Stops } from '../types/gtfs-entities';
-import type { StopTimeRef } from 'interlocking/gtfs/types';
+import type { StopTimeRef } from 'gtfs-zone-web-common/gtfs/types';
 import { stopTimeRef } from '../utils/stop-time-ref';
 
 interface StopIndexEntry {
@@ -152,8 +152,7 @@ export class GTFSRouteSource implements RouteSource {
     const index = new Map<string, string>();
     const rows = this.gtfsParser.getFileDataSync(GTFS_TABLES.LOCATIONS_GEOJSON);
     const collection = rows[0] as
-      | { features?: Array<Record<string, unknown>> }
-      | undefined;
+      { features?: Array<Record<string, unknown>> } | undefined;
     for (const feature of collection?.features ?? []) {
       const id = feature.id !== undefined ? String(feature.id) : '';
       if (!id) {

@@ -16,7 +16,7 @@
  * value beside it reads as a dropdown of actions, which it is not.
  */
 
-import { renderChevronIcon } from 'interlocking/ui/modal-utils';
+import { renderChevronIcon } from 'gtfs-zone-web-common/ui/modal-utils';
 
 /** Marks a span whose click opens a picker modal. */
 export const PICKER_TRIGGER_CLASS = 'picker-trigger';

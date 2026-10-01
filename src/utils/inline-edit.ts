@@ -15,12 +15,15 @@
  * `YYYY-MM-DD`, which is a format, not GTFS semantics.
  */
 
-import { escapeHtml } from 'interlocking/util/escape-html';
+import { escapeHtml } from 'gtfs-zone-web-common/util/escape-html';
 import {
   attachCalendarInput,
   ISO_DATE_CODEC,
-} from 'interlocking/ui/calendar-input';
-import { attachColorInput, HEX_COLOR_CODEC } from 'interlocking/ui/color-input';
+} from 'gtfs-zone-web-common/ui/calendar-input';
+import {
+  attachColorInput,
+  HEX_COLOR_CODEC,
+} from 'gtfs-zone-web-common/ui/color-input';
 import { CONFIG } from '../config';
 import { getFeedActiveRange } from './feed-active-range';
 import {
@@ -82,14 +85,7 @@ let suggestionListSeq = 0;
  * date or color picker where the spec type calls for one.
  */
 export type InlineEditorInputType =
-  | 'text'
-  | 'number'
-  | 'email'
-  | 'url'
-  | 'tel'
-  | 'color'
-  | 'date'
-  | 'time';
+  'text' | 'number' | 'email' | 'url' | 'tel' | 'color' | 'date' | 'time';
 
 export interface InlineEditorOptions {
   /**

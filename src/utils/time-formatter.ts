@@ -1,9 +1,9 @@
-import { escapeHtml } from 'interlocking/util/escape-html';
+import { escapeHtml } from 'gtfs-zone-web-common/util/escape-html';
 import {
   TOOLTIP_TRIGGER_CLASS,
   tooltipContentAttr,
-} from 'interlocking/ui/field-label';
-import { renderMoonIcon } from 'interlocking/ui/nav-icons';
+} from 'gtfs-zone-web-common/ui/field-label';
+import { renderMoonIcon } from 'gtfs-zone-web-common/ui/nav-icons';
 
 /**
  * Time Formatter Utility

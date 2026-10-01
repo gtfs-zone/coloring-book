@@ -4,16 +4,16 @@ import { GTFSParser } from './modules/gtfs-parser';
 import { MapController } from './modules/map-controller';
 import { Editor } from './modules/editor';
 import { UIController } from './modules/ui';
-import { BottomSheetController } from 'interlocking/ui/bottom-sheet';
+import { BottomSheetController } from 'gtfs-zone-web-common/ui/bottom-sheet';
 import { GTFSRelationships } from './modules/gtfs-relationships';
 import { BrowseNavigation } from './modules/browse-navigation';
 import { InfoDisplay } from './modules/info-display';
-import { SearchController } from 'interlocking/ui/search-controller';
+import { SearchController } from 'gtfs-zone-web-common/ui/search-controller';
 import {
   buildSearchEntries,
   type SearchPayload,
 } from './modules/search-entries';
-import { searchPlaces } from 'interlocking/map/place-search';
+import { searchPlaces } from 'gtfs-zone-web-common/map/place-search';
 import { GTFSValidator } from './modules/gtfs-validator';
 import {
   refreshFeedIssuesIfStale,
@@ -25,11 +25,11 @@ import {
   KeyboardShortcuts,
   describeShortcuts,
   type ShortcutCommand,
-} from 'interlocking/ui/keyboard-shortcuts';
+} from 'gtfs-zone-web-common/ui/keyboard-shortcuts';
 import { ScheduleController } from './modules/schedule-controller';
 import { ServiceDaysController } from './modules/service-days-controller';
-import { ThemeController } from 'interlocking/ui/theme-controller';
-import { notify } from 'interlocking/ui/notification-system';
+import { ThemeController } from 'gtfs-zone-web-common/ui/theme-controller';
+import { notify } from 'gtfs-zone-web-common/ui/notification-system';
 import {
   initializePageStateWithGTFS,
   takeLoadCommand,
@@ -39,9 +39,9 @@ import { openModal } from './modules/navigation-actions';
 import {
   createModalRouter,
   getModalRouter,
-} from 'interlocking/ui/modal-router';
+} from 'gtfs-zone-web-common/ui/modal-router';
 import { editorShortcuts } from './modules/shortcut-list';
-import { showModal } from 'interlocking/ui/modal-utils';
+import { showModal } from 'gtfs-zone-web-common/ui/modal-utils';
 import { showTimetableModal } from './modules/timetable-modal';
 import { showTimetableBrowserModal } from './modules/timetable-browser-modal';
 import type { ModalState, PageState } from './types/page-state';
@@ -57,7 +57,7 @@ import {
   setHelpPages,
   showHelpModal,
   showHelpPageOnce,
-} from 'interlocking/ui/help-modal';
+} from 'gtfs-zone-web-common/ui/help-modal';
 import {
   HELP_GROUP_ORDER,
   HELP_PAGES,
@@ -80,17 +80,20 @@ import { DOCK_ICONS, NAVBAR_ACTIONS } from './modules/navbar-action-list';
 import {
   renderDockIcons,
   renderNavbarActions,
-} from 'interlocking/ui/navbar-actions';
-import { renderAutoZoomControl } from 'interlocking/map/auto-zoom';
+} from 'gtfs-zone-web-common/ui/navbar-actions';
+import { renderAutoZoomControl } from 'gtfs-zone-web-common/map/auto-zoom';
 import { NavbarCounts } from './modules/navbar-counts';
-import { PanelResizer, restorePanelWidth } from 'interlocking/ui/panel-resizer';
+import {
+  PanelResizer,
+  restorePanelWidth,
+} from 'gtfs-zone-web-common/ui/panel-resizer';
 import { LevelsController } from './modules/levels-controller';
-import { feedProgressIndicator } from 'interlocking/ui/progress-indicator';
+import { feedProgressIndicator } from 'gtfs-zone-web-common/ui/progress-indicator';
 import { databaseFallbackManager } from './modules/database-fallback-manager';
-import { LoadCancelledError } from 'interlocking/gtfs/feed-download';
+import { LoadCancelledError } from 'gtfs-zone-web-common/gtfs/feed-download';
 import { CONFIG } from './config';
-import { initFieldTooltipPortal } from 'interlocking/util/tooltip-position';
-import { configureSpecMarkup } from 'interlocking/gtfs/spec-markup';
+import { initFieldTooltipPortal } from 'gtfs-zone-web-common/util/tooltip-position';
+import { configureSpecMarkup } from 'gtfs-zone-web-common/gtfs/spec-markup';
 import twoLegSvg from './assets/gtfs-spec/2-leg.svg';
 import threeLegSvg from './assets/gtfs-spec/3-leg.svg';
 import inliningSvg from './assets/gtfs-spec/inlining.svg';
@@ -121,11 +124,7 @@ declare global {
  * restore or a load failed.
  */
 type BootOutcome =
-  | 'restored'
-  | 'created-empty'
-  | 'loaded'
-  | 'nothing-stored'
-  | 'failed';
+  'restored' | 'created-empty' | 'loaded' | 'nothing-stored' | 'failed';
 
 export class GTFSEditor {
   public gtfsParser: GTFSParser;

@@ -8,7 +8,7 @@
  * drive the panes by id.
  */
 
-import { showModal } from 'interlocking/ui/modal-utils';
+import { showModal } from 'gtfs-zone-web-common/ui/modal-utils';
 
 const FILES_MODAL_BODY = `
   <div class="flex flex-col h-full min-h-0">

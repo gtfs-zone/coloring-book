@@ -9,13 +9,13 @@
  * supply the field list, the validation and the commit.
  */
 
-import { showModal } from 'interlocking/ui/modal-utils';
+import { showModal } from 'gtfs-zone-web-common/ui/modal-utils';
 import {
   generateFieldConfigsFromSchema,
   renderFieldLabel,
   type FieldConfig,
 } from '../utils/field-component';
-import { escapeHtml } from 'interlocking/util/escape-html';
+import { escapeHtml } from 'gtfs-zone-web-common/util/escape-html';
 import { GTFSSchemas } from '../types/gtfs';
 import type { GTFSPresence } from '../gtfs-spec/types';
 import { getEnumOptions, isEnumField } from '../types/gtfs-enums';
@@ -148,8 +148,7 @@ function draftFieldConfig(
 ): FieldConfig {
   const tableName = field.tableName ?? '';
   const schema = GTFSSchemas[tableName as keyof typeof GTFSSchemas] as
-    | z.ZodObject<z.ZodRawShape>
-    | undefined;
+    z.ZodObject<z.ZodRawShape> | undefined;
   if (!schema) {
     throw new Error(`[entity-form-modal] no schema for ${tableName}`);
   }
@@ -270,9 +269,7 @@ function readValues(
       continue;
     }
     const el = document.getElementById(inputId(field.field)) as
-      | HTMLInputElement
-      | HTMLSelectElement
-      | null;
+      HTMLInputElement | HTMLSelectElement | null;
     if (!el) {
       throw new Error(
         `[entity-form-modal] input for "${field.field}" is missing from the form`

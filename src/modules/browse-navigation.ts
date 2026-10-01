@@ -10,7 +10,7 @@ import {
   BreadcrumbItem,
   pageTitle,
   renderBreadcrumbTrail,
-} from 'interlocking/ui/breadcrumb-trail';
+} from 'gtfs-zone-web-common/ui/breadcrumb-trail';
 import { APP_NAME } from './breadcrumbs';
 import {
   navigateToAgency,

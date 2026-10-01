@@ -20,15 +20,15 @@ import {
   showModal,
   renderTrashIcon,
   isOutsideTopModal,
-} from 'interlocking/ui/modal-utils';
+} from 'gtfs-zone-web-common/ui/modal-utils';
 import {
   showMultiOptionPickerModal,
   showOptionPickerModal,
   type OptionPickerItem,
 } from './option-picker-modal';
-import { notify } from 'interlocking/ui/notification-system';
+import { notify } from 'gtfs-zone-web-common/ui/notification-system';
 import { formatIssueValue } from './feed-issues';
-import { escapeHtml } from 'interlocking/util/escape-html';
+import { escapeHtml } from 'gtfs-zone-web-common/util/escape-html';
 import {
   renderPickerTrigger,
   setPickerTriggerContent,

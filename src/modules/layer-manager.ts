@@ -8,7 +8,7 @@ import { bufferedHull } from '../utils/station-hull';
 import {
   clearThemeColorCache,
   resolveThemeColor,
-} from 'interlocking/util/theme-color';
+} from 'gtfs-zone-web-common/util/theme-color';
 import {
   PATHWAY_CATEGORIES,
   PATHWAY_CATEGORY_ORDER,
@@ -16,7 +16,7 @@ import {
   modesInCategory,
   type PathwayCategory,
 } from '../utils/pathway-modes';
-import { ensureMapIcons } from 'interlocking/map/icons';
+import { ensureMapIcons } from 'gtfs-zone-web-common/map/icons';
 import { listZones, zoneName } from './zone-store';
 import {
   STOP_FOCUS_HALO_LAYER,
@@ -29,7 +29,7 @@ import {
   stopFillColor,
   stopsBackgroundPaint,
   type StopStyleOptions,
-} from 'interlocking/map/stop-layer-style';
+} from 'gtfs-zone-web-common/map/stop-layer-style';
 import {
   ROUTES_CASING_LAYER,
   STOPS_BACKGROUND_LAYER,
@@ -43,7 +43,7 @@ import {
   stopClickAreaRadius,
   stopFadeOpacity,
   type StopFadeBands,
-} from 'interlocking/map/layer-specs';
+} from 'gtfs-zone-web-common/map/layer-specs';
 
 export interface StopLayerOptions {
   showBackground: boolean;
@@ -150,8 +150,7 @@ export class LayerManager {
   private map: MapLibreMap;
   private gtfsParser: GTFSParser;
   public onStopsDataUpdated:
-    | ((data: GeoJSON.FeatureCollection) => void)
-    | null = null;
+    ((data: GeoJSON.FeatureCollection) => void) | null = null;
 
   private activeStopsFilter: FilterSpecification = DEFAULT_STOPS_FILTER;
   // True while the feed is small enough that both zoom fade bands are skipped.
@@ -174,8 +173,7 @@ export class LayerManager {
 
   private _resolverDirty = true;
   private _cachedResolver:
-    | ((stop_id: string) => [number, number] | null)
-    | null = null;
+    ((stop_id: string) => [number, number] | null) | null = null;
 
   /**
    * line-dasharray is not data-driven in MapLibre, so each dash pattern needs
@@ -1584,8 +1582,7 @@ export class LayerManager {
     const geojson = this.buildPathwaysGeoJSON(stationId);
 
     const pathwaySource = this.map.getSource('pathways') as
-      | GeoJSONSource
-      | undefined;
+      GeoJSONSource | undefined;
     if (pathwaySource) {
       pathwaySource.setData(geojson);
     } else {
@@ -1617,8 +1614,7 @@ export class LayerManager {
     }
 
     const source = this.map.getSource('station-ground') as
-      | GeoJSONSource
-      | undefined;
+      GeoJSONSource | undefined;
     if (source) {
       source.setData(geojson);
       return;
@@ -1854,8 +1850,7 @@ export class LayerManager {
     (this.map.getSource('pathways') as GeoJSONSource).setData(geojson);
 
     const ground = this.map.getSource('station-ground') as
-      | GeoJSONSource
-      | undefined;
+      GeoJSONSource | undefined;
     if (ground) {
       const groundGeoJSON = this.buildStationGroundGeoJSON(stationId);
       if (groundGeoJSON) {

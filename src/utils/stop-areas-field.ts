@@ -14,10 +14,10 @@
 import { showOptionPickerModal } from '../modules/option-picker-modal';
 import { promptNewEntity } from '../modules/entity-form-modal';
 import { nextEntityId } from './inline-entity-creator';
-import { notify } from 'interlocking/ui/notification-system';
-import { isOutsideTopModal } from 'interlocking/ui/modal-utils';
+import { notify } from 'gtfs-zone-web-common/ui/notification-system';
+import { isOutsideTopModal } from 'gtfs-zone-web-common/ui/modal-utils';
 import { GTFS_TABLES } from '../types/gtfs';
-import { escapeHtml } from 'interlocking/util/escape-html';
+import { escapeHtml } from 'gtfs-zone-web-common/util/escape-html';
 import { generateCompositeKeyFromRecord } from './gtfs-primary-keys';
 import { getEntityDisplay, renderOptionLabel } from './entity-display';
 import {

@@ -61,12 +61,12 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      interlocking: resolve(import.meta.dirname, 'node_modules/interlocking/src')
+      'gtfs-zone-web-common': resolve(import.meta.dirname, 'node_modules/gtfs-zone-web-common/src')
     }
   },
   optimizeDeps: {
     include: ['maplibre-gl', 'codemirror', 'jszip', 'papaparse'],
-    // interlocking ships raw .ts; let vite transform it as source
-    exclude: ['interlocking']
+    // gtfs-zone-web-common ships raw .ts; let vite transform it as source
+    exclude: ['gtfs-zone-web-common']
   }
 })

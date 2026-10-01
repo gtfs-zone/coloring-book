@@ -7,7 +7,7 @@
  */
 
 import { GTFS_TABLES } from '../types/gtfs';
-import { escapeHtml } from 'interlocking/util/escape-html';
+import { escapeHtml } from 'gtfs-zone-web-common/util/escape-html';
 import {
   getEntityDisplay,
   getRouteDisplay,
@@ -198,9 +198,7 @@ export class LocationGroupViewController {
     const rows: string[] = [];
     for (const [route_id, count] of counts) {
       const route = (await this.dependencies.getRouteAsync?.(route_id)) as
-        | Record<string, string>
-        | null
-        | undefined;
+        Record<string, string> | null | undefined;
       const label = route
         ? renderCardLabel(getRouteDisplay(route))
         : `<span class="font-mono">${escapeHtml(route_id)}</span>`;

@@ -18,7 +18,7 @@ import {
   downloadWithProgress,
   downloadPercent,
   formatBytes,
-} from 'interlocking/gtfs/feed-download';
+} from 'gtfs-zone-web-common/gtfs/feed-download';
 
 type GTFSDatabaseRecord = {
   [key: string]: string | number | boolean | undefined;

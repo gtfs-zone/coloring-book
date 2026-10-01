@@ -7,9 +7,12 @@
  * asks for the new ID, shows what it would touch, and applies it.
  */
 
-import { showModal, renderWarningIcon } from 'interlocking/ui/modal-utils';
-import { notify } from 'interlocking/ui/notification-system';
-import { escapeHtml } from 'interlocking/util/escape-html';
+import {
+  showModal,
+  renderWarningIcon,
+} from 'gtfs-zone-web-common/ui/modal-utils';
+import { notify } from 'gtfs-zone-web-common/ui/notification-system';
+import { escapeHtml } from 'gtfs-zone-web-common/util/escape-html';
 import {
   applyRename,
   renamePlan,

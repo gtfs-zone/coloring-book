@@ -1,9 +1,9 @@
 /* Tailwind CSS v4 with DaisyUI plugin */
 @import 'tailwindcss';
 /* The shell layout: grid, drawer, map controls */
-@import '../../node_modules/interlocking/src/ui/app-shell.css';
+@import '../../node_modules/gtfs-zone-web-common/src/ui/app-shell.css';
 @source "../**/*.{html,js,ts}";
-@source "../../node_modules/interlocking/src/**/*.ts";
+@source "../../node_modules/gtfs-zone-web-common/src/**/*.ts";
 
 @plugin "daisyui" {
   themes:

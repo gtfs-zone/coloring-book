@@ -7,7 +7,7 @@
  */
 
 import type { StopTimes } from '../types/gtfs-entities';
-import type { StopTimeRef } from 'interlocking/gtfs/types';
+import type { StopTimeRef } from 'gtfs-zone-web-common/gtfs/types';
 
 // Non-empty string value, or null
 function value(raw: unknown): string | null {

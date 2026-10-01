@@ -12,7 +12,7 @@ import {
   footnote,
   glyphList,
   type HelpPageEntry,
-} from 'interlocking/ui/help-modal';
+} from 'gtfs-zone-web-common/ui/help-modal';
 import {
   renderBlurb,
   renderVersionAndSource,
@@ -23,7 +23,7 @@ import {
   renderExternalLink,
   TRANSITLAND_URL,
   type AboutApp,
-} from 'interlocking/ui/about-links';
+} from 'gtfs-zone-web-common/ui/about-links';
 import {
   PATHWAY_CATEGORIES,
   PATHWAY_CATEGORY_ORDER,

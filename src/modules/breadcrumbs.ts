@@ -10,7 +10,7 @@ import { PageState } from '../types/page-state';
 import {
   BreadcrumbItem,
   stopTypeLabel,
-} from 'interlocking/ui/breadcrumb-trail';
+} from 'gtfs-zone-web-common/ui/breadcrumb-trail';
 
 /** Name used as the tail of every page title. */
 export const APP_NAME = 'edit.gtfs.zone';

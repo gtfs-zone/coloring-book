@@ -24,18 +24,18 @@ import { agencyRouteFilter, normalizeAgencyId } from '../utils/agency-helpers';
 import {
   BasemapControl,
   onBasemapChanged,
-} from 'interlocking/map/basemap-control';
-import { AutoZoom } from 'interlocking/map/auto-zoom';
-import { MAP_MAX_ZOOM } from 'interlocking/map/basemap-styles';
-import { fitPadding } from 'interlocking/map/fit-padding';
-import { notify } from 'interlocking/ui/notification-system';
+} from 'gtfs-zone-web-common/map/basemap-control';
+import { AutoZoom } from 'gtfs-zone-web-common/map/auto-zoom';
+import { MAP_MAX_ZOOM } from 'gtfs-zone-web-common/map/basemap-styles';
+import { fitPadding } from 'gtfs-zone-web-common/map/fit-padding';
+import { notify } from 'gtfs-zone-web-common/ui/notification-system';
 import type { PatchRecord, SingleGTFSPatch } from '../types/patch';
 import { getZoneFeature, listZones, zoneBounds } from './zone-store';
 import { stopTimeRef } from '../utils/stop-time-ref';
 import {
   SearchPlaceMarker,
   type PlacePayload,
-} from 'interlocking/map/place-search';
+} from 'gtfs-zone-web-common/map/place-search';
 
 // Map interaction modes
 export enum MapMode {

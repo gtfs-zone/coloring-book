@@ -1,4 +1,4 @@
-import { showModal } from 'interlocking/ui/modal-utils';
+import { showModal } from 'gtfs-zone-web-common/ui/modal-utils';
 import {
   renderEditableTable,
   installEditableTableHandlers,

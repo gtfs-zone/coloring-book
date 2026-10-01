@@ -15,8 +15,8 @@ import {
   renderCardLabel,
   renderOptionLabel,
 } from '../utils/entity-display';
-import { escapeHtml } from 'interlocking/util/escape-html';
-import { routeColor } from 'interlocking/gtfs/route-colors';
+import { escapeHtml } from 'gtfs-zone-web-common/util/escape-html';
+import { routeColor } from 'gtfs-zone-web-common/gtfs/route-colors';
 import {
   filterServiceDataMap,
   loadServiceData,
@@ -24,7 +24,7 @@ import {
   type ServiceDataMap,
 } from './service-timeline';
 import { pathwayModeLabel } from '../utils/pathway-modes';
-import { renderTrashIcon } from 'interlocking/ui/modal-utils';
+import { renderTrashIcon } from 'gtfs-zone-web-common/ui/modal-utils';
 import {
   renderPathwayReference,
   renderStopReference,
@@ -387,8 +387,7 @@ export class StopViewController {
           direction === 'to' ? String(p.to_stop_id) : String(p.from_stop_id);
         const modeLabel = pathwayModeLabel(Number(p.pathway_mode) || 0);
         const otherStop = otherStopLookup.get(otherStopId) as
-          | Record<string, unknown>
-          | undefined;
+          Record<string, unknown> | undefined;
         return renderPathwayReference(p as unknown as Record<string, unknown>, {
           modeLabel,
           otherStop,
