@@ -6,16 +6,9 @@ It is a client-only SPA: no backend, all data stays in the browser via IndexedDB
 ## Commands
 
 ```bash
-pnpm dev          # Vite dev server on port 8080
-pnpm build        # Production build to dist/
-pnpm serve        # Preview the production build
-pnpm lint         # ESLint on src/ (lint:fix to auto-fix)
-pnpm format       # Prettier
-pnpm typecheck    # tsc --noEmit
 pnpm check        # typecheck + lint + knip + check-spec
 pnpm check-spec   # Diff src/gtfs-spec/ against the reference snapshot
 pnpm vuln         # osv-scanner vulnerability gate
-pnpm commit       # Commitizen prompt for a Conventional Commit
 ```
 
 ## Architecture
@@ -61,3 +54,6 @@ Invariants (details in [docs/architecture.md](docs/architecture.md)):
 - **CSS**: Tailwind CSS v4 + DaisyUI v5, configured in `src/styles/main.css` (no `tailwind.config.js`). The `@source` pointing into `node_modules/gtfs-zone-web-common/src` is what styles the shared modules. Write styles with Tailwind utility classes.
 - **UI**: conventions live in gtfs-zone-web-common's `AGENTS.md`.
 - **Testing**: no automated tests; changes are checked manually.
+- **Plans**: write plans to `CURRENT_PLAN.md` at the repo root as a
+  checklist (`- [ ]`), ticked off as work lands. It is neither tracked nor
+  gitignored: never stage or commit it.
