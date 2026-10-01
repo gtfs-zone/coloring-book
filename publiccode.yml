@@ -1,7 +1,7 @@
 publiccodeYmlVersion: "0.4"
 
 name: GTFS.zone Editor
-url: "https://github.com/gtfs-zone/coloring-book"
+url: "https://github.com/gtfs-zone/gtfs-zone-editor"
 landingURL: "https://edit.gtfs.zone"
 
 platforms:
