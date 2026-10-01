@@ -340,7 +340,7 @@ const ABOUT_APP: AboutApp = {
     'edit.gtfs.zone is a browser-based GTFS transit data editor. All data stays in your browser. No server, no account required.',
   ],
   contactSubject: 'edit.gtfs.zone feedback',
-  repo: 'coloring-book',
+  repo: 'gtfs-zone-editor',
   sibling: {
     name: 'viz.rt.gtfs.zone',
     href: 'https://viz.rt.gtfs.zone',
