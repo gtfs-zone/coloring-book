@@ -1,6 +1,6 @@
 [tool.commitizen]
 name = "cz_conventional_commits"
-version = "0.40.4"
+version = "0.40.5"
 version_files = [
     "package.json:version"
 ]

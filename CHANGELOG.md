@@ -1,3 +1,9 @@
+## v0.40.5 (2026-10-02)
+
+### Fix
+
+- declare @types/geojson as a direct devDependency
+
 ## v0.40.4 (2026-10-01)
 
 ### Fix
