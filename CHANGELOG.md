@@ -1,3 +1,9 @@
+## v0.40.4 (2026-10-01)
+
+### Fix
+
+- point publiccode.yml at the renamed repo
+
 ## v0.40.3 (2026-10-01)
 
 ### Fix
