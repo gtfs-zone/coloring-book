@@ -1,0 +1,33 @@
+name: Check
+
+# On a pull request: reject any commit whose message is not a Conventional
+# Commit. The commit-msg hook does the same locally but can be skipped.
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  commits:
+    runs-on: ubuntu-latest
+
+    steps:
+      # Full history and the PR head, not the merge commit, so only the PR's
+      # own commits are in the range.
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+
+      # Same commitizen version as the commit-msg hook in .pre-commit-config.yaml.
+      - name: Check commit messages
+        run: uvx --from commitizen==4.13.9 cz check --rev-range "origin/${BASE_REF}..HEAD"
+        env:
+          BASE_REF: ${{ github.base_ref }}
