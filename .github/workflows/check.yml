@@ -1,16 +1,48 @@
 name: Check
 
-# On a pull request: reject any commit whose message is not a Conventional
-# Commit. The commit-msg hook does the same locally but can be skipped.
+# On a push to a branch or a pull request: runs pnpm check. On a pull request
+# it also rejects any commit whose message is not a Conventional Commit; the
+# commit-msg hook does the same locally but can be skipped. Deploy workflows
+# call this workflow before they build.
 
 on:
+  push:
+    branches:
+      - '**'
   pull_request:
+  workflow_call:
 
 permissions:
   contents: read
 
 jobs:
+  check:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+
+      # Version comes from packageManager in package.json.
+      - name: Install pnpm
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+
+      - name: Install node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install node modules
+        run: pnpm install --frozen-lockfile
+
+      - name: Check
+        run: pnpm check
+
   commits:
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
 
     steps:

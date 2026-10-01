@@ -1,6 +1,7 @@
 name: Deploy to Pages
 
-# On a v* tag: build the site and publish dist/ to GitHub Pages.
+# On a v* tag: run the check workflow, then build the site and publish dist/ to
+# GitHub Pages.
 
 on:
   push:
@@ -17,7 +18,13 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  check:
+    uses: ./.github/workflows/check.yml
+    permissions:
+      contents: read
+
   build:
+    needs: check
     runs-on: ubuntu-latest
 
     steps:

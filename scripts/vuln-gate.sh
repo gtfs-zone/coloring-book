@@ -1,6 +1,7 @@
 #!/bin/sh
-# Scans pnpm-lock.yaml with osv-scanner, prints every finding and fails when
-# any vulnerability group has a CVSS max_severity of 9.0 or higher (critical).
+# Scans a lockfile (default pnpm-lock.yaml) with osv-scanner, prints every
+# finding and fails when any vulnerability group has a CVSS max_severity of 9.0
+# or higher (critical).
 set -eu
 
 LOCKFILE="${1:-pnpm-lock.yaml}"
