@@ -3,7 +3,7 @@
 ## Reporting a vulnerability
 
 Please report vulnerabilities privately through
-[GitHub private vulnerability reporting](https://github.com/gtfs-zone/coloring-book/security/advisories/new).
+[GitHub private vulnerability reporting](https://github.com/gtfs-zone/gtfs-zone-editor/security/advisories/new).
 Do not open a public issue.
 
 If you cannot use GitHub, email maxkatzchristy@gmail.com instead.

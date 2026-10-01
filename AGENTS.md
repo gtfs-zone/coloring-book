@@ -30,7 +30,7 @@ Modules shared with the two realtime apps live in the `gtfs-zone-web-common` pac
 
 A shared change is a commit in gtfs-zone-web-common, a tag, and a bump in each consumer. It is not edited here.
 
-Restart the dev server after a bump. The alias resolves through a pnpm symlink into the store, and Vite does not watch `node_modules`, so files whose transform is still cached keep importing the old store path: the page then holds two copies of a shared module, each with its own module-level state. Interlocking's `util/module-state` keeps that from corrupting anything and logs `loaded twice`.
+Restart the dev server after a bump. The alias resolves through a pnpm symlink into the store, and Vite does not watch `node_modules`, so files whose transform is still cached keep importing the old store path: the page then holds two copies of a shared module, each with its own module-level state. gtfs-zone-web-common's `util/module-state` keeps that from corrupting anything and logs `loaded twice`.
 
 ### Spec layer
 

@@ -35,7 +35,7 @@ which files have their own editor and which are only in the table viewer.
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md). Bugs and feature requests go to the
-[issue tracker](https://github.com/gtfs-zone/coloring-book/issues).
+[issue tracker](https://github.com/gtfs-zone/gtfs-zone-editor/issues).
 
 ## Security
 
@@ -58,4 +58,4 @@ Inc. and contributors (maintained by MobilityData), licensed under the
 ## Links
 
 - [GTFS Schedule reference](https://gtfs.org/documentation/schedule/reference/)
-- [Issue tracker](https://github.com/gtfs-zone/coloring-book/issues)
+- [Issue tracker](https://github.com/gtfs-zone/gtfs-zone-editor/issues)
