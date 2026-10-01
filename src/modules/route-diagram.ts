@@ -5,7 +5,7 @@
  * The timetable draws the same rail for a single service; this draws it for the
  * whole route, which is what makes the branches visible. The engine
  * (`route-sequence` / `route-graph` / `route-strip`) is shared with the
- * timetable and with test-track, so all this module does is pick the data and
+ * timetable and with gtfs-zone-rt-viewer, so all this module does is pick the data and
  * lay out the rows.
  *
  * Each row is a two-column grid: the rail cell, then the content. Row heights

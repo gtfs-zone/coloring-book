@@ -2,7 +2,7 @@
  * The help page registry: what pages exist, their grouping, and their copy.
  *
  * Rendering lives in `help-modal.ts`. This module is data only, following
- * landing-zone's `src/content/copy.ts` convention of keeping copy separate
+ * gtfs-zone-homepage's `src/content/copy.ts` convention of keeping copy separate
  * from the code that draws it.
  */
 

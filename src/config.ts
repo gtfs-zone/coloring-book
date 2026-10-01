@@ -114,7 +114,7 @@ export const CONFIG = {
   DEBUG_BOOT: false,
 
   // Where a path-only feed URL resolves to. Always the deployed feed server:
-  // unlike test-track, this app has no local realtime stack to talk to in
+  // unlike gtfs-zone-rt-viewer, this app has no local realtime stack to talk to in
   // dev.
   RT_BASE: 'https://rt.gtfs.zone',
 } as const;

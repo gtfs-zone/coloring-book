@@ -954,7 +954,7 @@ export class TimetableRenderer {
    *
    * The rail is the strip visualisation: an SVG of the route's branch
    * geometry for this row, laid under the stop label and swap button. No
-   * vehicle chips sit in the gaps in coloring-book (that is test-track's
+   * vehicle chips sit in the gaps in gtfs-zone-editor (that is gtfs-zone-rt-viewer's
    * concern), so every row is a plain stop row with no lead-in/lead-out
    * extension needed.
    *

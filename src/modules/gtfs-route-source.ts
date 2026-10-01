@@ -18,7 +18,7 @@ interface StopIndexEntry {
  * RouteSource over GTFSParser's virtual tables.
  *
  * The stop index and per-trip stop_time sort are memoized for the lifetime of
- * the instance, not the feed: coloring-book's data is mutable, so callers are
+ * the instance, not the feed: gtfs-zone-editor's data is mutable, so callers are
  * expected to build a fresh instance whenever the underlying tables might have
  * changed (the same cadence schedule-controller already rebuilds TimetableData at).
  */
