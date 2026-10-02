@@ -56,10 +56,21 @@
     z-index: 1;
   }
 
-  /* table-pin-rows sticks every thead row at top: 0, so the trip action row
-     lands on top of the trip id row instead of below it. Only the id row
-     freezes; the action row scrolls away with the body. It keeps no z-index of
-     its own so it passes under the pinned row (z-[2]) on the way out. */
+  /* table-pin-rows sticks the whole thead at z-index 1, which pins the trip
+     action rows too and lets the body's frozen stop cells (.stop-name, also
+     z-index 1, later in the DOM) paint over the header's frozen cells. Only
+     the id row freezes, above the body (z-[2]); the action rows scroll away
+     with the body. They keep no z-index of their own so they pass under the
+     pinned row on the way out. */
+  #schedule-view thead {
+    position: static;
+  }
+
+  #schedule-view thead tr:first-child {
+    position: sticky;
+    top: 0;
+  }
+
   #schedule-view thead tr.trip-actions-row {
     position: static;
     z-index: auto;
