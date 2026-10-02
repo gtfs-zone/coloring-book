@@ -13,3 +13,4 @@ scratchpad/
 scripts/screenshots/.cache/
 test-results/
 playwright-report/
+docs/screenshots/index.html
