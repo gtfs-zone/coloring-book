@@ -987,9 +987,7 @@ export class LayerManager {
     ] as unknown as ExpressionSpecification;
     // line-dasharray is not data-driven, so the dashed types need their own
     // layer. 0 (or empty) is a suggestion; 1, 2 and 3 are rules.
-    const before = this.map.getLayer(STOPS_BACKGROUND_LAYER)
-      ? STOPS_BACKGROUND_LAYER
-      : undefined;
+    const before = this.belowStops();
     const width = this.transferEmphasis(TRANSFER_WIDTH, TRANSFER_WIDTH_HOVERED);
     const opacity = this.transferEmphasis(
       TRANSFER_OPACITY,
@@ -1603,6 +1601,18 @@ export class LayerManager {
     );
   }
 
+  /**
+   * The beforeId that puts a layer under the stops. A basemap switch or a feed
+   * load removes the stop layers and re-adds them after an await, and a station
+   * focused in between gets here first: the layer then goes on top for now,
+   * and the stops added after it still land above.
+   */
+  private belowStops(): string | undefined {
+    return this.map.getLayer(STOPS_BACKGROUND_LAYER)
+      ? STOPS_BACKGROUND_LAYER
+      : undefined;
+  }
+
   /** Ground plane under the expanded station's pathway graph. */
   private updateStationGroundLayer(stationId: string): void {
     const geojson = this.buildStationGroundGeoJSON(stationId);
@@ -1625,7 +1635,7 @@ export class LayerManager {
     // Below the halo, which is itself below the pathways and the stops.
     const before = this.map.getLayer(STOP_FOCUS_HALO_LAYER)
       ? STOP_FOCUS_HALO_LAYER
-      : STOPS_BACKGROUND_LAYER;
+      : this.belowStops();
 
     this.map.addLayer(
       {
@@ -1714,7 +1724,7 @@ export class LayerManager {
             'line-join': 'round',
           },
         } as unknown as Parameters<MapLibreMap['addLayer']>[0],
-        STOPS_BACKGROUND_LAYER
+        this.belowStops()
       );
     }
 
@@ -1743,7 +1753,7 @@ export class LayerManager {
             'line-join': 'round',
           },
         } as unknown as Parameters<MapLibreMap['addLayer']>[0],
-        STOPS_BACKGROUND_LAYER
+        this.belowStops()
       );
     }
   }
@@ -1791,7 +1801,7 @@ export class LayerManager {
           ] as unknown as ExpressionSpecification,
         },
       },
-      STOPS_BACKGROUND_LAYER
+      this.belowStops()
     );
   }
 
@@ -1809,7 +1819,7 @@ export class LayerManager {
           'line-opacity': 0,
         },
       },
-      STOPS_BACKGROUND_LAYER
+      this.belowStops()
     );
 
     this.map.on('mouseenter', 'pathways-clickarea', this.onPathwayMouseEnter);
