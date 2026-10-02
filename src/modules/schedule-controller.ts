@@ -2914,10 +2914,25 @@ export class ScheduleController {
 
       // The dangling-reference styling (e.g. a red shape_id) is only as fresh
       // as the last validation pass, which otherwise only reruns when the
-      // home panel draws. Without this, fixing a reference from inside the
-      // timetable (assign a shape, add a stop) leaves it red until something
-      // else triggers a revalidation.
-      await refreshFeedIssuesIfStale();
+      // home panel draws. The pass sweeps every table and takes seconds on a
+      // large feed, so the grid draws now with the published issues and
+      // redraws once if the pass publishes new ones.
+      void refreshFeedIssuesIfStale()
+        .then((published) => {
+          if (
+            published &&
+            this.currentRouteId === route_id &&
+            this.currentServiceId === service_id
+          ) {
+            console.log(
+              '[ScheduleController] feed issues republished, redrawing timetable'
+            );
+            void this.refreshCurrentTimetable();
+          }
+        })
+        .catch((e: unknown) =>
+          console.error('[ScheduleController] feed issue refresh failed:', e)
+        );
 
       // Leaving a timetable drops the UI-only field roster: it is a choice
       // about this route and direction, not a persisted preference.

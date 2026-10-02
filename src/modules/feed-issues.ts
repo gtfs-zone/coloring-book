@@ -248,6 +248,9 @@ let validatedKey: string | null = null;
 /** The pass currently running, if any. */
 let pending: Promise<void> | null = null;
 
+/** Bumped on every publish, so a caller can tell whether its wait published. */
+let publishCount = 0;
+
 /** One label/count row, before the entity list is turned into markup. */
 export interface IssueGroup {
   file: string;
@@ -498,6 +501,7 @@ function publishFeedIssues(
   const issues = deriveFeedIssues(groups, source);
   setFeedIssues(issues);
   validatedKey = revalidator?.getStalenessKey() ?? null;
+  publishCount += 1;
   return issues;
 }
 
@@ -523,11 +527,14 @@ export function setFeedIssueRevalidator(next: FeedIssueRevalidator): void {
  * The pass yields to the event loop, so callers arriving during one are
  * serialized behind it rather than sweeping every table alongside it, and a
  * pass whose key moved on while it ran is discarded instead of published.
+ *
+ * @returns Whether new issues were published while this call waited
  */
-export async function refreshFeedIssuesIfStale(): Promise<void> {
+export async function refreshFeedIssuesIfStale(): Promise<boolean> {
   if (!revalidator) {
-    return;
+    return false;
   }
+  const publishedBefore = publishCount;
   // Wait out a pass that is already running rather than sweeping every table
   // alongside it. At boot the home panel asks once against the empty scaffold
   // and again once the stored feed is restored, and those two used to overlap.
@@ -538,7 +545,7 @@ export async function refreshFeedIssuesIfStale(): Promise<void> {
   const active = revalidator;
   const key = active.getStalenessKey();
   if (key === validatedKey) {
-    return;
+    return publishCount !== publishedBefore;
   }
   console.log(
     `[FeedIssues] revalidating: issues are from ${validatedKey}, feed is at ${key}`
@@ -566,6 +573,7 @@ export async function refreshFeedIssuesIfStale(): Promise<void> {
       pending = null;
     });
   await pending;
+  return publishCount !== publishedBefore;
 }
 
 export function isDanglingReference(
