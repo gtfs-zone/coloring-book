@@ -72,15 +72,22 @@ export async function seed(page: Page, testInfo: TestInfo): Promise<void> {
 export async function loadFeed(page: Page, zip: string): Promise<void> {
   await page.goto('/');
   await page.setInputFiles('#load-file-input', zip);
+  await feedLoaded(page, () =>
+    page
+      .locator('.modal-open, dialog[open]')
+      .getByRole('button', { name: 'Load', exact: true })
+      .click()
+  );
+}
+
+/** Run `start`, then wait until the feed it loads is drawn and the map is still. */
+export async function feedLoaded(page: Page, start: () => Promise<void>): Promise<void> {
   // Logged once the layers are in, just before the map fits to the feed.
   const mapReady = page.waitForEvent('console', {
     predicate: (msg) => msg.text() === 'Map update completed',
     timeout: 60_000,
   });
-  await page
-    .locator('.modal-open, dialog[open]')
-    .getByRole('button', { name: 'Load', exact: true })
-    .click();
+  await start();
   await expect(page.locator('#export-btn')).toBeEnabled({ timeout: 60_000 });
   await mapReady;
   await waitForLoadingDone(page);
@@ -244,4 +251,94 @@ export async function projectToPage(
     const rect = map.getCanvas().getBoundingClientRect();
     return { x: rect.left + p.x, y: rect.top + p.y };
   }, lngLat);
+}
+
+/**
+ * Draw a fake cursor that follows the mouse, since recorded video has none.
+ * It shrinks while a button is held so clicks and drags read in the GIF.
+ */
+export async function showCursor(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    const install = () => {
+      const dot = document.createElement('div');
+      dot.style.cssText =
+        'position:fixed;left:0;top:0;width:22px;height:22px;margin:-11px 0 0 -11px;' +
+        'border-radius:50%;background:rgba(250,204,21,.55);border:2px solid #111;' +
+        'pointer-events:none;z-index:2147483647;transition:transform 80ms;';
+      document.body.appendChild(dot);
+      const move = (e: MouseEvent) => {
+        dot.style.left = `${e.clientX}px`;
+        dot.style.top = `${e.clientY}px`;
+      };
+      window.addEventListener('mousemove', move, true);
+      window.addEventListener('dragover', move, true);
+      window.addEventListener('mousedown', () => (dot.style.transform = 'scale(.7)'), true);
+      window.addEventListener('mouseup', () => (dot.style.transform = ''), true);
+    };
+    if (document.body) {
+      install();
+    } else {
+      document.addEventListener('DOMContentLoaded', install);
+    }
+  });
+}
+
+/** Drop a zip on the page the way a user dragging it from a file manager does. */
+export async function dropFile(page: Page, zip: string): Promise<void> {
+  const data = readFileSync(zip).toString('base64');
+  const name = zip.split('/').pop()!;
+  await page.evaluate(
+    ({ data, name }) => {
+      const bytes = Uint8Array.from(atob(data), (c) => c.charCodeAt(0));
+      const transfer = new DataTransfer();
+      transfer.items.add(new File([bytes], name, { type: 'application/zip' }));
+      document.body.dispatchEvent(
+        new DragEvent('drop', { dataTransfer: transfer, bubbles: true, cancelable: true })
+      );
+    },
+    { data, name }
+  );
+}
+
+/**
+ * Convert a recorded webm to docs/screenshots/gifs/<slug>.gif, dropping the
+ * first `startSec` seconds, with a two-pass 128-colour palette at 12 fps and
+ * 960 px.
+ */
+export function toGif(videoPath: string, slug: string, startSec: number): void {
+  const dir = join(OUT_DIR, 'gifs');
+  mkdirSync(dir, { recursive: true });
+  const out = join(dir, `${slug}.gif`);
+  execFileSync('ffmpeg', [
+    '-y',
+    '-loglevel',
+    'error',
+    '-ss',
+    startSec.toFixed(2),
+    '-i',
+    videoPath,
+    '-vf',
+    'fps=12,scale=960:-1:flags=lanczos,split[a][b];[a]palettegen=stats_mode=diff:max_colors=128[p];[b][p]paletteuse=dither=bayer:bayer_scale=5:diff_mode=rectangle',
+    out,
+  ]);
+  console.log(`[screenshots] gifs/${slug}.gif from ${startSec.toFixed(2)}s`);
+}
+
+/**
+ * Scroll the timetable grid so its first stop row sits under the pinned trip
+ * id row, and drop focus so no tooltip or focus ring shows.
+ */
+export async function scrollToStopRows(page: Page): Promise<void> {
+  await page
+    .locator('[role=gridcell][data-stop-index="0"]')
+    .first()
+    .evaluate((cell) => {
+      const row = cell.closest('tr')!;
+      const scroller = row.closest<HTMLElement>('.overflow-x-auto')!;
+      const pinned = scroller.querySelector('thead tr')!;
+      scroller.scrollTop +=
+        row.getBoundingClientRect().top - pinned.getBoundingClientRect().bottom;
+    });
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await page.waitForTimeout(300);
 }

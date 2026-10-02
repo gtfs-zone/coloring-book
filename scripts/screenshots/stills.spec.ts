@@ -16,6 +16,7 @@ import {
   loadFeed,
   manifest,
   projectToPage,
+  scrollToStopRows,
   seed,
   settle,
   shot,
@@ -38,25 +39,6 @@ async function open(page: Page, testInfo: TestInfo, zip = DEMO_FEED): Promise<vo
   await seed(page, testInfo);
   await loadFeed(page, zip);
   await clearToasts(page);
-}
-
-/**
- * Scroll the timetable grid so its first stop row sits under the pinned trip
- * id row, and drop focus so no tooltip or focus ring shows.
- */
-async function scrollToStopRows(page: Page): Promise<void> {
-  await page
-    .locator('[role=gridcell][data-stop-index="0"]')
-    .first()
-    .evaluate((cell) => {
-      const row = cell.closest('tr')!;
-      const scroller = row.closest<HTMLElement>('.overflow-x-auto')!;
-      const pinned = scroller.querySelector('thead tr')!;
-      scroller.scrollTop +=
-        row.getBoundingClientRect().top - pinned.getBoundingClientRect().bottom;
-    });
-  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
-  await page.waitForTimeout(300);
 }
 
 /** The visible modal box. */
