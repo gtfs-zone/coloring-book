@@ -22,7 +22,7 @@
     "format": "prettier --write src/",
     "commit": "cz commit",
     "vuln": "sh scripts/vuln-gate.sh",
-    "screenshots:feed": "tsx scripts/screenshots/build-demo-feed.ts",
+    "screenshots:feed": "tsx scripts/screenshots/build-demo-feed.ts && tsx scripts/screenshots/build-synthetic-feed.ts",
     "screenshots": "playwright test -c scripts/screenshots/playwright.config.ts"
   },
   "keywords": [

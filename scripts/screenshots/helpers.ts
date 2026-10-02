@@ -14,6 +14,7 @@ const REPO_ROOT = join(__dirname, '../..');
 const OUT_DIR = join(REPO_ROOT, 'docs/screenshots');
 
 export const DEMO_FEED = join(__dirname, '.cache/mbta-demo.zip');
+export const SYNTHETIC_FEED = join(__dirname, '.cache/synthetic-demo.zip');
 export const FLEX_FIXTURES = join(REPO_ROOT, 'fixtures/flex/dist');
 
 const HELP_PAGES = ['welcome', 'getting-started', 'shapes', 'fares', 'on-demand'];
@@ -23,7 +24,7 @@ interface Manifest {
   routesByMode: Record<string, string[]>;
   servicesByDay: Record<'weekday' | 'saturday' | 'sunday', string[]>;
   stations: Record<
-    'parkStreet' | 'southStation',
+    'charlesMgh',
     {
       stationId: string;
       platformIds: string[];

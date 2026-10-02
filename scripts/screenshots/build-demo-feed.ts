@@ -22,8 +22,7 @@ const TRIPS_PER_PATTERN = { weekday: 6, saturday: 3, sunday: 3 };
 
 // Stations kept with every child (entrances, nodes, boarding areas) and pathway
 const SHOWCASE_STATIONS = {
-  parkStreet: 'place-pktrm',
-  southStation: 'place-sstat',
+  charlesMgh: 'place-chmnl',
 };
 
 // Files copied whole

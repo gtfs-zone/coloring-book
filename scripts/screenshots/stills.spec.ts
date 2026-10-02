@@ -7,6 +7,7 @@ import { expect, test, type Page, type TestInfo } from '@playwright/test';
 import {
   DEMO_FEED,
   FLEX_FIXTURES,
+  SYNTHETIC_FEED,
   clearToasts,
   editField,
   fitBoston,
@@ -21,9 +22,14 @@ import {
 } from './helpers';
 
 const m = manifest();
-const PARK_STREET = m.stations.parkStreet.stationId;
+const CHARLES_MGH = m.stations.charlesMgh.stationId;
+// Bottom to top of the Alewife platform stairs
+const STAIRS_PATHWAY = 'chmnl-030';
 const RED_WEEKDAY = 'RTL20264-hms46011-Weekday-01';
 const RED_TIMETABLE = `route=Red&modal=timetable&modal_route=Red&modal_service=${RED_WEEKDAY}`;
+// Route 10 of the synthetic feed: a trip every 10 minutes
+const LINE_TIMETABLE =
+  'route=10&modal=timetable&modal_route=10&modal_service=weekday&modal_direction=0';
 const DOWNTOWN: [number, number] = [-71.0589, 42.3555];
 // A route 1 stop on Mass Ave, clear of other stops for the drag shot.
 const BUS_STOP = { id: '72', lngLat: [-71.103074, 42.364915] as [number, number] };
@@ -34,12 +40,22 @@ async function open(page: Page, testInfo: TestInfo, zip = DEMO_FEED): Promise<vo
   await clearToasts(page);
 }
 
-/** Scroll the timetable grid down to its stop rows. */
+/**
+ * Scroll the timetable grid so its first stop row sits under the pinned trip
+ * id row, and drop focus so no tooltip or focus ring shows.
+ */
 async function scrollToStopRows(page: Page): Promise<void> {
   await page
     .locator('[role=gridcell][data-stop-index="0"]')
     .first()
-    .evaluate((cell) => cell.scrollIntoView({ block: 'start' }));
+    .evaluate((cell) => {
+      const row = cell.closest('tr')!;
+      const scroller = row.closest<HTMLElement>('.overflow-x-auto')!;
+      const pinned = scroller.querySelector('thead tr')!;
+      scroller.scrollTop +=
+        row.getBoundingClientRect().top - pinned.getBoundingClientRect().bottom;
+    });
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
   await page.waitForTimeout(300);
 }
 
@@ -73,10 +89,10 @@ test.describe('demo feed', () => {
   // Shots driven by hash alone: [slug, hash]
   const HASH_SHOTS: [string, string][] = [
     ['04-agency', 'agency=1'],
-    ['10-stop-station', `stop=${PARK_STREET}`],
+    ['10-stop-station', `stop=${CHARLES_MGH}`],
     ['11-stop-platform', 'stop=70076'],
-    ['15-pathway', `pathway=${m.stations.parkStreet.pathwayIds[10]}`],
-    ['16-levels', `stop=${PARK_STREET}&modal=levels`],
+    ['15-pathway', `pathway=${STAIRS_PATHWAY}`],
+    ['16-levels', `stop=${CHARLES_MGH}&modal=levels`],
     ['17-timetable-browser', 'modal=timetables'],
     ['23-shapes', 'modal=shapes'],
     ['25-calendar', 'modal=calendar'],
@@ -108,7 +124,6 @@ test.describe('demo feed', () => {
   }
 
   const TIMETABLE_SHOTS: [string, string][] = [
-    ['18-timetable-red', RED_TIMETABLE],
     [
       '19-timetable-cr',
       'route=CR-Providence&modal=timetable&modal_route=CR-Providence&modal_service=Spring%2FSummerWeekday',
@@ -160,39 +175,6 @@ test.describe('demo feed', () => {
     await shot(page, testInfo, '14-add-stop-tool', { keepCursor: true });
   });
 
-  test('21 timetable-cell-edit', async ({ page }, testInfo) => {
-    await go(page, RED_TIMETABLE);
-    await scrollToStopRows(page);
-    await page
-      .locator('[role=gridcell][data-field="departure_time"][data-stop-index="1"]')
-      .nth(2)
-      .click();
-    await page.keyboard.press('ControlOrMeta+a');
-    await page.keyboard.type('06:1', { delay: 40 });
-    await page.waitForTimeout(300);
-    await shot(page, testInfo, '21-timetable-cell-edit', { keepCursor: true });
-  });
-
-  test('22 timetable-invalid', async ({ page }, testInfo) => {
-    await go(page, RED_TIMETABLE);
-    await scrollToStopRows(page);
-    // The third stop's arrival, set before the trip's first departure.
-    await page
-      .locator('[role=gridcell][data-field="arrival_time"][data-stop-index="2"]')
-      .first()
-      .click();
-    await page.keyboard.press('ControlOrMeta+a');
-    await page.keyboard.type('04:00');
-    await page.keyboard.press('Enter');
-    await page.waitForTimeout(800);
-    // The grid keeps showing the old value until the timetable is reopened.
-    await go(page, 'route=Red');
-    await go(page, RED_TIMETABLE);
-    await scrollToStopRows(page);
-    await clearToasts(page);
-    await shot(page, testInfo, '22-timetable-invalid');
-  });
-
   test('29 files-stops', async ({ page }, testInfo) => {
     await page.click('#files-btn');
     await page.locator('#file-list a', { hasText: 'stops.txt' }).first().click();
@@ -223,7 +205,7 @@ test.describe('demo feed', () => {
     await go(page, RED_TIMETABLE);
     await page.locator('[role=gridcell][data-field="departure_time"]').nth(1).click();
     await page.keyboard.press('ControlOrMeta+a');
-    await page.keyboard.type('05:17');
+    await page.keyboard.type('05:26');
     await page.keyboard.press('Enter');
     await page.waitForTimeout(500);
     await page.keyboard.press('Escape');
@@ -281,23 +263,61 @@ test.describe('demo feed', () => {
   });
 });
 
-test.describe('flex fixtures', () => {
+test.describe('synthetic feed', () => {
+  test.beforeEach(async ({ page }, testInfo) => {
+    await open(page, testInfo, SYNTHETIC_FEED);
+  });
+
+  test('18 timetable-dense', async ({ page }, testInfo) => {
+    await go(page, LINE_TIMETABLE);
+    await scrollToStopRows(page);
+    await shot(page, testInfo, '18-timetable-dense');
+  });
+
+  test('21 timetable-cell-edit', async ({ page }, testInfo) => {
+    await go(page, LINE_TIMETABLE);
+    await scrollToStopRows(page);
+    await page
+      .locator('[role=gridcell][data-field="departure_time"][data-stop-index="4"]')
+      .nth(3)
+      .click();
+    await page.keyboard.press('ControlOrMeta+a');
+    await page.keyboard.type('06:1', { delay: 40 });
+    await page.waitForTimeout(300);
+    await shot(page, testInfo, '21-timetable-cell-edit', { keepCursor: true });
+  });
+
+  test('22 timetable-invalid', async ({ page }, testInfo) => {
+    await go(page, LINE_TIMETABLE);
+    await scrollToStopRows(page);
+    // The third stop's arrival, set before the trip's first departure.
+    await page
+      .locator('[role=gridcell][data-field="arrival_time"][data-stop-index="2"]')
+      .first()
+      .click();
+    await page.keyboard.press('ControlOrMeta+a');
+    await page.keyboard.type('05:00');
+    await page.keyboard.press('Enter');
+    await page.waitForTimeout(800);
+    // Enter moves the selection down a cell; drop its focus ring.
+    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+    await clearToasts(page);
+    await shot(page, testInfo, '22-timetable-invalid');
+  });
+
   test('38 on-demand', async ({ page }, testInfo) => {
-    await open(page, testInfo, join(FLEX_FIXTURES, 'multiple-zones.zip'));
     await go(page, 'modal=on_demand');
     await shot(page, testInfo, '38-on-demand');
   });
 
   test('39 zone-page', async ({ page }, testInfo) => {
-    await open(page, testInfo, join(FLEX_FIXTURES, 'multiple-zones.zip'));
-    await go(page, 'zone=area_713');
+    await go(page, 'zone=northside');
     await shot(page, testInfo, '39-zone-page');
   });
 
   // The zone editor is a GeoJSON textarea, not a map vertex editor.
   test('40 zone-geometry-edit', async ({ page }, testInfo) => {
-    await open(page, testInfo, join(FLEX_FIXTURES, 'multiple-zones.zip'));
-    await go(page, 'zone=area_713');
+    await go(page, 'zone=northside');
     const textarea = page.locator('.geojson-exchange-input').first();
     await textarea.scrollIntoViewIfNeeded();
     await textarea.click();
@@ -305,7 +325,9 @@ test.describe('flex fixtures', () => {
     await settle(page);
     await shot(page, testInfo, '40-zone-geometry-edit', { keepCursor: true });
   });
+});
 
+test.describe('flex fixtures', () => {
   test('41 location-group', async ({ page }, testInfo) => {
     await open(page, testInfo, join(FLEX_FIXTURES, 'location-group.zip'));
     await go(page, 'location_group=lg_downtown');
