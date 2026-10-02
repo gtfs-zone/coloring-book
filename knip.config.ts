@@ -15,6 +15,7 @@ const config: KnipConfig = {
   ],
   ignoreBinaries: [
     "cz", // commitizen CLI
+    "pngquant", // system tool, compresses screenshots
   ],
   // Suppress noise from exports that are defined for internal cohesion
   // (e.g. helpers on the same module, types defined alongside their users).
