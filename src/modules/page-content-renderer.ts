@@ -495,7 +495,15 @@ export class PageContentRenderer {
    */
   async renderPage(pageState: PageState): Promise<string> {
     const focusStart = performance.now();
-    this.applyMapFocus(pageState);
+    // A camera error must not take the sidebar render down with it.
+    try {
+      this.applyMapFocus(pageState);
+    } catch (error) {
+      console.error(
+        `[PageContentRenderer] map focus failed for ${pageState.type}:`,
+        error
+      );
+    }
     this.lastMapFocusMs = performance.now() - focusStart;
 
     try {

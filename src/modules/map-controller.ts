@@ -1,5 +1,6 @@
 import {
   Map as MapLibreMap,
+  LngLat,
   LngLatBounds,
   type FitBoundsOptions,
   type FlyToOptions,
@@ -157,7 +158,51 @@ export class MapController {
 
   /** Camera moves driven by navigation, gated on the auto-zoom preference. */
   private autoFit(bounds: LngLatBounds, options: FitBoundsOptions): void {
-    this.autoZoom.fitBounds(this.map!, bounds, options);
+    this.fitCamera(bounds, options, false);
+  }
+
+  /**
+   * Fit the map to bounds, forced or through the auto-zoom gate. MapLibre
+   * throws "Invalid LngLat object: (NaN, NaN)" when the space left after
+   * padding is exactly 0, so the camera is computed first and a fit with no
+   * finite camera is skipped with a warning.
+   */
+  private fitCamera(
+    bounds: LngLatBounds,
+    options: FitBoundsOptions,
+    force: boolean
+  ): void {
+    const map = this.map!;
+    let camera: ReturnType<MapLibreMap['cameraForBounds']>;
+    let error: unknown = null;
+    try {
+      camera = map.cameraForBounds(bounds, options);
+    } catch (e) {
+      error = e;
+    }
+    const center = camera ? LngLat.convert(camera.center!) : null;
+    if (
+      !camera ||
+      !center ||
+      !Number.isFinite(center.lng) ||
+      !Number.isFinite(center.lat) ||
+      !Number.isFinite(camera.zoom)
+    ) {
+      const container = map.getContainer();
+      console.warn('[MapController] skipping fit: no finite camera', {
+        bounds: bounds.toArray(),
+        padding: options.padding,
+        container: [container.clientWidth, container.clientHeight],
+        camera,
+        error,
+      });
+      return;
+    }
+    if (force) {
+      map.fitBounds(bounds, options);
+    } else {
+      this.autoZoom.fitBounds(map, bounds, options);
+    }
   }
 
   private autoFlyTo(options: FlyToOptions): void {
@@ -763,11 +808,7 @@ export class MapController {
     const options: FitBoundsOptions = {
       padding: fitPadding(this.map!, 50, this.bottomPadding),
     };
-    if (force) {
-      this.map!.fitBounds(bounds, options);
-    } else {
-      this.autoFit(bounds, options);
-    }
+    this.fitCamera(bounds, options, force);
   }
 
   // ========================================
