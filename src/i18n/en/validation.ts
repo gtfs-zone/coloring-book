@@ -105,4 +105,7 @@ export const validation = {
   'geoIo.notCollection': 'Expected a GeoJSON FeatureCollection, got {type}.',
   'gpx.noPoints': 'No track points found in GPX file',
   'gpx.noValidPoints': 'No valid track points found in GPX file',
+  'coords.invalid': 'Invalid coordinates: lat={lat}, lng={lng}',
+  'coords.lat': 'Invalid latitude: {lat}. Must be between -90 and 90',
+  'coords.lng': 'Invalid longitude: {lng}. Must be between -180 and 180',
 } as const;

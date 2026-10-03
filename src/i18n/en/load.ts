@@ -78,4 +78,59 @@ export const load = {
   'tabLock.body':
     'This editor is open in another tab. Only one tab can edit at a time.',
   'tabLock.useHere': 'Use here',
+  'large.title': 'Large feed',
+  'large.body': '{name} is large.',
+  'large.wait':
+    'Loading it may take about 30 seconds. Cancelling leaves the feed you have loaded now exactly as it is.',
+  'large.loadAnyway': 'Load anyway',
+  'parse.busy':
+    'Another feed is already loading. Wait for it to finish, or cancel it first.',
+  'parse.watchdog':
+    'The feed loader stopped responding (no progress for {seconds}s). The feed may be too large for this browser.',
+  'parse.openingStored': 'Opening stored feed...',
+  'parse.preparing': 'Preparing...',
+  'parse.readingStored': 'Reading stored feed...',
+  'parse.restoringTable': 'Restoring {table}...',
+  'parse.buildingIndexes': 'Building indexes...',
+  'parse.restoringFiles': 'Restoring files...',
+  'parse.complete': 'Complete!',
+  'parse.waitingConfirm': 'Waiting for confirmation...',
+  'parse.downloading': 'Downloading feed...',
+  'parse.readingFile': 'Reading file...',
+  'parse.saving': 'Saving feed...',
+  'parse.networkConflict_one':
+    'This feed defines networks in networks.txt or route_networks.txt and also sets network_id on {count} route in routes.txt. GTFS forbids both, so the routes.network_id values are ignored and will not be exported.',
+  'parse.networkConflict_other':
+    'This feed defines networks in networks.txt or route_networks.txt and also sets network_id on {count} routes in routes.txt. GTFS forbids both, so the routes.network_id values are ignored and will not be exported.',
+  'parse.noData': 'No GTFS data to export',
+  'worker.downloadingOf': 'Downloading feed, {loaded} of {total}',
+  'worker.downloadingBytes': 'Downloading feed, {loaded}',
+  'worker.opening': 'Opening {path}...',
+  'worker.extracting': 'Extracting ZIP file...',
+  'worker.processing': 'Processing {file}...',
+  'worker.finalizing': 'Finalizing...',
+  'worker.noEntry': 'The archive has no entry "{path}".',
+  'worker.noEntryFound':
+    'The archive has no entry "{path}": it contains {found}.',
+  'dbui.outOfDate': 'App is out of date',
+  'dbui.outOfDateBody':
+    'The saved database is at version {current}, but this version of GTFS.zone only understands version {supported}. Reload the page to pick up the current version of the app.',
+  'dbui.updateRequired': 'Database update required',
+  'dbui.updateBody':
+    'GTFS.zone needs to update its local database schema. Export your saved feed first, or clear and continue.',
+  'dbui.exportContinue': 'Export & Continue',
+  'dbui.clearContinue': 'Clear & Continue',
+  'dbui.otherTabUpdating':
+    'Another GTFS.zone tab is updating the database. Reload this tab to keep editing.',
+  'dbui.blockedByTab':
+    'Another GTFS.zone tab still has the old database open, so it cannot be updated.',
+  'dbui.notAnswering':
+    'The browser is not answering the request to open the database. An earlier reset may still be waiting on a tab that was never closed.',
+  'dbui.notResponding': 'Database is not responding',
+  'dbui.closeTabsRetry':
+    'Close any other GTFS.zone tabs and retry. If that does not help, restarting the browser clears the stuck request.',
+  'dbui.retry': 'Retry',
+  'dbui.continueWithout': 'Continue without saving',
+  'dbui.noDatabase':
+    'Running without a database: edits will not be saved to this browser.',
 } as const;

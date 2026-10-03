@@ -86,4 +86,59 @@ export const load: Translation<typeof en> = {
   'tabLock.body':
     'Cet éditeur est ouvert dans un autre onglet. Un seul onglet peut modifier à la fois.',
   'tabLock.useHere': 'Utiliser ici',
+  'large.title': 'Flux volumineux',
+  'large.body': '{name} est volumineux.',
+  'large.wait':
+    'Le charger peut prendre environ 30 secondes. Annuler laisse le flux actuellement chargé tel quel.',
+  'large.loadAnyway': 'Charger quand même',
+  'parse.busy':
+    "Un autre flux est déjà en cours de chargement. Attendez qu'il se termine, ou annulez-le d'abord.",
+  'parse.watchdog':
+    'Le chargeur de flux ne répond plus (aucune progression depuis {seconds} s). Le flux est peut-être trop volumineux pour ce navigateur.',
+  'parse.openingStored': 'Ouverture du flux enregistré...',
+  'parse.preparing': 'Préparation...',
+  'parse.readingStored': 'Lecture du flux enregistré...',
+  'parse.restoringTable': 'Restauration de {table}...',
+  'parse.buildingIndexes': 'Construction des index...',
+  'parse.restoringFiles': 'Restauration des fichiers...',
+  'parse.complete': 'Terminé !',
+  'parse.waitingConfirm': 'En attente de confirmation...',
+  'parse.downloading': 'Téléchargement du flux...',
+  'parse.readingFile': 'Lecture du fichier...',
+  'parse.saving': 'Enregistrement du flux...',
+  'parse.networkConflict_one':
+    'Ce flux définit des réseaux dans networks.txt ou route_networks.txt et renseigne aussi network_id sur {count} ligne de routes.txt. GTFS interdit les deux : les valeurs de routes.network_id sont ignorées et ne seront pas exportées.',
+  'parse.networkConflict_other':
+    'Ce flux définit des réseaux dans networks.txt ou route_networks.txt et renseigne aussi network_id sur {count} lignes de routes.txt. GTFS interdit les deux : les valeurs de routes.network_id sont ignorées et ne seront pas exportées.',
+  'parse.noData': 'Aucune donnée GTFS à exporter',
+  'worker.downloadingOf': 'Téléchargement du flux, {loaded} sur {total}',
+  'worker.downloadingBytes': 'Téléchargement du flux, {loaded}',
+  'worker.opening': 'Ouverture de {path}...',
+  'worker.extracting': 'Extraction du fichier ZIP...',
+  'worker.processing': 'Traitement de {file}...',
+  'worker.finalizing': 'Finalisation...',
+  'worker.noEntry': "L'archive n'a pas d'entrée « {path} ».",
+  'worker.noEntryFound':
+    "L'archive n'a pas d'entrée « {path} » : elle contient {found}.",
+  'dbui.outOfDate': "L'application n'est pas à jour",
+  'dbui.outOfDateBody':
+    "La base de données enregistrée est en version {current}, mais cette version de GTFS.zone ne comprend que la version {supported}. Rechargez la page pour obtenir la version actuelle de l'application.",
+  'dbui.updateRequired': 'Mise à jour de la base de données nécessaire',
+  'dbui.updateBody':
+    "GTFS.zone doit mettre à jour le schéma de sa base de données locale. Exportez d'abord votre flux enregistré, ou videz et continuez.",
+  'dbui.exportContinue': 'Exporter et continuer',
+  'dbui.clearContinue': 'Vider et continuer',
+  'dbui.otherTabUpdating':
+    'Un autre onglet GTFS.zone met à jour la base de données. Rechargez cet onglet pour continuer à modifier.',
+  'dbui.blockedByTab':
+    "Un autre onglet GTFS.zone utilise encore l'ancienne base de données, elle ne peut donc pas être mise à jour.",
+  'dbui.notAnswering':
+    "Le navigateur ne répond pas à la demande d'ouverture de la base de données. Une réinitialisation précédente attend peut-être encore un onglet jamais fermé.",
+  'dbui.notResponding': 'La base de données ne répond pas',
+  'dbui.closeTabsRetry':
+    'Fermez les autres onglets GTFS.zone et réessayez. Si cela ne suffit pas, redémarrer le navigateur débloque la requête.',
+  'dbui.retry': 'Réessayer',
+  'dbui.continueWithout': 'Continuer sans enregistrer',
+  'dbui.noDatabase':
+    'Fonctionnement sans base de données : les modifications ne seront pas enregistrées dans ce navigateur.',
 };

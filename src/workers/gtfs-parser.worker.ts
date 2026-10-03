@@ -19,6 +19,14 @@ import {
   downloadPercent,
   formatBytes,
 } from 'gtfs-zone-web-common/gtfs/feed-download';
+import { defineCatalog, type Locale } from 'gtfs-zone-web-common/i18n/index';
+import { en } from '../i18n/catalog.en';
+import { fr } from '../i18n/catalog.fr';
+
+// A worker has no cookie or localStorage to resolve the locale from, so the
+// main thread sends its own with the parse request.
+let locale: Locale = 'en';
+const t = defineCatalog(en, { fr }, () => locale);
 
 type GTFSDatabaseRecord = {
   [key: string]: string | number | boolean | undefined;
@@ -90,6 +98,7 @@ export type WorkerOutbound =
 export type WorkerInbound =
   | {
       type: 'parse';
+      locale: Locale;
       gen: number;
       chunkRows: number;
       source: ImportSource;
@@ -131,7 +140,9 @@ async function extractInnerZip(
       .filter((name) => name.toLowerCase().endsWith('.zip'))
       .join(', ');
     throw new Error(
-      `The archive has no entry "${innerPath}"${found ? ` — it contains ${found}` : ''}.`
+      found
+        ? t('worker.noEntryFound', { path: innerPath, found })
+        : t('worker.noEntry', { path: innerPath })
     );
   }
   return entry.async('arraybuffer');
@@ -150,8 +161,11 @@ async function resolveSourceBytes(source: ImportSource): Promise<ArrayBuffer> {
         type: 'progress',
         progress: ((percent ?? 0) / 100) * 25,
         status: total
-          ? `Downloading feed, ${formatBytes(loaded)} of ${formatBytes(total)}`
-          : `Downloading feed, ${formatBytes(loaded)}`,
+          ? t('worker.downloadingOf', {
+              loaded: formatBytes(loaded),
+              total: formatBytes(total),
+            })
+          : t('worker.downloadingBytes', { loaded: formatBytes(loaded) }),
       });
     },
   });
@@ -161,7 +175,7 @@ async function resolveSourceBytes(source: ImportSource): Promise<ArrayBuffer> {
     post({
       type: 'progress',
       progress: 25,
-      status: `Opening ${innerPath}...`,
+      status: t('worker.opening', { path: innerPath }),
     });
     buffer = await extractInnerZip(buffer, innerPath);
   }
@@ -250,7 +264,7 @@ async function runImport(
   const db = await openBlobStore();
   const buffer = await resolveSourceBytes(source);
 
-  post({ type: 'progress', progress: 25, status: 'Extracting ZIP file...' });
+  post({ type: 'progress', progress: 25, status: t('worker.extracting') });
 
   const zip = new JSZip();
   const zipContent = await zip.loadAsync(buffer);
@@ -293,7 +307,7 @@ async function runImport(
     post({
       type: 'progress',
       progress: 25 + 65 * (i / files.length),
-      status: `Processing ${fileName}...`,
+      status: t('worker.processing', { file: fileName }),
     });
 
     const fileContent = await zipContent.files[fileName].async('text');
@@ -337,7 +351,7 @@ async function runImport(
     await writeTableChunks(db, gen, tableName, [], chunkRows);
   }
 
-  post({ type: 'progress', progress: 90, status: 'Finalizing...' });
+  post({ type: 'progress', progress: 90, status: t('worker.finalizing') });
   post({
     type: 'done',
     tableCounts,
@@ -358,6 +372,7 @@ self.onmessage = async (event: MessageEvent<WorkerInbound>) => {
     }
     if (event.data.type === 'parse') {
       const { gen, chunkRows, source } = event.data;
+      locale = event.data.locale;
       await runImport(gen, chunkRows, source);
     }
   } catch (err) {

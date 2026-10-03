@@ -112,4 +112,8 @@ export const validation: Translation<typeof en> = {
   'geoIo.notCollection': 'FeatureCollection GeoJSON attendue, reçu : {type}.',
   'gpx.noPoints': 'Aucun point de trace dans le fichier GPX',
   'gpx.noValidPoints': 'Aucun point de trace valide dans le fichier GPX',
+  'coords.invalid': 'Coordonnées invalides : lat={lat}, lng={lng}',
+  'coords.lat': 'Latitude invalide : {lat}. Doit être comprise entre -90 et 90',
+  'coords.lng':
+    'Longitude invalide : {lng}. Doit être comprise entre -180 et 180',
 };

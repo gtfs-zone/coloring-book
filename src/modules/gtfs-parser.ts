@@ -28,6 +28,8 @@ import { splitInnerZipPath } from 'gtfs-zone-web-common/gtfs/feed-url-resolve';
 import { yieldToEventLoop } from '../utils/async-yield';
 import { processParsedData } from '../utils/gtfs-field-values';
 import { LoadCancelledError } from 'gtfs-zone-web-common/gtfs/feed-download';
+import { t } from '../i18n/messages';
+import { getLocale } from 'gtfs-zone-web-common/i18n/index';
 
 /**
  * The shell one feed-producing operation runs inside: its progress key, its
@@ -88,23 +90,26 @@ async function confirmLargeFeed(
 ): Promise<boolean> {
   let accepted = false;
   await showModal({
-    title: 'Large feed',
+    title: t('large.title'),
     body: `
-      <p><strong>${escapeHtml(label)}</strong> is large.</p>
-      <p class="mt-2">Loading it may take about 30 seconds. Cancelling leaves
-      the feed you have loaded now exactly as it is.</p>
+      <p>${t('large.body', { name: `<strong>${escapeHtml(label)}</strong>` })}</p>
+      <p class="mt-2">${t('large.wait')}</p>
     `,
     escapeAction: 1,
     onMount: onOpen,
     actions: [
       {
-        label: 'Load anyway',
+        label: t('large.loadAnyway'),
         className: 'btn-warning',
         onClick: () => {
           accepted = true;
         },
       },
-      { label: 'Cancel', className: 'btn-outline', onClick: () => {} },
+      {
+        label: t('common.cancel'),
+        className: 'btn-outline',
+        onClick: () => {},
+      },
     ],
   });
   return accepted;
@@ -1152,9 +1157,7 @@ export class GTFSParser {
     body: (op: FeedOperation) => Promise<T>
   ): Promise<T> {
     if (this.feedOperationInFlight) {
-      throw new Error(
-        'Another feed is already loading. Wait for it to finish, or cancel it first.'
-      );
+      throw new Error(t('parse.busy'));
     }
     this.feedOperationInFlight = true;
 
@@ -1198,7 +1201,9 @@ export class GTFSParser {
           watchdog = null;
           op.fail(
             new Error(
-              `The feed loader stopped responding (no progress for ${Math.round(CONFIG.LOAD_WATCHDOG_MS / 1000)}s). The feed may be too large for this browser.`
+              t('parse.watchdog', {
+                seconds: Math.round(CONFIG.LOAD_WATCHDOG_MS / 1000),
+              })
             )
           );
         }, CONFIG.LOAD_WATCHDOG_MS);
@@ -1258,7 +1263,7 @@ export class GTFSParser {
         feedProgressIndicator.updateProgress(
           op.key,
           5 + (read / totalChunks) * 85,
-          `Restoring ${tableName}...`
+          t('parse.restoringTable', { table: tableName })
         );
         yield { tableName, json };
       }
@@ -1274,7 +1279,7 @@ export class GTFSParser {
    * gets corrupted.
    */
   async restoreDataFromDatabase(): Promise<boolean> {
-    return this.runFeedOperation('restore', 'Opening stored feed...', (op) =>
+    return this.runFeedOperation('restore', t('parse.openingStored'), (op) =>
       this.restoreActiveGeneration(op)
     );
   }
@@ -1291,7 +1296,7 @@ export class GTFSParser {
       return false;
     }
     op.throwIfAborted();
-    feedProgressIndicator.updateProgress(op.key, 5, 'Reading stored feed...');
+    feedProgressIndicator.updateProgress(op.key, 5, t('parse.readingStored'));
 
     const { data, indexes } = await this.hydrateFeed(
       this.readStoredChunks(gen, counts, op)
@@ -1313,10 +1318,14 @@ export class GTFSParser {
     // from there a cancel would leave a half-adopted feed behind.
     op.throwIfAborted();
     op.clearWatchdog();
-    feedProgressIndicator.updateProgress(op.key, 92, 'Building indexes...');
+    feedProgressIndicator.updateProgress(
+      op.key,
+      92,
+      t('parse.buildingIndexes')
+    );
     this.installFeed(data, indexes);
 
-    feedProgressIndicator.updateProgress(op.key, 96, 'Restoring files...');
+    feedProgressIndicator.updateProgress(op.key, 96, t('parse.restoringFiles'));
     const ptFiles = await this.gtfsDatabase.getAllPassthroughFiles(gen);
     for (const [fileName, rawContent] of Object.entries(ptFiles)) {
       this.passthroughFiles.set(fileName, rawContent);
@@ -1335,7 +1344,7 @@ export class GTFSParser {
         );
       }
     }
-    feedProgressIndicator.updateProgress(op.key, 100, 'Complete!');
+    feedProgressIndicator.updateProgress(op.key, 100, t('parse.complete'));
     return true;
   }
 
@@ -1509,7 +1518,7 @@ export class GTFSParser {
     data: { [fileName: string]: GTFSFileData };
     unknownFiles: string[];
   }> {
-    return this.runFeedOperation('load', 'Preparing...', (op) =>
+    return this.runFeedOperation('load', t('parse.preparing'), (op) =>
       this.runImport(op, source, transfer, label)
     );
   }
@@ -1590,7 +1599,7 @@ export class GTFSParser {
             feedProgressIndicator.updateProgress(
               operation,
               25,
-              'Waiting for confirmation...'
+              t('parse.waitingConfirm')
             );
             void confirmLargeFeed(label, (close) => {
               closeLargeFeedPrompt = close;
@@ -1625,12 +1634,13 @@ export class GTFSParser {
       feedProgressIndicator.updateProgress(
         operation,
         0,
-        source.kind === 'url' ? 'Downloading feed...' : 'Reading file...'
+        source.kind === 'url' ? t('parse.downloading') : t('parse.readingFile')
       );
       op.armWatchdog();
       activeWorker.postMessage(
         {
           type: 'parse',
+          locale: getLocale(),
           gen: stagingGen,
           chunkRows: CONFIG.BLOB_CHUNK_ROWS,
           source,
@@ -1681,7 +1691,7 @@ export class GTFSParser {
       indexes.delete(this.getTableName(GTFS_TABLES.NETWORKS));
       indexes.delete(this.getTableName(GTFS_TABLES.ROUTE_NETWORKS));
 
-      feedProgressIndicator.updateProgress(operation, 95, 'Saving feed...');
+      feedProgressIndicator.updateProgress(operation, 95, t('parse.saving'));
       // normalizeNetworks appends synthesized rows after the worker has already
       // written both tables, so their chunks are rewritten from the pending rows.
       for (const fileName of [
@@ -1728,7 +1738,7 @@ export class GTFSParser {
       this.markFeedReplaced();
       this.retireGeneration(activeGen);
 
-      feedProgressIndicator.updateProgress(operation, 100, 'Complete!');
+      feedProgressIndicator.updateProgress(operation, 100, t('parse.complete'));
 
       console.log('Loaded GTFS data to IndexedDB and memory:', this.gtfsData);
       return { data: this.gtfsData, unknownFiles: result.unknownFiles };
@@ -1832,10 +1842,9 @@ export class GTFSParser {
         console.warn(
           `[Networks] ignoring routes.network_id on ${ignored} route(s): the feed also defines networks in its own files`
         );
-        notify.warning(
-          `This feed defines networks in networks.txt or route_networks.txt and also sets network_id on ${ignored} route${ignored === 1 ? '' : 's'} in routes.txt. GTFS forbids both, so the routes.network_id values are ignored and will not be exported.`,
-          { duration: 12000 }
-        );
+        notify.warning(t('parse.networkConflict', { count: ignored }), {
+          duration: 12000,
+        });
       }
 
       return 'files';
@@ -2169,7 +2178,7 @@ export class GTFSParser {
         (f) => (this.gtfsData[f]?.data.length ?? 0) > 0
       );
       if (!hasAnyRows) {
-        throw new Error('No GTFS data to export');
+        throw new Error(t('parse.noData'));
       }
 
       const zip = new JSZip();
@@ -2405,18 +2414,18 @@ export class GTFSParser {
 
     // Validate coordinates
     if (isNaN(lat) || isNaN(lng)) {
-      throw new Error(`Invalid coordinates: lat=${lat}, lng=${lng}`);
+      throw new Error(
+        t('coords.invalid', { lat: String(lat), lng: String(lng) })
+      );
     }
 
     // Validate coordinate ranges
     if (lat < -90 || lat > 90) {
-      throw new Error(`Invalid latitude: ${lat}. Must be between -90 and 90`);
+      throw new Error(t('coords.lat', { lat: String(lat) }));
     }
 
     if (lng < -180 || lng > 180) {
-      throw new Error(
-        `Invalid longitude: ${lng}. Must be between -180 and 180`
-      );
+      throw new Error(t('coords.lng', { lng: String(lng) }));
     }
 
     // Update in-memory data
