@@ -45,8 +45,18 @@ export class GTFSRelationships {
     return agencyData.map((agency) => ({
       id: agency.agency_id,
       agency_id: agency.agency_id,
-      name: agency.agency_name || `Agency ${agency.agency_id}`,
-      agency_name: agency.agency_name || `Agency ${agency.agency_id}`,
+      name:
+        agency.agency_name ||
+        t('crumb.fallback', {
+          type: t('crumb.agency'),
+          id: String(agency.agency_id ?? ''),
+        }),
+      agency_name:
+        agency.agency_name ||
+        t('crumb.fallback', {
+          type: t('crumb.agency'),
+          id: String(agency.agency_id ?? ''),
+        }),
       url: agency.agency_url,
       timezone: agency.agency_timezone,
       lang: agency.agency_lang,
@@ -966,7 +976,12 @@ export class GTFSRelationships {
       const agency = agencyData[0];
       return {
         id: agency.agency_id,
-        name: agency.agency_name || `Agency ${agency.agency_id}`,
+        name:
+          agency.agency_name ||
+          t('crumb.fallback', {
+            type: t('crumb.agency'),
+            id: String(agency.agency_id ?? ''),
+          }),
         url: agency.agency_url,
         timezone: agency.agency_timezone,
         lang: agency.agency_lang,
