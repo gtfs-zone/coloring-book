@@ -60,7 +60,7 @@
     "@tailwindcss/postcss": "^4.3.3",
     "clusterize.js": "^1.0.0",
     "daisyui": "^5.7.46",
-    "gtfs-zone-web-common": "github:gtfs-zone/gtfs-zone-web-common#v5.2.0",
+    "gtfs-zone-web-common": "github:gtfs-zone/gtfs-zone-web-common#v5.11.0",
     "idb": "^8.0.3",
     "jszip": "^3.10.2",
     "maplibre-gl": "^6.11.2",
