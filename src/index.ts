@@ -98,6 +98,7 @@ import twoLegSvg from './assets/gtfs-spec/2-leg.svg';
 import threeLegSvg from './assets/gtfs-spec/3-leg.svg';
 import inliningSvg from './assets/gtfs-spec/inlining.svg';
 import './styles/main.css';
+import { t } from './i18n/messages';
 
 // Reference anchors resolve against the schedule reference, and the three
 // diagrams it embeds are bundled here.
@@ -273,9 +274,7 @@ export class GTFSEditor {
 
     this.init().catch((error) => {
       console.error('Failed to initialize GTFSEditor:', error);
-      notify.error(
-        'Failed to initialize application. Please refresh the page and try again.'
-      );
+      notify.error(t('app.initFailed'));
     });
   }
 
@@ -293,7 +292,7 @@ export class GTFSEditor {
       document.getElementById('auto-zoom-mount')!.innerHTML =
         renderAutoZoomControl();
 
-      feedProgressIndicator.startLoading('boot', 'Opening database...');
+      feedProgressIndicator.startLoading('boot', t('boot.openingDb'));
 
       // Claim tab lock before any module initialization
       this.tabLock.init();
@@ -317,7 +316,11 @@ export class GTFSEditor {
       // created and has not filled in, which come from the meta store. Read
       // them now: every consumer of that list is synchronous.
       await loadExtensionColumns(this.gtfsParser.gtfsDatabase);
-      feedProgressIndicator.updateProgress('boot', 60, 'Restoring patches...');
+      feedProgressIndicator.updateProgress(
+        'boot',
+        60,
+        t('boot.restoringPatches')
+      );
 
       const exportBtn = document.getElementById(
         'export-btn'
@@ -326,7 +329,7 @@ export class GTFSEditor {
         exportBtn.disabled = false;
       }
 
-      feedProgressIndicator.updateProgress('boot', 80, 'Building map...');
+      feedProgressIndicator.updateProgress('boot', 80, t('boot.buildingMap'));
       this.historyController.initialize(this.patchManager);
       this.navbarCounts.initialize();
 
@@ -378,7 +381,9 @@ export class GTFSEditor {
       const onUndoRedoJump = () => {
         refreshAfterUndoRedo().catch((e: unknown) =>
           notify.error(
-            `Failed to refresh after undo/redo: ${e instanceof Error ? e.message : String(e)}`
+            t('edit.refreshAfterUndoFailed', {
+              message: e instanceof Error ? e.message : String(e),
+            })
           )
         );
       };
@@ -390,25 +395,25 @@ export class GTFSEditor {
       this.patchManager.on('change', (r) => {
         console.log('[patch:change]', r);
         notify.info(humanLabel(r?.patch), { duration: 3000 });
-        this.browseNavigation
-          .refresh()
-          .catch((e: unknown) =>
-            notify.error(
-              `Failed to refresh after edit: ${e instanceof Error ? e.message : String(e)}`
-            )
-          );
+        this.browseNavigation.refresh().catch((e: unknown) =>
+          notify.error(
+            t('edit.refreshAfterEditFailed', {
+              message: e instanceof Error ? e.message : String(e),
+            })
+          )
+        );
         this.updateUndoRedoState();
       });
       this.patchManager.on('undo', (r) => {
         console.log('[patch:undo]', r);
-        notify.info(`Undone: ${humanLabel(r?.patch)}`, {
+        notify.info(t('edit.undone', { label: humanLabel(r?.patch) }), {
           duration: 3000,
         });
         this.updateUndoRedoState();
       });
       this.patchManager.on('redo', (r) => {
         console.log('[patch:redo]', r);
-        notify.info(`Redone: ${humanLabel(r?.patch)}`, {
+        notify.info(t('edit.redone', { label: humanLabel(r?.patch) }), {
           duration: 3000,
         });
         this.updateUndoRedoState();
@@ -533,9 +538,9 @@ export class GTFSEditor {
       // and torn down with the modal.
       const openHistoryModal = () => {
         void showModal({
-          title: 'History',
+          title: t('nav.history'),
           body: '<div id="changes-panel"></div>',
-          actions: [{ label: 'Close', onClick: () => {} }],
+          actions: [{ label: t('common.close'), onClick: () => {} }],
           escapeAction: 0,
           boxClassName: 'max-w-2xl w-11/12 h-[80vh]',
           onMount: () => {
@@ -605,13 +610,13 @@ export class GTFSEditor {
       // boot's page state comes from the URL. The map update it schedules also
       // refreshes navigation once it lands, so a deep-linked stop keeps its
       // selection through the focus reset inside updateMap.
-      await this.uiController
-        .refreshAfterFeedSwap()
-        .catch((e: unknown) =>
-          notify.error(
-            `Failed to refresh navigation: ${e instanceof Error ? e.message : String(e)}`
-          )
-        );
+      await this.uiController.refreshAfterFeedSwap().catch((e: unknown) =>
+        notify.error(
+          t('boot.refreshFailed', {
+            message: e instanceof Error ? e.message : String(e),
+          })
+        )
+      );
       if (CONFIG.DEBUG_BOOT) {
         console.timeEnd('[boot] refresh after feed swap');
       }
@@ -621,9 +626,7 @@ export class GTFSEditor {
       getModalRouter().sync(this.pageStateManager.getPageState());
     } catch (error) {
       console.error('Failed to initialize application:', error);
-      notify.error(
-        'Failed to initialize application. Please refresh the page and try again.'
-      );
+      notify.error(t('app.initFailed'));
     } finally {
       feedProgressIndicator.finishLoading('boot');
       if (CONFIG.DEBUG_BOOT) {
@@ -650,7 +653,7 @@ export class GTFSEditor {
           kind: 'url',
           url: loadUrl,
           useCors: true,
-          label: 'Linked feed',
+          label: t('load.linkedFeed'),
         },
         realtime: null,
       });
@@ -679,7 +682,7 @@ export class GTFSEditor {
     const choice = await this.uiController.openBootLoadModal(
       summary ? { ...summary, edits: versions.currentVersion } : undefined
     );
-    feedProgressIndicator.startLoading('boot', 'Opening feed...');
+    feedProgressIndicator.startLoading('boot', t('boot.openingFeed'));
     console.log(`[boot] load modal: user chose ${choice}`);
 
     if (choice === 'continue') {
@@ -689,7 +692,7 @@ export class GTFSEditor {
       await this.gtfsParser.initializeEmpty();
       feedProgressIndicator.finishLoading('boot');
       await showHelpPageOnce('getting-started');
-      feedProgressIndicator.startLoading('boot', 'Opening feed...');
+      feedProgressIndicator.startLoading('boot', t('boot.openingFeed'));
       return 'created-empty';
     }
     // 'loaded' has already parsed the chosen feed into place.
@@ -722,7 +725,7 @@ export class GTFSEditor {
       // the boot modal and the stored feed is untouched.
       if (error instanceof LoadCancelledError) {
         console.log('[boot] restore cancelled by the user');
-        notify.info('Load cancelled');
+        notify.info(t('common.loadCancelled'));
         return 'failed';
       }
       // The patch log is deliberately not replayed: a half-restored feed with
@@ -731,7 +734,7 @@ export class GTFSEditor {
       console.error('[boot] failed to restore the stored feed:', error);
       databaseFallbackManager.showDatabaseError(
         error,
-        'restoring the stored feed',
+        t('boot.restoreContext'),
         () => this.gtfsParser.gtfsDatabase.exportCurrentBlobsAsZip()
       );
       return 'failed';
@@ -788,7 +791,7 @@ export class GTFSEditor {
     router.register('shapes', async (_modal, _transient, cancelled) => {
       if (
         (await showHelpPageOnce('shapes', {
-          continueLabel: 'Continue to Shapes',
+          continueLabel: t('help.continueShapes'),
         })) &&
         cancelled()
       ) {
@@ -800,7 +803,7 @@ export class GTFSEditor {
     router.register('fares', async (_modal, _transient, cancelled) => {
       if (
         (await showHelpPageOnce('fares', {
-          continueLabel: 'Continue to Fares',
+          continueLabel: t('help.continueFares'),
         })) &&
         cancelled()
       ) {
@@ -829,7 +832,7 @@ export class GTFSEditor {
     router.register('on_demand', async (modal, transient, cancelled) => {
       if (
         (await showHelpPageOnce('on-demand', {
-          continueLabel: 'Continue to On-Demand',
+          continueLabel: t('help.continueOnDemand'),
         })) &&
         cancelled()
       ) {
@@ -966,10 +969,10 @@ export class GTFSEditor {
 
     if (!canUndo && !canRedo) {
       if (undoTooltip) {
-        undoTooltip.dataset.tip = 'Nothing to undo';
+        undoTooltip.dataset.tip = t('nav.nothingToUndo');
       }
       if (redoTooltip) {
-        redoTooltip.dataset.tip = 'Nothing to redo';
+        redoTooltip.dataset.tip = t('nav.nothingToRedo');
       }
       return;
     }
@@ -983,10 +986,10 @@ export class GTFSEditor {
           if (canUndo) {
             const undoPatch = history.find((r) => r.version === currentVersion);
             undoTooltip.dataset.tip = undoPatch
-              ? `Undo: ${humanLabel(undoPatch.patch)}`
-              : 'Nothing to undo';
+              ? t('nav.undoLabel', { label: humanLabel(undoPatch.patch) })
+              : t('nav.nothingToUndo');
           } else {
-            undoTooltip.dataset.tip = 'Nothing to undo';
+            undoTooltip.dataset.tip = t('nav.nothingToUndo');
           }
         }
 
@@ -996,10 +999,10 @@ export class GTFSEditor {
               (r) => r.version === currentVersion + 1
             );
             redoTooltip.dataset.tip = redoPatch
-              ? `Redo: ${humanLabel(redoPatch.patch)}`
-              : 'Nothing to redo';
+              ? t('nav.redoLabel', { label: humanLabel(redoPatch.patch) })
+              : t('nav.nothingToRedo');
           } else {
-            redoTooltip.dataset.tip = 'Nothing to redo';
+            redoTooltip.dataset.tip = t('nav.nothingToRedo');
           }
         }
       })
@@ -1011,30 +1014,30 @@ export class GTFSEditor {
   public undoEdit(): void {
     const stackSize = this.patchManager.canUndo;
     if (!stackSize) {
-      notify.info('Nothing to undo');
+      notify.info(t('nav.nothingToUndo'));
       return;
     }
-    this.patchManager
-      .undo()
-      .catch((e: unknown) =>
-        notify.error(
-          `Undo failed: ${e instanceof Error ? e.message : String(e)}`
-        )
-      );
+    this.patchManager.undo().catch((e: unknown) =>
+      notify.error(
+        t('edit.undoFailed', {
+          message: e instanceof Error ? e.message : String(e),
+        })
+      )
+    );
   }
 
   public redoEdit(): void {
     if (!this.patchManager.canRedo) {
-      notify.info('Nothing to redo');
+      notify.info(t('nav.nothingToRedo'));
       return;
     }
-    this.patchManager
-      .redo()
-      .catch((e: unknown) =>
-        notify.error(
-          `Redo failed: ${e instanceof Error ? e.message : String(e)}`
-        )
-      );
+    this.patchManager.redo().catch((e: unknown) =>
+      notify.error(
+        t('edit.redoFailed', {
+          message: e instanceof Error ? e.message : String(e),
+        })
+      )
+    );
   }
 }
 

@@ -30,6 +30,8 @@ import {
   renderInlineEditableField,
 } from '../utils/inline-editable-field';
 import { flushInlineEdits } from '../utils/inline-edit';
+import { t } from '../i18n/messages';
+import { formatNumber } from 'gtfs-zone-web-common/i18n/fmt';
 
 function escapeHtml(text: string): string {
   return text
@@ -41,15 +43,15 @@ function escapeHtml(text: string): string {
 
 function showURLErrorModal(url: string, error: Error) {
   showModal({
-    title: 'Failed to load feed',
+    title: t('load.urlErrorTitle'),
     body: `
       <p><code class="break-all whitespace-pre-wrap">${escapeHtml(error.message)}</code></p>
-      <p>Attempted URL: <a href="${url}" target="_blank" rel="noopener" class="link">${escapeHtml(url)}</a></p>
-      <p class="text-sm text-base-content/60">Some feeds block direct browser requests (CORS). You can try opening the link above to download the file, then upload it directly using Load -> Upload.</p>
+      <p>${t('load.attemptedUrl', { link: `<a href="${url}" target="_blank" rel="noopener" class="link">${escapeHtml(url)}</a>` })}</p>
+      <p class="text-sm text-base-content/60">${t('load.corsHint')}</p>
     `,
     enterAction: 0,
     escapeAction: 0,
-    actions: [{ label: 'Close', onClick: () => {} }],
+    actions: [{ label: t('common.close'), onClick: () => {} }],
   });
 }
 
@@ -227,7 +229,9 @@ export class UIController {
         })
         .catch((error: unknown) =>
           notify.error(
-            `Failed to update map: ${error instanceof Error ? error.message : String(error)}`
+            t('load.mapUpdateFailed', {
+              message: error instanceof Error ? error.message : String(error),
+            })
           )
         );
     });
@@ -268,14 +272,17 @@ export class UIController {
 
       // Validate file type
       if (!file.name.toLowerCase().endsWith('.zip')) {
-        throw new Error('Please upload a ZIP file containing GTFS data');
+        throw new Error(t('load.notZip'));
       }
 
       // Parse the file
       const { unknownFiles } = await this.gtfsParser!.parseFile(file);
       if (unknownFiles.length > 0) {
         notify.warning(
-          `Preserving ${unknownFiles.length} unrecognized file(s) for export: ${unknownFiles.join(', ')}`
+          t('load.preservingUnknown', {
+            count: unknownFiles.length,
+            files: unknownFiles.join(', '),
+          })
         );
       }
 
@@ -284,28 +291,27 @@ export class UIController {
       // Populate the file list without opening the Files modal
       this.showFileList();
 
-      notify.success(`Successfully loaded GTFS file: ${file.name}`);
+      notify.success(t('load.loadedFile', { name: file.name }));
 
       console.timeEnd('[GTFS] loadGTFSFile total');
     } catch (error) {
       // A cancelled load leaves whatever feed was already loaded untouched.
       if (error instanceof LoadCancelledError) {
-        notify.info('Load cancelled');
+        notify.info(t('common.loadCancelled'));
         return;
       }
       console.error('Error loading GTFS file:', error);
 
       // Show error notification with helpful message
-      let errorMessage = 'Failed to load GTFS file';
-      if ((error as Error).message) {
-        errorMessage += `: ${(error as Error).message}`;
-      }
+      const errorMessage = (error as Error).message
+        ? t('load.fileFailedReason', { message: (error as Error).message })
+        : t('load.fileFailed');
 
       notify.error(errorMessage, {
         actions: [
           {
             id: 'retry',
-            label: 'Try Again',
+            label: t('load.tryAgain'),
             primary: true,
             handler: () => {
               document.getElementById('file-input')!.click();
@@ -331,7 +337,7 @@ export class UIController {
             kind: 'url',
             url: initialUrl,
             useCors: true,
-            label: 'Linked feed',
+            label: t('load.linkedFeed'),
           },
           realtime: null,
         }
@@ -341,7 +347,7 @@ export class UIController {
       realtime: false,
       extraActions: [
         {
-          label: 'New Empty Feed',
+          label: t('load.newEmpty'),
           className: 'btn-ghost',
           onClick: () => {
             void this.createNewFeed();
@@ -372,7 +378,7 @@ export class UIController {
       continueWith,
       extraActions: [
         {
-          label: 'New Empty Feed',
+          label: t('load.newEmpty'),
           className: 'btn-ghost',
           onClick: () => {
             emptyChosen = true;
@@ -415,27 +421,30 @@ export class UIController {
       const { unknownFiles } = await this.gtfsParser!.parseFromURL(url);
       if (unknownFiles.length > 0) {
         notify.warning(
-          `Preserving ${unknownFiles.length} unrecognized file(s) for export: ${unknownFiles.join(', ')}`
+          t('load.preservingUnknown', {
+            count: unknownFiles.length,
+            files: unknownFiles.join(', '),
+          })
         );
       }
 
       await this.refreshAfterFeedSwap({ navigateHome: true });
 
-      notify.success('Successfully loaded GTFS from URL');
+      notify.success(t('load.loadedUrl'));
     } catch (error) {
       // A cancelled load leaves whatever feed was already loaded untouched.
       if (error instanceof LoadCancelledError) {
-        notify.info('Load cancelled');
+        notify.info(t('common.loadCancelled'));
         return;
       }
       console.error('Error loading GTFS from URL:', error);
 
-      notify.error('Failed to load feed', {
+      notify.error(t('load.urlErrorTitle'), {
         autoHide: false,
         actions: [
           {
             id: 'more-info',
-            label: 'More Info',
+            label: t('load.moreInfo'),
             handler: () => showURLErrorModal(url, error as Error),
           },
         ],
@@ -492,7 +501,7 @@ export class UIController {
     const requiredSection = document.createElement('li');
     const requiredHeader = document.createElement('div');
     requiredHeader.className = 'menu-title';
-    requiredHeader.textContent = 'Required Files';
+    requiredHeader.textContent = t('files.required');
     requiredSection.appendChild(requiredHeader);
 
     const requiredList = document.createElement('ul');
@@ -506,7 +515,7 @@ export class UIController {
     const optionalSection = document.createElement('li');
     const optionalHeader = document.createElement('div');
     optionalHeader.className = 'menu-title';
-    optionalHeader.textContent = 'Optional Files';
+    optionalHeader.textContent = t('files.optional');
     optionalSection.appendChild(optionalHeader);
 
     const optionalList = document.createElement('ul');
@@ -521,7 +530,7 @@ export class UIController {
       const additionalSection = document.createElement('li');
       const additionalHeader = document.createElement('div');
       additionalHeader.className = 'menu-title';
-      additionalHeader.textContent = 'Additional Files';
+      additionalHeader.textContent = t('files.additional');
       additionalSection.appendChild(additionalHeader);
 
       const additionalList = document.createElement('ul');
@@ -553,7 +562,7 @@ export class UIController {
         .filter((l) => l.trim() !== '').length;
       const lineSpan = document.createElement('span');
       lineSpan.className = 'badge badge-ghost badge-sm';
-      lineSpan.textContent = `${lines} lines`;
+      lineSpan.textContent = t('files.lines', { count: lines });
       link.appendChild(lineSpan);
     } else {
       // Add record count if available
@@ -562,7 +571,7 @@ export class UIController {
         const count = Array.isArray(data) ? data.length : 1;
         const countSpan = document.createElement('span');
         countSpan.className = 'badge badge-neutral badge-sm';
-        countSpan.textContent = `${count}`;
+        countSpan.textContent = formatNumber(count);
         link.appendChild(countSpan);
       }
     }
@@ -628,7 +637,7 @@ export class UIController {
 
     const currentFileNameEl = document.getElementById('current-file-name');
     if (currentFileNameEl) {
-      currentFileNameEl.textContent = 'None';
+      currentFileNameEl.textContent = t('common.none');
     }
   }
 
@@ -669,13 +678,13 @@ export class UIController {
         this.browseNavigation.refresh();
       }
 
-      notify.success('New empty GTFS feed created.');
+      notify.success(t('load.emptyCreated'));
 
       await showHelpPageOnce('getting-started');
     } catch (error) {
       console.error('Error creating new GTFS feed:', error);
       notify.error(
-        `Failed to create new GTFS feed: ${(error as Error).message}`
+        t('load.emptyFailed', { message: (error as Error).message })
       );
     }
   }
@@ -736,10 +745,10 @@ export class UIController {
       }
     };
     await showModal({
-      title: 'feed_version has not changed since import',
+      title: t('export.versionTitle'),
       body: `
         <div class="space-y-3" data-export-feed-version>
-          <p class="text-sm">Consumers use feed_version to tell one release of a feed from the next. Set a new one before publishing.</p>
+          <p class="text-sm">${t('export.versionBody')}</p>
           ${field}
           <p id="${errorId}" class="text-error text-sm hidden"></p>
         </div>
@@ -754,7 +763,7 @@ export class UIController {
       },
       actions: [
         {
-          label: 'Save and export',
+          label: t('export.saveAndExport'),
           className: 'btn-primary',
           onClick: async () => {
             await flushInlineEdits();
@@ -765,7 +774,7 @@ export class UIController {
             }
             const next = String(draft.values.feed_version ?? '');
             if (next === current) {
-              showError('Enter a new feed_version, or export anyway.');
+              showError(t('export.versionUnchanged'));
               return true;
             }
             if (!this.patchManager) {
@@ -785,7 +794,7 @@ export class UIController {
           },
         },
         {
-          label: 'Export anyway',
+          label: t('export.anyway'),
           onClick: () => {
             console.log(
               `[UI] Export: feed_version "${current}" kept, exporting anyway`
@@ -794,7 +803,7 @@ export class UIController {
           },
         },
         {
-          label: 'Cancel',
+          label: t('common.cancel'),
           className: 'btn-ghost',
           onClick: () => {
             console.log('[UI] Export: cancelled at the feed_version prompt');
@@ -816,7 +825,7 @@ export class UIController {
           .getAllFileNames()
           .some((f) => (this.gtfsParser!.getFileDataSync(f)?.length ?? 0) > 0)
       ) {
-        notify.warning('No GTFS data to export. Please add some data first.');
+        notify.warning(t('export.noData'));
         return;
       }
 
@@ -830,7 +839,7 @@ export class UIController {
       console.log('Exporting GTFS data...');
 
       // Show loading notification
-      loadingNotificationId = notify.loading('Preparing GTFS export...');
+      loadingNotificationId = notify.loading(t('export.preparing'));
 
       // Generate ZIP blob
       const blob = await this.gtfsParser!.exportAsZip();
@@ -849,7 +858,7 @@ export class UIController {
       if (loadingNotificationId) {
         notify.removeNotification(loadingNotificationId);
       }
-      notify.success('GTFS data exported successfully!');
+      notify.success(t('export.done'));
 
       await showHelpPageOnce('publishing');
     } catch (error) {
@@ -860,7 +869,7 @@ export class UIController {
         notify.removeNotification(loadingNotificationId);
       }
 
-      notify.error(`Failed to export GTFS data: ${(error as Error).message}`);
+      notify.error(t('export.failed', { message: (error as Error).message }));
     }
   }
 
@@ -941,10 +950,10 @@ export class UIController {
         addPathwayTooltip.setAttribute(
           'data-tip',
           mode === MapMode.ADD_PATHWAY
-            ? 'Click two stops to connect them'
+            ? t('shell.addPathwayActive')
             : hasExpandedStation
-              ? 'Add pathway'
-              : 'Add pathway (expand a station first)'
+              ? t('shell.addPathway')
+              : t('shell.addPathwayExpand')
         );
       }
     }

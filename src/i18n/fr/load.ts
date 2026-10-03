@@ -1,0 +1,60 @@
+import type { Translation } from 'gtfs-zone-web-common/i18n/index';
+import type { load as en } from '../en/load';
+
+/** Boot, load and export flows, in French. */
+export const load: Translation<typeof en> = {
+  'boot.openingDb': 'Ouverture de la base de données...',
+  'boot.restoringPatches': 'Restauration des modifications...',
+  'boot.buildingMap': 'Construction de la carte...',
+  'boot.openingFeed': 'Ouverture du flux...',
+  'boot.restoreContext': 'la restauration du flux enregistré',
+  'boot.refreshFailed': "Échec de l'actualisation de la navigation : {message}",
+  'edit.undone': 'Annulé : {label}',
+  'edit.redone': 'Rétabli : {label}',
+  'edit.undoFailed': "Échec de l'annulation : {message}",
+  'edit.redoFailed': 'Échec du rétablissement : {message}',
+  'edit.refreshAfterUndoFailed':
+    "Échec de l'actualisation après annulation/rétablissement : {message}",
+  'edit.refreshAfterEditFailed':
+    "Échec de l'actualisation après la modification : {message}",
+  'help.continueShapes': 'Continuer vers les tracés',
+  'help.continueFares': 'Continuer vers les tarifs',
+  'help.continueOnDemand': 'Continuer vers le transport à la demande',
+  'load.linkedFeed': 'Flux lié',
+  'load.newEmpty': 'Nouveau flux vide',
+  'load.urlErrorTitle': 'Échec du chargement du flux',
+  'load.attemptedUrl': 'URL demandée : {link}',
+  'load.corsHint':
+    'Certains flux bloquent les requêtes directes du navigateur (CORS). Ouvrez le lien ci-dessus pour télécharger le fichier, puis importez-le avec Charger -> Importer.',
+  'load.mapUpdateFailed': 'Échec de la mise à jour de la carte : {message}',
+  'load.notZip': 'Importez un fichier ZIP contenant des données GTFS',
+  'load.preservingUnknown_one':
+    "Conservation de {count} fichier non reconnu pour l'export : {files}",
+  'load.preservingUnknown_other':
+    "Conservation de {count} fichiers non reconnus pour l'export : {files}",
+  'load.loadedFile': 'Fichier GTFS chargé : {name}',
+  'load.loadedUrl': "Flux GTFS chargé depuis l'URL",
+  'load.fileFailed': 'Échec du chargement du fichier GTFS',
+  'load.fileFailedReason': 'Échec du chargement du fichier GTFS : {message}',
+  'load.tryAgain': 'Réessayer',
+  'load.moreInfo': "Plus d'infos",
+  'files.required': 'Fichiers obligatoires',
+  'files.optional': 'Fichiers facultatifs',
+  'files.additional': 'Fichiers supplémentaires',
+  'files.lines_one': '{count} ligne',
+  'files.lines_other': '{count} lignes',
+  'load.emptyCreated': 'Nouveau flux GTFS vide créé.',
+  'load.emptyFailed': 'Échec de la création du flux GTFS : {message}',
+  'export.versionTitle': "feed_version n'a pas changé depuis l'import",
+  'export.versionBody':
+    'Les réutilisateurs se servent de feed_version pour distinguer une version du flux de la suivante. Indiquez-en une nouvelle avant de publier.',
+  'export.saveAndExport': 'Enregistrer et exporter',
+  'export.versionUnchanged':
+    'Saisissez une nouvelle feed_version, ou exportez quand même.',
+  'export.anyway': 'Exporter quand même',
+  'export.noData':
+    "Aucune donnée GTFS à exporter. Ajoutez d'abord des données.",
+  'export.preparing': "Préparation de l'export GTFS...",
+  'export.done': 'Données GTFS exportées.',
+  'export.failed': "Échec de l'export des données GTFS : {message}",
+};

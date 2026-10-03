@@ -1,5 +1,6 @@
 import { showHelpModal } from 'gtfs-zone-web-common/ui/help-modal';
 import type { ShortcutCommand } from 'gtfs-zone-web-common/ui/keyboard-shortcuts';
+import { t } from '../i18n/messages';
 
 /**
  * This app's keyboard commands.
@@ -30,7 +31,7 @@ export function editorShortcuts(host: ShortcutHost): ShortcutCommand[] {
     // File operations
     {
       keys: 'ctrl+o',
-      description: 'Open the load feed dialog',
+      description: t('shortcut.openLoad'),
       handler: (e) => {
         e?.preventDefault();
         return host.uiController.openLoadModal();
@@ -38,7 +39,7 @@ export function editorShortcuts(host: ShortcutHost): ShortcutCommand[] {
     },
     {
       keys: 'ctrl+e',
-      description: 'Export GTFS feed',
+      description: t('shortcut.export'),
       handler: (e) => {
         e?.preventDefault();
         host.uiController.exportGTFS();
@@ -48,7 +49,7 @@ export function editorShortcuts(host: ShortcutHost): ShortcutCommand[] {
     // Navigation
     {
       keys: 'f1',
-      description: 'Show guide',
+      description: t('shortcut.guide'),
       allowInInputFields: true,
       handler: (e) => {
         e?.preventDefault();
@@ -57,7 +58,7 @@ export function editorShortcuts(host: ShortcutHost): ShortcutCommand[] {
     },
     {
       keys: 'ctrl+f',
-      description: 'Focus map search',
+      description: t('shortcut.focusSearch'),
       handler: (e) => {
         e?.preventDefault();
         focusMapSearch();
@@ -65,7 +66,7 @@ export function editorShortcuts(host: ShortcutHost): ShortcutCommand[] {
     },
     {
       keys: 'escape',
-      description: 'Clear searches',
+      description: t('shortcut.clearSearch'),
       allowInInputFields: true,
       handler: () => {
         clearSearches(host);
@@ -76,7 +77,7 @@ export function editorShortcuts(host: ShortcutHost): ShortcutCommand[] {
     // CodeMirror the native undo stack is what the user means.
     {
       keys: 'ctrl+z',
-      description: 'Undo last edit',
+      description: t('shortcut.undo'),
       handler: (e) => {
         e?.preventDefault();
         return host.patchManager?.undo();
@@ -84,7 +85,7 @@ export function editorShortcuts(host: ShortcutHost): ShortcutCommand[] {
     },
     {
       keys: 'ctrl+shift+z',
-      description: 'Redo last undone edit',
+      description: t('shortcut.redo'),
       handler: (e) => {
         e?.preventDefault();
         return host.patchManager?.redo();

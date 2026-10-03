@@ -6,6 +6,7 @@ import {
   type NavIconName,
 } from 'gtfs-zone-web-common/ui/nav-icons';
 import type { NavbarAction } from 'gtfs-zone-web-common/ui/navbar-actions';
+import { t } from '../i18n/messages';
 
 /** Database icon for the Feed Data modal, which has no shared nav icon. */
 const FEED_DATA_ICON =
@@ -22,14 +23,14 @@ export const NAVBAR_ACTIONS: NavbarAction[] = [
   {
     kind: 'icon',
     id: 'timetable-btn',
-    label: 'Timetables',
+    label: t('nav.timetables'),
     icon: renderNavIcon('timetable'),
     desktopOnly: true,
   },
   {
     kind: 'icon',
     id: 'shapes-btn',
-    label: 'Shapes',
+    label: t('nav.shapes'),
     // Same icon as the "open in brouter" affordance, at navbar icon size.
     icon: renderRouteWaypointsIcon('h-5 w-5'),
     badgeId: 'shapes-count-badge',
@@ -38,7 +39,7 @@ export const NAVBAR_ACTIONS: NavbarAction[] = [
   {
     kind: 'icon',
     id: 'calendar-btn',
-    label: 'Service Calendar',
+    label: t('nav.calendar'),
     icon: renderNavIcon('calendar'),
     badgeId: 'calendar-count-badge',
     desktopOnly: true,
@@ -46,7 +47,7 @@ export const NAVBAR_ACTIONS: NavbarAction[] = [
   {
     kind: 'icon',
     id: 'fares-btn',
-    label: 'Fares (V2)',
+    label: t('nav.fares'),
     icon: renderNavIcon('fares'),
     badgeId: 'fares-count-badge',
     desktopOnly: true,
@@ -54,7 +55,7 @@ export const NAVBAR_ACTIONS: NavbarAction[] = [
   {
     kind: 'icon',
     id: 'on-demand-btn',
-    label: 'On-Demand (GTFS Flex)',
+    label: t('nav.onDemand'),
     icon: renderNavIcon('onDemand'),
     badgeId: 'on-demand-count-badge',
     desktopOnly: true,
@@ -62,7 +63,7 @@ export const NAVBAR_ACTIONS: NavbarAction[] = [
   {
     kind: 'icon',
     id: 'feed-data-btn',
-    label: 'Feed Data (transfers, attributions, translations)',
+    label: t('nav.feedData'),
     icon: FEED_DATA_ICON,
     badgeId: 'feed-data-count-badge',
     desktopOnly: true,
@@ -70,7 +71,7 @@ export const NAVBAR_ACTIONS: NavbarAction[] = [
   {
     kind: 'icon',
     id: 'levels-btn',
-    label: 'Manage Levels',
+    label: t('nav.levels'),
     icon: renderNavIcon('levels'),
     badgeId: 'levels-count-badge',
     desktopOnly: true,
@@ -78,29 +79,30 @@ export const NAVBAR_ACTIONS: NavbarAction[] = [
   {
     kind: 'icon',
     id: 'files-btn',
-    label: 'Files',
+    label: t('nav.files'),
     icon: renderNavIcon('files'),
     desktopOnly: true,
   },
   {
     kind: 'toggle',
     id: 'theme-toggle',
-    label: 'Toggle theme',
+    label: t('nav.theme'),
     iconOn: renderSunIcon('swap-on h-5 w-5'),
     iconOff: renderMoonIcon('swap-off h-5 w-5'),
     inputClass: 'theme-controller',
     value: 'light',
   },
+  { kind: 'locale', id: 'locale-toggle' },
   {
     kind: 'icon',
     id: 'help-btn',
-    label: 'Guide',
+    label: t('nav.guide'),
     icon: renderNavIcon('guide'),
   },
   {
     kind: 'icon',
     id: 'undo-btn',
-    label: 'Nothing to undo',
+    label: t('nav.nothingToUndo'),
     icon: renderNavIcon('undo'),
     tooltipId: 'undo-tooltip',
     onclick: 'window.gtfsEditor?.undoEdit()',
@@ -110,7 +112,7 @@ export const NAVBAR_ACTIONS: NavbarAction[] = [
   {
     kind: 'icon',
     id: 'history-btn',
-    label: 'History',
+    label: t('nav.history'),
     icon: renderNavIcon('history'),
     badgeId: 'history-count-badge',
     desktopOnly: true,
@@ -119,7 +121,7 @@ export const NAVBAR_ACTIONS: NavbarAction[] = [
   {
     kind: 'icon',
     id: 'redo-btn',
-    label: 'Nothing to redo',
+    label: t('nav.nothingToRedo'),
     icon: renderNavIcon('redo'),
     tooltipId: 'redo-tooltip',
     onclick: 'window.gtfsEditor?.redoEdit()',
@@ -130,14 +132,14 @@ export const NAVBAR_ACTIONS: NavbarAction[] = [
     kind: 'labeled',
     id: 'load-btn',
     // Opens the one modal covering every feed source.
-    label: 'Load',
+    label: t('nav.load'),
     icon: renderNavIcon('load', { sizeClass: 'h-4 w-4' }),
     btnClass: 'btn-primary',
   },
   {
     kind: 'labeled',
     id: 'export-btn',
-    label: 'Export',
+    label: t('nav.export'),
     icon: renderNavIcon('export', { sizeClass: 'h-4 w-4' }),
     btnClass: 'btn-outline',
     disabled: true,
