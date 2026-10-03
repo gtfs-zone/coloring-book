@@ -10,6 +10,8 @@ import { escapeHtml } from 'gtfs-zone-web-common/util/escape-html';
 import { formatGtfsDateRange } from './gtfs-date';
 import { routeColor } from 'gtfs-zone-web-common/gtfs/route-colors';
 import { normalizeAgencyId } from './agency-helpers';
+import { t } from '../i18n/messages';
+import { weekdayName } from 'gtfs-zone-web-common/i18n/fmt';
 
 function escapeAttr(text: unknown): string {
   const div = document.createElement('div');
@@ -41,12 +43,13 @@ const DAY_KEYS = [
   'sunday',
 ] as const;
 
-const DAY_ABBRS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+// DAY_KEYS index to weekdayName's day, which counts from Sunday.
+const dayAbbr = (i: number): string => weekdayName((i + 1) % 7);
 
 export function formatDaysOfWeek(service: Record<string, unknown>): string {
   const hasAnyDayField = DAY_KEYS.some((k) => k in service);
   if (!hasAnyDayField) {
-    return 'Specific Days';
+    return t('ref.specificDays');
   }
 
   const active: number[] = [];
@@ -58,7 +61,7 @@ export function formatDaysOfWeek(service: Record<string, unknown>): string {
   }
 
   if (active.length === 0) {
-    return 'No regular days';
+    return t('ref.noRegularDays');
   }
 
   // Check if active indices are consecutive and at least 3 long
@@ -71,9 +74,9 @@ export function formatDaysOfWeek(service: Record<string, unknown>): string {
   }
 
   if (consecutive) {
-    return `${DAY_ABBRS[active[0]]}–${DAY_ABBRS[active[active.length - 1]]}`;
+    return `${dayAbbr(active[0])}–${dayAbbr(active[active.length - 1])}`;
   }
-  return active.map((i) => DAY_ABBRS[i]).join(', ');
+  return active.map(dayAbbr).join(', ');
 }
 
 export function formatDateRange(
@@ -151,11 +154,11 @@ export function renderRouteReference(
 
   const badge =
     opts.tripCount !== undefined
-      ? `<div class="badge badge-outline badge-sm">${opts.tripCount} trip${opts.tripCount !== 1 ? 's' : ''}</div>`
+      ? `<div class="badge badge-outline badge-sm">${t('count.trips', { count: opts.tripCount })}</div>`
       : '';
 
   const viewBtn = opts.service_id
-    ? `<button class="btn btn-xs btn-ghost ${ENTITY_REF_BTN}" data-route-id="${escapeAttr(route.route_id)}">View Route</button>`
+    ? `<button class="btn btn-xs btn-ghost ${ENTITY_REF_BTN}" data-route-id="${escapeAttr(route.route_id)}">${t('ref.viewRoute')}</button>`
     : '';
 
   const serviceAttr = opts.service_id
@@ -185,7 +188,7 @@ export function renderAgencyReference(
   <div class="flex-1 min-w-0">
     ${label}
   </div>
-  <div class="badge badge-outline badge-sm">${routeCount} route${routeCount !== 1 ? 's' : ''}</div>
+  <div class="badge badge-outline badge-sm">${t('count.routes', { count: routeCount })}</div>
 </div>`;
 }
 
@@ -228,11 +231,14 @@ export function renderPathwayReference(
       )
     : String(opts.otherStopId);
 
-  const primaryText = `${opts.modeLabel} ${opts.direction} ${otherDisplay}`;
+  const primaryText = t(
+    opts.direction === 'to' ? 'ref.pathwayTo' : 'ref.pathwayFrom',
+    { mode: opts.modeLabel, stop: otherDisplay }
+  );
   const label = `<div class="font-medium truncate">${primaryText}</div>`;
 
   const viewStopBtn = opts.viewStopButton
-    ? `<button class="btn btn-xs btn-ghost ${ENTITY_REF_BTN}" data-stop-id="${escapeAttr(opts.otherStopId)}">View Stop</button>`
+    ? `<button class="btn btn-xs btn-ghost ${ENTITY_REF_BTN}" data-stop-id="${escapeAttr(opts.otherStopId)}">${t('ref.viewStop')}</button>`
     : '';
 
   return `<div class="flex items-center gap-3 p-3 rounded-lg hover:bg-base-200 cursor-pointer transition-colors ${PATHWAY_REF_ROW}" data-pathway-id="${escapeAttr(pathway.pathway_id)}">
@@ -290,17 +296,17 @@ export function renderTimetableReference(
 
   const tripBadge =
     opts.tripCount !== undefined
-      ? `<div class="badge badge-outline badge-sm">${opts.tripCount} trip${opts.tripCount !== 1 ? 's' : ''}</div>`
+      ? `<div class="badge badge-outline badge-sm">${t('count.trips', { count: opts.tripCount })}</div>`
       : '';
 
   const routeBtn =
     opts.hide === 'route'
       ? ''
-      : `<button class="btn btn-xs btn-ghost ${VIEW_ROUTE_BTN}" data-route-id="${escapeAttr(route_id)}">Route</button>`;
+      : `<button class="btn btn-xs btn-ghost ${VIEW_ROUTE_BTN}" data-route-id="${escapeAttr(route_id)}">${t('ref.route')}</button>`;
   const serviceBtn =
     opts.hide === 'service'
       ? ''
-      : `<button class="btn btn-xs btn-ghost ${VIEW_SERVICE_BTN}" data-service-id="${escapeAttr(service_id)}">Service</button>`;
+      : `<button class="btn btn-xs btn-ghost ${VIEW_SERVICE_BTN}" data-service-id="${escapeAttr(service_id)}">${t('ref.service')}</button>`;
 
   return `<div class="flex items-center gap-3 p-3 rounded-lg hover:bg-base-200 cursor-pointer transition-colors ${TIMETABLE_REF_ROW}" data-route-id="${escapeAttr(route_id)}" data-service-id="${escapeAttr(service_id)}">
   ${dot}

@@ -1,23 +1,24 @@
 import { GTFSPatch } from '../types/patch';
 import { getEntityDisplay } from './entity-display';
+import { t } from '../i18n/messages';
 
 /** Human-readable singular type names, keyed by GTFS table name. */
 const TYPE_LABELS: Record<string, string> = {
-  agency: 'Agency',
-  stops: 'Stop',
-  routes: 'Route',
-  trips: 'Trip',
-  calendar: 'Service',
-  calendar_dates: 'Service exception',
-  pathways: 'Pathway',
-  stop_times: 'Stop time',
-  shapes: 'Shape',
-  fare_attributes: 'Fare',
-  fare_rules: 'Fare rule',
-  frequencies: 'Frequency',
-  transfers: 'Transfer',
-  levels: 'Level',
-  feed_info: 'Feed info',
+  agency: t('patch.type.agency'),
+  stops: t('patch.type.stops'),
+  routes: t('patch.type.routes'),
+  trips: t('patch.type.trips'),
+  calendar: t('patch.type.calendar'),
+  calendar_dates: t('patch.type.calendar_dates'),
+  pathways: t('patch.type.pathways'),
+  stop_times: t('patch.type.stop_times'),
+  shapes: t('patch.type.shapes'),
+  fare_attributes: t('patch.type.fare_attributes'),
+  fare_rules: t('patch.type.fare_rules'),
+  frequencies: t('patch.type.frequencies'),
+  transfers: t('patch.type.transfers'),
+  levels: t('patch.type.levels'),
+  feed_info: t('patch.type.feed_info'),
 };
 
 function typeLabel(table: string): string {
@@ -44,10 +45,10 @@ function resolveName(
 
 export function humanLabel(patch: GTFSPatch | undefined): string {
   if (!patch) {
-    return 'Unknown change';
+    return t('patch.unknown');
   }
   if (patch.op === 'batch') {
-    return patch.label ?? `Batch update (${patch.ops.length} rows)`;
+    return patch.label ?? t('patch.batch', { count: patch.ops.length });
   }
   const { op, source } = patch;
   const type = typeLabel(source.table);
@@ -55,17 +56,23 @@ export function humanLabel(patch: GTFSPatch | undefined): string {
   if (op === 'insert') {
     const record = (patch.forward as { record: Record<string, unknown> })
       .record;
-    return `${type} "${resolveName(source.table, record, source.id)}" created`;
+    return t('patch.created', {
+      type,
+      name: resolveName(source.table, record, source.id),
+    });
   }
   if (op === 'delete') {
     const record = (patch.inverse as { record: Record<string, unknown> })
       .record;
-    return `${type} "${resolveName(source.table, record, source.id)}" deleted`;
+    return t('patch.deleted', {
+      type,
+      name: resolveName(source.table, record, source.id),
+    });
   }
   // update, only changed fields are available; name falls back to id
   const changes = (patch.forward as { changes: Record<string, unknown> })
     .changes;
   const name = resolveName(source.table, changes, source.id);
   const fields = source.col ?? Object.keys(changes).join(', ');
-  return `${type} "${name}" updated (${fields})`;
+  return t('patch.updated', { type, name, fields });
 }

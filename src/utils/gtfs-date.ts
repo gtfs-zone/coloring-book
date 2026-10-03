@@ -7,26 +7,22 @@
  * classic way to lose a day west of Greenwich, and this module exists so that
  * mistake has exactly one place it could live.
  *
- * Pure functions, no DOM, no dependencies. Never throws: unparseable input
+ * Pure functions, no DOM; labels follow the active locale. Never throws: unparseable input
  * comes back unchanged, falsy input comes back as ''.
  */
 
-const MONTH_ABBR = [
-  'Jan',
-  'Feb',
-  'Mar',
-  'Apr',
-  'May',
-  'Jun',
-  'Jul',
-  'Aug',
-  'Sep',
-  'Oct',
-  'Nov',
-  'Dec',
-];
+import { formatDate } from 'gtfs-zone-web-common/i18n/fmt';
 
-const DAY_ABBR = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+// Dates are calendar days pinned to UTC midnight, so they are read in UTC.
+const DAY_MONTH: Intl.DateTimeFormatOptions = {
+  month: 'short',
+  day: 'numeric',
+  timeZone: 'UTC',
+};
+const DAY_MONTH_YEAR: Intl.DateTimeFormatOptions = {
+  ...DAY_MONTH,
+  year: 'numeric',
+};
 
 const GTFS_DATE_PATTERN = /^\d{8}$/;
 
@@ -93,7 +89,7 @@ export function formatGtfsDate(date: string): string {
   if (!parsed) {
     return String(date ?? '');
   }
-  return `${MONTH_ABBR[parsed.getUTCMonth()]} ${parsed.getUTCDate()}, ${parsed.getUTCFullYear()}`;
+  return formatDate(parsed, DAY_MONTH_YEAR);
 }
 
 /**
@@ -108,7 +104,7 @@ export function formatGtfsDateWithWeekday(date: string): string {
   if (!parsed) {
     return String(date ?? '');
   }
-  return `${DAY_ABBR[parsed.getUTCDay()]}, ${formatGtfsDate(date)}`;
+  return formatDate(parsed, { ...DAY_MONTH_YEAR, weekday: 'short' });
 }
 
 /**
@@ -132,7 +128,7 @@ export function formatGtfsDateRange(start: string, end?: string): string {
     endDate &&
     startDate.getUTCFullYear() === endDate.getUTCFullYear()
   ) {
-    const startNoYear = `${MONTH_ABBR[startDate.getUTCMonth()]} ${startDate.getUTCDate()}`;
+    const startNoYear = formatDate(startDate, DAY_MONTH);
     return `${startNoYear} - ${formatGtfsDate(end)}`;
   }
 

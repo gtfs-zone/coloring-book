@@ -8,6 +8,7 @@
 
 import type { EditableTableDeps } from '../modules/editable-table';
 import { generateCompositeKeyFromRecord } from './gtfs-primary-keys';
+import { t } from '../i18n/messages';
 
 export interface TripDeleteResult {
   /** Trips deleted. */
@@ -66,7 +67,7 @@ export async function deleteTrips(
   }
   await deps.patchManager.recordBatchMixed(
     ops,
-    `Delete ${found.length} trips without stop_times`
+    t('fix.deleteTripsLabel', { count: found.length })
   );
 
   result.trips = found.length;
@@ -76,14 +77,12 @@ export async function deleteTrips(
 
 /** The one-line notification text for a finished run. */
 export function describeTripDelete(result: TripDeleteResult): string {
-  const parts = [
-    result.trips === 1 ? 'Deleted 1 trip' : `Deleted ${result.trips} trips`,
-  ];
+  const parts = [t('fix.deletedTrips', { count: result.trips })];
   if (result.frequencies > 0) {
-    parts.push(`removed ${result.frequencies} frequencies rows with them`);
+    parts.push(t('fix.removedFrequencies', { count: result.frequencies }));
   }
   if (result.missing > 0) {
-    parts.push(`skipped ${result.missing} trips that no longer exist`);
+    parts.push(t('fix.skippedTrips', { count: result.missing }));
   }
   return parts.join('; ');
 }

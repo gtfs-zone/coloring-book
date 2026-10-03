@@ -17,9 +17,9 @@
 
 import { GTFS_FIELD_SPECS } from '../types/gtfs';
 import type { GTFSFieldSpec } from '../gtfs-spec/types';
+import { t } from '../i18n/messages';
 
-export const EXTENSION_FIELD_DESCRIPTION =
-  'This field is not part of the GTFS specification. It is preserved as-is on export.';
+export const EXTENSION_FIELD_DESCRIPTION = t('field.extensionDescription');
 
 export interface ExtensionColumnStore {
   getExtensionColumns(): Promise<Record<string, string[]>>;
@@ -156,21 +156,21 @@ export function validateExtensionColumnName(
 ): string | null {
   const trimmed = name.trim();
   if (trimmed === '') {
-    return 'Enter a field name';
+    return t('field.extEnterName');
   }
   if (!VALID_NAME.test(trimmed)) {
-    return 'Use letters, digits and underscores, starting with a letter or underscore';
+    return t('field.extInvalidName');
   }
   const specs = GTFS_FIELD_SPECS[tableName];
   if (!specs) {
-    return `${tableName} has no fields to extend`;
+    return t('field.extNoFields', { table: tableName });
   }
   const lower = trimmed.toLowerCase();
   if (Object.keys(specs).some((f) => f.toLowerCase() === lower)) {
-    return `${trimmed} is already a field of ${tableName}`;
+    return t('field.extIsSpec', { name: trimmed, table: tableName });
   }
   if (extensionFields(tableName, rows).some((f) => f.toLowerCase() === lower)) {
-    return `${tableName} already has a column named ${trimmed}`;
+    return t('field.extExists', { table: tableName, name: trimmed });
   }
   return null;
 }

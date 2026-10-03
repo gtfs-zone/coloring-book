@@ -1,4 +1,5 @@
 import { escapeHtml } from 'gtfs-zone-web-common/util/escape-html';
+import { t } from '../i18n/messages';
 
 export interface EntityDisplayInfo {
   primary: string; // shown prominently (name, short name, or ID as fallback)
@@ -16,7 +17,7 @@ export function getAgencyDisplay(
   if (name) {
     return { primary: name, secondary: id };
   }
-  return { primary: id || 'Not specified' };
+  return { primary: id || t('common.notSpecified') };
 }
 
 /**

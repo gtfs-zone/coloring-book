@@ -6,6 +6,7 @@
  */
 
 import { feedBounds, type FeedBoundsSource } from './feed-bounds';
+import { t } from '../i18n/messages';
 
 export interface FeedActiveRange {
   /** `YYYY-MM-DD`, the inline editor's date format. */
@@ -35,7 +36,8 @@ export async function refreshFeedActiveRange(
       `[FeedActiveRange] feed_info dates are not YYYYMMDD: ${bounds.start} to ${bounds.end}`
     );
   }
-  const next = start && end ? { start, end, label: 'Feed active' } : null;
+  const next =
+    start && end ? { start, end, label: t('bounds.feedActive') } : null;
   if (next?.start === current?.start && next?.end === current?.end) {
     return;
   }

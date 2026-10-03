@@ -35,4 +35,13 @@ export const common = {
   'delete.agency': 'Delete agency',
   'delete.stop': 'Delete stop',
   'delete.zone': 'Delete zone',
+  'common.notSpecified': 'Not specified',
+  'ref.specificDays': 'Specific Days',
+  'ref.noRegularDays': 'No regular days',
+  'ref.viewRoute': 'View Route',
+  'ref.viewStop': 'View Stop',
+  'ref.route': 'Route',
+  'ref.service': 'Service',
+  'ref.pathwayTo': '{mode} to {stop}',
+  'ref.pathwayFrom': '{mode} from {stop}',
 } as const;

@@ -33,6 +33,7 @@ import {
   isEnumField,
   type GTFSEnumOption,
 } from '../types/gtfs-enums';
+import { t } from '../i18n/messages';
 
 export interface FieldConfig {
   /** Field name in the GTFS specification (e.g., 'stop_name', 'stop_lat') */
@@ -149,15 +150,15 @@ export function buildFieldTooltipContent(config: FieldConfig): string {
     parts.push(renderSpecDescription(description));
   }
   parts.push(
-    `<div class="opacity-70">ID: <code class="text-xs">${escapeHtml(config.field)}</code></div>`
+    `<div class="opacity-70">${t('field.tipId', { id: `<code class="text-xs">${escapeHtml(config.field)}</code>` })}</div>`
   );
   if (config.presence && config.presence !== 'Optional') {
     parts.push(
-      `<div class="opacity-70">Presence: ${escapeHtml(config.presence)}</div>`
+      `<div class="opacity-70">${t('field.tipPresence', { presence: escapeHtml(config.presence) })}</div>`
     );
     if (config.presenceCondition) {
       parts.push(
-        `<div class="opacity-70">Condition: ${renderSpecDescription(config.presenceCondition)}</div>`
+        `<div class="opacity-70">${t('field.tipCondition', { condition: renderSpecDescription(config.presenceCondition) })}</div>`
       );
     }
   }
@@ -183,7 +184,7 @@ export function renderFieldLabelContent(
   const specUrl = config.isExtension ? '' : getSpecUrl(config.tableName);
   const tipContent = buildFieldTooltipContent(config);
   const labelText = config.isExtension
-    ? `<span class="italic">${escapeHtml(config.label)}</span> <span class="badge badge-ghost badge-xs align-middle">non-spec</span>`
+    ? `<span class="italic">${escapeHtml(config.label)}</span> <span class="badge badge-ghost badge-xs align-middle">${t('field.nonSpec')}</span>`
     : escapeHtml(config.label);
   const linkContent = specUrl
     ? `<a href="${specUrl}" target="_blank" rel="noopener noreferrer">${labelText}</a>`
@@ -438,8 +439,8 @@ export function generateFieldConfigsFromSchema(
       type: fieldType,
       value: data[fieldName],
       placeholder: isOptional
-        ? `Optional ${label.toLowerCase()}`
-        : `Enter ${label.toLowerCase()}`,
+        ? t('field.optionalPlaceholder', { label: label.toLowerCase() })
+        : t('field.enterPlaceholder', { label: label.toLowerCase() }),
       tableName,
       required: fieldSpec ? fieldSpec.presence === 'Required' : !isOptional,
       presence: fieldSpec?.presence,

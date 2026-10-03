@@ -19,6 +19,7 @@ import {
   generateCompositeKeyFromRecord,
   getGTFSPrimaryKey,
 } from './gtfs-primary-keys';
+import { t } from '../i18n/messages';
 
 export interface WhitespaceFixResult {
   /** Cells whose value was rewritten. */
@@ -198,7 +199,7 @@ export async function applyWhitespaceFix(
       ...ops.filter((op) => op.op === 'insert'),
       ...ops.filter((op) => op.op === 'update'),
     ],
-    `Clean whitespace in ${result.cleaned} values`
+    t('fix.cleanLabel', { count: result.cleaned })
   );
 
   return result;
@@ -206,23 +207,17 @@ export async function applyWhitespaceFix(
 
 /** The one-line notification text for a finished run. */
 export function describeWhitespaceFix(result: WhitespaceFixResult): string {
-  const parts: string[] = [
-    result.cleaned === 1
-      ? 'Cleaned 1 value'
-      : `Cleaned ${result.cleaned} values`,
-  ];
+  const parts: string[] = [t('fix.cleaned', { count: result.cleaned })];
   if (result.skippedRequired.length > 0) {
     parts.push(
-      `left ${result.skippedRequired.join(', ')} alone: trimming would empty a required field`
+      t('fix.leftRequired', { fields: result.skippedRequired.join(', ') })
     );
   }
   if (result.skippedConflict > 0) {
-    parts.push(
-      `skipped ${result.skippedConflict} rows whose trimmed id is already taken`
-    );
+    parts.push(t('fix.skippedConflict', { count: result.skippedConflict }));
   }
   if (result.skippedMissing > 0) {
-    parts.push(`skipped ${result.skippedMissing} rows that no longer exist`);
+    parts.push(t('fix.skippedMissing', { count: result.skippedMissing }));
   }
   return parts.join('; ');
 }

@@ -25,6 +25,7 @@ import {
   getEffectiveAreasForStop,
   stopLocationType,
 } from './area-hierarchy';
+import { t } from '../i18n/messages';
 
 /** Marks the container this module's delegated listeners refresh. */
 const FIELD_CLASS = 'stop-areas-field';
@@ -154,7 +155,7 @@ async function stationLabel(stop_id: string): Promise<string> {
 async function renderContent(stop: Record<string, unknown>): Promise<string> {
   const stop_id = String(stop.stop_id ?? '');
   if (!canStopHaveAreas(stop)) {
-    return `<p class="px-1 py-1.5 text-sm opacity-60">Only stops and stations can be assigned to areas (this one is location_type ${stopLocationType(stop)}).</p>`;
+    return `<p class="px-1 py-1.5 text-sm opacity-60">${t('areas.notAllowed', { type: String(stopLocationType(stop)) })}</p>`;
   }
   if (!deps) {
     return '';
@@ -177,7 +178,7 @@ async function renderContent(stop: Record<string, unknown>): Promise<string> {
           class="${REMOVE_CLASS} cursor-pointer leading-none opacity-60 hover:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
           data-stop-id="${escapeHtml(stop_id)}"
           data-area-id="${escapeHtml(area.area_id)}"
-          title="Remove from this area"
+          title="${t('areas.remove')}"
         >x</button>
       </span>`;
     })
@@ -187,17 +188,17 @@ async function renderContent(stop: Record<string, unknown>): Promise<string> {
     type="button"
     class="${ADD_CLASS} btn btn-xs btn-ghost"
     data-stop-id="${escapeHtml(stop_id)}"
-  >+ Add area...</button>`;
+  >${t('areas.add')}</button>`;
 
   let note = '';
   if (inheritedFrom) {
     const station = await stationLabel(inheritedFrom);
-    note = `Inherited from ${station}. Adding an area here assigns this platform directly and replaces the inherited ones.`;
+    note = t('areas.inherited', { station });
   } else if (areas.length > 0 && stopLocationType(stop) === 0) {
     const parent_station = String(stop.parent_station ?? '').trim();
     if (parent_station !== '') {
       const station = await stationLabel(parent_station);
-      note = `Assigned directly, which supersedes the areas of ${station}. Removing the last one returns this platform to inheriting them.`;
+      note = t('areas.direct', { station });
     }
   }
 
@@ -214,7 +215,7 @@ export async function renderStopAreasField(
   const stop_id = String(stop.stop_id ?? '');
   return `
     <fieldset class="fieldset isolate">
-      <legend class="fieldset-legend">Areas</legend>
+      <legend class="fieldset-legend">${t('areas.legend')}</legend>
       <div class="${FIELD_CLASS}" data-stop-id="${escapeHtml(stop_id)}">${await renderContent(stop)}</div>
     </fieldset>
   `;
@@ -255,7 +256,7 @@ async function addArea(stop_id: string): Promise<void> {
   >[];
   const assigned = new Set(existing.map((a) => a.area_id));
   const picked = await showOptionPickerModal({
-    title: 'Add to area',
+    title: t('areas.addTitle'),
     options: [
       ...areas
         .filter((a) => !assigned.has(String(a.area_id ?? '')))
@@ -264,7 +265,7 @@ async function addArea(stop_id: string): Promise<void> {
           primary: renderOptionLabel(getEntityDisplay('areas', a)),
           secondary: String(a.area_id ?? ''),
         })),
-      { value: CREATE_AREA, primary: '+ Create a new area...' },
+      { value: CREATE_AREA, primary: t('areas.create') },
     ],
     searchable: true,
   });
@@ -296,9 +297,7 @@ async function addArea(stop_id: string): Promise<void> {
       String(stop.parent_station ?? '')
     );
     if (inherited.length > 0) {
-      notify.info(
-        "This platform now has its own areas, so it no longer inherits its station's."
-      );
+      notify.info(t('areas.ownNow'));
     }
   }
 
@@ -334,9 +333,7 @@ async function removeArea(stop_id: string, area_id: string): Promise<void> {
 
   const remaining = await getEffectiveAreasForStop(deps.gtfsDatabase, stop_id);
   if (remaining.some((a) => a.inheritedFrom)) {
-    notify.info(
-      "That was this platform's last area, so it inherits its station's again."
-    );
+    notify.info(t('areas.inheritsAgain'));
   }
 }
 
@@ -348,7 +345,7 @@ async function createArea(
 ): Promise<string | null> {
   let area_id: string | null = null;
   const values = await promptNewEntity({
-    title: 'New area',
+    title: t('areas.newTitle'),
     id: {
       table: 'areas',
       suggested: await nextEntityId(areaDeps.gtfsDatabase, 'areas', 'area'),

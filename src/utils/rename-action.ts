@@ -15,6 +15,7 @@ import { escapeHtml } from 'gtfs-zone-web-common/util/escape-html';
 import { showRenameModal } from '../modules/rename-id-modal';
 import type { RenameDatabase, RenamePatchManager } from './rename-entity';
 import { getCurrentPageState } from '../modules/navigation-actions';
+import { t } from '../i18n/messages';
 
 export interface RenameActionDeps {
   database: RenameDatabase;
@@ -105,7 +106,7 @@ export function renderRenameTrigger(
   scope?: string
 ): string {
   // A blank ID (a single-agency feed's agency_id) shows a placeholder
-  const title = id === '' ? 'Set ID' : `Rename ${id}`;
+  const title = id === '' ? t('rename.setId') : t('rename.renameId', { id });
   const text = id === '' ? '<span class="opacity-40">-</span>' : escapeHtml(id);
   return `<span
       class="${boxClass} block truncate"
@@ -133,7 +134,7 @@ export async function requestRename(
   after?: () => void
 ): Promise<void> {
   if (!deps) {
-    notify.error('Cannot rename: this page cannot write to the feed');
+    notify.error(t('rename.readOnly'));
     console.warn('[RenameAction] no writable database handle');
     return;
   }

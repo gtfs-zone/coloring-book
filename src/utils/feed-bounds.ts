@@ -9,6 +9,7 @@
  */
 
 import { generateCompositeKeyFromRecord } from './gtfs-primary-keys';
+import { t } from '../i18n/messages';
 
 export interface FeedBounds {
   start?: string;
@@ -179,13 +180,16 @@ export async function trimOrExtendServices(
   if (ops.length > 0) {
     const verb = field === 'start_date' ? 'Trim' : 'Extend';
     const edge = field === 'start_date' ? 'start' : 'end';
-    const removed =
-      exceptions.length > 0
-        ? `, remove ${exceptions.length} exception${exceptions.length === 1 ? '' : 's'}`
-        : '';
+    const vars = {
+      services: t('count.services', { count: services }),
+      exceptions: t('count.exceptions', { count: exceptions.length }),
+    };
+    const trim = field === 'start_date';
     await patchManager.recordBatchMixed(
       ops,
-      `${verb} ${services} service${services === 1 ? '' : 's'} to feed ${edge}${removed}`
+      exceptions.length > 0
+        ? t(trim ? 'bounds.trimRemoveLabel' : 'bounds.extendRemoveLabel', vars)
+        : t(trim ? 'bounds.trimLabel' : 'bounds.extendLabel', vars)
     );
     console.log(
       `[FeedBounds] ${verb} to feed ${edge}: ${services} calendar row(s), ${exceptions.length} exception(s) removed`

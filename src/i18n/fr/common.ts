@@ -38,4 +38,13 @@ export const common: Translation<typeof en> = {
   'delete.agency': "Supprimer l'agence",
   'delete.stop': "Supprimer l'arrêt",
   'delete.zone': 'Supprimer la zone',
+  'common.notSpecified': 'Non précisé',
+  'ref.specificDays': 'Jours spécifiques',
+  'ref.noRegularDays': 'Aucun jour régulier',
+  'ref.viewRoute': 'Voir la ligne',
+  'ref.viewStop': "Voir l'arrêt",
+  'ref.route': 'Ligne',
+  'ref.service': 'Service',
+  'ref.pathwayTo': '{mode} vers {stop}',
+  'ref.pathwayFrom': '{mode} depuis {stop}',
 };

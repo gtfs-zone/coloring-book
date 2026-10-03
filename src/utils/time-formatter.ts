@@ -4,6 +4,7 @@ import {
   tooltipContentAttr,
 } from 'gtfs-zone-web-common/ui/field-label';
 import { renderMoonIcon } from 'gtfs-zone-web-common/ui/nav-icons';
+import { t } from '../i18n/messages';
 
 /**
  * Time Formatter Utility
@@ -313,6 +314,9 @@ export function renderTimeHtml(time: string, placeholder = '--:--:--'): string {
   if (dayOffset === 0) {
     return escapeHtml(clock);
   }
-  const tip = dayOffset === 1 ? 'Next day' : `+${dayOffset} days`;
+  const tip =
+    dayOffset === 1
+      ? t('time.nextDay')
+      : t('time.plusDays', { count: dayOffset });
   return `${escapeHtml(clock)}<span class="${TOOLTIP_TRIGGER_CLASS} ml-1 inline-flex items-center gap-0.5 align-middle text-[10px] leading-none opacity-70" aria-hidden="true" ${tooltipContentAttr(tip)}>${renderMoonIcon('h-3 w-3')}+${dayOffset}</span>`;
 }

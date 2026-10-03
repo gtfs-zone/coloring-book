@@ -61,6 +61,7 @@ import {
 import { renderTimeHtml } from './time-formatter';
 import type { GTFSFieldSpec } from '../gtfs-spec/types';
 import type { z } from 'zod';
+import { t } from '../i18n/messages';
 
 /** Marks a span this module's delegated listeners are responsible for. */
 const FIELD_CLASS = 'inline-editable-field';
@@ -397,7 +398,7 @@ export async function renderInlineEntityFields(
   );
   if (extras.length > 0) {
     fieldsHtml.push(
-      `<div class="divider text-xs opacity-60" title="${escapeHtml(EXTENSION_FIELD_DESCRIPTION)}">Additional fields</div>`
+      `<div class="divider text-xs opacity-60" title="${escapeHtml(EXTENSION_FIELD_DESCRIPTION)}">${t('field.additional')}</div>`
     );
     for (const field of extras) {
       fieldsHtml.push(
@@ -489,12 +490,12 @@ function openFieldEditor(span: HTMLElement): void {
       if (current && !options.some((o) => o.value === current)) {
         options.push({
           value: current,
-          primary: `${formatIssueValue(current)} (dangling reference)`,
+          primary: t('field.dangling', { value: formatIssueValue(current) }),
         });
       }
       const picked = await showOptionPickerModal({
-        title: `Select ${field}`,
-        options: [{ value: '', primary: '- none -' }, ...options],
+        title: t('field.selectTitle', { field }),
+        options: [{ value: '', primary: t('common.noneOption') }, ...options],
         selectedValue: current,
         searchable: true,
       });
@@ -534,17 +535,27 @@ async function openConstrainedPicker(
   // cannot silently blank a code the user did not touch.
   const extra =
     current && !options.some((o) => o.value === current)
-      ? [{ value: current, primary: current, secondary: 'current value' }]
+      ? [
+          {
+            value: current,
+            primary: current,
+            secondary: t('field.currentValue'),
+          },
+        ]
       : [];
 
   let custom = false;
   const picked = await showOptionPickerModal({
-    title: `Select ${field}`,
-    options: [{ value: '', primary: '- none -' }, ...extra, ...options],
+    title: t('field.selectTitle', { field }),
+    options: [
+      { value: '', primary: t('common.noneOption') },
+      ...extra,
+      ...options,
+    ],
     selectedValue: current,
     searchable: true,
     footerAction: {
-      label: 'Enter a custom value...',
+      label: t('field.customValue'),
       onClick: () => {
         custom = true;
       },
@@ -697,7 +708,7 @@ async function commit(
   const store = specStoreName(table);
   console.log(`[InlineField] update ${store} ${recordId}.${field}`);
   if (!deps?.patchManager) {
-    notify.error('Cannot save: the edit history is not ready yet');
+    notify.error(t('field.historyNotReady'));
     console.warn('[InlineField] no patch manager, edit dropped');
     return;
   }
@@ -707,7 +718,7 @@ async function commit(
   // does not exist is a no-op. Insert it on the first committed field instead.
   if (!(await deps.gtfsDatabase.getRow(store, recordId))) {
     if (getGTFSPrimaryKey(store)?.type !== 'none') {
-      notify.error('Cannot save: this record no longer exists');
+      notify.error(t('field.recordGone'));
       console.error(`[InlineField] no row ${recordId} in ${store}`);
       return;
     }
