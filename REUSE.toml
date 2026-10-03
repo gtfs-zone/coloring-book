@@ -16,3 +16,15 @@ path = [
 precedence = "override"
 SPDX-FileCopyrightText = "Google Inc. and contributors"
 SPDX-License-Identifier = "Apache-2.0"
+
+# Screenshots: map tiles and imagery, and MBTA transit data
+[[annotations]]
+path = "docs/screenshots/**"
+precedence = "aggregate"
+SPDX-FileCopyrightText = [
+  "Max Katz-Christy and gtfs.zone contributors",
+  "OpenStreetMap contributors",
+  "Esri",
+  "Massachusetts Bay Transportation Authority",
+]
+SPDX-License-Identifier = "AGPL-3.0-or-later"

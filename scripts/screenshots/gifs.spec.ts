@@ -6,20 +6,16 @@
  * Run with: pnpm screenshots --project gif
  */
 
-import { expect, test, type Locator, type Page } from '@playwright/test';
+import { test, type Locator, type Page } from '@playwright/test';
 import {
   DEMO_FEED,
   SYNTHETIC_FEED,
   clearToasts,
-  dropFile,
-  feedLoaded,
   fitBoston,
   go,
   jumpTo,
   loadFeed,
   manifest,
-  projectToPage,
-  scrollToStopRows,
   seed,
   settle,
   showCursor,
@@ -28,10 +24,7 @@ import {
 
 const m = manifest();
 const RED_WEEKDAY = 'RTL20264-hms46011-Weekday-01';
-const LINE_TIMETABLE =
-  'route=10&modal=timetable&modal_route=10&modal_service=weekday&modal_direction=0';
 const DOWNTOWN: [number, number] = [-71.0589, 42.3555];
-const BUS_STOP = { id: '72', lngLat: [-71.103074, 42.364915] as [number, number] };
 
 // One test runs at a time per worker, so module state is per clip.
 let videoStart = 0;
@@ -91,20 +84,6 @@ test.afterEach(async ({ page }, testInfo) => {
   toGif(await video.path(), slug, startSec);
 });
 
-test('g01 load-feed @gif', async ({ page }) => {
-  await page.goto('/');
-  // Close the boot load modal so the drop lands on the empty editor.
-  await page
-    .locator('.modal-open, dialog[open]')
-    .getByRole('button', { name: 'Cancel', exact: true })
-    .click();
-  await settle(page);
-  await page.mouse.move(1240, 60);
-  markStart();
-  await glide(page, 640, 420, 30);
-  await feedLoaded(page, () => dropFile(page, DEMO_FEED));
-});
-
 test('g02 search-to-route @gif', async ({ page }) => {
   await loadFeed(page, DEMO_FEED);
   await clearToasts(page);
@@ -137,47 +116,6 @@ test('g03 browse-route-station-platform @gif', async ({ page }) => {
   await settle(page);
 });
 
-test('g04 drag-stop-undo @gif', async ({ page }) => {
-  await loadFeed(page, DEMO_FEED);
-  await clearToasts(page);
-  await go(page, `stop=${BUS_STOP.id}`);
-  await jumpTo(page, BUS_STOP.lngLat, 17.5);
-  const from = await projectToPage(page, BUS_STOP.lngLat);
-  await page.mouse.move(from.x + 160, from.y + 120);
-  markStart();
-  await glide(page, from.x, from.y);
-  await page.mouse.down();
-  await page.mouse.move(from.x + 90, from.y - 50, { steps: 30 });
-  await page.mouse.up();
-  await page.waitForTimeout(1500);
-  await page.keyboard.press('ControlOrMeta+z');
-  await page.waitForTimeout(1200);
-});
-
-test('g05 timetable-edit @gif', async ({ page }) => {
-  await loadFeed(page, SYNTHETIC_FEED);
-  await clearToasts(page);
-  await go(page, LINE_TIMETABLE);
-  await scrollToStopRows(page);
-  markStart();
-  const cell = page
-    .locator('[role=gridcell][data-field="departure_time"][data-stop-index="4"]')
-    .nth(3);
-  await glideClick(page, cell);
-  await page.keyboard.press('ControlOrMeta+a');
-  await page.keyboard.type('06:12', { delay: 160 });
-  await page.waitForTimeout(400);
-  await page.keyboard.press('Tab');
-  await page.waitForTimeout(600);
-  await page.keyboard.press('ControlOrMeta+a');
-  await page.keyboard.type('06:22', { delay: 160 });
-  await page.waitForTimeout(400);
-  await page.keyboard.press('Enter');
-  await page.waitForTimeout(800);
-  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
-  await clearToasts(page);
-});
-
 test('g06 add-stop @gif', async ({ page }) => {
   await loadFeed(page, DEMO_FEED);
   await clearToasts(page);
@@ -207,19 +145,6 @@ test('g06 add-stop @gif', async ({ page }) => {
   await page.waitForTimeout(800);
 });
 
-test('g07 theme-toggle @gif', async ({ page }) => {
-  await loadFeed(page, DEMO_FEED);
-  await clearToasts(page);
-  await go(page, 'route=Red');
-  await parkOnMap(page);
-  markStart();
-  const toggle = page.locator('#theme-toggle');
-  await glideClick(page, toggle);
-  await settle(page, 1200);
-  await glideClick(page, toggle);
-  await settle(page, 600);
-});
-
 test('g08 calendar-edit @gif', async ({ page }) => {
   await loadFeed(page, DEMO_FEED);
   await clearToasts(page);
@@ -231,32 +156,6 @@ test('g08 calendar-edit @gif', async ({ page }) => {
     await page.waitForTimeout(1000);
   }
   await clearToasts(page);
-});
-
-test('g09 files-edit @gif', async ({ page }) => {
-  await loadFeed(page, DEMO_FEED);
-  await clearToasts(page);
-  await parkOnMap(page);
-  markStart();
-  await glideClick(page, page.locator('#files-btn'));
-  await glideClick(page, page.locator('#file-list a', { hasText: 'stops.txt' }).first());
-  // Column 3 is stop_name.
-  const cell = page
-    .locator('#table-editor tbody tr')
-    .nth(3)
-    .locator('td')
-    .nth(2)
-    .locator('input');
-  await cell.waitFor();
-  await page.waitForTimeout(500);
-  await glideClick(page, cell);
-  await page.keyboard.press('ControlOrMeta+a');
-  await page.keyboard.type('Haymarket Station', { delay: 90 });
-  await page.keyboard.press('Enter');
-  await expect(page.locator('#history-count-badge')).toHaveText('1');
-  await page.waitForTimeout(400);
-  await glide(page, ...(await center(page.locator('#history-btn'))));
-  await page.waitForTimeout(800);
 });
 
 test('g10 zone-edit @gif', async ({ page }) => {

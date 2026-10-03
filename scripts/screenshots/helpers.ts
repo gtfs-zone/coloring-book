@@ -15,7 +15,6 @@ const OUT_DIR = join(REPO_ROOT, 'docs/screenshots');
 
 export const DEMO_FEED = join(__dirname, '.cache/mbta-demo.zip');
 export const SYNTHETIC_FEED = join(__dirname, '.cache/synthetic-demo.zip');
-export const FLEX_FIXTURES = join(REPO_ROOT, 'fixtures/flex/dist');
 
 const HELP_PAGES = ['welcome', 'getting-started', 'shapes', 'fares', 'on-demand'];
 
@@ -81,7 +80,7 @@ export async function loadFeed(page: Page, zip: string): Promise<void> {
 }
 
 /** Run `start`, then wait until the feed it loads is drawn and the map is still. */
-export async function feedLoaded(page: Page, start: () => Promise<void>): Promise<void> {
+async function feedLoaded(page: Page, start: () => Promise<void>): Promise<void> {
   // Logged once the layers are in, just before the map fits to the feed.
   const mapReady = page.waitForEvent('console', {
     predicate: (msg) => msg.text() === 'Map update completed',
@@ -281,23 +280,6 @@ export async function showCursor(page: Page): Promise<void> {
       document.addEventListener('DOMContentLoaded', install);
     }
   });
-}
-
-/** Drop a zip on the page the way a user dragging it from a file manager does. */
-export async function dropFile(page: Page, zip: string): Promise<void> {
-  const data = readFileSync(zip).toString('base64');
-  const name = zip.split('/').pop()!;
-  await page.evaluate(
-    ({ data, name }) => {
-      const bytes = Uint8Array.from(atob(data), (c) => c.charCodeAt(0));
-      const transfer = new DataTransfer();
-      transfer.items.add(new File([bytes], name, { type: 'application/zip' }));
-      document.body.dispatchEvent(
-        new DragEvent('drop', { dataTransfer: transfer, bubbles: true, cancelable: true })
-      );
-    },
-    { data, name }
-  );
 }
 
 /**
