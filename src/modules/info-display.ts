@@ -9,6 +9,7 @@ import {
   getCalendarFieldDescription,
   createTooltip,
 } from '../utils/zod-tooltip-helper';
+import { formatNumber } from 'gtfs-zone-web-common/i18n/fmt';
 
 export class InfoDisplay {
   private relationships: {
@@ -391,7 +392,7 @@ export class InfoDisplay {
           <div class="space-y-2 text-sm">
             <div class="flex justify-between">
               <span>Total Stop Times:</span>
-              <span class="font-medium">${stats.stopTimes.toLocaleString()}</span>
+              <span class="font-medium">${formatNumber(stats.stopTimes as number)}</span>
             </div>
             <div class="flex justify-between">
               <span>Avg. Trips per Route:</span>

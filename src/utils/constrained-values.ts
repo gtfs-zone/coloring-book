@@ -11,6 +11,8 @@
  */
 
 import type { OptionPickerItem } from '../modules/option-picker-modal';
+import { getLocale } from 'gtfs-zone-web-common/i18n/index';
+import { dateFormat } from 'gtfs-zone-web-common/i18n/fmt';
 
 /**
  * BCP-47 primary language subtags offered by the picker.
@@ -263,7 +265,10 @@ function displayNames(type: 'language' | 'currency'): (code: string) => string {
     );
     return (code) => code;
   }
-  const names = new Intl.DisplayNames(['en'], { type, fallback: 'code' });
+  const names = new Intl.DisplayNames([getLocale()], {
+    type,
+    fallback: 'code',
+  });
   return (code) => {
     try {
       return names.of(code) ?? code;
@@ -292,7 +297,7 @@ function supportedValues(key: 'timeZone' | 'currency'): string[] {
 /** The zone's current UTC offset, as a short hint beside its name. */
 function timezoneOffset(zone: string): string {
   try {
-    const parts = new Intl.DateTimeFormat('en-US', {
+    const parts = dateFormat({
       timeZone: zone,
       timeZoneName: 'shortOffset',
     }).formatToParts(new Date());
@@ -302,7 +307,7 @@ function timezoneOffset(zone: string): string {
   }
 }
 
-/** BCP-47 language tags, labelled in English. */
+/** BCP-47 language tags, labelled in the active locale. */
 export function languageOptions(): OptionPickerItem[] {
   if (languageCache) {
     return languageCache;
@@ -328,7 +333,7 @@ export function timezoneOptions(): OptionPickerItem[] {
   return timezoneCache;
 }
 
-/** ISO 4217 currency codes, labelled in English. */
+/** ISO 4217 currency codes, labelled in the active locale. */
 export function currencyOptions(): OptionPickerItem[] {
   if (currencyCache) {
     return currencyCache;
