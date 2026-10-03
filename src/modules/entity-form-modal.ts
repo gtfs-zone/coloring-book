@@ -31,6 +31,7 @@ import { flushInlineEdits } from '../utils/inline-edit';
 import { getNaturalKeyField } from '../utils/gtfs-primary-keys';
 import { validateIdText, validateNewId } from '../utils/rename-entity';
 import type { z } from 'zod';
+import { t } from '../i18n/messages';
 
 export interface EntityFormField {
   /** Field name. Also the value key and the basis of the input's id. */
@@ -256,7 +257,10 @@ function readValues(
   );
   if (rejected) {
     return {
-      error: `${rejected.label ?? rejected.field}: ${draft.errors[rejected.field]}`,
+      error: t('form.fieldError', {
+        field: rejected.label ?? rejected.field,
+        error: draft.errors[rejected.field],
+      }),
     };
   }
 
@@ -360,7 +364,7 @@ export async function promptNewEntity(
     },
     actions: [
       {
-        label: options.createLabel ?? 'Create',
+        label: options.createLabel ?? t('form.create'),
         className: 'btn-primary',
         onClick: async () => {
           // A draft field still open (Enter, or a click straight on Create)
@@ -401,7 +405,7 @@ export async function promptNewEntity(
           } catch (error) {
             console.error('[entity-form-modal] create failed', error);
             showError(
-              error instanceof Error ? error.message : 'Could not create.'
+              error instanceof Error ? error.message : t('form.couldNotCreate')
             );
             return true;
           }

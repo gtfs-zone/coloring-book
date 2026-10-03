@@ -76,6 +76,7 @@ import {
 import { GTFSSchemas, GTFS_FIELD_SPECS } from '../types/gtfs';
 import type { GTFSFieldSpec } from '../gtfs-spec/types';
 import type { z } from 'zod';
+import { t } from '../i18n/messages';
 
 export interface EditableTableDatabase {
   getAllRows(tableName: string): Promise<Record<string, unknown>[]>;
@@ -766,8 +767,8 @@ export async function renderEditableTable(
         .join('');
       const deleteTitle =
         group.rows.length > 1
-          ? `Delete ${group.rows.length} rows`
-          : 'Delete row';
+          ? t('table.deleteRows', { count: group.rows.length })
+          : t('table.deleteRow');
       return `<tr data-et-row="${escapeHtml(key)}" data-et="${escapeHtml(config.instanceId)}">${cells}${joinCells}<td class="align-middle w-8">
         <button class="editable-table-delete btn btn-xs btn-ghost text-error" data-et="${escapeHtml(config.instanceId)}" data-key="${escapeHtml(key)}" title="${escapeHtml(deleteTitle)}">${renderTrashIcon('h-3.5 w-3.5')}</button>
       </td></tr>`;
@@ -807,13 +808,13 @@ export async function renderEditableTable(
       return `<td class="align-middle p-1">${span}</td>`;
     })
     .join('');
-  const newRowStart = `<button class="editable-table-new-row-start btn btn-xs btn-primary whitespace-nowrap" data-et="${escapeHtml(config.instanceId)}">+ New</button>`;
+  const newRowStart = `<button class="editable-table-new-row-start btn btn-xs btn-primary whitespace-nowrap" data-et="${escapeHtml(config.instanceId)}">${t('table.new')}</button>`;
 
   // A host that pins its columns has decided what the table shows, so a new
   // column would be created and then not rendered.
   const addFieldHtml = config.fields
     ? ''
-    : `<button class="editable-table-add-field btn btn-xs btn-ghost font-normal whitespace-nowrap" data-et="${escapeHtml(config.instanceId)}" title="Add a non-spec column to ${escapeHtml(config.tableName)}">+ Field</button>`;
+    : `<button class="editable-table-add-field btn btn-xs btn-ghost font-normal whitespace-nowrap" data-et="${escapeHtml(config.instanceId)}" title="${t('table.addFieldTip', { table: escapeHtml(config.tableName) })}">${t('table.addFieldBtn')}</button>`;
 
   return `
     <div class="overflow-x-auto">
@@ -964,24 +965,22 @@ async function addFieldColumn(button: HTMLElement): Promise<void> {
   const inputId = `add-field-${config.instanceId}`;
 
   await showModal({
-    title: `Add a field to ${config.tableName}`,
+    title: t('table.addFieldTitle', { table: config.tableName }),
     body: `
       <p class="text-sm opacity-70 mb-3">
-        A field that is not part of the GTFS specification. It is preserved
-        as-is on export, and validation ignores it.
+        ${t('table.addFieldBody')}
       </p>
       <input id="${escapeHtml(inputId)}" type="text" class="input input-bordered w-full" placeholder="my_field" autocomplete="off" />
       <p id="${escapeHtml(inputId)}-error" class="text-error text-sm mt-2 hidden"></p>
       <p class="text-sm opacity-70 mt-3">
-        The exported file lists the columns the rows actually carry, so a field
-        left empty on every row will not appear in it.
+        ${t('table.addFieldNote')}
       </p>
     `,
     enterAction: 0,
     escapeAction: 1,
     actions: [
       {
-        label: 'Add field',
+        label: t('table.addField'),
         className: 'btn-primary',
         onClick: async () => {
           const input = document.getElementById(inputId) as HTMLInputElement;
@@ -1000,12 +999,17 @@ async function addFieldColumn(button: HTMLElement): Promise<void> {
             return true;
           }
           await addExtensionColumn(config.tableName, name);
-          notify.success(`Added ${name.trim()} to ${config.tableName}`);
+          notify.success(
+            t('table.fieldAdded', {
+              name: name.trim(),
+              table: config.tableName,
+            })
+          );
           config.onRowsChanged?.();
           return;
         },
       },
-      { label: 'Cancel', className: 'btn-ghost', onClick: () => {} },
+      { label: t('common.cancel'), className: 'btn-ghost', onClick: () => {} },
     ],
     onMount: () => {
       document.getElementById(inputId)?.focus();
@@ -1061,18 +1065,18 @@ function openCellEditor(span: HTMLElement): void {
         if (!options.some((o) => o.value === value)) {
           options.push({
             value,
-            primary: `${formatIssueValue(value)} (dangling reference)`,
+            primary: t('field.dangling', { value: formatIssueValue(value) }),
           });
         }
       }
       const picked = await showMultiOptionPickerModal({
-        title: `Select ${field}`,
+        title: t('field.selectTitle', { field }),
         options,
         selectedValues: selected,
         searchable: true,
         emptyOption: {
-          label: 'Leave blank',
-          hint: 'matches everything',
+          label: t('table.leaveBlank'),
+          hint: t('table.matchesEverything'),
         },
       });
       if (picked !== null) {
@@ -1105,12 +1109,12 @@ function openCellEditor(span: HTMLElement): void {
       if (current && !options.some((o) => o.value === current)) {
         options.push({
           value: current,
-          primary: `${formatIssueValue(current)} (dangling reference)`,
+          primary: t('field.dangling', { value: formatIssueValue(current) }),
         });
       }
       const picked = await showOptionPickerModal({
-        title: `Select ${field}`,
-        options: [{ value: '', primary: '- none -' }, ...options],
+        title: t('field.selectTitle', { field }),
+        options: [{ value: '', primary: t('common.noneOption') }, ...options],
         selectedValue: current,
         searchable: true,
       });
@@ -1128,16 +1132,26 @@ function openCellEditor(span: HTMLElement): void {
       // picker cannot silently blank a code the user did not touch.
       const extra =
         current && !options.some((o) => o.value === current)
-          ? [{ value: current, primary: current, secondary: 'current value' }]
+          ? [
+              {
+                value: current,
+                primary: current,
+                secondary: t('field.currentValue'),
+              },
+            ]
           : [];
       let custom = false;
       const picked = await showOptionPickerModal({
-        title: `Select ${field}`,
-        options: [{ value: '', primary: '- none -' }, ...extra, ...options],
+        title: t('field.selectTitle', { field }),
+        options: [
+          { value: '', primary: t('common.noneOption') },
+          ...extra,
+          ...options,
+        ],
         selectedValue: current,
         searchable: true,
         footerAction: {
-          label: 'Enter a custom value...',
+          label: t('field.customValue'),
           onClick: () => {
             custom = true;
           },
@@ -1253,12 +1267,12 @@ async function openJoinEditor(span: HTMLElement): Promise<void> {
     if (!options.some((o) => o.value === value)) {
       options.push({
         value,
-        primary: `${formatIssueValue(value)} (dangling reference)`,
+        primary: t('field.dangling', { value: formatIssueValue(value) }),
       });
     }
   }
   const picked = await showMultiOptionPickerModal({
-    title: `Select ${column.label}`,
+    title: t('field.selectTitle', { field: column.label }),
     options,
     selectedValues: selected,
     searchable: true,
@@ -1784,16 +1798,14 @@ async function deleteRow(button: HTMLElement): Promise<void> {
 
   const count = group.rows.length;
   const question =
-    count === 1
-      ? 'Are you sure you want to delete this record?'
-      : `Are you sure you want to delete these ${count} records?`;
+    count === 1 ? t('table.confirmOne') : t('table.confirmMany', { count });
 
   await showModal({
-    title: 'Confirm Delete',
-    body: `<p>${question} This can be undone via Edit -> Undo.</p>`,
+    title: t('table.confirmTitle'),
+    body: `<p>${question} ${t('table.undoHint')}</p>`,
     actions: [
       {
-        label: 'Delete',
+        label: t('common.delete'),
         className: 'btn-error',
         onClick: async () => {
           for (const groupKey of group.keys) {
@@ -1813,7 +1825,7 @@ async function deleteRow(button: HTMLElement): Promise<void> {
                 id: group.keys[i],
                 record,
               })),
-              `Delete ${count} rows from ${table}`
+              t('table.labelDeleteRows', { count, table })
             );
           }
           console.log(
@@ -1822,7 +1834,7 @@ async function deleteRow(button: HTMLElement): Promise<void> {
           config.onDelete?.(key);
         },
       },
-      { label: 'Cancel', className: 'btn-ghost', onClick: () => {} },
+      { label: t('common.cancel'), className: 'btn-ghost', onClick: () => {} },
     ],
     escapeAction: 1,
   });

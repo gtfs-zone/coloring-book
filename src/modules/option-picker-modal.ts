@@ -1,6 +1,7 @@
 import uFuzzy from '@leeoniya/ufuzzy';
 import { showModal } from 'gtfs-zone-web-common/ui/modal-utils';
 import { SELECTED_ROW_CLASS } from 'gtfs-zone-web-common/ui/selectable-row';
+import { t } from '../i18n/messages';
 
 export interface OptionPickerItem {
   value: string;
@@ -205,7 +206,7 @@ function mountPicker(
     shown = [...picked, ...rest.slice(0, MAX_SHOWN)];
 
     if (shown.length === 0) {
-      resultsEl.innerHTML = `<div class="text-base-content/60 text-sm p-4 text-center">No options found</div>`;
+      resultsEl.innerHTML = `<div class="text-base-content/60 text-sm p-4 text-center">${t('picker.noOptions')}</div>`;
       return;
     }
 
@@ -241,8 +242,13 @@ function mountPicker(
       const note = document.createElement('div');
       note.className = 'text-xs text-base-content/50 text-center p-2';
       const selectedNote =
-        picked.length > 0 ? `All ${picked.length} selected shown, plus ` : '';
-      note.textContent = `${selectedNote}${shown.length - picked.length} of ${rest.length} more. Refine your search`;
+        picked.length > 0
+          ? t('picker.allSelected', { count: picked.length })
+          : '';
+      note.textContent = `${selectedNote}${t('picker.more', {
+        shown: shown.length - picked.length,
+        total: rest.length,
+      })}`;
       resultsEl.appendChild(note);
     }
 
@@ -308,7 +314,7 @@ export async function showOptionPickerModal(
     title: opts.title,
     body: pickerBody(
       searchable,
-      opts.placeholder ?? 'Search…',
+      opts.placeholder ?? t('picker.search'),
       undefined,
       opts.hint
     ),
@@ -322,7 +328,7 @@ export async function showOptionPickerModal(
             },
           ]
         : []),
-      { label: 'Cancel', onClick: () => {} },
+      { label: t('common.cancel'), onClick: () => {} },
     ],
     escapeAction: footer ? 1 : 0,
     onMount: (close) => {
@@ -362,18 +368,18 @@ export async function showMultiOptionPickerModal(
     title: opts.title,
     body: pickerBody(
       searchable,
-      opts.placeholder ?? 'Search…',
+      opts.placeholder ?? t('picker.search'),
       opts.emptyOption
     ),
     actions: [
       {
-        label: 'Done',
+        label: t('picker.done'),
         className: 'btn-primary',
         onClick: () => {
           confirmed = true;
         },
       },
-      { label: 'Cancel', className: 'btn-ghost', onClick: () => {} },
+      { label: t('common.cancel'), className: 'btn-ghost', onClick: () => {} },
     ],
     escapeAction: 1,
     onMount: (close) => {

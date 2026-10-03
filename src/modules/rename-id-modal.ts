@@ -22,6 +22,8 @@ import {
   type RenamePlan,
 } from '../utils/rename-entity';
 import { getNaturalKeyField } from '../utils/gtfs-primary-keys';
+import { t } from '../i18n/messages';
+import { formatNumber } from 'gtfs-zone-web-common/i18n/fmt';
 
 export interface RenameModalDeps {
   database: RenameDatabase;
@@ -49,7 +51,7 @@ const PREVIEW_ID = '\u0000rename-preview';
 
 function renderImpact(plan: RenamePlan): string {
   if (plan.cascades.length === 0) {
-    return `<p class="text-sm opacity-70">Nothing else in the feed references this ID.</p>`;
+    return `<p class="text-sm opacity-70">${t('renameModal.noRefs')}</p>`;
   }
 
   const rows = plan.cascades
@@ -57,18 +59,18 @@ function renderImpact(plan: RenamePlan): string {
       (cascade) => `
         <tr>
           <td class="font-mono text-xs">${escapeHtml(`${cascade.table}.${cascade.field}`)}</td>
-          <td class="text-right">${cascade.rows.toLocaleString()}</td>
+          <td class="text-right">${formatNumber(cascade.rows)}</td>
         </tr>`
     )
     .join('');
 
   return `
     <div class="space-y-1">
-      <p class="text-sm opacity-70">Rows that will be rewritten:</p>
+      <p class="text-sm opacity-70">${t('renameModal.rowsRewritten')}</p>
       <table class="table table-sm">
         <tbody>${rows}</tbody>
       </table>
-      <p class="text-sm">${plan.total.toLocaleString()} row${plan.total === 1 ? '' : 's'} in total, recorded as one undoable change.</p>
+      <p class="text-sm">${t('renameModal.total', { count: plan.total })}</p>
     </div>`;
 }
 
@@ -79,7 +81,7 @@ function renderWarning(plan: RenamePlan): string {
   return `
     <div class="alert alert-warning text-sm">
       ${renderWarningIcon()}
-      <span>This rename rewrites ${plan.total.toLocaleString()} rows. It will take a moment and the page will not respond while it runs.</span>
+      <span>${t('renameModal.heavy', { count: plan.total })}</span>
     </div>`;
 }
 
@@ -110,7 +112,7 @@ export async function showRenameModal(
     return null;
   }
   if (!deps.patchManager) {
-    notify.error('Cannot rename: the edit history is not ready yet');
+    notify.error(t('renameModal.historyNotReady'));
     return null;
   }
   const patchManager = deps.patchManager;
@@ -121,7 +123,7 @@ export async function showRenameModal(
   } catch (error) {
     console.error('[RenameIdModal] could not plan the rename', error);
     notify.error(
-      error instanceof Error ? error.message : 'Could not plan the rename.'
+      error instanceof Error ? error.message : t('renameModal.couldNotPlan')
     );
     return null;
   }
@@ -129,7 +131,7 @@ export async function showRenameModal(
   const body = `
     <div class="space-y-3">
       <fieldset class="fieldset">
-        <label class="label" for="${INPUT_ID}">New ${escapeHtml(keyField)}</label>
+        <label class="label" for="${INPUT_ID}">${t('renameModal.newLabel', { field: escapeHtml(keyField) })}</label>
         <input
           id="${INPUT_ID}"
           type="text"
@@ -146,7 +148,10 @@ export async function showRenameModal(
   let renamed: string | null = null;
 
   await showModal({
-    title: id === '' ? `Set ${keyField}` : `Rename ${keyField} "${id}"`,
+    title:
+      id === ''
+        ? t('renameModal.setTitle', { field: keyField })
+        : t('renameModal.renameTitle', { field: keyField, id }),
     body,
     boxClassName: 'max-w-lg',
     enterAction: 0,
@@ -160,7 +165,7 @@ export async function showRenameModal(
     },
     actions: [
       {
-        label: 'Rename',
+        label: t('renameModal.rename'),
         className: 'btn-primary',
         onClick: async () => {
           const input = document.getElementById(INPUT_ID);
@@ -191,7 +196,9 @@ export async function showRenameModal(
           } catch (error) {
             console.error('[RenameIdModal] rename failed', error);
             showError(
-              error instanceof Error ? error.message : 'Could not rename.'
+              error instanceof Error
+                ? error.message
+                : t('renameModal.couldNotRename')
             );
             return true;
           }
@@ -199,12 +206,12 @@ export async function showRenameModal(
           // Outside the try: the write is done, so nothing that happens now
           // may report it as a failure.
           notify.success(
-            `Renamed ${keyField} to ${newId}: ${rows.toLocaleString()} row${rows === 1 ? '' : 's'} updated`
+            t('renameModal.done', { field: keyField, id: newId, count: rows })
           );
           return false;
         },
       },
-      { label: 'Cancel', className: 'btn-ghost', onClick: () => {} },
+      { label: t('common.cancel'), className: 'btn-ghost', onClick: () => {} },
     ],
   });
 

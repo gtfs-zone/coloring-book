@@ -106,4 +106,51 @@ export const fields: Translation<typeof en> = {
   'weekday.thu': 'Jeu',
   'weekday.fri': 'Ven',
   'weekday.sat': 'Sam',
+  'table.deleteRows': 'Supprimer {count} lignes',
+  'table.deleteRow': 'Supprimer la ligne',
+  'table.new': '+ Nouveau',
+  'table.addFieldTip': 'Ajouter une colonne hors spécification à {table}',
+  'table.addFieldBtn': '+ Champ',
+  'table.addFieldTitle': 'Ajouter un champ à {table}',
+  'table.addFieldBody':
+    "Un champ qui ne fait pas partie de la spécification GTFS. Il est conservé tel quel à l'export, et la validation l'ignore.",
+  'table.addFieldNote':
+    "Le fichier exporté liste les colonnes réellement présentes dans les lignes : un champ vide sur toutes les lignes n'y apparaîtra pas.",
+  'table.addField': 'Ajouter le champ',
+  'table.fieldAdded': '{name} ajouté à {table}',
+  'table.leaveBlank': 'Laisser vide',
+  'table.matchesEverything': 'correspond à tout',
+  'table.confirmOne': 'Voulez-vous vraiment supprimer cet enregistrement ?',
+  'table.confirmMany':
+    'Voulez-vous vraiment supprimer ces {count} enregistrements ?',
+  'table.undoHint': 'Vous pouvez revenir en arrière avec Annuler.',
+  'table.confirmTitle': 'Confirmer la suppression',
+  'table.labelDeleteRows': 'Suppression de {count} lignes de {table}',
+  'form.fieldError': '{field} : {error}',
+  'form.create': 'Créer',
+  'form.couldNotCreate': 'Création impossible.',
+  'picker.noOptions': 'Aucune option trouvée',
+  'picker.allSelected': 'Les {count} sélectionnés sont affichés, plus ',
+  'picker.more': '{shown} sur {total} de plus. Affinez votre recherche',
+  'picker.search': 'Rechercher…',
+  'picker.done': 'Terminé',
+  'renameModal.noRefs': "Rien d'autre dans le flux ne fait référence à cet ID.",
+  'renameModal.rowsRewritten': 'Lignes qui seront réécrites :',
+  'renameModal.total_one':
+    '{count} ligne au total, enregistrée comme une seule modification annulable.',
+  'renameModal.total_other':
+    '{count} lignes au total, enregistrées comme une seule modification annulable.',
+  'renameModal.heavy':
+    'Ce renommage réécrit {count} lignes. Cela prendra un moment et la page ne répondra pas pendant ce temps.',
+  'renameModal.historyNotReady':
+    "Renommage impossible : l'historique des modifications n'est pas encore prêt",
+  'renameModal.couldNotPlan': 'Impossible de préparer le renommage.',
+  'renameModal.newLabel': 'Nouveau {field}',
+  'renameModal.setTitle': 'Définir {field}',
+  'renameModal.renameTitle': 'Renommer {field} « {id} »',
+  'renameModal.rename': 'Renommer',
+  'renameModal.couldNotRename': 'Renommage impossible.',
+  'renameModal.done_one': '{field} renommé en {id} : {count} ligne mise à jour',
+  'renameModal.done_other':
+    '{field} renommé en {id} : {count} lignes mises à jour',
 };
