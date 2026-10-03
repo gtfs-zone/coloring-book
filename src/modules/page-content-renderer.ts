@@ -113,7 +113,8 @@ import {
   VIEW_ROUTE_BTN,
   VIEW_SERVICE_BTN,
 } from '../utils/entity-references';
-import introHtml from '../intro.html?raw';
+import { introHtml } from '../intro';
+import { t } from '../i18n/messages';
 
 /** Marks the route page's network picker. */
 const ROUTE_NETWORK_FIELD = 'route-network-field';
@@ -429,7 +430,7 @@ export class PageContentRenderer {
   private async runIssueAction(button: HTMLButtonElement): Promise<void> {
     const deps = this.editableDeps();
     if (!deps) {
-      notify.error('This feed is open read-only, so it cannot be fixed');
+      notify.error(t('page.readOnly'));
       return;
     }
     const key = button.getAttribute('data-issue-key') ?? '';
@@ -531,7 +532,7 @@ export class PageContentRenderer {
       }
     } catch (error) {
       console.error('Error rendering page:', error);
-      return this.renderError('Failed to load content. Please try again.');
+      return this.renderError(t('page.loadFailed'));
     }
   }
 
@@ -569,9 +570,9 @@ export class PageContentRenderer {
   private renderCleanFeedEncouragement(): string {
     return `
       <div class="rounded-lg border border-success/40 bg-success/10 p-3 text-sm flex items-center justify-between gap-3">
-        <span>Everything look good? Export your feed and publish.</span>
+        <span>${t('page.cleanFeed')}</span>
         <button type="button" class="btn btn-xs btn-success btn-outline" data-open-guide="publishing">
-          Publishing guide
+          ${t('page.publishingGuide')}
         </button>
       </div>
     `;
@@ -608,15 +609,15 @@ export class PageContentRenderer {
       this.dependencies.gtfsDatabase.updateRow && this.dependencies.patchManager
     );
     const bulkTrimTitle = !canBulkTrimExtend
-      ? 'No patch manager available'
+      ? t('page.noPatchManager')
       : bounds.start
-        ? `Set every service's start_date to ${bounds.start}, and remove every exception before it`
-        : 'feed_info has no feed_start_date';
+        ? t('page.trimAllTitle', { date: bounds.start })
+        : t('page.noFeedStart');
     const bulkExtendTitle = !canBulkTrimExtend
-      ? 'No patch manager available'
+      ? t('page.noPatchManager')
       : bounds.end
-        ? `Set every service's end_date to ${bounds.end}, and remove every exception after it`
-        : 'feed_info has no feed_end_date';
+        ? t('page.extendAllTitle', { date: bounds.end })
+        : t('page.noFeedEnd');
 
     // Routes without agency_id belong to the agency when there is only one
     const routeCounts = new Map<string, number>();
@@ -661,23 +662,23 @@ export class PageContentRenderer {
 
     const html = `
       <div class="p-4 space-y-4">
-        ${feedIsEmpty ? `<div class="card bg-base-100 shadow-lg"><div class="card-body p-4">${introHtml}</div></div>` : ''}
+        ${feedIsEmpty ? `<div class="card bg-base-100 shadow-lg"><div class="card-body p-4">${introHtml()}</div></div>` : ''}
         ${await this.renderFeedInfoProperties(feedInfo)}
 
         ${await this.renderAttributionsSection()}
 
-        ${renderIssueCard('Feed issues', feedIssues)}
+        ${renderIssueCard(t('page.feedIssues'), feedIssues)}
         ${cleanFeedEncouragement ? this.renderCleanFeedEncouragement() : ''}
 
         <div class="space-y-4">
           <div class="flex items-center justify-between gap-4">
-            <h2 class="text-lg font-semibold">Agencies</h2>
+            <h2 class="text-lg font-semibold">${t('page.agencies')}</h2>
             <div class="flex items-center gap-2">
               <button
                 type="button"
                 class="btn btn-sm btn-primary"
                 data-entity-create="agency"
-              >+ New agency</button>
+              >${t('page.newAgency')}</button>
             </div>
           </div>
           ${
@@ -685,7 +686,7 @@ export class PageContentRenderer {
               ? `<div class="card bg-base-100 shadow-lg">
                   <div class="card-body p-4">
                     <div class="text-center py-6 opacity-70">
-                      No agencies found in GTFS data.
+                      ${t('page.noAgencies')}
                     </div>
                   </div>
                 </div>`
@@ -701,7 +702,7 @@ export class PageContentRenderer {
 
         <div class="space-y-4">
           <div class="flex items-center justify-between gap-4">
-            <h2 class="text-lg font-semibold">Services</h2>
+            <h2 class="text-lg font-semibold">${t('page.services')}</h2>
             <div class="flex items-center gap-2">
               <button
                 type="button"
@@ -709,19 +710,19 @@ export class PageContentRenderer {
                 id="bulk-trim-all-btn"
                 title="${escapeHtml(bulkTrimTitle)}"
                 ${bounds.start && canBulkTrimExtend ? '' : 'disabled'}
-              >Trim all to feed start</button>
+              >${t('page.trimAll')}</button>
               <button
                 type="button"
                 class="btn btn-xs btn-outline"
                 id="bulk-extend-all-btn"
                 title="${escapeHtml(bulkExtendTitle)}"
                 ${bounds.end && canBulkTrimExtend ? '' : 'disabled'}
-              >Extend all to feed end</button>
+              >${t('page.extendAll')}</button>
               <button
                 type="button"
                 class="btn btn-sm btn-primary"
                 data-entity-create="service"
-              >+ New service</button>
+              >${t('page.newService')}</button>
             </div>
           </div>
           ${
@@ -729,7 +730,7 @@ export class PageContentRenderer {
               ? `<div class="card bg-base-100 shadow-lg">
                   <div class="card-body p-4">
                     <div class="text-center py-6 opacity-70">
-                      No services found in GTFS data.
+                      ${t('page.noServices')}
                     </div>
                   </div>
                 </div>`
@@ -801,7 +802,7 @@ export class PageContentRenderer {
 
     return `
       <div class="space-y-4">
-        <h2 class="text-lg font-semibold">Feed Information</h2>
+        <h2 class="text-lg font-semibold">${t('page.feedInfo')}</h2>
         <div class="card bg-base-100 shadow-lg">
           <div class="card-body p-4">
             <div class="max-w-md">
@@ -835,8 +836,8 @@ export class PageContentRenderer {
     return `
       <div class="space-y-2">
         <div class="flex items-center justify-between gap-2">
-          <h2 class="text-lg font-semibold">Attributions</h2>
-          <button class="btn btn-xs btn-outline manage-attributions-btn">Manage attributions</button>
+          <h2 class="text-lg font-semibold">${t('page.attributions')}</h2>
+          <button class="btn btn-xs btn-outline manage-attributions-btn">${t('page.manageAttributions')}</button>
         </div>
         <div class="card bg-base-100 shadow-lg">
           <div class="card-body p-4 space-y-3">
@@ -854,9 +855,9 @@ export class PageContentRenderer {
     const text = (field: string): string => String(row[field] ?? '').trim();
 
     const roles = [
-      ['is_producer', 'Producer'],
-      ['is_operator', 'Operator'],
-      ['is_authority', 'Authority'],
+      ['is_producer', t('page.producer')],
+      ['is_operator', t('page.operator')],
+      ['is_authority', t('page.authority')],
     ]
       .filter(([field]) => text(field) === '1')
       .map(
@@ -892,7 +893,7 @@ export class PageContentRenderer {
     return `
       <div class="space-y-1">
         <div class="flex items-center gap-2 flex-wrap">
-          <span class="font-semibold">${organization === '' ? '<span class="opacity-60">No organization name</span>' : escapeHtml(organization)}</span>
+          <span class="font-semibold">${organization === '' ? `<span class="opacity-60">${t('page.noOrganization')}</span>` : escapeHtml(organization)}</span>
           ${roles}
         </div>
         <div class="text-xs opacity-70">${scopeHtml}</div>
@@ -910,9 +911,9 @@ export class PageContentRenderer {
     row: Record<string, unknown>
   ): Promise<string> {
     const scopes: Array<[string, string, string]> = [
-      ['agency_id', 'agency', 'Agency'],
-      ['route_id', 'routes', 'Route'],
-      ['trip_id', 'trips', 'Trip'],
+      ['agency_id', 'agency', t('entity.agency')],
+      ['route_id', 'routes', t('entity.route')],
+      ['trip_id', 'trips', t('entity.trip')],
     ];
 
     for (const [field, table, label] of scopes) {
@@ -924,12 +925,21 @@ export class PageContentRenderer {
         [field]: id,
       })) as Record<string, string>[];
       if (matches.length === 0) {
-        return `${label}: ${escapeHtml(id)} <span class="text-error">(no such ${label.toLowerCase()})</span>`;
+        return t('page.scopeMissing', {
+          label,
+          id: escapeHtml(id),
+          missing: `<span class="text-error">${t('page.scopeNoSuch', { entity: label.toLowerCase() })}</span>`,
+        });
       }
-      return `${label}: ${escapeHtml(renderOptionLabel(getEntityDisplay(table, matches[0])))}`;
+      return t('page.scope', {
+        label,
+        name: escapeHtml(
+          renderOptionLabel(getEntityDisplay(table, matches[0]))
+        ),
+      });
     }
 
-    return 'Applies to the whole dataset';
+    return t('page.wholeDataset');
   }
 
   /**
@@ -1010,8 +1020,8 @@ export class PageContentRenderer {
         <div class="flex items-center justify-between gap-2 min-w-0">
           <h2 class="text-lg font-semibold truncate">${renderCardLabel(getRouteDisplay(routeData))}</h2>
           <div class="flex items-center gap-2 shrink-0">
-            <button class="btn btn-sm btn-outline open-timetable-btn" data-route-id="${route_id}" data-service-id="${escapeHtml(timetableServiceId ?? '')}" title="Timetable"${timetableServiceId ? '' : ' disabled'}>${renderNavIcon('timetable', { sizeClass: 'h-4 w-4' })}</button>
-            <button class="btn btn-sm btn-error btn-outline delete-route-btn" data-route-id="${route_id}" title="Delete">${renderTrashIcon()}</button>
+            <button class="btn btn-sm btn-outline open-timetable-btn" data-route-id="${route_id}" data-service-id="${escapeHtml(timetableServiceId ?? '')}" title="${t('page.timetable')}"${timetableServiceId ? '' : ' disabled'}>${renderNavIcon('timetable', { sizeClass: 'h-4 w-4' })}</button>
+            <button class="btn btn-sm btn-error btn-outline delete-route-btn" data-route-id="${route_id}" title="${t('common.delete')}">${renderTrashIcon()}</button>
           </div>
         </div>
         <div class="card bg-base-100 shadow-lg">
@@ -1030,15 +1040,15 @@ export class PageContentRenderer {
     const newServiceSelectorHTML = `
       <div class="space-y-2">
         <label class="label" for="new-service-select">
-          Add timetable for service:
+          ${t('page.addTimetable')}
         </label>
         <select
           id="new-service-select"
           class="select select-bordered w-full"
           data-route-id="${route_id}"
-          ${noServices ? 'disabled title="No services yet: create one first"' : ''}
+          ${noServices ? `disabled title="${t('page.noServicesYet')}"` : ''}
         >
-          <option value="">Choose a service...</option>
+          <option value="">${t('page.chooseService')}</option>
           ${allServices
             .filter((s) => !serviceGroups[s.service_id as string]) // Only show services without trips
             .map(
@@ -1047,7 +1057,7 @@ export class PageContentRenderer {
             `
             )
             .join('')}
-          <option value="" data-new-service>New service…</option>
+          <option value="" data-new-service>${t('page.newServiceOption')}</option>
         </select>
       </div>
     `;
@@ -1067,19 +1077,19 @@ export class PageContentRenderer {
     // Render timetables list
     const servicesListHTML = `
       <div class="space-y-4">
-        <h2 class="text-lg font-semibold">Timetables</h2>
+        <h2 class="text-lg font-semibold">${t('page.timetables')}</h2>
         <div class="card bg-base-100 shadow-lg">
           <div class="card-body p-4">
             ${newServiceSelectorHTML}
             ${
               Object.keys(serviceGroups).length === 0 && noServices
                 ? `<div class="text-center py-6 opacity-70">
-                    No services found.
-                    <button type="button" class="link link-primary create-service-link">Create one</button>.
+                    ${t('page.noServicesFound')}
+                    <button type="button" class="link link-primary create-service-link">${t('page.createOne')}</button>.
                   </div>`
                 : Object.keys(serviceGroups).length === 0
                   ? `<div class="text-center py-6 opacity-70 mt-4">
-                    No timetables yet. Select a service above to create one.
+                    ${t('page.noTimetables')}
                   </div>`
                   : `<div class="max-h-96 overflow-y-auto mt-4">
                     ${renderServiceTimeline(routeServiceData, { route_id, tripCounts: routeTripCounts })}
@@ -1142,11 +1152,11 @@ export class PageContentRenderer {
 
     return `
       <fieldset class="fieldset">
-        <legend class="fieldset-legend">Network</legend>
+        <legend class="fieldset-legend">${t('page.network')}</legend>
         ${renderPickerTrigger({
           content: label
             ? escapeHtml(label)
-            : '<span class="opacity-40">Not in a network</span>',
+            : `<span class="opacity-40">${t('page.notInNetwork')}</span>`,
           // Brings its own bordered field box, so only the layout and the
           // chevron come from the shared trigger.
           variant: 'bare',
@@ -1184,15 +1194,15 @@ export class PageContentRenderer {
       'networks'
     )) as Record<string, string>[];
     const picked = await showOptionPickerModal({
-      title: 'Select network',
+      title: t('page.selectNetwork'),
       options: [
-        { value: '', primary: '- none -' },
+        { value: '', primary: t('common.noneOption') },
         ...networks.map((n) => ({
           value: String(n.network_id ?? ''),
           primary: renderOptionLabel(getEntityDisplay('networks', n)),
           secondary: String(n.network_id ?? ''),
         })),
-        { value: CREATE_NETWORK, primary: '+ Create a new network...' },
+        { value: CREATE_NETWORK, primary: t('page.createNetwork') },
       ],
       selectedValue: current,
       searchable: true,
@@ -1244,7 +1254,7 @@ export class PageContentRenderer {
     setPickerTriggerContent(
       span,
       network_id === ''
-        ? '<span class="opacity-40">Not in a network</span>'
+        ? `<span class="opacity-40">${t('page.notInNetwork')}</span>`
         : escapeHtml(await this.networkLabel(network_id))
     );
   }
@@ -1256,7 +1266,7 @@ export class PageContentRenderer {
     const db = this.dependencies.gtfsDatabase;
     let network_id: string | null = null;
     const values = await promptNewEntity({
-      title: 'New network',
+      title: t('page.newNetwork'),
       id: {
         table: 'networks',
         suggested: await nextEntityId(db, 'networks', 'network'),
@@ -1265,7 +1275,7 @@ export class PageContentRenderer {
         {
           field: 'network_name',
           tableName: GTFS_TABLES.NETWORKS,
-          note: 'Naming a network makes the feed export networks.txt and route_networks.txt rather than a network_id column on routes.txt.',
+          note: t('page.networkNote'),
         },
       ],
       validate: () => null,
@@ -1636,7 +1646,7 @@ export class PageContentRenderer {
     const db = this.dependencies.gtfsDatabase;
     let agency_id: string | null = null;
     const values = await promptNewEntity({
-      title: 'New agency',
+      title: t('page.newAgencyTitle'),
       id: {
         table: 'agency',
         suggested: await nextEntityId(db, 'agency', 'agency'),
@@ -1674,7 +1684,7 @@ export class PageContentRenderer {
     const db = this.dependencies.gtfsDatabase;
     let route_id: string | null = null;
     const values = await promptNewEntity({
-      title: 'New route',
+      title: t('page.newRouteTitle'),
       id: {
         table: 'routes',
         suggested: await nextEntityId(db, 'routes', 'route'),
@@ -1737,15 +1747,17 @@ export class PageContentRenderer {
       value
     );
     if (services === 0 && exceptions === 0) {
-      notify.info('Every service is already at that bound');
+      notify.info(t('page.alreadyAtBound'));
     } else {
-      const verb = field === 'start_date' ? 'Trimmed' : 'Extended';
-      const removed =
-        exceptions > 0
-          ? `, removed ${exceptions} exception${exceptions === 1 ? '' : 's'}`
-          : '';
+      const vars = {
+        services: t('count.services', { count: services }),
+        exceptions: t('count.exceptions', { count: exceptions }),
+      };
+      const trim = field === 'start_date';
       notify.success(
-        `${verb} ${services} service${services === 1 ? '' : 's'}${removed}`
+        exceptions > 0
+          ? t(trim ? 'page.trimmedRemoved' : 'page.extendedRemoved', vars)
+          : t(trim ? 'page.trimmed' : 'page.extended', vars)
       );
     }
     this.dependencies.onEntityCreated?.();
@@ -1884,8 +1896,14 @@ export class PageContentRenderer {
       ];
       const label =
         trips.length === 0
-          ? 'Delete route'
-          : `Delete route + ${trips.length} trip${trips.length !== 1 ? 's' : ''} + ${allStopTimes.length} stop_time${allStopTimes.length !== 1 ? 's' : ''}`;
+          ? t('delete.route')
+          : t('delete.cascade', {
+              label: t('delete.route'),
+              parts: [
+                t('count.trips', { count: trips.length }),
+                t('count.stopTimes', { count: allStopTimes.length }),
+              ].join(' + '),
+            });
       await pm.recordBatchDelete(deleteOps, label);
 
       console.log(
@@ -1896,28 +1914,49 @@ export class PageContentRenderer {
 
     if (trips.length === 0) {
       await showModal({
-        title: 'Delete route?',
-        body: `<p>This route has no trips. Are you sure you want to delete it?</p>`,
+        title: t('page.deleteRouteTitle'),
+        body: `<p>${t('page.deleteRouteEmpty')}</p>`,
         enterAction: 1,
         escapeAction: 0,
         actions: [
-          { label: 'Cancel', className: 'btn-ghost', onClick: () => {} },
-          { label: 'Delete route', className: 'btn-error', onClick: doDelete },
+          {
+            label: t('common.cancel'),
+            className: 'btn-ghost',
+            onClick: () => {},
+          },
+          {
+            label: t('delete.route'),
+            className: 'btn-error',
+            onClick: doDelete,
+          },
         ],
       });
       return;
     }
 
     await showModal({
-      title: 'Route has trips',
-      body: `<p>This route has <strong>${trips.length} trip${trips.length !== 1 ? 's' : ''}</strong> and <strong>${allStopTimes.length} stop_time${allStopTimes.length !== 1 ? 's' : ''}</strong>.</p>
-             <p class="mt-3">Deleting this route will cascade-delete all its trips and stop_times (reversible via undo). Or cancel to keep it.</p>`,
+      title: t('page.routeHasTrips'),
+      body: `<p>${t('page.routeHasTripsBody', {
+        trips: `<strong>${t('count.trips', { count: trips.length })}</strong>`,
+        stopTimes: `<strong>${t('count.stopTimes', { count: allStopTimes.length })}</strong>`,
+      })}</p>
+             <p class="mt-3">${t('page.routeCascade')}</p>`,
       enterAction: 1,
       escapeAction: 0,
       actions: [
-        { label: 'Cancel', className: 'btn-ghost', onClick: () => {} },
         {
-          label: `Delete route + ${trips.length} trips + ${allStopTimes.length} stop_times`,
+          label: t('common.cancel'),
+          className: 'btn-ghost',
+          onClick: () => {},
+        },
+        {
+          label: t('delete.cascade', {
+            label: t('delete.route'),
+            parts: [
+              t('count.trips', { count: trips.length }),
+              t('count.stopTimes', { count: allStopTimes.length }),
+            ].join(' + '),
+          }),
           className: 'btn-error',
           onClick: doDelete,
         },
@@ -1998,24 +2037,14 @@ export class PageContentRenderer {
           : []),
       ];
 
-      const parts: string[] = [];
-      if (trips.length > 0) {
-        parts.push(`${trips.length} trip${trips.length !== 1 ? 's' : ''}`);
-      }
-      if (allStopTimes.length > 0) {
-        parts.push(
-          `${allStopTimes.length} stop_time${allStopTimes.length !== 1 ? 's' : ''}`
-        );
-      }
-      if (calendarDates.length > 0) {
-        parts.push(
-          `${calendarDates.length} calendar_date${calendarDates.length !== 1 ? 's' : ''}`
-        );
-      }
+      const parts = serviceDependentParts();
       const label =
         parts.length === 0
-          ? 'Delete service'
-          : `Delete service + ${parts.join(', ')}`;
+          ? t('delete.service')
+          : t('delete.cascade', {
+              label: t('delete.service'),
+              parts: parts.join(' + '),
+            });
       await pm.recordBatchDelete(deleteOps, label);
 
       console.log(
@@ -2024,18 +2053,35 @@ export class PageContentRenderer {
       await navigateToHome();
     };
 
+    // The non-empty counts among a service's dependents, worded.
+    function serviceDependentParts(): string[] {
+      return [
+        trips.length > 0 ? t('count.trips', { count: trips.length }) : '',
+        allStopTimes.length > 0
+          ? t('count.stopTimes', { count: allStopTimes.length })
+          : '',
+        calendarDates.length > 0
+          ? t('count.calendarDates', { count: calendarDates.length })
+          : '',
+      ].filter((part) => part !== '');
+    }
+
     const hasAnyDependents = trips.length > 0 || calendarDates.length > 0;
 
     if (!hasAnyDependents) {
       await showModal({
-        title: 'Delete service?',
-        body: `<p>This service has no trips or calendar dates. Are you sure you want to delete it?</p>`,
+        title: t('page.deleteServiceTitle'),
+        body: `<p>${t('page.deleteServiceEmpty')}</p>`,
         enterAction: 1,
         escapeAction: 0,
         actions: [
-          { label: 'Cancel', className: 'btn-ghost', onClick: () => {} },
           {
-            label: 'Delete service',
+            label: t('common.cancel'),
+            className: 'btn-ghost',
+            onClick: () => {},
+          },
+          {
+            label: t('delete.service'),
             className: 'btn-error',
             onClick: doDelete,
           },
@@ -2044,44 +2090,29 @@ export class PageContentRenderer {
       return;
     }
 
-    const summaryParts: string[] = [];
-    if (trips.length > 0) {
-      summaryParts.push(
-        `<strong>${trips.length} trip${trips.length !== 1 ? 's' : ''}</strong>`
-      );
-    }
-    if (allStopTimes.length > 0) {
-      summaryParts.push(
-        `<strong>${allStopTimes.length} stop_time${allStopTimes.length !== 1 ? 's' : ''}</strong>`
-      );
-    }
-    if (calendarDates.length > 0) {
-      summaryParts.push(
-        `<strong>${calendarDates.length} calendar_date${calendarDates.length !== 1 ? 's' : ''}</strong>`
-      );
-    }
-
-    const deleteBtnParts: string[] = [];
-    if (trips.length > 0) {
-      deleteBtnParts.push(`${trips.length} trips`);
-    }
-    if (allStopTimes.length > 0) {
-      deleteBtnParts.push(`${allStopTimes.length} stop_times`);
-    }
-    if (calendarDates.length > 0) {
-      deleteBtnParts.push(`${calendarDates.length} calendar_dates`);
-    }
+    const dependentParts = serviceDependentParts();
 
     await showModal({
-      title: 'Service has dependents',
-      body: `<p>This service has ${summaryParts.join(', ')}.</p>
-             <p class="mt-3">Deleting this service will cascade-delete all its trips, stop_times, and calendar_dates (reversible via undo). Or cancel to keep it.</p>`,
+      title: t('page.serviceHasDependents'),
+      body: `<p>${t('page.serviceHasBody', {
+        parts: dependentParts
+          .map((part) => `<strong>${part}</strong>`)
+          .join(', '),
+      })}</p>
+             <p class="mt-3">${t('page.serviceCascade')}</p>`,
       enterAction: 1,
       escapeAction: 0,
       actions: [
-        { label: 'Cancel', className: 'btn-ghost', onClick: () => {} },
         {
-          label: `Delete service + ${deleteBtnParts.join(' + ')}`,
+          label: t('common.cancel'),
+          className: 'btn-ghost',
+          onClick: () => {},
+        },
+        {
+          label: t('delete.cascade', {
+            label: t('delete.service'),
+            parts: dependentParts.join(' + '),
+          }),
           className: 'btn-error',
           onClick: doDelete,
         },
@@ -2137,6 +2168,11 @@ export class PageContentRenderer {
         )
       );
     const allStopTimes = stopTimesPerTrip.flat();
+    const agencyParts = (): string[] => [
+      t('count.routes', { count: routes.length }),
+      t('count.trips', { count: allTrips.length }),
+      t('count.stopTimes', { count: allStopTimes.length }),
+    ];
 
     const doDelete = async () => {
       for (const st of allStopTimes) {
@@ -2172,8 +2208,11 @@ export class PageContentRenderer {
 
       const label =
         routes.length === 0
-          ? 'Delete agency'
-          : `Delete agency + ${routes.length} route${routes.length !== 1 ? 's' : ''} + ${allTrips.length} trip${allTrips.length !== 1 ? 's' : ''} + ${allStopTimes.length} stop_time${allStopTimes.length !== 1 ? 's' : ''}`;
+          ? t('delete.agency')
+          : t('delete.cascade', {
+              label: t('delete.agency'),
+              parts: agencyParts().join(' + '),
+            });
       await pm.recordBatchDelete(deleteOps, label);
 
       console.log(
@@ -2184,14 +2223,18 @@ export class PageContentRenderer {
 
     if (routes.length === 0) {
       await showModal({
-        title: 'Delete agency?',
-        body: `<p>This agency has no routes. Are you sure you want to delete it?</p>`,
+        title: t('page.deleteAgencyTitle'),
+        body: `<p>${t('page.deleteAgencyEmpty')}</p>`,
         enterAction: 1,
         escapeAction: 0,
         actions: [
-          { label: 'Cancel', className: 'btn-ghost', onClick: () => {} },
           {
-            label: 'Delete agency',
+            label: t('common.cancel'),
+            className: 'btn-ghost',
+            onClick: () => {},
+          },
+          {
+            label: t('delete.agency'),
             className: 'btn-error',
             onClick: doDelete,
           },
@@ -2201,15 +2244,26 @@ export class PageContentRenderer {
     }
 
     await showModal({
-      title: 'Agency has routes',
-      body: `<p>This agency has <strong>${routes.length} route${routes.length !== 1 ? 's' : ''}</strong>, <strong>${allTrips.length} trip${allTrips.length !== 1 ? 's' : ''}</strong>, and <strong>${allStopTimes.length} stop_time${allStopTimes.length !== 1 ? 's' : ''}</strong>.</p>
-             <p class="mt-3">Deleting this agency will cascade-delete all its routes, trips, and stop_times (reversible via undo). Or cancel to keep it.</p>`,
+      title: t('page.agencyHasRoutes'),
+      body: `<p>${t('page.agencyHasBody', {
+        routes: `<strong>${t('count.routes', { count: routes.length })}</strong>`,
+        trips: `<strong>${t('count.trips', { count: allTrips.length })}</strong>`,
+        stopTimes: `<strong>${t('count.stopTimes', { count: allStopTimes.length })}</strong>`,
+      })}</p>
+             <p class="mt-3">${t('page.agencyCascade')}</p>`,
       enterAction: 1,
       escapeAction: 0,
       actions: [
-        { label: 'Cancel', className: 'btn-ghost', onClick: () => {} },
         {
-          label: `Delete agency + ${routes.length} routes + ${allTrips.length} trips + ${allStopTimes.length} stop_times`,
+          label: t('common.cancel'),
+          className: 'btn-ghost',
+          onClick: () => {},
+        },
+        {
+          label: t('delete.cascade', {
+            label: t('delete.agency'),
+            parts: agencyParts().join(' + '),
+          }),
           className: 'btn-error',
           onClick: doDelete,
         },
@@ -2268,8 +2322,11 @@ export class PageContentRenderer {
         { table: 'stops', id: stop_id, record: stop },
       ];
       const label = cascade
-        ? `Delete stop + ${stopTimes.length} stop_time${stopTimes.length !== 1 ? 's' : ''}`
-        : 'Delete stop';
+        ? t('delete.cascade', {
+            label: t('delete.stop'),
+            parts: t('count.stopTimes', { count: stopTimes.length }),
+          })
+        : t('delete.stop');
       await pm.recordBatchDelete(deleteOps, label);
 
       console.log(
@@ -2287,18 +2344,30 @@ export class PageContentRenderer {
     const tripIds = [...new Set(stopTimes.map((st) => st.trip_id as string))];
     const tripSummary =
       tripIds.slice(0, 5).join(', ') +
-      (tripIds.length > 5 ? ` … and ${tripIds.length - 5} more` : '');
+      (tripIds.length > 5
+        ? t('delete.andMore', { count: tripIds.length - 5 })
+        : '');
     await showModal({
-      title: 'Stop has scheduled visits',
-      body: `<p>This stop is referenced by <strong>${stopTimes.length} stop_time${stopTimes.length !== 1 ? 's' : ''}</strong> across ${tripIds.length} trip${tripIds.length !== 1 ? 's' : ''}:</p>
+      title: t('page.stopHasVisits'),
+      body: `<p>${t('page.stopReferenced', {
+        stopTimes: `<strong>${t('count.stopTimes', { count: stopTimes.length })}</strong>`,
+        trips: t('count.trips', { count: tripIds.length }),
+      })}</p>
              <p class="text-sm opacity-70 mt-1">${tripSummary}</p>
-             <p class="mt-3">You can cascade-delete the stop and all its stop_times (reversible via undo), or cancel.</p>`,
+             <p class="mt-3">${t('page.stopCascade')}</p>`,
       enterAction: 1,
       escapeAction: 0,
       actions: [
-        { label: 'Cancel', className: 'btn-ghost', onClick: () => {} },
         {
-          label: `Delete stop + ${stopTimes.length} stop_times`,
+          label: t('common.cancel'),
+          className: 'btn-ghost',
+          onClick: () => {},
+        },
+        {
+          label: t('delete.cascade', {
+            label: t('delete.stop'),
+            parts: t('count.stopTimes', { count: stopTimes.length }),
+          }),
           className: 'btn-error',
           onClick: () => doDelete(true),
         },
@@ -2383,8 +2452,11 @@ export class PageContentRenderer {
           },
         ],
         stopTimes.length > 0
-          ? `Delete zone + ${stopTimes.length} stop_time${stopTimes.length !== 1 ? 's' : ''}`
-          : 'Delete zone'
+          ? t('delete.cascade', {
+              label: t('delete.zone'),
+              parts: t('count.stopTimes', { count: stopTimes.length }),
+            })
+          : t('delete.zone')
       );
 
       console.log(
@@ -2402,18 +2474,30 @@ export class PageContentRenderer {
     const tripIds = [...new Set(stopTimes.map((st) => st.trip_id as string))];
     const tripSummary =
       tripIds.slice(0, 5).join(', ') +
-      (tripIds.length > 5 ? ` … and ${tripIds.length - 5} more` : '');
+      (tripIds.length > 5
+        ? t('delete.andMore', { count: tripIds.length - 5 })
+        : '');
     await showModal({
-      title: 'Zone has scheduled pickups',
-      body: `<p>This zone is referenced by <strong>${stopTimes.length} stop_time${stopTimes.length !== 1 ? 's' : ''}</strong> across ${tripIds.length} trip${tripIds.length !== 1 ? 's' : ''}:</p>
+      title: t('page.zoneHasPickups'),
+      body: `<p>${t('page.zoneReferenced', {
+        stopTimes: `<strong>${t('count.stopTimes', { count: stopTimes.length })}</strong>`,
+        trips: t('count.trips', { count: tripIds.length }),
+      })}</p>
              <p class="text-sm opacity-70 mt-1">${tripSummary}</p>
-             <p class="mt-3">You can cascade-delete the zone and all its stop_times (reversible via undo), or cancel.</p>`,
+             <p class="mt-3">${t('page.zoneCascade')}</p>`,
       enterAction: 1,
       escapeAction: 0,
       actions: [
-        { label: 'Cancel', className: 'btn-ghost', onClick: () => {} },
         {
-          label: `Delete zone + ${stopTimes.length} stop_times`,
+          label: t('common.cancel'),
+          className: 'btn-ghost',
+          onClick: () => {},
+        },
+        {
+          label: t('delete.cascade', {
+            label: t('delete.zone'),
+            parts: t('count.stopTimes', { count: stopTimes.length }),
+          }),
           className: 'btn-error',
           onClick: () => doDelete(),
         },
