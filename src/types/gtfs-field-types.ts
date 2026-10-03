@@ -1,4 +1,4 @@
-import { t } from '../i18n/messages';
+import { tv as t } from '../i18n/validation';
 
 /**
  * GTFS Field Type Definitions

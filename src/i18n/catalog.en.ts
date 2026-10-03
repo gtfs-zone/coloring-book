@@ -12,6 +12,7 @@ import { shell } from './en/shell';
 import { timetable } from './en/timetable';
 import { validation } from './en/validation';
 import { views } from './en/views';
+import { worker } from './en/worker';
 
 /** edit.gtfs.zone's UI strings, in English: the source of the keys. */
 export const en = {
@@ -29,4 +30,5 @@ export const en = {
   ...timetable,
   ...validation,
   ...views,
+  ...worker,
 };

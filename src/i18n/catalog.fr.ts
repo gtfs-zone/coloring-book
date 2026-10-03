@@ -14,6 +14,7 @@ import { shell } from './fr/shell';
 import { timetable } from './fr/timetable';
 import { validation } from './fr/validation';
 import { views } from './fr/views';
+import { worker } from './fr/worker';
 
 /** edit.gtfs.zone's UI strings, in French. */
 export const fr: Translation<typeof en> = {
@@ -31,4 +32,5 @@ export const fr: Translation<typeof en> = {
   ...timetable,
   ...validation,
   ...views,
+  ...worker,
 };

@@ -103,15 +103,6 @@ export const load = {
   'parse.networkConflict_other':
     'This feed defines networks in networks.txt or route_networks.txt and also sets network_id on {count} routes in routes.txt. GTFS forbids both, so the routes.network_id values are ignored and will not be exported.',
   'parse.noData': 'No GTFS data to export',
-  'worker.downloadingOf': 'Downloading feed, {loaded} of {total}',
-  'worker.downloadingBytes': 'Downloading feed, {loaded}',
-  'worker.opening': 'Opening {path}...',
-  'worker.extracting': 'Extracting ZIP file...',
-  'worker.processing': 'Processing {file}...',
-  'worker.finalizing': 'Finalizing...',
-  'worker.noEntry': 'The archive has no entry "{path}".',
-  'worker.noEntryFound':
-    'The archive has no entry "{path}": it contains {found}.',
   'dbui.outOfDate': 'App is out of date',
   'dbui.outOfDateBody':
     'The saved database is at version {current}, but this version of GTFS.zone only understands version {supported}. Reload the page to pick up the current version of the app.',

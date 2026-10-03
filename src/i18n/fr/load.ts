@@ -111,15 +111,6 @@ export const load: Translation<typeof en> = {
   'parse.networkConflict_other':
     'Ce flux définit des réseaux dans networks.txt ou route_networks.txt et renseigne aussi network_id sur {count} lignes de routes.txt. GTFS interdit les deux : les valeurs de routes.network_id sont ignorées et ne seront pas exportées.',
   'parse.noData': 'Aucune donnée GTFS à exporter',
-  'worker.downloadingOf': 'Téléchargement du flux, {loaded} sur {total}',
-  'worker.downloadingBytes': 'Téléchargement du flux, {loaded}',
-  'worker.opening': 'Ouverture de {path}...',
-  'worker.extracting': 'Extraction du fichier ZIP...',
-  'worker.processing': 'Traitement de {file}...',
-  'worker.finalizing': 'Finalisation...',
-  'worker.noEntry': "L'archive n'a pas d'entrée « {path} ».",
-  'worker.noEntryFound':
-    "L'archive n'a pas d'entrée « {path} » : elle contient {found}.",
   'dbui.outOfDate': "L'application n'est pas à jour",
   'dbui.outOfDateBody':
     "La base de données enregistrée est en version {current}, mais cette version de GTFS.zone ne comprend que la version {supported}. Rechargez la page pour obtenir la version actuelle de l'application.",

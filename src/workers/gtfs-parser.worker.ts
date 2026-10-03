@@ -20,8 +20,8 @@ import {
   formatBytes,
 } from 'gtfs-zone-web-common/gtfs/feed-download';
 import { defineCatalog, type Locale } from 'gtfs-zone-web-common/i18n/index';
-import { en } from '../i18n/catalog.en';
-import { fr } from '../i18n/catalog.fr';
+import { worker as en } from '../i18n/en/worker';
+import { worker as fr } from '../i18n/fr/worker';
 
 // A worker has no cookie or localStorage to resolve the locale from, so the
 // main thread sends its own with the parse request.
