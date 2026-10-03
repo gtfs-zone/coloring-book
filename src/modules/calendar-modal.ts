@@ -23,6 +23,7 @@ import {
   type ServiceData,
   type ServiceTimelineSource,
 } from './service-timeline';
+import { t } from '../i18n/messages';
 
 export interface CalendarModalDeps {
   gtfsDatabase: ServiceTimelineSource & FeedBoundsWriteDatabase;
@@ -56,11 +57,11 @@ function renderFeedEdgeBadges(
 ): string {
   const start =
     date === feedStartDate
-      ? `<span class="badge badge-xs badge-success ml-1 field-tooltip-trigger" tabindex="0" data-tooltip-content="Feed start date">${renderTriangleIcon('h-2 w-2')}</span>`
+      ? `<span class="badge badge-xs badge-success ml-1 field-tooltip-trigger" tabindex="0" data-tooltip-content="${t('cal.feedStart')}">${renderTriangleIcon('h-2 w-2')}</span>`
       : '';
   const end =
     date === feedEndDate
-      ? `<span class="badge badge-xs badge-error ml-1 field-tooltip-trigger" tabindex="0" data-tooltip-content="Feed end date">${renderTriangleIcon('h-2 w-2 rotate-180')}</span>`
+      ? `<span class="badge badge-xs badge-error ml-1 field-tooltip-trigger" tabindex="0" data-tooltip-content="${t('cal.feedEnd')}">${renderTriangleIcon('h-2 w-2 rotate-180')}</span>`
       : '';
   return start + end;
 }
@@ -80,11 +81,11 @@ export async function showCalendarModal(
   let openService: (sid: string) => void = () => {};
 
   const trimTitle = feedStartDate
-    ? `Set every service's start_date to ${feedStartDate}, and remove every exception before it`
-    : 'feed_info has no feed_start_date';
+    ? t('page.trimAllTitle', { date: feedStartDate })
+    : t('page.noFeedStart');
   const extendTitle = feedEndDate
-    ? `Set every service's end_date to ${feedEndDate}, and remove every exception after it`
-    : 'feed_info has no feed_end_date';
+    ? t('page.extendAllTitle', { date: feedEndDate })
+    : t('page.noFeedEnd');
 
   const toolbarHtml = (): string => `
     <button
@@ -93,14 +94,14 @@ export async function showCalendarModal(
       data-cal-bound="start_date"
       title="${escapeHtml(trimTitle)}"
       ${feedStartDate && !batchRunning ? '' : 'disabled'}
-    >Trim all to feed start</button>
+    >${t('page.trimAll')}</button>
     <button
       type="button"
       class="btn btn-xs btn-outline"
       data-cal-bound="end_date"
       title="${escapeHtml(extendTitle)}"
       ${feedEndDate && !batchRunning ? '' : 'disabled'}
-    >Extend all to feed end</button>
+    >${t('page.extendAll')}</button>
   `;
 
   const renderGrid = (month: string): string =>
@@ -145,15 +146,17 @@ export async function showCalendarModal(
         value
       );
       if (services === 0 && exceptions === 0) {
-        notify.info('Every service is already at that bound');
+        notify.info(t('page.alreadyAtBound'));
       } else {
-        const verb = field === 'start_date' ? 'Trimmed' : 'Extended';
-        const removed =
-          exceptions > 0
-            ? `, removed ${exceptions} exception${exceptions === 1 ? '' : 's'}`
-            : '';
+        const vars = {
+          services: t('count.services', { count: services }),
+          exceptions: t('count.exceptions', { count: exceptions }),
+        };
+        const trim = field === 'start_date';
         notify.success(
-          `${verb} ${services} service${services === 1 ? '' : 's'}${removed}`
+          exceptions > 0
+            ? t(trim ? 'page.trimmedRemoved' : 'page.extendedRemoved', vars)
+            : t(trim ? 'page.trimmed' : 'page.extended', vars)
         );
       }
       await refreshServiceData();
@@ -164,16 +167,16 @@ export async function showCalendarModal(
   };
 
   await showSharedCalendarModal({
-    title: 'Service Calendar',
+    title: t('cal.title'),
     codec: GTFS_DATE_CODEC,
     weekStart: CONFIG.WEEK_START,
     today: todayGtfsDate,
     toolbarHtml,
     tabs: [
-      { key: 'month', label: 'Month Grid', render: renderGrid },
+      { key: 'month', label: t('cal.monthGrid'), render: renderGrid },
       {
         key: 'timeline',
-        label: 'Timeline',
+        label: t('cal.timeline'),
         monthless: true,
         render: () => renderServiceTimeline(data, { tripCounts }),
       },

@@ -23,6 +23,7 @@ import {
   setWeekdayToggle,
 } from '../utils/weekday-toggles';
 import { setDraftValue } from '../utils/inline-editable-field';
+import { t } from '../i18n/messages';
 
 export interface NewServiceModalDeps {
   database: FeedBoundsSource & {
@@ -60,7 +61,7 @@ export async function showNewServiceModal(
   let service_id: string | null = null;
 
   const values = await promptNewEntity({
-    title: 'New service',
+    title: t('newSvc.title'),
     boxClassName: 'max-w-lg',
     id: {
       table: 'calendar',
@@ -71,7 +72,7 @@ export async function showNewServiceModal(
           'calendar_dates'
         )) as Record<string, unknown>[];
         return exceptions.some((row) => String(row.service_id ?? '') === id)
-          ? `calendar_dates already has exceptions for service "${id}"`
+          ? t('newSvc.idHasExceptions', { id })
           : null;
       },
     },
@@ -90,7 +91,7 @@ export async function showNewServiceModal(
     draft: defaults as unknown as Record<string, unknown>,
     extraBody: `
       <div class="new-service-days">
-        <h4 class="text-sm font-semibold mb-2 text-base-content/80">Weekly Pattern</h4>
+        <h4 class="text-sm font-semibold mb-2 text-base-content/80">${t('svc.weeklyPattern')}</h4>
         ${renderWeekdayToggles(new Set(), () => '')}
       </div>
     `,
@@ -117,10 +118,10 @@ export async function showNewServiceModal(
     },
     validate: (v) => {
       if (v.start_date === '' || v.end_date === '') {
-        return 'A service needs both a start and an end date.';
+        return t('newSvc.needsDates');
       }
       if (v.end_date < v.start_date) {
-        return 'The end date is before the start date.';
+        return t('newSvc.endBeforeStart');
       }
       return null;
     },
@@ -137,7 +138,7 @@ export async function showNewServiceModal(
       }
 
       service_id = id;
-      notify.success(`Created service ${id}`);
+      notify.success(t('newSvc.created', { id }));
     },
   });
 

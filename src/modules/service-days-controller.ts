@@ -35,6 +35,7 @@ import {
   setWeekdayToggle,
 } from '../utils/weekday-toggles';
 import { defaultServiceRange } from '../utils/default-values';
+import { t } from '../i18n/messages';
 
 interface GTFSParserInterface {
   gtfsDatabase: {
@@ -131,7 +132,7 @@ export class ServiceDaysController {
       );
     } catch (error) {
       console.error('Error rendering service editor:', error);
-      return this.renderErrorHTML('Failed to load service editor');
+      return this.renderErrorHTML(t('svc.loadFailed'));
     }
   }
 
@@ -222,7 +223,7 @@ export class ServiceDaysController {
       console.error(`Failed to toggle ${dayKey}:`, error);
       this.showSaveError(
         `day-${dayKey}-${service_id}`,
-        `Failed to update ${dayKey}`
+        t('svc.dayFailed', { day: dayKey })
       );
     }
   }
@@ -295,7 +296,7 @@ export class ServiceDaysController {
       }
     } catch (error) {
       console.error('Failed to add exception:', error);
-      this.showSaveError('exceptions', 'Failed to add exception');
+      this.showSaveError('exceptions', t('svc.addExceptionFailed'));
     }
   }
 
@@ -325,19 +326,19 @@ export class ServiceDaysController {
 
           <!-- Weekly Pattern -->
           <div class="weekly-pattern">
-            <h4 class="text-sm font-semibold mb-2 text-base-content/80">Weekly Pattern</h4>
+            <h4 class="text-sm font-semibold mb-2 text-base-content/80">${t('svc.weeklyPattern')}</h4>
             ${weeklyPatternHTML}
           </div>
 
           <!-- Date Range -->
           <div class="date-range" id="service-date-range-${service_id}">
-            <h4 class="text-sm font-semibold mb-2 text-base-content/80">Date Range</h4>
+            <h4 class="text-sm font-semibold mb-2 text-base-content/80">${t('svc.dateRange')}</h4>
             ${dateRangeHTML}
           </div>
 
           <!-- Exceptions -->
           <div class="exceptions">
-            <h4 class="text-sm font-semibold mb-2 text-base-content/80">Service Exceptions</h4>
+            <h4 class="text-sm font-semibold mb-2 text-base-content/80">${t('svc.exceptions')}</h4>
             ${exceptionsHTML}
           </div>
         </div>
@@ -402,7 +403,7 @@ export class ServiceDaysController {
         ${renderFieldLabel(config)}
         <span
           class="px-1 py-1.5 text-sm opacity-70"
-          title="Only a service with a calendar.txt row can be renamed. Toggle a weekday to create one."
+          title="${t('svc.renameNeedsRow')}"
         >${escapeHtml(service_id)}</span>
       </fieldset>
     `;
@@ -421,8 +422,7 @@ export class ServiceDaysController {
     if (!calendar) {
       return `
         <div class="text-xs text-base-content/60">
-          This service has no calendar.txt row, so it has no date range. Its
-          dates come from the exceptions below. Toggle a weekday to create one.
+          ${t('svc.noCalendarRow')}
         </div>
       `;
     }
@@ -487,8 +487,7 @@ export class ServiceDaysController {
       .filter((e) => Number(e.exception_type) === 2)
       .sort(byDate);
 
-    const unavailable =
-      '<div class="text-xs text-base-content/60">Exceptions cannot be edited until the edit history is ready.</div>';
+    const unavailable = `<div class="text-xs text-base-content/60">${t('svc.exceptionsUnavailable')}</div>`;
     const holidayNames = this.federalHolidayNames(calendar, exceptions);
     const addedHTML = deps
       ? await this.renderExceptionTable(
@@ -516,12 +515,12 @@ export class ServiceDaysController {
         </div>
 
         <div class="space-y-1">
-          <h5 class="text-xs font-semibold text-base-content/70">Added service</h5>
+          <h5 class="text-xs font-semibold text-base-content/70">${t('svc.added')}</h5>
           ${addedHTML}
         </div>
 
         <div class="space-y-1">
-          <h5 class="text-xs font-semibold text-base-content/70">Removed service</h5>
+          <h5 class="text-xs font-semibold text-base-content/70">${t('svc.removed')}</h5>
           ${this.renderHolidaysCheckbox(service_id, calendar, exceptions)}
           ${removedHTML}
         </div>
@@ -568,13 +567,11 @@ export class ServiceDaysController {
       },
       fixedValues: { service_id, exception_type },
       emptyMessage:
-        exception_type === 1
-          ? 'No dates add service beyond the weekly pattern.'
-          : 'No dates remove service from the weekly pattern.',
+        exception_type === 1 ? t('svc.noAdded') : t('svc.noRemoved'),
       insertRow: async (record) => {
         const date = fromInputValue(String(record.date ?? ''));
         if (!/^\d{8}$/.test(date)) {
-          return 'Enter a date as YYYYMMDD';
+          return t('svc.enterDate');
         }
         await this.addException(service_id, date, exception_type);
         return null;
@@ -612,8 +609,8 @@ export class ServiceDaysController {
       holidays.length > 0 && holidays.every((date) => removedDates.has(date));
     const title =
       holidays.length === 0
-        ? 'Set a start and end date first'
-        : `${holidays.length} federal holiday date${holidays.length === 1 ? '' : 's'} fall in this date range`;
+        ? t('svc.setRangeFirst')
+        : t('svc.holidaysInRange', { count: holidays.length });
 
     return `
       <label class="label cursor-pointer justify-start gap-2 py-1" title="${title}">
@@ -624,7 +621,7 @@ export class ServiceDaysController {
           ${holidays.length === 0 ? 'disabled' : ''}
           onchange="window.gtfsEditor.serviceDaysController.toggleFederalHolidays('${service_id}')"
         />
-        <span class="label-text text-xs">Exclude US Federal Holidays</span>
+        <span class="label-text text-xs">${t('svc.excludeHolidays')}</span>
       </label>
     `;
   }
@@ -703,10 +700,7 @@ export class ServiceDaysController {
       const calendar = calendarRows[0] ?? null;
       const holidays = this.federalHolidayDates(calendar, exceptions);
       if (holidays.length === 0) {
-        this.showSaveError(
-          'exceptions',
-          'Set a start and end date before excluding holidays'
-        );
+        this.showSaveError('exceptions', t('svc.setRangeBeforeHolidays'));
         return;
       }
 
@@ -730,7 +724,7 @@ export class ServiceDaysController {
         }
         await this.patchManager?.recordBatchDelete(
           ops,
-          'Include US federal holidays'
+          t('svc.includeHolidaysLabel')
         );
         console.log(
           `[ServiceDaysController] Removed ${ops.length} federal holiday rows for ${service_id}`
@@ -757,7 +751,7 @@ export class ServiceDaysController {
           );
         }
 
-        const label = 'Exclude US federal holidays';
+        const label = t('svc.excludeHolidaysLabel');
         const insertOps = inserts.map((row) => ({
           table,
           id: `${service_id}:${row.date}`,
@@ -789,7 +783,7 @@ export class ServiceDaysController {
       await this.refreshExceptionsDisplay(service_id);
     } catch (error) {
       console.error('Failed to toggle federal holidays:', error);
-      this.showSaveError('exceptions', 'Failed to update federal holidays');
+      this.showSaveError('exceptions', t('svc.holidaysFailed'));
     }
   }
 
@@ -830,7 +824,7 @@ export class ServiceDaysController {
     );
     const calendar = calendarRows[0] ?? null;
     container.innerHTML = `
-      <h4 class="text-sm font-semibold mb-2 text-base-content/80">Date Range</h4>
+      <h4 class="text-sm font-semibold mb-2 text-base-content/80">${t('svc.dateRange')}</h4>
       ${await this.renderDateRange(service_id, calendar)}
     `;
   }

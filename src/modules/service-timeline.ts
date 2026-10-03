@@ -19,6 +19,8 @@ import {
   renderPencilIcon,
   renderTriangleIcon,
 } from 'gtfs-zone-web-common/ui/modal-utils';
+import { t } from '../i18n/messages';
+import { formatDate, weekdayName } from 'gtfs-zone-web-common/i18n/fmt';
 
 export interface ServiceData {
   calendar: Record<string, unknown> | null;
@@ -288,21 +290,12 @@ function todayLineStyle(pct: number): string {
   return `background-image:linear-gradient(to right, transparent calc(${pct}% - 0.5px), ${c} calc(${pct}% - 0.5px), ${c} calc(${pct}% + 0.5px), transparent calc(${pct}% + 0.5px))`;
 }
 
-const MONTH_ABBR = [
-  'Jan',
-  'Feb',
-  'Mar',
-  'Apr',
-  'May',
-  'Jun',
-  'Jul',
-  'Aug',
-  'Sep',
-  'Oct',
-  'Nov',
-  'Dec',
-];
 const THREE_YEARS_MS = 3 * 365.25 * 24 * 60 * 60 * 1000;
+
+// One narrow weekday name per dot, Sunday first.
+const WEEKDAY_INITIALS = [0, 1, 2, 3, 4, 5, 6]
+  .map((day) => weekdayName(day, 'narrow'))
+  .join('');
 
 // Sun-Sat order for weekday dot display (matches WEEKDAY_KEYS)
 const WEEKDAY_DOT_KEYS = [
@@ -337,7 +330,7 @@ function renderTooltipTrigger(
 
 function getDaysTooltip(calendar: Record<string, unknown> | null): string {
   if (!calendar) {
-    return 'No regular days';
+    return t('ref.noRegularDays');
   }
   return formatDaysOfWeek(calendar);
 }
@@ -347,7 +340,7 @@ export function renderServiceTimeline(
   options: ServiceTimelineOptions = {}
 ): string {
   if (data.size === 0) {
-    return `<div class="flex items-center justify-center h-32 text-base-content/50 text-sm">No service data available</div>`;
+    return `<div class="flex items-center justify-center h-32 text-base-content/50 text-sm">${t('timeline.noData')}</div>`;
   }
 
   let minTs = Infinity;
@@ -376,7 +369,7 @@ export function renderServiceTimeline(
   }
 
   if (!isFinite(minTs) || !isFinite(maxTs)) {
-    return `<div class="flex items-center justify-center h-32 text-base-content/50 text-sm">No date data available</div>`;
+    return `<div class="flex items-center justify-center h-32 text-base-content/50 text-sm">${t('timeline.noDates')}</div>`;
   }
 
   // Snap minDate back to the nearest Sunday
@@ -403,7 +396,11 @@ export function renderServiceTimeline(
   const monthSpans: Array<{ label: string; colspan: number }> = [];
   for (const week of weeks) {
     const d = parseGTFSDate(week);
-    const label = `${MONTH_ABBR[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
+    const label = formatDate(d, {
+      month: 'short',
+      year: 'numeric',
+      timeZone: 'UTC',
+    });
     if (
       monthSpans.length === 0 ||
       monthSpans[monthSpans.length - 1].label !== label
@@ -496,7 +493,9 @@ export function renderServiceTimeline(
             if (excType === 1) {
               ticks.push(
                 renderTooltipTrigger(
-                  `Added ${formatGtfsDateWithWeekday(dateStr)}`,
+                  t('timeline.addedOn', {
+                    date: formatGtfsDateWithWeekday(dateStr),
+                  }),
                   renderTriangleIcon('h-2.5 w-2.5 -rotate-90'),
                   'inline-flex text-success'
                 )
@@ -504,7 +503,9 @@ export function renderServiceTimeline(
             } else if (excType === 2) {
               ticks.push(
                 renderTooltipTrigger(
-                  `Removed ${formatGtfsDateWithWeekday(dateStr)}`,
+                  t('timeline.removedOn', {
+                    date: formatGtfsDateWithWeekday(dateStr),
+                  }),
                   renderTriangleIcon('h-2.5 w-2.5 rotate-90'),
                   'inline-flex text-error'
                 )
@@ -555,10 +556,10 @@ export function renderServiceTimeline(
       // context the row already opens the service page.
       const editCell = options.route_id
         ? `<td class="w-8 min-w-8 px-1 py-1 border-b border-base-300/30 text-center">
-          <button type="button" class="btn btn-ghost btn-xs px-1 field-tooltip-trigger ${SERVICE_EDIT_BTN}" data-service-id="${escapeHtml(sid)}" data-tooltip-content="${escapeHtml(`Edit service ${sid}`)}">${renderPencilIcon('h-3 w-3')}</button>
+          <button type="button" class="btn btn-ghost btn-xs px-1 field-tooltip-trigger ${SERVICE_EDIT_BTN}" data-service-id="${escapeHtml(sid)}" data-tooltip-content="${escapeHtml(t('timeline.editService', { id: sid }))}">${renderPencilIcon('h-3 w-3')}</button>
         </td>`
         : `<td class="w-8 min-w-8 px-1 py-1 border-b border-base-300/30 text-center">
-          <button type="button" class="btn btn-ghost btn-xs px-1" disabled title="Click the row to open the service">${renderPencilIcon('h-3 w-3')}</button>
+          <button type="button" class="btn btn-ghost btn-xs px-1" disabled title="${t('timeline.clickRow')}">${renderPencilIcon('h-3 w-3')}</button>
         </td>`;
 
       return `<tr class="timeline-row cursor-pointer hover:bg-base-300/20" data-service-id="${escapeHtml(sid)}"${routeAttr}>${labelCell}${dotCell}${tripCell}${editCell}${cells}</tr>`;
@@ -566,17 +567,17 @@ export function renderServiceTimeline(
     .join('');
 
   const warningHtml = truncated
-    ? `<div class="text-xs text-warning mb-2">Date range exceeds 3 years: display truncated.</div>`
+    ? `<div class="text-xs text-warning mb-2">${t('timeline.truncated')}</div>`
     : '';
 
   const hintHtml = options.route_id
-    ? `<div class="text-xs opacity-70 mb-2">Select a service to show the timetable for that service, or use the pencil to edit the service itself.</div>`
+    ? `<div class="text-xs opacity-70 mb-2">${t('timeline.hint')}</div>`
     : '';
 
   const editHeader = `<th class="w-8 min-w-8 border-b border-base-300"></th>`;
 
   const tripHeader = options.tripCounts
-    ? `<th class="w-12 min-w-12 px-1 py-0.5 border-b border-base-300 text-right whitespace-nowrap"><span class="text-base-content/50 text-xs font-medium">Trips</span></th>`
+    ? `<th class="w-12 min-w-12 px-1 py-0.5 border-b border-base-300 text-right whitespace-nowrap"><span class="text-base-content/50 text-xs font-medium">${t('timeline.trips')}</span></th>`
     : '';
 
   return `
@@ -588,7 +589,7 @@ export function renderServiceTimeline(
           <thead>
             <tr>
               <th class="sticky left-0 z-10 bg-base-200 border-b border-base-300" style="width:${labelColPx}px;min-width:${labelColPx}px"></th>
-              <th class="w-14 min-w-14 px-1 py-0.5 border-b border-base-300 text-center whitespace-nowrap"><span class="font-mono tracking-tight text-base-content/50 text-xs">SMTWTFS</span></th>
+              <th class="w-14 min-w-14 px-1 py-0.5 border-b border-base-300 text-center whitespace-nowrap"><span class="font-mono tracking-tight text-base-content/50 text-xs">${WEEKDAY_INITIALS}</span></th>
               ${tripHeader}
               ${editHeader}
               ${headerHtml}
