@@ -36,6 +36,7 @@ import {
 import { renderSpecDescription } from 'gtfs-zone-web-common/gtfs/spec-markup';
 import { gtfsSpec } from '../gtfs-spec/index';
 import { GTFS_TABLES } from '../types/gtfs';
+import { t } from '../i18n/messages';
 
 export type FaresModalDeps = EditableTableDeps;
 
@@ -111,7 +112,7 @@ export async function memberJoinColumn(
             member as Record<string, string>
           )
         ) + (spec.memberSuffix?.(member) ?? '')
-      : `${member_id} (missing from ${spec.memberTable})`;
+      : t('fares.missingMember', { id: member_id, table: spec.memberTable });
     const list = byGroup.get(group_id) ?? [];
     list.push({ value: member_id, label });
     byGroup.set(group_id, list);
@@ -171,7 +172,10 @@ export async function memberJoinColumn(
       }
       await deps.patchManager.recordBatchMixed(
         [...deletes, ...inserts],
-        `Edit ${spec.label.toLowerCase()} on ${spec.joinTable}`
+        t('fares.editMembers', {
+          label: spec.label.toLowerCase(),
+          table: spec.joinTable,
+        })
       );
     },
   };
@@ -346,7 +350,11 @@ export async function serviceOptions(
     if (id === '' || options.has(id)) {
       continue;
     }
-    options.set(id, { value: id, primary: id, secondary: 'Specific dates' });
+    options.set(id, {
+      value: id,
+      primary: id,
+      secondary: t('fares.specificDates'),
+    });
   }
   return [...options.values()];
 }
@@ -389,12 +397,9 @@ export function emptyState(table: string, hint: string): string {
 const FARES_ENTRIES: FaresEntry[] = [
   {
     table: GTFS_TABLES.TIMEFRAMES,
-    label: 'Timeframes',
+    label: t('fares.timeframes'),
     group: 'Definitions',
-    emptyMessage: emptyState(
-      GTFS_TABLES.TIMEFRAMES,
-      'Add one row per interval. Rows sharing a timeframe_group_id form one group, which a fare leg rule can then name.'
-    ),
+    emptyMessage: emptyState(GTFS_TABLES.TIMEFRAMES, t('fares.timeframesHint')),
     columnOverrides: (deps) => ({
       service_id: { options: () => serviceOptions(deps) },
     }),
@@ -402,29 +407,26 @@ const FARES_ENTRIES: FaresEntry[] = [
   },
   {
     table: GTFS_TABLES.RIDER_CATEGORIES,
-    label: 'Rider Categories',
+    label: t('fares.riderCategories'),
     group: 'Definitions',
     emptyMessage: emptyState(
       GTFS_TABLES.RIDER_CATEGORIES,
-      'Add one to price fares differently for, say, seniors or students.'
+      t('fares.riderCategoriesHint')
     ),
   },
   {
     table: GTFS_TABLES.FARE_MEDIA,
-    label: 'Fare Media',
+    label: t('fares.media'),
     group: 'Definitions',
-    emptyMessage: emptyState(
-      GTFS_TABLES.FARE_MEDIA,
-      'Add one to describe how a fare is carried: a paper ticket, a transit card, a phone.'
-    ),
+    emptyMessage: emptyState(GTFS_TABLES.FARE_MEDIA, t('fares.mediaHint')),
   },
   {
     table: GTFS_TABLES.FARE_PRODUCTS,
-    label: 'Fare Products',
+    label: t('fares.products'),
     group: 'Definitions',
     emptyMessage: emptyState(
       GTFS_TABLES.FARE_PRODUCTS,
-      'Add one to give a fare a price.'
+      t('fares.productsHint')
     ),
     columnOverrides: () => ({
       fare_media_id: { list: true },
@@ -435,11 +437,11 @@ const FARES_ENTRIES: FaresEntry[] = [
   },
   {
     table: GTFS_TABLES.FARE_LEG_RULES,
-    label: 'Fare Leg Rules',
+    label: t('fares.legRules'),
     group: 'Rules',
     emptyMessage: emptyState(
       GTFS_TABLES.FARE_LEG_RULES,
-      'Add one to say which fare product pays for a leg. An empty network or area matches everything the other rules do not name.'
+      t('fares.legRulesHint')
     ),
     columnOverrides: (deps) => ({
       leg_group_id: { suggestions: () => legGroupSuggestions(deps) },
@@ -453,13 +455,13 @@ const FARES_ENTRIES: FaresEntry[] = [
   },
   {
     table: GTFS_TABLES.FARE_LEG_JOIN_RULES,
-    label: 'Fare Leg Join Rules',
+    label: t('fares.legJoinRules'),
     group: 'Rules',
     emptyMessage: emptyState(
       GTFS_TABLES.FARE_LEG_JOIN_RULES,
-      'Add one to make two legs across a transfer price as a single leg.'
+      t('fares.legJoinRulesHint')
     ),
-    note: 'The stop fields go together: name both, or neither. Only stops and stations may be named.',
+    note: t('fares.legJoinRulesNote'),
     columnOverrides: (deps) => ({
       from_network_id: { options: () => networkOptions(deps), list: true },
       to_network_id: { options: () => networkOptions(deps), list: true },
@@ -470,13 +472,13 @@ const FARES_ENTRIES: FaresEntry[] = [
   },
   {
     table: GTFS_TABLES.FARE_TRANSFER_RULES,
-    label: 'Fare Transfer Rules',
+    label: t('fares.transferRules'),
     group: 'Rules',
     emptyMessage: emptyState(
       GTFS_TABLES.FARE_TRANSFER_RULES,
-      'Add one to price the transfer between two leg groups.'
+      t('fares.transferRulesHint')
     ),
-    note: 'A fare transfer rule defined from from_leg_group_id to to_leg_group_id does not apply in the reverse direction. The duration fields go together: set both, or neither.',
+    note: t('fares.transferRulesNote'),
     columnOverrides: (deps) => ({
       from_leg_group_id: { list: true },
       to_leg_group_id: { list: true },
@@ -486,38 +488,32 @@ const FARES_ENTRIES: FaresEntry[] = [
   },
   {
     table: GTFS_TABLES.AREAS,
-    label: 'Areas',
+    label: t('fares.areas'),
     group: 'Geography',
-    emptyMessage: emptyState(
-      GTFS_TABLES.AREAS,
-      'An area is the group of stops a fare leg rule starts or ends in.'
-    ),
-    note: 'Stops join an area here or on the stop page. A station in an area carries its platforms with it, unless a platform is assigned to an area of its own; only the stops named directly are listed.',
+    emptyMessage: emptyState(GTFS_TABLES.AREAS, t('fares.areasHint')),
+    note: t('fares.areasNote'),
     joinColumns: async (deps) => [
       await memberJoinColumn(deps, {
-        label: 'Stops',
+        label: t('fares.stops'),
         memberTable: GTFS_TABLES.STOPS,
         joinTable: GTFS_TABLES.STOP_AREAS,
         groupField: 'area_id',
         memberField: 'stop_id',
         options: () => fareStopOptions(deps),
         memberSuffix: (stop) =>
-          stopLocationType(stop) === 1 ? ', and its platforms' : '',
+          stopLocationType(stop) === 1 ? t('fares.andPlatforms') : '',
       }),
     ],
   },
   {
     table: GTFS_TABLES.NETWORKS,
-    label: 'Networks',
+    label: t('fares.networks'),
     group: 'Geography',
-    emptyMessage: emptyState(
-      GTFS_TABLES.NETWORKS,
-      'A network is the group of routes a fare leg rule applies to.'
-    ),
-    note: 'Routes join a network here or on the route page. Giving a network a name makes the feed export networks.txt and route_networks.txt; an unnamed network is exported as a network_id column on routes.txt instead.',
+    emptyMessage: emptyState(GTFS_TABLES.NETWORKS, t('fares.networksHint')),
+    note: t('fares.networksNote'),
     joinColumns: async (deps) => [
       await memberJoinColumn(deps, {
-        label: 'Routes',
+        label: t('fares.routes'),
         memberTable: GTFS_TABLES.ROUTES,
         joinTable: GTFS_TABLES.ROUTE_NETWORKS,
         groupField: 'network_id',
@@ -530,12 +526,11 @@ const FARES_ENTRIES: FaresEntry[] = [
 
 const GROUP_ORDER: FaresGroup[] = ['Definitions', 'Rules', 'Geography'];
 
-const INTRO = `Fares v2: the products a rider can buy, the rules that price a
-  journey out of them, and the geography those rules refer to. Fares v1
-  (<code>fare_attributes.txt</code>, <code>fare_rules.txt</code>) is not edited
-  here: open those tables in the file viewer.
+const INTRO = `${t('fares.intro', {
+  files: '<code>fare_attributes.txt</code>, <code>fare_rules.txt</code>',
+})}
   <a href="https://gtfs.org/documentation/schedule/reference/#fare_productstxt"
-     target="_blank" rel="noopener noreferrer" class="link">GTFS reference</a>.`;
+     target="_blank" rel="noopener noreferrer" class="link">${t('fares.reference')}</a>.`;
 
 export async function showFaresModal(deps: FaresModalDeps): Promise<void> {
   // Filled in by the scaffold; the table's own callbacks re-render through it.
@@ -569,9 +564,10 @@ export async function showFaresModal(deps: FaresModalDeps): Promise<void> {
   installEditableTableHandlers(tableConfig);
 
   await showSidebarModal({
-    title: 'Fares',
+    title: t('fares.title'),
     intro: INTRO,
     groupOrder: GROUP_ORDER,
+    groupLabel: (group) => t(`fares.group.${group as FaresGroup}`),
     refreshRef,
     entries: FARES_ENTRIES.map((entry) => ({
       id: entry.table,

@@ -3,6 +3,7 @@ import { common } from './en/common';
 import { fields } from './en/fields';
 import { help } from './en/help';
 import { load } from './en/load';
+import { modals } from './en/modals';
 import { pages } from './en/pages';
 import { shapes } from './en/shapes';
 import { shell } from './en/shell';
@@ -16,6 +17,7 @@ export const en = {
   ...fields,
   ...help,
   ...load,
+  ...modals,
   ...pages,
   ...shapes,
   ...shell,

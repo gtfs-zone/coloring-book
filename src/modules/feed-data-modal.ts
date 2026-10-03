@@ -28,6 +28,7 @@ import { specStoreName } from '../utils/spec-field-edit';
 import { validateTransferRow } from '../utils/fares-rules';
 import { gtfsSpec } from '../gtfs-spec/index';
 import { GTFS_FIELD_SPECS, GTFS_TABLES } from '../types/gtfs';
+import { t } from '../i18n/messages';
 
 export type FeedDataModalDeps = EditableTableDeps;
 
@@ -79,7 +80,7 @@ export function validateAttributionRow(
     (field) => cell(row, field) !== ''
   );
   if (scopes.length > 1) {
-    return `Only one of agency_id, route_id or trip_id may be set (found ${scopes.join(', ')})`;
+    return t('feedData.attrOneScope', { found: scopes.join(', ') });
   }
   return null;
 }
@@ -105,23 +106,23 @@ export function validateTranslationRow(
       ['field_value', fieldValue],
     ]) {
       if (value !== '') {
-        return `${field} is forbidden when table_name is feed_info`;
+        return t('feedData.forbiddenFeedInfo', { field });
       }
     }
     return null;
   }
 
   if (recordId !== '' && fieldValue !== '') {
-    return 'record_id and field_value are mutually exclusive: set one or the other';
+    return t('feedData.exclusive');
   }
   if (recordId === '' && fieldValue === '') {
-    return 'Either record_id or field_value is required';
+    return t('feedData.eitherRequired');
   }
   if (recordSubId !== '' && recordId === '') {
-    return 'record_sub_id requires record_id';
+    return t('feedData.subIdNeedsId');
   }
   if (tableName === 'stop_times' && recordId !== '' && recordSubId === '') {
-    return 'record_sub_id (the stop_sequence) is required when translating stop_times by record_id';
+    return t('feedData.stopTimesSubId');
   }
   return null;
 }
@@ -164,12 +165,12 @@ function translatableFieldNames(): string[] {
 const FEED_DATA_ENTRIES: FeedDataEntry[] = [
   {
     table: GTFS_TABLES.TRANSFERS,
-    label: 'Transfers',
+    label: t('feedData.transfers'),
     emptyMessage: emptyState(
       GTFS_TABLES.TRANSFERS,
-      'Add one to override how a connection between two stops is treated: to make it timed, to give it a minimum time, or to rule it out.'
+      t('feedData.transfersHint')
     ),
-    note: 'Transfer types 4 and 5 link two trips of the same vehicle and name trips instead of stops. A transfer from a station applies to all of its child stops.',
+    note: t('feedData.transfersNote'),
     docAnchor: 'transferstxt',
     columnOverrides: () => ({
       from_stop_id: { widthClass: 'min-w-48' },
@@ -179,12 +180,12 @@ const FEED_DATA_ENTRIES: FeedDataEntry[] = [
   },
   {
     table: GTFS_TABLES.ATTRIBUTIONS,
-    label: 'Attributions',
+    label: t('feedData.attributions'),
     emptyMessage: emptyState(
       GTFS_TABLES.ATTRIBUTIONS,
-      'Add one to credit an organization for the dataset, or for one agency, route or trip in it.'
+      t('feedData.attributionsHint')
     ),
-    note: 'Leave agency_id, route_id and trip_id empty to attribute the whole dataset; setting one scopes the attribution to it. At least one of is_producer, is_operator and is_authority should be 1.',
+    note: t('feedData.attributionsNote'),
     docAnchor: 'attributionstxt',
     columnOverrides: () => ({
       organization_name: { widthClass: 'min-w-48' },
@@ -193,12 +194,12 @@ const FEED_DATA_ENTRIES: FeedDataEntry[] = [
   },
   {
     table: GTFS_TABLES.TRANSLATIONS,
-    label: 'Translations',
+    label: t('feedData.translations'),
     emptyMessage: emptyState(
       GTFS_TABLES.TRANSLATIONS,
-      'Add one per translated value. Name what to translate either by record_id, or by field_value to translate every field holding that exact value.'
+      t('feedData.translationsHint')
     ),
-    note: 'Translations are stored and exported, but are not yet applied to labels shown in the app. record_id is the first field of the named table’s primary key; it is not checked against that table, since which table it names varies per row.',
+    note: t('feedData.translationsNote'),
     docAnchor: 'translationstxt',
     columnOverrides: () => ({
       field_name: {
@@ -218,12 +219,10 @@ function entryNote(entry: FeedDataEntry): string | undefined {
   }
   return `${escapeHtml(entry.note)}
     <a href="https://gtfs.org/documentation/schedule/reference/#${escapeHtml(entry.docAnchor)}"
-       target="_blank" rel="noopener noreferrer" class="link">GTFS reference</a>.`;
+       target="_blank" rel="noopener noreferrer" class="link">${t('fares.reference')}</a>.`;
 }
 
-const INTRO = `Feed-level tables that describe the rest of the feed rather than
-  adding anything to the map: the connections between stops, who the data is
-  attributed to, and the translations of its text.`;
+const INTRO = t('feedData.intro');
 
 export async function showFeedDataModal(
   deps: FeedDataModalDeps,
@@ -260,7 +259,7 @@ export async function showFeedDataModal(
   installEditableTableHandlers(tableConfig);
 
   await showSidebarModal({
-    title: 'Feed Data',
+    title: t('feedData.title'),
     intro: INTRO,
     initialId: target.table,
     refreshRef,

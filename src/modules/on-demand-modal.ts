@@ -46,6 +46,7 @@ import {
 } from '../utils/location-id-owners';
 import { GTFS_TABLES } from '../types/gtfs';
 import { firstFreeId } from '../utils/inline-entity-creator';
+import { t } from '../i18n/messages';
 
 export interface OnDemandModalDeps extends EditableTableDeps {
   /** Opens a zone's browse page. The modal closes first. */
@@ -145,10 +146,7 @@ async function groupStopOptions(
 async function renderZonesPane(deps: OnDemandModalDeps): Promise<string> {
   const features = await readZoneFeatures(deps.gtfsDatabase);
   if (features.length === 0) {
-    return emptyState(
-      ZONES_ENTRY_ID,
-      'A zone is an area a rider can be picked up in or dropped off in. Zones arrive by importing a feed with locations.geojson, or you can draw one in geojson.io and create it here.'
-    );
+    return emptyState(ZONES_ENTRY_ID, t('flex.zonesHint'));
   }
 
   const rows = features
@@ -168,7 +166,7 @@ async function renderZonesPane(deps: OnDemandModalDeps): Promise<string> {
     .join('');
 
   return `<table class="table table-sm">
-    <thead><tr><th>location_id</th><th>Name</th><th>Geometry</th></tr></thead>
+    <thead><tr><th>location_id</th><th>${t('flex.name')}</th><th>${t('flex.geometry')}</th></tr></thead>
     <tbody>${rows}</tbody>
   </table>`;
 }
@@ -194,7 +192,7 @@ async function promptNewZone(
   // locations.geojson is a GeoJSON file the reference defines no field table
   // for, so presence is stated here rather than read from the spec layer.
   const values = await promptNewEntity({
-    title: 'New zone',
+    title: t('flex.newZone'),
     fields: [
       {
         field: 'location_id',
@@ -205,20 +203,20 @@ async function promptNewZone(
       },
       {
         field: 'stop_name',
-        label: 'Name',
+        label: t('flex.name'),
         presence: 'Optional',
-        placeholder: 'e.g. North service area',
+        placeholder: t('flex.zoneNamePlaceholder'),
       },
     ],
     extraBody: renderGeojsonExchangeBlock({
       instanceId,
       featureJson: '',
       editUrl: blankMapUrl,
-      title: 'Geometry',
+      title: t('flex.geometry'),
       rows: 8,
       placeholder:
         '{ "type": "Feature", "geometry": { "type": "Polygon", ... } }',
-      hint: 'Draw the zone in geojson.io, then Share and paste the link here. A Polygon or MultiPolygon Feature, or a FeatureCollection holding one, works too.',
+      hint: t('flex.geometryHint'),
     }),
     onMount: () => {
       attachGeojsonExchangeHandlers(document, {
@@ -229,7 +227,7 @@ async function promptNewZone(
     },
     validate: async (v) => {
       if (v.location_id === '') {
-        return 'location_id is required.';
+        return t('flex.idRequired');
       }
       const clash = locationIdClash(taken, v.location_id);
       if (clash) {
@@ -272,12 +270,10 @@ async function readNewZoneGeometry(
     );
     const geometry = feature.geometry as GeoJSON.Geometry | null;
     if (geometry?.type !== 'Polygon' && geometry?.type !== 'MultiPolygon') {
-      return fail(
-        `A zone needs a Polygon or MultiPolygon, got ${String(geometry?.type)}.`
-      );
+      return fail(t('flex.needsPolygon', { type: String(geometry?.type) }));
     }
     if (geometry.coordinates.length === 0) {
-      return fail('That polygon has no coordinates. Draw the zone first.');
+      return fail(t('flex.emptyPolygon'));
     }
     return geometry;
   } catch (error) {
@@ -290,13 +286,13 @@ async function readNewZoneGeometry(
 const ON_DEMAND_ENTRIES: OnDemandEntry[] = [
   {
     table: GTFS_TABLES.BOOKING_RULES,
-    label: 'Booking Rules',
+    label: t('flex.bookingRules'),
     group: 'Booking',
     emptyMessage: emptyState(
       GTFS_TABLES.BOOKING_RULES,
-      'Add one to say how far in advance a rider has to book, and how. A stop_time then names it as its pickup or drop-off rule.'
+      t('flex.bookingRulesHint')
     ),
-    note: 'Which prior-notice fields apply depends on booking_type: real time (0) takes none, same-day (1) takes a duration in minutes, prior day (2) takes a last day and time.',
+    note: t('flex.bookingRulesNote'),
     columnOverrides: (deps) => ({
       prior_notice_service_id: { options: () => serviceOptions(deps) },
     }),
@@ -304,13 +300,13 @@ const ON_DEMAND_ENTRIES: OnDemandEntry[] = [
   },
   {
     table: GTFS_TABLES.LOCATION_GROUPS,
-    label: 'Location Groups',
+    label: t('flex.locationGroups'),
     group: 'Geography',
     emptyMessage: emptyState(
       GTFS_TABLES.LOCATION_GROUPS,
-      'A location group is the set of stops a rider may request pickup or drop off at. Add one, then join its stops in the Stops column.'
+      t('flex.locationGroupsHint')
     ),
-    note: 'Stops join a location group here or on the location group page. A location_group_id shares one ID namespace with stops.stop_id and locations.geojson id, so it may not collide with either.',
+    note: t('flex.locationGroupsNote'),
     validateRow: (context) => (row) =>
       validateLocationGroupId(
         String(row.location_group_id ?? '').trim(),
@@ -318,7 +314,7 @@ const ON_DEMAND_ENTRIES: OnDemandEntry[] = [
       ),
     joinColumns: async (deps) => [
       await memberJoinColumn(deps, {
-        label: 'Stops',
+        label: t('fares.stops'),
         memberTable: GTFS_TABLES.STOPS,
         joinTable: GTFS_TABLES.LOCATION_GROUP_STOPS,
         groupField: 'location_group_id',
@@ -329,22 +325,19 @@ const ON_DEMAND_ENTRIES: OnDemandEntry[] = [
   },
   {
     table: ZONES_ENTRY_ID,
-    label: 'Zones',
+    label: t('flex.zones'),
     group: 'Geography',
     emptyMessage: '',
-    note: 'The zone list is read-only here. Open a zone to see its geometry and edit it in geojson.io.',
+    note: t('flex.zonesNote'),
     render: renderZonesPane,
   },
 ];
 
 const GROUP_ORDER: OnDemandGroup[] = ['Booking', 'Geography'];
 
-const INTRO = `On-demand service (GTFS Flex): the rules a rider books under, the
-  groups of stops they can be served at, and the zones they can be served in. A
-  trip becomes on-demand in its timetable, by giving a stop_time a pickup and
-  drop-off window instead of an arrival and departure.
+const INTRO = `${t('flex.intro')}
   <a href="https://gtfs.org/documentation/schedule/reference/#booking_rulestxt"
-     target="_blank" rel="noopener noreferrer" class="link">GTFS reference</a>.`;
+     target="_blank" rel="noopener noreferrer" class="link">${t('fares.reference')}</a>.`;
 
 export async function showOnDemandModal(
   deps: OnDemandModalDeps,
@@ -412,9 +405,10 @@ export async function showOnDemandModal(
   installEditableTableHandlers(tableConfig);
 
   await showSidebarModal({
-    title: 'On-Demand',
+    title: t('flex.title'),
     intro: INTRO,
     groupOrder: GROUP_ORDER,
+    groupLabel: (group) => t(`flex.group.${group as OnDemandGroup}`),
     initialId: target.table,
     refreshRef,
     entries: ON_DEMAND_ENTRIES.map((entry) => ({
@@ -425,7 +419,7 @@ export async function showOnDemandModal(
       guidePage: entry.table === ZONES_ENTRY_ID ? 'on-demand' : undefined,
       primaryAction:
         entry.table === ZONES_ENTRY_ID
-          ? { label: 'New zone', onClick: createZone }
+          ? { label: t('flex.newZone'), onClick: createZone }
           : undefined,
       count: () => countEntry(entry),
       renderPane: () => renderPane(entry),
