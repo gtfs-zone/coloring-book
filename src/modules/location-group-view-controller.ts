@@ -18,6 +18,7 @@ import {
 import { generateCompositeKeyFromRecord } from '../utils/gtfs-primary-keys';
 import { renderInlineEntityFields } from '../utils/inline-editable-field';
 import { showOptionPickerModal } from './option-picker-modal';
+import { t } from '../i18n/messages';
 
 const MEMBER_ROW = 'location-group-member-row';
 const MEMBER_REMOVE = 'location-group-member-remove';
@@ -75,7 +76,7 @@ export class LocationGroupViewController {
     try {
       const group = await this.getGroup(location_group_id);
       if (!group) {
-        return this.renderError('Location group not found.');
+        return this.renderError(t('view.groupNotFound'));
       }
 
       const name =
@@ -97,7 +98,7 @@ export class LocationGroupViewController {
         <div class="p-4 space-y-4">
           <div>
             <h2 class="text-lg font-semibold">${escapeHtml(name)}</h2>
-            <div class="badge badge-sm badge-outline mt-1">Location group</div>
+            <div class="badge badge-sm badge-outline mt-1">${t('view.locationGroup')}</div>
           </div>
           <div class="card bg-base-100 shadow-lg">
             <div class="card-body p-4">
@@ -107,15 +108,15 @@ export class LocationGroupViewController {
           <div class="card bg-base-100 shadow-lg">
             <div class="card-body p-4 space-y-2">
               <div class="flex items-center justify-between">
-                <h3 class="font-semibold">Member stops</h3>
-                <button class="btn btn-xs btn-ghost ${MEMBER_ADD}" data-location-group-id="${escapeHtml(location_group_id)}">+ Add stop...</button>
+                <h3 class="font-semibold">${t('view.memberStops')}</h3>
+                <button class="btn btn-xs btn-ghost ${MEMBER_ADD}" data-location-group-id="${escapeHtml(location_group_id)}">${t('view.addMember')}</button>
               </div>
               ${membersHtml}
             </div>
           </div>
           <div class="card bg-base-100 shadow-lg">
             <div class="card-body p-4 space-y-2">
-              <h3 class="font-semibold">Routes serving this group</h3>
+              <h3 class="font-semibold">${t('view.groupRoutes')}</h3>
               ${routesHtml}
             </div>
           </div>
@@ -126,7 +127,7 @@ export class LocationGroupViewController {
         '[LocationGroupViewController] Error rendering view:',
         error
       );
-      return this.renderError('Failed to load location group information.');
+      return this.renderError(t('view.groupFailed'));
     }
   }
 
@@ -151,7 +152,7 @@ export class LocationGroupViewController {
   private async renderMembers(location_group_id: string): Promise<string> {
     const members = await this.getMemberRows(location_group_id);
     if (members.length === 0) {
-      return `<p class="text-sm opacity-60">No stops in this group yet.</p>`;
+      return `<p class="text-sm opacity-60">${t('view.noMembers')}</p>`;
     }
 
     const rows: string[] = [];
@@ -168,11 +169,11 @@ export class LocationGroupViewController {
       // rather than dropping the row and hiding the problem.
       const label = stop
         ? renderCardLabel(getStopDisplay(stop))
-        : `<span class="font-mono text-error">${escapeHtml(stop_id)} (missing from stops.txt)</span>`;
+        : `<span class="font-mono text-error">${t('view.missingStop', { id: escapeHtml(stop_id) })}</span>`;
       rows.push(`
         <div class="flex items-center gap-3 p-3 rounded-lg hover:bg-base-200 transition-colors ${MEMBER_ROW}" data-stop-id="${escapeHtml(stop_id)}">
           <div class="flex-1 min-w-0 cursor-pointer">${label}</div>
-          <button class="btn btn-xs btn-ghost ${MEMBER_REMOVE}" data-location-group-id="${escapeHtml(location_group_id)}" data-stop-id="${escapeHtml(stop_id)}" title="Remove from group">x</button>
+          <button class="btn btn-xs btn-ghost ${MEMBER_REMOVE}" data-location-group-id="${escapeHtml(location_group_id)}" data-stop-id="${escapeHtml(stop_id)}" title="${t('view.removeFromGroup')}">x</button>
         </div>
       `);
     }
@@ -183,7 +184,7 @@ export class LocationGroupViewController {
     const trips =
       this.dependencies.getTripsForLocationGroup?.(location_group_id) ?? [];
     if (trips.length === 0) {
-      return `<p class="text-sm opacity-60">No stop_times reference this group.</p>`;
+      return `<p class="text-sm opacity-60">${t('view.groupNoStopTimes')}</p>`;
     }
 
     const counts = new Map<string, number>();
@@ -205,7 +206,7 @@ export class LocationGroupViewController {
       rows.push(`
         <div class="flex items-center gap-3 p-3 rounded-lg hover:bg-base-200 cursor-pointer transition-colors ${GROUP_ROUTE_ROW}" data-route-id="${escapeHtml(route_id)}">
           <div class="flex-1 min-w-0">${label}</div>
-          <div class="badge badge-outline badge-sm">${count} trip${count !== 1 ? 's' : ''}</div>
+          <div class="badge badge-outline badge-sm">${t('count.trips', { count })}</div>
         </div>
       `);
     }
@@ -272,7 +273,7 @@ export class LocationGroupViewController {
       }));
 
     const stop_id = await showOptionPickerModal({
-      title: 'Add stop to location group',
+      title: t('view.addMemberTitle'),
       options,
       searchable: true,
     });

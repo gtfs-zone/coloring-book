@@ -16,6 +16,7 @@ import {
 } from '../utils/entity-references';
 import { renderTrashIcon } from 'gtfs-zone-web-common/ui/modal-utils';
 import { escapeHtml } from 'gtfs-zone-web-common/util/escape-html';
+import { t } from '../i18n/messages';
 
 export interface AgencyViewDependencies {
   gtfsDatabase?: QueryOnlyDatabase;
@@ -42,7 +43,7 @@ export class AgencyViewController {
       // Get agency data
       const agency = await this.getAgencyData(agency_id);
       if (!agency) {
-        return this.renderError('Agency not found.');
+        return this.renderError(t('view.agencyNotFound'));
       }
 
       // Get related routes
@@ -72,7 +73,7 @@ export class AgencyViewController {
       return html;
     } catch (error) {
       console.error('Error rendering agency view:', error);
-      return this.renderError('Failed to load agency information.');
+      return this.renderError(t('view.agencyFailed'));
     }
   }
 
@@ -89,8 +90,8 @@ export class AgencyViewController {
     return `
       <div class="space-y-4">
         <div class="flex items-center justify-between gap-2">
-          <h2 class="text-lg font-semibold">Agency Properties</h2>
-          <button class="btn btn-sm btn-error btn-outline delete-agency-btn" data-agency-id="${this.currentAgencyId ?? ''}" title="Delete">${renderTrashIcon()}</button>
+          <h2 class="text-lg font-semibold">${t('view.agencyProperties')}</h2>
+          <button class="btn btn-sm btn-error btn-outline delete-agency-btn" data-agency-id="${this.currentAgencyId ?? ''}" title="${t('common.delete')}">${renderTrashIcon()}</button>
         </div>
         <div class="card bg-base-100 shadow-lg">
           <div class="card-body p-4">
@@ -122,14 +123,14 @@ export class AgencyViewController {
     return `
       <div class="space-y-4">
         <div class="flex items-center justify-between gap-4">
-          <h2 class="text-lg font-semibold">Routes</h2>
+          <h2 class="text-lg font-semibold">${t('view.routes')}</h2>
           <div class="flex items-center gap-2">
             <button
               type="button"
               class="btn btn-sm btn-primary"
               data-entity-create="route"
               data-agency-id="${escapeHtml(agency_id)}"
-            >+ New route</button>
+            >${t('view.newRoute')}</button>
           </div>
         </div>
         <div class="card bg-base-100 shadow-lg">
@@ -137,7 +138,7 @@ export class AgencyViewController {
             ${
               routes.length === 0
                 ? `<div class="text-center py-6 opacity-70">
-                    No routes found for this agency.
+                    ${t('view.noRoutes')}
                   </div>`
                 : `<div class="space-y-2">
                     ${routeItems}

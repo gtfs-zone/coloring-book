@@ -28,6 +28,7 @@ import {
   type ZoneFeature,
   type ZonePatchRecorder,
 } from './zone-store';
+import { t } from '../i18n/messages';
 
 /**
  * Own row class rather than the shared ROUTE_REF_ROW: the agency view
@@ -48,13 +49,13 @@ const DELETE_BTN = 'zone-delete-btn';
 const ZONE_PROPERTY_FIELDS: FieldConfig[] = [
   {
     field: 'stop_name',
-    label: 'Name',
+    label: t('view.name'),
     type: 'text',
     tableName: GTFS_TABLES.STOPS,
   },
   {
     field: 'stop_desc',
-    label: 'Description',
+    label: t('view.description'),
     type: 'text',
     tableName: GTFS_TABLES.STOPS,
   },
@@ -108,14 +109,14 @@ export class ZoneViewController {
 
     const parser = this.dependencies.gtfsParser;
     if (!parser) {
-      return this.renderError('Zone data is not available.');
+      return this.renderError(t('view.zoneUnavailable'));
     }
 
     try {
       const feature = getZoneFeature(parser, location_id);
       if (!feature) {
         return this.renderError(
-          `Zone ${escapeHtml(location_id)} is not in locations.geojson.`
+          t('view.zoneMissing', { id: escapeHtml(location_id) })
         );
       }
 
@@ -129,10 +130,10 @@ export class ZoneViewController {
             <div>
               <h2 class="text-lg font-semibold">${escapeHtml(name)}</h2>
               <div class="text-xs opacity-60 font-mono">${escapeHtml(location_id)}</div>
-              <div class="badge badge-sm badge-outline mt-1">On-demand zone</div>
+              <div class="badge badge-sm badge-outline mt-1">${t('view.onDemandZone')}</div>
             </div>
             <button type="button" class="btn btn-sm btn-error btn-outline ${DELETE_BTN}"
-              data-location-id="${escapeHtml(location_id)}" title="Delete zone">
+              data-location-id="${escapeHtml(location_id)}" title="${t('view.deleteZone')}">
               ${renderTrashIcon()}
             </button>
           </div>
@@ -148,7 +149,7 @@ export class ZoneViewController {
           </div>
           <div class="card bg-base-100 shadow-lg">
             <div class="card-body p-4 space-y-2">
-              <h3 class="font-semibold">Routes serving this zone</h3>
+              <h3 class="font-semibold">${t('view.zoneRoutes')}</h3>
               ${routesHtml}
             </div>
           </div>
@@ -156,7 +157,7 @@ export class ZoneViewController {
       `;
     } catch (error) {
       console.error('[ZoneViewController] Error rendering zone view:', error);
-      return this.renderError('Failed to load zone information.');
+      return this.renderError(t('view.zoneFailed'));
     }
   }
 
@@ -179,7 +180,7 @@ export class ZoneViewController {
     ).join('');
     return `
       <div class="space-y-3 ${DETAILS_FORM}" data-location-id="${escapeHtml(location_id)}">
-        <h3 class="font-semibold">Details</h3>
+        <h3 class="font-semibold">${t('view.details')}</h3>
         ${fields}
       </div>
     `;
@@ -189,7 +190,7 @@ export class ZoneViewController {
   private async renderRoutes(location_id: string): Promise<string> {
     const trips = this.dependencies.getTripsForZone?.(location_id) ?? [];
     if (trips.length === 0) {
-      return `<p class="text-sm opacity-60">No stop_times reference this zone.</p>`;
+      return `<p class="text-sm opacity-60">${t('view.zoneNoStopTimes')}</p>`;
     }
 
     const counts = new Map<string, number>();
@@ -211,7 +212,7 @@ export class ZoneViewController {
       rows.push(`
         <div class="flex items-center gap-3 p-3 rounded-lg hover:bg-base-200 cursor-pointer transition-colors ${ZONE_ROUTE_ROW}" data-route-id="${escapeHtml(route_id)}">
           <div class="flex-1 min-w-0">${label}</div>
-          <div class="badge badge-outline badge-sm">${count} trip${count !== 1 ? 's' : ''}</div>
+          <div class="badge badge-outline badge-sm">${t('count.trips', { count })}</div>
         </div>
       `);
     }

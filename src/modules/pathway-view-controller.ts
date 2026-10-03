@@ -6,6 +6,7 @@ import { ENTITY_REF_BTN } from '../utils/entity-references';
 import { getStopDisplay, renderOptionLabel } from '../utils/entity-display';
 import { pathwayModeLabel } from '../utils/pathway-modes';
 import { pageHeaderEyebrow } from 'gtfs-zone-web-common/ui/breadcrumb-trail';
+import { t } from '../i18n/messages';
 
 function escapeAttr(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
@@ -32,7 +33,7 @@ export class PathwayViewController {
     try {
       const pathway = await this.getPathwayData(pathway_id);
       if (!pathway) {
-        return this.renderError('Pathway not found.');
+        return this.renderError(t('view.pathwayNotFound'));
       }
 
       const [fromStop, toStop] = await Promise.all([
@@ -76,7 +77,7 @@ export class PathwayViewController {
         '[PathwayViewController] Error rendering pathway view:',
         error
       );
-      return this.renderError('Failed to load pathway information.');
+      return this.renderError(t('view.pathwayFailed'));
     }
   }
 
@@ -102,9 +103,9 @@ export class PathwayViewController {
 
     return `
       <div class="flex flex-wrap items-start gap-x-2 gap-y-2 text-sm">
-        ${renderCrumb('From', pathway.from_stop_id, fromStop)}
+        ${renderCrumb(t('view.from'), pathway.from_stop_id, fromStop)}
         <span aria-hidden="true" class="pt-4 opacity-40 select-none">/</span>
-        ${renderCrumb('To', pathway.to_stop_id, toStop)}
+        ${renderCrumb(t('view.to'), pathway.to_stop_id, toStop)}
       </div>
     `;
   }

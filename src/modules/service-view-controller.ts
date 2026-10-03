@@ -25,6 +25,7 @@ import {
   showOptionPickerModal,
   type OptionPickerItem,
 } from './option-picker-modal';
+import { t } from '../i18n/messages';
 
 const CREATE_TIMETABLE_BTN = 'create-timetable-btn';
 const TRIM_TO_FEED_START_BTN = 'trim-to-feed-start-btn';
@@ -120,7 +121,7 @@ export class ServiceViewController {
       return html;
     } catch (error) {
       console.error('Error rendering service view:', error);
-      return this.renderError('Failed to load service information.');
+      return this.renderError(t('view.serviceFailed'));
     }
   }
 
@@ -271,30 +272,34 @@ export class ServiceViewController {
 
     const trimDisabled = !bounds.start || (!canTrim && strayBefore === 0);
     const trimTitle = !bounds.start
-      ? 'feed_info has no feed_start_date'
+      ? t('page.noFeedStart')
       : !canTrim && strayBefore === 0
         ? hasCalendarRow
-          ? 'Already at feed start'
-          : 'This service has no calendar.txt row and no early exceptions'
-        : `${canTrim ? `Set start_date to ${bounds.start}, and remove` : 'Remove'} every exception before it`;
+          ? t('view.alreadyAtStart')
+          : t('view.noEarlyExceptions')
+        : canTrim
+          ? t('view.trimTitle', { date: bounds.start })
+          : t('view.trimTitleNoRow');
 
     const extendDisabled = !bounds.end || (!canExtend && strayAfter === 0);
     const extendTitle = !bounds.end
-      ? 'feed_info has no feed_end_date'
+      ? t('page.noFeedEnd')
       : !canExtend && strayAfter === 0
         ? hasCalendarRow
-          ? 'Already at feed end'
-          : 'This service has no calendar.txt row and no late exceptions'
-        : `${canExtend ? `Set end_date to ${bounds.end}, and remove` : 'Remove'} every exception after it`;
+          ? t('view.alreadyAtEnd')
+          : t('view.noLateExceptions')
+        : canExtend
+          ? t('view.extendTitle', { date: bounds.end })
+          : t('view.extendTitleNoRow');
 
     return `
       <div class="space-y-4">
         <div class="flex items-center justify-between gap-2">
-          <h2 class="text-lg font-semibold">Service Schedule</h2>
+          <h2 class="text-lg font-semibold">${t('view.serviceSchedule')}</h2>
           <div class="flex items-center gap-2">
-            <button class="btn btn-xs btn-outline ${TRIM_TO_FEED_START_BTN}" data-service-id="${service_id}" title="${trimTitle}" ${trimDisabled ? 'disabled' : ''}>Trim to feed start</button>
-            <button class="btn btn-xs btn-outline ${EXTEND_TO_FEED_END_BTN}" data-service-id="${service_id}" title="${extendTitle}" ${extendDisabled ? 'disabled' : ''}>Extend to feed end</button>
-            <button class="btn btn-sm btn-error btn-outline delete-service-btn" data-service-id="${service_id}" title="Delete">${renderTrashIcon()}</button>
+            <button class="btn btn-xs btn-outline ${TRIM_TO_FEED_START_BTN}" data-service-id="${service_id}" title="${trimTitle}" ${trimDisabled ? 'disabled' : ''}>${t('view.trimToStart')}</button>
+            <button class="btn btn-xs btn-outline ${EXTEND_TO_FEED_END_BTN}" data-service-id="${service_id}" title="${extendTitle}" ${extendDisabled ? 'disabled' : ''}>${t('view.extendToEnd')}</button>
+            <button class="btn btn-sm btn-error btn-outline delete-service-btn" data-service-id="${service_id}" title="${t('common.delete')}">${renderTrashIcon()}</button>
           </div>
         </div>
         <div class="card bg-base-100 shadow-lg">
@@ -309,12 +314,12 @@ export class ServiceViewController {
   private renderTimetablesHeader(service_id: string): string {
     return `
       <div class="flex items-center justify-between gap-4">
-        <h2 class="text-lg font-semibold">Timetables</h2>
+        <h2 class="text-lg font-semibold">${t('view.timetables')}</h2>
         <button
           type="button"
           class="btn btn-sm btn-outline ${CREATE_TIMETABLE_BTN}"
           data-service-id="${service_id}"
-        >+ Timetable</button>
+        >${t('view.addTimetable')}</button>
       </div>
     `;
   }
@@ -334,13 +339,13 @@ export class ServiceViewController {
           <div class="card bg-base-100 shadow-lg">
             <div class="card-body p-4">
               <div class="text-center py-6 opacity-70">
-                No routes are using this service.
+                ${t('view.noRoutesUsingService')}
                 <div>
                   <button
                     type="button"
                     class="btn btn-sm btn-primary ${CREATE_TIMETABLE_BTN} mt-2"
                     data-service-id="${service_id}"
-                  >Create a timetable</button>
+                  >${t('view.createTimetable')}</button>
                 </div>
               </div>
             </div>
@@ -403,7 +408,7 @@ export class ServiceViewController {
       });
 
     const route_id = await showOptionPickerModal({
-      title: 'Create timetable',
+      title: t('view.createTimetableTitle'),
       options,
       searchable: true,
     });

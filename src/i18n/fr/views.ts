@@ -1,0 +1,82 @@
+import type { Translation } from 'gtfs-zone-web-common/i18n/index';
+import type { views as en } from '../en/views';
+
+/** Entity view pages, in French. */
+export const views: Translation<typeof en> = {
+  'view.agencyNotFound': 'Agence introuvable.',
+  'view.agencyFailed': "Échec du chargement des informations de l'agence.",
+  'view.agencyProperties': "Propriétés de l'agence",
+  'view.routes': 'Lignes',
+  'view.newRoute': '+ Nouvelle ligne',
+  'view.noRoutes': 'Aucune ligne pour cette agence.',
+  'view.stopNotFound': 'Arrêt introuvable.',
+  'view.pathwaysOut': 'Cheminements sortants',
+  'view.pathwaysIn': 'Cheminements entrants',
+  'view.stopFailed': "Échec du chargement des informations de l'arrêt.",
+  'view.timetables': 'Horaires',
+  'view.stopNoTimetable':
+    "Cet arrêt ne figure encore dans aucun horaire. Pour l'ajouter, ouvrez une ligne et choisissez un service, ou trouvez l'horaire dans le navigateur d'horaires.",
+  'view.openTimetableBrowser': "Ouvrir le navigateur d'horaires",
+  'view.viaMore': ' +{count} de plus',
+  'view.openRoute': 'Ouvrir la ligne',
+  'view.noTransfers':
+    "Aucune correspondance ne cite cet arrêt. Ajoutez-en une pour garantir une correspondance, lui donner un temps minimum ou l'interdire.",
+  'view.inSeatNote_one':
+    '{count} correspondance sans descendre (type 4 ou 5) cite aussi cet arrêt. Elle relie deux voyages plutôt que deux arrêts et se modifie donc dans Données du flux.',
+  'view.inSeatNote_other':
+    '{count} correspondances sans descendre (type 4 ou 5) citent aussi cet arrêt. Elles relient deux voyages plutôt que deux arrêts et se modifient donc dans Données du flux.',
+  'view.transfers': 'Correspondances',
+  'view.manageTransfers': 'Gérer toutes les correspondances',
+  'view.boardingAreas': "Zones d'embarquement",
+  'view.entrances': 'Entrées / sorties',
+  'view.platforms': 'Quais',
+  'view.genericNodes': 'Nœuds génériques',
+  'view.childStops': 'Arrêts enfants',
+  'view.noChildStops': 'Aucun arrêt enfant défini.',
+  'view.serviceFailed': 'Échec du chargement des informations du service.',
+  'view.alreadyAtStart': 'Déjà au début du flux',
+  'view.noEarlyExceptions':
+    "Ce service n'a ni ligne calendar.txt ni exception antérieure",
+  'view.trimTitle':
+    'Mettre start_date au {date} et supprimer toutes les exceptions antérieures',
+  'view.trimTitleNoRow': 'Supprimer toutes les exceptions antérieures',
+  'view.alreadyAtEnd': 'Déjà à la fin du flux',
+  'view.noLateExceptions':
+    "Ce service n'a ni ligne calendar.txt ni exception postérieure",
+  'view.extendTitle':
+    'Mettre end_date au {date} et supprimer toutes les exceptions postérieures',
+  'view.extendTitleNoRow': 'Supprimer toutes les exceptions postérieures',
+  'view.serviceSchedule': 'Calendrier du service',
+  'view.trimToStart': 'Raccourcir au début du flux',
+  'view.extendToEnd': "Prolonger jusqu'à la fin du flux",
+  'view.addTimetable': '+ Horaire',
+  'view.noRoutesUsingService': "Aucune ligne n'utilise ce service.",
+  'view.createTimetable': 'Créer un horaire',
+  'view.createTimetableTitle': 'Créer un horaire',
+  'view.pathwayNotFound': 'Cheminement introuvable.',
+  'view.pathwayFailed': 'Échec du chargement des informations du cheminement.',
+  'view.from': 'De',
+  'view.to': 'Vers',
+  'view.name': 'Nom',
+  'view.description': 'Description',
+  'view.zoneUnavailable': 'Les données de zone ne sont pas disponibles.',
+  'view.zoneMissing': "La zone {id} n'est pas dans locations.geojson.",
+  'view.onDemandZone': 'Zone à la demande',
+  'view.deleteZone': 'Supprimer la zone',
+  'view.zoneRoutes': 'Lignes desservant cette zone',
+  'view.zoneFailed': 'Échec du chargement des informations de la zone.',
+  'view.details': 'Détails',
+  'view.zoneNoStopTimes': 'Aucun stop_time ne fait référence à cette zone.',
+  'view.groupNotFound': "Groupe d'emplacements introuvable.",
+  'view.locationGroup': "Groupe d'emplacements",
+  'view.memberStops': 'Arrêts membres',
+  'view.addMember': '+ Ajouter un arrêt...',
+  'view.groupRoutes': 'Lignes desservant ce groupe',
+  'view.groupFailed':
+    "Échec du chargement des informations du groupe d'emplacements.",
+  'view.noMembers': "Pas encore d'arrêt dans ce groupe.",
+  'view.missingStop': '{id} (absent de stops.txt)',
+  'view.removeFromGroup': 'Retirer du groupe',
+  'view.groupNoStopTimes': 'Aucun stop_time ne fait référence à ce groupe.',
+  'view.addMemberTitle': "Ajouter un arrêt au groupe d'emplacements",
+};

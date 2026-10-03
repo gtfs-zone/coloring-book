@@ -40,6 +40,7 @@ import {
 import { openModal } from './navigation-actions';
 import { specStoreName } from '../utils/spec-field-edit';
 import { validateTransferRow } from '../utils/fares-rules';
+import { t } from '../i18n/messages';
 
 /** How many `via` stop names are spelled out before collapsing to "+N more". */
 const MAX_VIA_LABELS = 3;
@@ -107,7 +108,7 @@ export class StopViewController {
     try {
       const stop = await this.getStopData(stop_id);
       if (!stop) {
-        return this.renderError('Stop not found.');
+        return this.renderError(t('view.stopNotFound'));
       }
 
       const locationType =
@@ -178,8 +179,8 @@ export class StopViewController {
           ${await this.renderStopProperties(stop)}
           ${isStation ? this.renderChildStopsSections(childStops as Stops[]) : ''}
           ${!isStation ? boardingAreasHtml : ''}
-          ${!isStation ? this.renderPathwaySection('Pathways Out', outPathways, 'to', otherStopLookup) : ''}
-          ${!isStation ? this.renderPathwaySection('Pathways In', inPathways, 'from', otherStopLookup) : ''}
+          ${!isStation ? this.renderPathwaySection(t('view.pathwaysOut'), outPathways, 'to', otherStopLookup) : ''}
+          ${!isStation ? this.renderPathwaySection(t('view.pathwaysIn'), inPathways, 'from', otherStopLookup) : ''}
           ${await this.renderTransfersSection(stop_id)}
           ${this.renderTimetablesSection(timetableKeys, routes, serviceData)}
         </div>
@@ -188,7 +189,7 @@ export class StopViewController {
       return html;
     } catch (error) {
       console.error('Error rendering stop view:', error);
-      return this.renderError('Failed to load stop information.');
+      return this.renderError(t('view.stopFailed'));
     }
   }
 
@@ -208,7 +209,7 @@ export class StopViewController {
       <div class="space-y-4">
         <div class="flex items-center justify-between gap-2 min-w-0">
           <h2 class="text-lg font-semibold truncate">${renderCardLabel(getStopDisplay(stop as unknown as Record<string, string>))}</h2>
-          <button class="btn btn-sm btn-error btn-outline delete-stop-btn shrink-0" data-stop-id="${stop.stop_id}" title="Delete">${renderTrashIcon()}</button>
+          <button class="btn btn-sm btn-error btn-outline delete-stop-btn shrink-0" data-stop-id="${stop.stop_id}" title="${t('common.delete')}">${renderTrashIcon()}</button>
         </div>
         <div class="card bg-base-100 shadow-lg">
           <div class="card-body p-4">
@@ -230,17 +231,15 @@ export class StopViewController {
     if (timetableKeys.length === 0) {
       return `
         <div class="space-y-4">
-          <h2 class="text-lg font-semibold">Timetables</h2>
+          <h2 class="text-lg font-semibold">${t('view.timetables')}</h2>
           <div class="card bg-base-100 shadow-lg">
             <div class="card-body p-4">
               <div class="text-center py-6 space-y-3">
                 <p class="opacity-70">
-                  This stop is not in any timetable yet. To add it, open a
-                  route and pick a service, or find the timetable in the
-                  timetable browser.
+                  ${t('view.stopNoTimetable')}
                 </p>
                 <button type="button" class="btn btn-sm btn-primary open-timetable-browser-btn">
-                  Open timetable browser
+                  ${t('view.openTimetableBrowser')}
                 </button>
               </div>
             </div>
@@ -304,12 +303,12 @@ export class StopViewController {
                     )
                   )
                   .join(', ')
-              )}${via.length > MAX_VIA_LABELS ? ` +${via.length - MAX_VIA_LABELS} more` : ''}</div>`
+              )}${via.length > MAX_VIA_LABELS ? t('view.viaMore', { count: via.length - MAX_VIA_LABELS }) : ''}</div>`
             : '';
 
         return `
           <div class="space-y-1">
-            <div class="route-card flex items-center gap-2 min-w-0 w-fit max-w-full px-1 -mx-1 rounded cursor-pointer hover:bg-base-200 hover:underline" data-route-id="${escapeHtml(route_id)}" title="Open route">
+            <div class="route-card flex items-center gap-2 min-w-0 w-fit max-w-full px-1 -mx-1 rounded cursor-pointer hover:bg-base-200 hover:underline" data-route-id="${escapeHtml(route_id)}" title="${t('view.openRoute')}">
               <div class="w-3 h-3 rounded-full flex-shrink-0" style="background-color: ${color}"></div>
               <span class="font-medium truncate">${renderCardLabel(getRouteDisplay(route as Record<string, string>))}</span>
             </div>
@@ -322,7 +321,7 @@ export class StopViewController {
 
     return `
       <div class="space-y-4">
-        <h2 class="text-lg font-semibold">Timetables</h2>
+        <h2 class="text-lg font-semibold">${t('view.timetables')}</h2>
         <div class="card bg-base-100 shadow-lg">
           <div class="card-body p-4">
             <div class="space-y-4">
@@ -441,8 +440,7 @@ export class StopViewController {
       tableName: GTFS_TABLES.TRANSFERS,
       rows,
       deps,
-      emptyMessage:
-        'No transfers name this stop. Add one to make a connection timed, to give it a minimum time, or to rule it out.',
+      emptyMessage: t('view.noTransfers'),
       columnOverrides: {
         from_stop_id: { widthClass: 'min-w-48' },
         to_stop_id: { widthClass: 'min-w-48' },
@@ -479,14 +477,14 @@ export class StopViewController {
 
     const linkedNote =
       linkedTripCount > 0
-        ? `<p class="text-xs opacity-60">${linkedTripCount} in-seat transfer${linkedTripCount === 1 ? '' : 's'} (type 4 or 5) also name${linkedTripCount === 1 ? 's' : ''} this stop. Those link two trips rather than two stops, so they are edited in Feed Data.</p>`
+        ? `<p class="text-xs opacity-60">${t('view.inSeatNote', { count: linkedTripCount })}</p>`
         : '';
 
     return `
       <div class="space-y-2">
         <div class="flex items-center justify-between gap-2">
-          <h2 class="text-lg font-semibold">Transfers</h2>
-          <button class="btn btn-xs btn-outline manage-transfers-btn">Manage all transfers</button>
+          <h2 class="text-lg font-semibold">${t('view.transfers')}</h2>
+          <button class="btn btn-xs btn-outline manage-transfers-btn">${t('view.manageTransfers')}</button>
         </div>
         <div class="card bg-base-100 shadow-lg">
           <div class="card-body p-4 space-y-2">
@@ -525,7 +523,7 @@ export class StopViewController {
         .join('');
       return `
         <div class="space-y-2">
-          <h3 class="text-base font-semibold">Boarding Areas</h3>
+          <h3 class="text-base font-semibold">${t('view.boardingAreas')}</h3>
           <div class="card bg-base-100 shadow-lg">
             <div class="card-body p-4">
               <div class="space-y-1">${rowsHtml}</div>
@@ -588,9 +586,9 @@ export class StopViewController {
     const { entrances, platforms, genericNodes } =
       this.groupChildrenByLocationType(children);
     const sections = [
-      this.renderTypedChildSection('Entrances / Exits', entrances),
-      this.renderTypedChildSection('Platforms', platforms),
-      this.renderTypedChildSection('Generic Nodes', genericNodes),
+      this.renderTypedChildSection(t('view.entrances'), entrances),
+      this.renderTypedChildSection(t('view.platforms'), platforms),
+      this.renderTypedChildSection(t('view.genericNodes'), genericNodes),
     ]
       .filter(Boolean)
       .join('');
@@ -598,10 +596,10 @@ export class StopViewController {
     if (!sections) {
       return `
         <div class="space-y-4">
-          <h2 class="text-lg font-semibold">Child Stops</h2>
+          <h2 class="text-lg font-semibold">${t('view.childStops')}</h2>
           <div class="card bg-base-100 shadow-lg">
             <div class="card-body p-4">
-              <div class="text-center py-4 opacity-70">No child stops defined.</div>
+              <div class="text-center py-4 opacity-70">${t('view.noChildStops')}</div>
             </div>
           </div>
         </div>
@@ -610,7 +608,7 @@ export class StopViewController {
 
     return `
       <div class="space-y-4">
-        <h2 class="text-lg font-semibold">Child Stops</h2>
+        <h2 class="text-lg font-semibold">${t('view.childStops')}</h2>
         ${sections}
       </div>
     `;
