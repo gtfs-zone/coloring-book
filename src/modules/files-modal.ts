@@ -9,11 +9,13 @@
  */
 
 import { showModal } from 'gtfs-zone-web-common/ui/modal-utils';
+import { escapeHtml } from 'gtfs-zone-web-common/util/escape-html';
+import { t } from '../i18n/messages';
 
-const FILES_MODAL_BODY = `
+const filesModalBody = (): string => `
   <div class="flex flex-col h-full min-h-0">
     <div class="alert alert-warning text-sm mb-3 shrink-0">
-      <span>A behind-the-scenes look at what is actually in the GTFS. Edits here are best avoided: use the regular editing pages instead.</span>
+      <span>${t('files.warning')}</span>
     </div>
 
     <!-- File List View -->
@@ -26,10 +28,10 @@ const FILES_MODAL_BODY = `
       <div class="h-full flex flex-col">
         <!-- Editor Header -->
         <div class="flex items-center gap-4 pb-3 border-b border-base-300 shrink-0">
-          <button id="back-to-files" class="btn btn-ghost btn-sm">&lt;- Back to Files</button>
+          <button id="back-to-files" class="btn btn-ghost btn-sm">${escapeHtml(t('files.back'))}</button>
           <div class="flex items-center gap-2">
-            <span class="text-sm font-medium opacity-70">Editing:</span>
-            <span id="current-file-name" class="text-sm font-medium">None</span>
+            <span class="text-sm font-medium opacity-70">${t('files.editing')}</span>
+            <span id="current-file-name" class="text-sm font-medium">${t('common.none')}</span>
           </div>
         </div>
 
@@ -46,8 +48,7 @@ const FILES_MODAL_BODY = `
           <div id="raw-editor-view" class="h-full hidden">
             <div class="h-full flex flex-col">
               <div class="py-2 text-xs opacity-70 border-b border-base-300 shrink-0">
-                Not part of the GTFS spec. Preserved verbatim on export. Edits
-                here are saved immediately and cannot be undone.
+                ${t('files.rawNote')}
               </div>
               <textarea
                 id="raw-editor"
@@ -55,7 +56,7 @@ const FILES_MODAL_BODY = `
                 spellcheck="false"
               ></textarea>
               <div class="flex items-center gap-3 shrink-0">
-                <button id="raw-editor-save" class="btn btn-primary btn-sm">Save</button>
+                <button id="raw-editor-save" class="btn btn-primary btn-sm">${t('common.save')}</button>
                 <span id="raw-editor-status" class="text-xs opacity-70"></span>
               </div>
             </div>
@@ -75,9 +76,9 @@ export async function showFilesModal(handlers: {
   onClose: () => void | Promise<void>;
 }): Promise<void> {
   await showModal({
-    title: 'Files',
-    body: FILES_MODAL_BODY,
-    actions: [{ label: 'Close', onClick: () => {} }],
+    title: t('files.title'),
+    body: filesModalBody(),
+    actions: [{ label: t('common.close'), onClick: () => {} }],
     escapeAction: 0,
     boxClassName: 'max-w-4xl w-11/12 h-[85vh]',
     onMount: handlers.onMount,

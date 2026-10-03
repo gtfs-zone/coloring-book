@@ -10,6 +10,7 @@ import {
   getGTFSPrimaryKey,
 } from '../utils/gtfs-primary-keys';
 import { keyToGridDirection } from '../utils/grid-navigation';
+import { t } from '../i18n/messages';
 
 interface GTFSParser {
   updateFileInMemory(fileName: string, content: string): void;
@@ -146,7 +147,7 @@ export class Editor {
     freshSave.addEventListener('click', async () => {
       await this.gtfsParser!.setPassthroughContent(fileName, textarea.value);
       if (status) {
-        status.textContent = `Saved ${fileName}`;
+        status.textContent = t('files.saved', { name: fileName });
       }
     });
 
@@ -192,8 +193,7 @@ export class Editor {
     // Show loading state
     const tableContainer = document.getElementById('table-editor');
     if (tableContainer) {
-      tableContainer.innerHTML =
-        '<div class="p-4 text-center">Loading table data...</div>';
+      tableContainer.innerHTML = `<div class="p-4 text-center">${t('files.loadingTable')}</div>`;
     }
 
     try {
@@ -205,8 +205,7 @@ export class Editor {
 
       if (!data || data.length === 0) {
         if (tableContainer) {
-          tableContainer.innerHTML =
-            '<div class="p-4 text-center text-gray-500">No data available</div>';
+          tableContainer.innerHTML = `<div class="p-4 text-center text-gray-500">${t('files.noData')}</div>`;
         }
         return;
       }
@@ -330,8 +329,7 @@ export class Editor {
     } catch (error) {
       console.error('Error building table editor:', error);
       if (tableContainer) {
-        tableContainer.innerHTML =
-          '<div class="p-4 text-center text-red-500">Error loading table data</div>';
+        tableContainer.innerHTML = `<div class="p-4 text-center text-red-500">${t('files.tableError')}</div>`;
       }
     }
   }

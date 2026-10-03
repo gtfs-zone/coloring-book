@@ -1,6 +1,7 @@
 import { PatchManager } from './patch-manager';
 import { GTFSPatch } from '../types/patch';
 import { humanLabel } from '../utils/patch-label';
+import { t } from '../i18n/messages';
 
 function escHtml(s: unknown): string {
   return String(s ?? '')
@@ -14,17 +15,17 @@ function relativeTime(timestamp: number): string {
   const diffMs = Date.now() - timestamp;
   const diffSec = Math.floor(diffMs / 1000);
   if (diffSec < 60) {
-    return `${diffSec}s ago`;
+    return t('history.secondsAgo', { n: diffSec });
   }
   const diffMin = Math.floor(diffSec / 60);
   if (diffMin < 60) {
-    return `${diffMin}m ago`;
+    return t('history.minutesAgo', { n: diffMin });
   }
   const diffHr = Math.floor(diffMin / 60);
   if (diffHr < 24) {
-    return `${diffHr}h ago`;
+    return t('history.hoursAgo', { n: diffHr });
   }
-  return `${Math.floor(diffHr / 24)}d ago`;
+  return t('history.daysAgo', { n: Math.floor(diffHr / 24) });
 }
 
 function opBadgeClass(op: GTFSPatch['op']): string {
@@ -43,15 +44,23 @@ function opBadgeClass(op: GTFSPatch['op']): string {
 function renderFieldDiffs(patch: GTFSPatch): string {
   if (patch.op === 'batch') {
     const opTypes = new Set(patch.ops.map((op) => op.op));
-    let verb: string;
+    let key:
+      | 'history.rowsInserted'
+      | 'history.rowsDeleted'
+      | 'history.rowsUpdated'
+      | 'history.rowsChanged';
     if (opTypes.size === 1) {
-      const t = opTypes.values().next().value;
-      verb =
-        t === 'insert' ? 'inserted' : t === 'delete' ? 'deleted' : 'updated';
+      const op = opTypes.values().next().value;
+      key =
+        op === 'insert'
+          ? 'history.rowsInserted'
+          : op === 'delete'
+            ? 'history.rowsDeleted'
+            : 'history.rowsUpdated';
     } else {
-      verb = 'changed';
+      key = 'history.rowsChanged';
     }
-    return `<div class="text-xs mt-0.5">${patch.ops.length} rows ${verb}</div>`;
+    return `<div class="text-xs mt-0.5">${t(key, { count: patch.ops.length })}</div>`;
   }
   if (patch.op === 'update') {
     const before = (patch.inverse as { changes: Record<string, unknown> })
@@ -145,7 +154,7 @@ export class HistoryController {
         <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12 mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
         </svg>
-        <span class="text-sm">No changes yet</span>`;
+        <span class="text-sm">${t('history.empty')}</span>`;
       panel.appendChild(emptyDiv);
     } else {
       for (let i = history.length - 1; i >= 0; i--) {
@@ -164,7 +173,7 @@ export class HistoryController {
         li.innerHTML = `
           <div class="flex flex-col gap-1 min-w-0 flex-1">
             <div class="flex items-center gap-2 flex-wrap">
-              <span class="badge badge-sm ${opBadgeClass(patch.op)}">${patch.op}</span>
+              <span class="badge badge-sm ${opBadgeClass(patch.op)}">${t(`history.op.${patch.op}`)}</span>
               <span class="text-xs truncate ${textClass}">${escHtml(humanLabel(patch))}</span>
             </div>
             <div class="text-base-content/70">${renderFieldDiffs(patch)}</div>
@@ -194,8 +203,8 @@ export class HistoryController {
     baselineLi.innerHTML = `
       <div class="flex flex-col gap-1 min-w-0 flex-1">
         <div class="flex items-center gap-2 flex-wrap">
-          <span class="badge badge-ghost badge-sm">origin</span>
-          <span class="text-xs">Feed loaded</span>
+          <span class="badge badge-ghost badge-sm">${t('history.origin')}</span>
+          <span class="text-xs">${t('history.feedLoaded')}</span>
         </div>
       </div>`;
     baselineLi.addEventListener('click', () => {

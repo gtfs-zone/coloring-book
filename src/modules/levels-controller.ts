@@ -12,6 +12,7 @@ import type { PatchManager } from './patch-manager';
 import { getStopDisplay, renderOptionLabel } from '../utils/entity-display';
 import { specStoreName } from '../utils/spec-field-edit';
 import { GTFS_TABLES } from '../types/gtfs';
+import { t } from '../i18n/messages';
 
 const INSTANCE_ID = 'levels';
 const STOPS_STORE = specStoreName(GTFS_TABLES.STOPS);
@@ -66,7 +67,7 @@ export class LevelsController {
     }));
 
     return {
-      label: 'Used by',
+      label: t('levels.usedBy'),
       spec: { tableName: GTFS_TABLES.STOPS, field: 'level_id' },
       // A copy: the picker appends dangling values to what it is handed.
       options: async () => options.slice(),
@@ -112,7 +113,7 @@ export class LevelsController {
         }
         await this.patchManager?.recordBatchMixed(
           ops,
-          `Edit stops on level ${level_id}`
+          t('levels.editStops', { id: level_id })
         );
       },
     };
@@ -128,8 +129,7 @@ export class LevelsController {
       tableName: GTFS_TABLES.LEVELS,
       rows: [],
       deps: { gtfsDatabase: this.db, patchManager: this.patchManager },
-      emptyMessage:
-        'No levels yet. A level is a floor of a station, named by <code>stops.level_id</code> and used by pathways.',
+      emptyMessage: t('levels.empty'),
       columnOverrides: {
         level_id: { widthClass: 'min-w-64' },
       },
@@ -163,10 +163,10 @@ export class LevelsController {
     installEditableTableHandlers(config);
 
     await showModal({
-      title: 'Levels',
+      title: t('levels.title'),
       body: `<div id="levels-panel"></div>`,
       escapeAction: 0,
-      actions: [{ label: 'Close', onClick: () => {} }],
+      actions: [{ label: t('common.close'), onClick: () => {} }],
       onMount: () => void refresh(),
     });
 

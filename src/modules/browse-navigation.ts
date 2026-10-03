@@ -28,6 +28,7 @@ import {
 } from './page-content-renderer';
 import type { GTFSParser } from './gtfs-parser';
 import { followRenameInState } from '../utils/follow-rename';
+import { t } from '../i18n/messages';
 
 export class BrowseNavigation {
   private relationships: {
@@ -280,7 +281,7 @@ export class BrowseNavigation {
       },
       serviceDaysController: this.serviceDaysController || {
         renderServiceEditor: () =>
-          Promise.resolve('<div>Service days editor not available</div>'),
+          Promise.resolve(`<div>${t('browse.serviceEditorMissing')}</div>`),
       },
       mapController: {
         highlightRoute: (route_id: string) =>
@@ -490,8 +491,8 @@ export class BrowseNavigation {
         <div class="content flex-1 flex items-center justify-center">
           <div class="text-center">
             <div class="text-4xl mb-4"></div>
-            <div class="text-lg mb-2">Error loading content</div>
-            <div class="text-sm opacity-60">Please try refreshing the page</div>
+            <div class="text-lg mb-2">${t('browse.errorTitle')}</div>
+            <div class="text-sm opacity-60">${t('browse.errorHint')}</div>
           </div>
         </div>
       </div>

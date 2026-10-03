@@ -11,6 +11,7 @@ import {
   BreadcrumbItem,
   stopTypeLabel,
 } from 'gtfs-zone-web-common/ui/breadcrumb-trail';
+import { t } from '../i18n/messages';
 
 /** Name used as the tail of every page title. */
 export const APP_NAME = 'edit.gtfs.zone';
@@ -39,14 +40,20 @@ export interface BreadcrumbLookup {
 }
 
 const HOME: BreadcrumbItem<PageState> = {
-  typeLabel: 'Feed',
-  label: 'Home',
+  typeLabel: t('crumb.feed'),
+  label: t('crumb.home'),
   pageState: { type: 'home' },
 };
 
 /** Fallback name when there is no lookup, or the lookup threw. */
 function fallbackName(type: string, id: string): string {
-  return `${type.charAt(0).toUpperCase() + type.slice(1)} ${id}`;
+  const labels: Record<string, string> = {
+    agency: t('crumb.agency'),
+    route: t('crumb.route'),
+    stop: t('crumb.stop'),
+  };
+  const typeLabel = labels[type] ?? type;
+  return t('crumb.fallback', { type: typeLabel, id });
 }
 
 async function nameOf(
@@ -99,7 +106,7 @@ export async function buildBreadcrumbs(
         return [
           HOME,
           {
-            typeLabel: 'Agency',
+            typeLabel: t('crumb.agency'),
             label: await nameOf(lookup, 'agency', pageState.agency_id),
             pageState: { type: 'agency', agency_id: pageState.agency_id },
           },
@@ -112,12 +119,12 @@ export async function buildBreadcrumbs(
         return [
           HOME,
           {
-            typeLabel: 'Agency',
+            typeLabel: t('crumb.agency'),
             label: await nameOf(lookup, 'agency', agency_id),
             pageState: { type: 'agency', agency_id },
           },
           {
-            typeLabel: 'Route',
+            typeLabel: t('crumb.route'),
             label: await nameOf(lookup, 'route', pageState.route_id),
             pageState: { type: 'route', route_id: pageState.route_id },
           },
@@ -146,7 +153,7 @@ export async function buildBreadcrumbs(
         return [
           HOME,
           {
-            typeLabel: 'Service',
+            typeLabel: t('crumb.service'),
             label: pageState.service_id,
             pageState: { type: 'service', service_id: pageState.service_id },
           },
@@ -160,7 +167,7 @@ export async function buildBreadcrumbs(
           HOME,
           ...ancestorCrumbs(ancestors),
           {
-            typeLabel: 'Pathway',
+            typeLabel: t('crumb.pathway'),
             label: pageState.pathway_id,
             pageState: { type: 'pathway', pathway_id: pageState.pathway_id },
           },
@@ -175,7 +182,7 @@ export async function buildBreadcrumbs(
         return [
           HOME,
           {
-            typeLabel: 'Zone',
+            typeLabel: t('crumb.zone'),
             label: zoneName,
             pageState: { type: 'zone', location_id: pageState.location_id },
           },
@@ -190,7 +197,7 @@ export async function buildBreadcrumbs(
         return [
           HOME,
           {
-            typeLabel: 'Location group',
+            typeLabel: t('crumb.locationGroup'),
             label: groupName,
             pageState: {
               type: 'location_group',
