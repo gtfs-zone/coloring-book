@@ -62,6 +62,7 @@ import {
 import { RouteSequence } from 'gtfs-zone-web-common/gtfs/route-sequence';
 import { RouteGraph } from 'gtfs-zone-web-common/gtfs/route-graph';
 import type { StopTimeRef } from 'gtfs-zone-web-common/gtfs/types';
+import { t } from '../i18n/messages';
 
 function getBrouterProfile(routeType: string | number): string {
   const t = Number(routeType);
@@ -242,11 +243,11 @@ export class TimetableRenderer {
     return `
       <div class="border-b border-base-300 flex flex-wrap items-center gap-x-6 gap-y-2 px-3 py-2">
         <label class="flex items-center gap-2 text-sm">
-          <span class="opacity-60">Route</span>
+          <span class="opacity-60">${t('tt.route')}</span>
           ${routeTrigger}
         </label>
         <label class="flex items-center gap-2 text-sm">
-          <span class="opacity-60">Service</span>
+          <span class="opacity-60">${t('tt.service')}</span>
           ${serviceTrigger}
         </label>
         ${this.renderDirectionTabs(data)}
@@ -297,21 +298,21 @@ export class TimetableRenderer {
       ? `
           <a class="tab ${TIMETABLE_ADD_DIRECTION}"
              data-direction-id="${nextDirectionId}"
-             aria-label="Add direction">
+             aria-label="${t('tt.addDirection')}">
             +
           </a>
         `
       : `
           <button type="button" class="tab tab-disabled" disabled
-             aria-label="Add direction"
-             title="Both directions already exist: GTFS only defines direction_id 0 and 1">
+             aria-label="${t('tt.addDirection')}"
+             title="${t('tt.bothDirections')}">
             +
           </button>
         `;
 
     return `
       <div class="flex items-center gap-2 text-sm">
-        <span class="opacity-60">Direction</span>
+        <span class="opacity-60">${t('tt.direction')}</span>
         <div class="tabs tabs-border">
           ${tabsHTML}
           ${addTabHTML}
@@ -472,15 +473,15 @@ export class TimetableRenderer {
           data.route.route_type ?? ''
         );
         const brouterTip =
-          '<div>Open in BRouter</div>' +
-          `<div class="opacity-70">Routes this trip's ${tripStops.length} stops in BRouter in a new tab, to draw or check a shape against the road or rail network. Nothing in the feed changes.</div>`;
+          `<div>${t('tt.brouterTitle')}</div>` +
+          `<div class="opacity-70">${t('tt.brouterText', { count: tripStops.length })}</div>`;
         const brouterLink = brouterUrl
           ? `<a href="${brouterUrl}" target="_blank" rel="noopener" class="btn btn-xs btn-outline field-tooltip-trigger" ${tooltipContentAttr(brouterTip)}>${renderRouteWaypointsIcon('h-3 w-3')}</a>`
-          : `<button type="button" class="btn btn-xs btn-outline" disabled title="Open in BRouter needs at least two stops with coordinates on this trip">${renderRouteWaypointsIcon('h-3 w-3')}</button>`;
+          : `<button type="button" class="btn btn-xs btn-outline" disabled title="${t('tt.brouterDisabled')}">${renderRouteWaypointsIcon('h-3 w-3')}</button>`;
 
         const uploadTip =
-          '<div>Upload shape for this trip</div>' +
-          '<div class="opacity-70">Reads a GPX file, or one shape out of a GTFS feed, into new shapes.txt rows and points this trip\'s shape_id at them. Undoable from the Changes panel.</div>';
+          `<div>${t('tt.uploadTitle')}</div>` +
+          `<div class="opacity-70">${t('tt.uploadText')}</div>`;
         const uploadBtn = `
           <button
             type="button"
@@ -507,7 +508,7 @@ export class TimetableRenderer {
     return `
       <tr class="trip-property-row" data-property="shape_actions">
         <th class="stop-name p-2 font-medium border-r border-base-300 bg-base-100" style="${this.labelColumnStyle()}">
-          <div class="stop-name-text truncate">Shape actions</div>
+          <div class="stop-name-text truncate">${t('tt.shapeActions')}</div>
         </th>
         ${cells}
         ${newTripCell}
@@ -547,8 +548,8 @@ export class TimetableRenderer {
     const spacerCell = '<td class="text-center p-2"></td>';
 
     const addTip = (trip: AlignedTrip): string =>
-      `<div>Add a headway period to <code>${escapeHtml(trip.trip_id)}</code></div>` +
-      '<div class="opacity-70">Appends a <code>frequencies.txt</code> row: a service window and the seconds between departures in it. The trip\'s stop_times become a template of offsets from its first departure.</div>' +
+      `<div>${t('tt.addHeadwayTitle', { trip: `<code>${escapeHtml(trip.trip_id)}</code>` })}</div>` +
+      `<div class="opacity-70">${t('tt.addHeadwayText')}</div>` +
       buildFieldTooltipContent({
         field: 'headway_secs',
         label: 'headway_secs',
@@ -571,7 +572,7 @@ export class TimetableRenderer {
     // still be converted, and nothing else added to the layout.
     if (bandSize === 0) {
       const cells = trips
-        .map((trip) => addButton(trip, '+ frequency'))
+        .map((trip) => addButton(trip, t('tt.addFrequency')))
         .join('');
       return `
         <tr class="frequency-row" data-freq-index="empty">
@@ -633,7 +634,7 @@ export class TimetableRenderer {
 
     const addRow = `
       <tr class="frequency-row" data-freq-index="add">
-        ${labelCell('+ period', true)}
+        ${labelCell(t('tt.addPeriod'), true)}
         ${trips.map((trip) => addButton(trip, '+')).join('')}
         ${spacerCell}
       </tr>
@@ -658,7 +659,7 @@ export class TimetableRenderer {
     return `
       <th class="stop-name align-top py-0 px-2 font-medium border-r border-base-300 bg-base-100" style="${this.labelColumnStyle()}">
         <div class="flex items-start gap-2 min-w-0">
-          <div class="min-w-0 flex-1 self-center stop-name-text truncate">frequency ${index + 1}</div>
+          <div class="min-w-0 flex-1 self-center stop-name-text truncate">${t('tt.frequencyN', { n: index + 1 })}</div>
           <div
             class="shrink-0 py-2 text-right font-mono text-xs opacity-60"
             style="width:${LABEL_COLUMN_REM}rem"
@@ -674,8 +675,14 @@ export class TimetableRenderer {
    */
   private frequencyDeleteTip(period: TripFrequency): string {
     return (
-      '<div>Delete this headway period</div>' +
-      `<div class="opacity-70">Removes the <code>frequencies.txt</code> row for <code>${escapeHtml(period.trip_id)}</code> at <code>${escapeHtml(period.start_time)}</code>: ${escapeHtml(describeFrequency(period as unknown as Record<string, unknown>))}. The trip's stop_times stay as they are.</div>`
+      `<div>${t('tt.deleteHeadwayTitle')}</div>` +
+      `<div class="opacity-70">${t('tt.deleteHeadwayText', {
+        trip: `<code>${escapeHtml(period.trip_id)}</code>`,
+        start: `<code>${escapeHtml(period.start_time)}</code>`,
+        period: escapeHtml(
+          describeFrequency(period as unknown as Record<string, unknown>)
+        ),
+      })}</div>`
     );
   }
 
@@ -704,7 +711,10 @@ export class TimetableRenderer {
       displayHtml = escapeHtml(value || '-');
       const secs = /^\d+$/.test(value) ? parseInt(value, 10) : null;
       if (secs !== null) {
-        title = `${field} - ${secs % 60 === 0 ? `${secs / 60} minutes` : `${secs} seconds`}`;
+        title =
+          secs % 60 === 0
+            ? t('tt.minutes', { field, n: secs / 60 })
+            : t('tt.seconds', { field, n: secs });
       }
     } else {
       // Empty exact_times is equivalent to 0 per the spec, so it is shown as 0
@@ -717,7 +727,7 @@ export class TimetableRenderer {
         option ? `${effective} - ${option.label}` : effective
       );
       muted = value === '';
-      title = value === '' ? `${field} - empty, equivalent to 0` : field;
+      title = value === '' ? t('tt.emptyEquivalent', { field }) : field;
     }
 
     return `
@@ -827,8 +837,8 @@ export class TimetableRenderer {
    */
   private frequencyBadgeTip(trip: AlignedTrip): string {
     return (
-      '<div>Frequency-based trip</div>' +
-      '<div class="opacity-70">The stop_times below are a template: only their offsets from the first departure carry meaning, and a vehicle leaves every headway through each period.</div>' +
+      `<div>${t('tt.frequencyTripTitle')}</div>` +
+      `<div class="opacity-70">${t('tt.frequencyTripText')}</div>` +
       trip.frequencies
         .map(
           (f) =>
@@ -868,8 +878,8 @@ export class TimetableRenderer {
     const tripActionCells = trips
       .map((trip) => {
         const deleteTip =
-          `<div>Delete trip <code>${escapeHtml(trip.trip_id)}</code></div>` +
-          '<div class="opacity-70">Removes the trip and its stop_times. Undoable from the Changes panel.</div>';
+          `<div>${t('tt.deleteTripTitle', { trip: `<code>${escapeHtml(trip.trip_id)}</code>` })}</div>` +
+          `<div class="opacity-70">${t('tt.deleteTripText')}</div>`;
         // Sorting is offered, never applied on its own: renumbering rows can
         // move them to different strip columns, so the user asks for it and
         // then looks at the result.
@@ -877,13 +887,13 @@ export class TimetableRenderer {
         // be discovered by pressing sort and seeing whether anything moves.
         const resortTip =
           (trip.timesOutOfOrder
-            ? '<div class="font-semibold">This trip\'s stop_times are not in chronological order.</div>'
+            ? `<div class="font-semibold">${t('tt.outOfOrder')}</div>`
             : '') +
-          `<div>Sort trip <code>${escapeHtml(trip.trip_id)}</code> by time</div>` +
-          '<div class="opacity-70">Renumbers this trip\'s stop_times into chronological order. Stops can change column on the strip. Undoable from the Changes panel.</div>';
+          `<div>${t('tt.sortTripTitle', { trip: `<code>${escapeHtml(trip.trip_id)}</code>` })}</div>` +
+          `<div class="opacity-70">${t('tt.sortTripText')}</div>`;
         const copyTip =
-          `<div>Copy trip <code>${escapeHtml(trip.trip_id)}</code></div>` +
-          '<div class="opacity-70">Asks for a time offset and whether to reverse the stop order, then creates the copy with a generated trip ID. Copies the stop_times and frequencies too.</div>';
+          `<div>${t('tt.copyTripTitle', { trip: `<code>${escapeHtml(trip.trip_id)}</code>` })}</div>` +
+          `<div class="opacity-70">${t('tt.copyTripText')}</div>`;
         return `
           <td class="trip-header text-center p-2 text-xs" style="${columnStyle}">
             <div class="flex items-center justify-center gap-1">
@@ -899,11 +909,11 @@ export class TimetableRenderer {
     const stopOrderCells = trips
       .map((trip) => {
         const reverseTip =
-          `<div>Reverse trip <code>${escapeHtml(trip.trip_id)}</code></div>` +
-          '<div class="opacity-70">Reverses and renumbers the stop_times, mirroring the times so the trip still runs forward. Clears the shape. Leaves direction_id alone, so you likely want to update it on the trip afterwards. Undoable from the Changes panel.</div>';
+          `<div>${t('tt.reverseTripTitle', { trip: `<code>${escapeHtml(trip.trip_id)}</code>` })}</div>` +
+          `<div class="opacity-70">${t('tt.reverseTripText')}</div>`;
         const shiftTip =
-          `<div>Shift trip <code>${escapeHtml(trip.trip_id)}</code></div>` +
-          '<div class="opacity-70">Adds a signed offset to every time of this trip. Stop order is unchanged. Undoable from the Changes panel.</div>';
+          `<div>${t('tt.shiftTripTitle', { trip: `<code>${escapeHtml(trip.trip_id)}</code>` })}</div>` +
+          `<div class="opacity-70">${t('tt.shiftTripText')}</div>`;
         return `
           <td class="trip-header text-center p-2 text-xs" style="${columnStyle}">
             <div class="flex items-center justify-center gap-1">
@@ -918,7 +928,7 @@ export class TimetableRenderer {
     // Always add a "new trip" column on the right.
     const newTripHeader = `
       <td class="trip-header text-center p-2 text-xs" style="width:${NEW_TRIP_COLUMN_REM}rem">
-        <button class="new-trip-btn btn btn-xs btn-primary">New trip</button>
+        <button class="new-trip-btn btn btn-xs btn-primary">${t('tt.newTrip')}</button>
       </td>
     `;
 
@@ -926,21 +936,21 @@ export class TimetableRenderer {
       <thead>
         <tr class="z-[2]">
           <th class="stop-header p-2 text-left bg-base-100" style="${this.labelColumnStyle()}">
-            Stop
+            ${t('tt.stop')}
           </th>
           ${tripHeaders}
           ${newTripHeader}
         </tr>
         <tr class="trip-actions-row">
           <th class="stop-header p-2 text-left bg-base-100">
-            <div class="truncate">Trip actions</div>
+            <div class="truncate">${t('tt.tripActions')}</div>
           </th>
           ${tripActionCells}
           <td class="trip-header text-center p-2 text-xs"></td>
         </tr>
         <tr class="trip-actions-row">
           <th class="stop-header p-2 text-left bg-base-100">
-            <div class="truncate">Stop order</div>
+            <div class="truncate">${t('tt.stopOrder')}</div>
           </th>
           ${stopOrderCells}
           <td class="trip-header text-center p-2 text-xs"></td>
@@ -1005,14 +1015,12 @@ export class TimetableRenderer {
       graph.laneCount,
       rowPaths(graph, index, { kind: 'stop', leadIn: false, leadOut: false }),
       dot,
-      isStop
-        ? { stop_id: stop.stop_id, title: 'Focus this stop on the map' }
-        : {}
+      isStop ? { stop_id: stop.stop_id, title: t('tt.focusStop') } : {}
     );
 
     const revisitHtml =
       revisit > 0
-        ? `<span class="opacity-50 text-xs ml-1">(visit ${revisit + 1})</span>`
+        ? `<span class="opacity-50 text-xs ml-1">${t('tt.visit', { n: revisit + 1 })}</span>`
         : '';
 
     // The rail is absolutely positioned so it fills the full row height,
@@ -1022,7 +1030,10 @@ export class TimetableRenderer {
     // `inset-y-0` resolves to the whole cell. The label clears the rail with a
     // left pad of the rail width plus the usual gap.
     const width = gutterWidth(graph.laneCount);
-    const title = `Served by ${stats.serves} of ${sequence.totalTrips} trips`;
+    const title = t('tt.servedBy', {
+      serves: stats.serves,
+      total: sequence.totalTrips,
+    });
     const nameBlock = isStop
       ? this.renderStopNameBlock(stop, revisitHtml, title)
       : this.renderFlexNameBlock(stop, ref, revisitHtml, title);
@@ -1044,8 +1055,8 @@ export class TimetableRenderer {
    */
   private renderRemoveFieldButton(field: string): string {
     const tip =
-      `<div>Stop showing <code>${escapeHtml(field)}</code></div>` +
-      '<div class="opacity-70">Removes the sub-row from every cell. Values already in the feed are untouched, and the field returns on its own merit once any cell has one.</div>' +
+      `<div>${t('tt.stopShowingTitle', { field: `<code>${escapeHtml(field)}</code>` })}</div>` +
+      `<div class="opacity-70">${t('tt.stopShowingText')}</div>` +
       buildFieldTooltipContent({
         field,
         label: field,
@@ -1110,7 +1121,7 @@ export class TimetableRenderer {
         ${renderPickerTrigger({
           content: `${label}${revisitHtml}`,
           className: 'stop-label-span',
-          attrs: `data-stop-id="${escapeHtml(stop.stop_id)}" title="Change stop"`,
+          attrs: `data-stop-id="${escapeHtml(stop.stop_id)}" title="${t('tt.changeStop')}"`,
         })}
         <span class="stop-id-line text-xs opacity-50 font-mono truncate px-1">${escapeHtml(stop.stop_id)}</span>
       </div>
@@ -1134,11 +1145,10 @@ export class TimetableRenderer {
     revisitHtml: string,
     title: string
   ): string {
-    const kindLabel = ref.kind === 'location_group' ? 'Group' : 'Zone';
+    const kindLabel =
+      ref.kind === 'location_group' ? t('tt.group') : t('tt.zone');
     const openLabel =
-      ref.kind === 'location_group'
-        ? 'Open this location group'
-        : 'Open this zone';
+      ref.kind === 'location_group' ? t('tt.openGroup') : t('tt.openZone');
     return `
       <div class="flex flex-col justify-center min-w-0 flex-1" title="${title}">
         <span
@@ -1170,13 +1180,8 @@ export class TimetableRenderer {
   ): string {
     const nameBlock =
       pendingRef !== undefined && pendingRef.kind !== 'stop'
-        ? this.renderFlexNameBlock(
-            stop,
-            pendingRef,
-            '',
-            'Pending on-demand row'
-          )
-        : this.renderStopNameBlock(stop, '', 'Pending stop');
+        ? this.renderFlexNameBlock(stop, pendingRef, '', t('tt.pendingFlex'))
+        : this.renderStopNameBlock(stop, '', t('tt.pendingStop'));
     return `
       <div class="flex items-start gap-2 min-w-0">
         <div class="min-w-0 flex-1 self-center">${nameBlock}</div>
@@ -1303,8 +1308,8 @@ export class TimetableRenderer {
         <th class="stop-name p-2 border-r border-base-300 bg-base-100" style="${this.labelColumnStyle()}">
           <button
             class="add-stop-btn btn btn-primary btn-sm w-full justify-start"
-            ${noTrips ? 'disabled title="Add a trip first: stop times belong to a trip"' : ''}
-          >Add stop or zone...</button>
+            ${noTrips ? `disabled title="${t('tt.addTripFirst')}"` : ''}
+          >${t('tt.addStopOrZone')}</button>
         </th>
         ${newStopTimeCells}
         <td class="text-center p-2"></td>
@@ -1329,8 +1334,8 @@ export class TimetableRenderer {
     return `
       <tr>
         <td colspan="2" class="p-6 text-center">
-          <p class="text-sm opacity-70">This direction of the route has no trips yet. Stop times belong to a trip, so add one before adding stops.</p>
-          <button class="add-first-trip-btn btn btn-primary btn-sm mt-3">Add first trip</button>
+          <p class="text-sm opacity-70">${t('tt.noTripsInDirection')}</p>
+          <button class="add-first-trip-btn btn btn-primary btn-sm mt-3">${t('tt.addFirstTrip')}</button>
         </td>
       </tr>
     `;
@@ -1348,7 +1353,7 @@ export class TimetableRenderer {
    */
   private getDirectionDisplayName(direction: DirectionInfo): string {
     if (direction.tripCount === 0) {
-      return `${direction.name}: No trips`;
+      return t('tt.directionNoTrips', { name: direction.name });
     }
     return direction.name;
   }
@@ -1366,7 +1371,7 @@ export class TimetableRenderer {
     return `
       <div class="flex-1 flex items-center justify-center">
         <div class="text-center text-error">
-          <p class="font-medium">Error</p>
+          <p class="font-medium">${t('tt.error')}</p>
           <p class="text-sm mt-2">${message}</p>
         </div>
       </div>

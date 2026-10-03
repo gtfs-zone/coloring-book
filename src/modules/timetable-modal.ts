@@ -23,6 +23,7 @@ import { PageState, TimetableModalState } from '../types/page-state';
 import { getPageStateManager } from './page-state-manager';
 import { showModal } from 'gtfs-zone-web-common/ui/modal-utils';
 import { notify } from 'gtfs-zone-web-common/ui/notification-system';
+import { t } from '../i18n/messages';
 
 export interface TimetableModalDeps {
   scheduleController: ScheduleController;
@@ -49,7 +50,7 @@ export async function showTimetableModal(
 
   const target = await scheduleController.resolveTimetableTarget(modal);
   if (!target) {
-    notify.warning('This feed has no trips yet, so there is no timetable.');
+    notify.warning(t('tt.noTrips'));
     return;
   }
 
@@ -90,9 +91,9 @@ export async function showTimetableModal(
 
   try {
     await showModal({
-      title: 'Timetable',
+      title: t('tt.title'),
       body,
-      actions: [{ label: 'Close', onClick: () => {} }],
+      actions: [{ label: t('common.close'), onClick: () => {} }],
       escapeAction: 0,
       boxClassName: BOX_CLASS,
       onMount: () => scheduleController.applyTimetableSelection(),

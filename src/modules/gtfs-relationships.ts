@@ -8,6 +8,7 @@ import { GTFSDatabase, GTFSDatabaseRecord } from './gtfs-database';
 import { normalizeAgencyId, agencyRouteFilter } from '../utils/agency-helpers';
 import type { StopTimeRef } from 'gtfs-zone-web-common/gtfs/types';
 import { stopTimeRef } from '../utils/stop-time-ref';
+import { t } from '../i18n/messages';
 
 /** The stop_times column each reference kind lives in. */
 const STOP_TIME_REF_FIELD: Record<StopTimeRef['kind'], string> = {
@@ -391,11 +392,11 @@ export class GTFSRelationships {
     // Fallback to standard direction names
     switch (direction_id) {
       case '0':
-        return 'Outbound';
+        return t('tt.outbound');
       case '1':
-        return 'Inbound';
+        return t('tt.inbound');
       default:
-        return `Direction ${direction_id}`;
+        return t('tt.directionN', { id: String(direction_id) });
     }
   }
 

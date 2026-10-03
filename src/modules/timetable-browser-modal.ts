@@ -26,6 +26,8 @@ import {
   renderOptionLabel,
 } from '../utils/entity-display';
 import { formatDaysOfWeek } from '../utils/entity-references';
+import { t } from '../i18n/messages';
+import { formatNumber } from 'gtfs-zone-web-common/i18n/fmt';
 
 export interface TimetableBrowserDeps {
   gtfsParser: GTFSParser;
@@ -97,13 +99,13 @@ function renderSection(
 ): string {
   const title = section.agency
     ? renderCardLabel(getAgencyDisplay(section.agency))
-    : '<span>No agency</span>';
+    : `<span>${t('tt.noAgency')}</span>`;
 
   if (section.routes.length === 0) {
     return `
       <section class="space-y-2">
         <h4 class="font-semibold">${title}</h4>
-        <p class="text-sm opacity-70">No routes.</p>
+        <p class="text-sm opacity-70">${t('tt.noRoutes')}</p>
       </section>`;
   }
 
@@ -164,7 +166,7 @@ function renderSection(
 
       if ((routeTripCounts.get(route_id) ?? 0) === 0) {
         return `<tr class="${selected}">${routeCell}<td colspan="${Math.max(1, columns.length)}">
-          <button type="button" class="btn btn-xs btn-primary" data-new-timetable data-route-id="${escapeHtml(route_id)}">New timetable</button>
+          <button type="button" class="btn btn-xs btn-primary" data-new-timetable data-route-id="${escapeHtml(route_id)}">${t('tt.newTimetable')}</button>
         </td></tr>`;
       }
 
@@ -174,7 +176,7 @@ function renderSection(
           if (count === 0) {
             return '<td class="text-center opacity-40">-</td>';
           }
-          return `<td class="text-center"><button type="button" class="btn btn-xs btn-ghost" data-route-id="${escapeHtml(route_id)}" data-service-id="${escapeHtml(service_id)}" title="Open timetable">${count}</button></td>`;
+          return `<td class="text-center"><button type="button" class="btn btn-xs btn-ghost" data-route-id="${escapeHtml(route_id)}" data-service-id="${escapeHtml(service_id)}" title="${t('tt.openTimetable')}">${formatNumber(count)}</button></td>`;
         })
         .join('');
       return `<tr class="${selected}">${routeCell}${cells}</tr>`;
@@ -187,7 +189,7 @@ function renderSection(
       <div class="overflow-x-auto">
         <table class="table table-sm w-auto">
           <thead>
-            <tr><th class="sticky left-0 z-10 bg-base-100">Route</th>${headers}</tr>
+            <tr><th class="sticky left-0 z-10 bg-base-100">${t('tt.route')}</th>${headers}</tr>
           </thead>
           <tbody>${rows}</tbody>
         </table>
@@ -237,7 +239,7 @@ export async function showTimetableBrowserModal(
 
   const body =
     routes.length === 0
-      ? '<p class="opacity-70">This feed has no routes yet.</p>'
+      ? `<p class="opacity-70">${t('tt.feedNoRoutes')}</p>`
       : `<div id="timetable-browser" class="space-y-6">${sections
           .map((section) =>
             renderSection(
@@ -251,9 +253,9 @@ export async function showTimetableBrowserModal(
           .join('')}</div>`;
 
   await showModal({
-    title: 'Timetables',
+    title: t('tt.browserTitle'),
     body,
-    actions: [{ label: 'Close', onClick: () => {} }],
+    actions: [{ label: t('common.close'), onClick: () => {} }],
     escapeAction: 0,
     boxClassName: 'max-w-6xl',
     onMount: () => {

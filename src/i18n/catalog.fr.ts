@@ -6,6 +6,7 @@ import { help } from './fr/help';
 import { load } from './fr/load';
 import { pages } from './fr/pages';
 import { shell } from './fr/shell';
+import { timetable } from './fr/timetable';
 import { views } from './fr/views';
 
 /** edit.gtfs.zone's UI strings, in French. */
@@ -16,5 +17,6 @@ export const fr: Translation<typeof en> = {
   ...load,
   ...pages,
   ...shell,
+  ...timetable,
   ...views,
 };

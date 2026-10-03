@@ -4,6 +4,7 @@ import { help } from './en/help';
 import { load } from './en/load';
 import { pages } from './en/pages';
 import { shell } from './en/shell';
+import { timetable } from './en/timetable';
 import { views } from './en/views';
 
 /** edit.gtfs.zone's UI strings, in English: the source of the keys. */
@@ -14,5 +15,6 @@ export const en = {
   ...load,
   ...pages,
   ...shell,
+  ...timetable,
   ...views,
 };

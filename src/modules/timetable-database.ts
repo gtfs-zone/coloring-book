@@ -12,6 +12,7 @@ import { TimeFormatter } from '../utils/time-formatter';
 import { chronologicalOrder } from '../utils/stop-time-order';
 import { mirrorTripTimes, shiftRowTimes } from '../utils/stop-time-shift';
 import { notify } from 'gtfs-zone-web-common/ui/notification-system';
+import { t } from '../i18n/messages';
 
 /** The two ends of a stop_time's pickup/drop-off window. */
 export type FlexWindowField =
@@ -151,7 +152,7 @@ export class TimetableDatabase {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (StopTimesSchema.shape.arrival_time as any).safeParse(newTime);
       if (!timeValidation.success) {
-        const error = `Invalid time format: ${newTime}. Must be HH:MM:SS format.`;
+        const error = t('tt.invalidTime', { time: newTime });
         console.error('Time validation failed:', timeValidation.error);
         throw new Error(error);
       }
@@ -543,7 +544,7 @@ export class TimetableDatabase {
     if (!database) {
       const error = 'Database connection not available';
       console.error(error);
-      notify.error('Database connection lost');
+      notify.error(t('tt.dbLost'));
       throw new Error(error);
     }
 
@@ -578,7 +579,7 @@ export class TimetableDatabase {
     if (arrival !== null && departure !== null && arrival > departure) {
       return {
         isValid: false,
-        errorMessage: 'Arrival time must be before or equal to departure time',
+        errorMessage: t('tt.arrivalAfterDeparture'),
       };
     }
 

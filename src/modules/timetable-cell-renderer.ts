@@ -13,6 +13,7 @@ import { FieldPresence, stopTimeFieldPresence } from '../utils/flex-rules';
 import { formatIssueValue, isDanglingReference } from './feed-issues';
 import { tooltipContentAttr } from 'gtfs-zone-web-common/ui/field-label';
 import { renderPickerTrigger } from '../utils/picker-trigger';
+import { t } from '../i18n/messages';
 
 /** Everything one cell needs to render its stack of sub-rows. */
 export interface StopTimeCellParams {
@@ -70,7 +71,9 @@ function offsetLabel(time: string, origin: string): string | null {
   if (at === null || from === null) {
     return null;
   }
-  return `${TimeFormatter.formatSignedDuration(at - from)} from first departure`;
+  return t('tt.fromFirstDeparture', {
+    offset: TimeFormatter.formatSignedDuration(at - from),
+  });
 }
 
 /**
@@ -173,8 +176,8 @@ export class TimetableCellRenderer {
     // to every cell. Hidden until the cell is hovered or focused, or the grid
     // would be littered with plus signs.
     const addFieldTip =
-      '<div>Show another <code>stop_times.txt</code> field</div>' +
-      '<div class="opacity-70">Picks a field to add as a sub-row of every cell in this table. It is not written to the feed until a value is typed, and it is dropped on leaving the timetable.</div>';
+      `<div>${t('tt.addFieldTitle', { file: '<code>stop_times.txt</code>' })}</div>` +
+      `<div class="opacity-70">${t('tt.addFieldText')}</div>`;
     const addField = `
       <button
         type="button"
@@ -249,11 +252,11 @@ export class TimetableCellRenderer {
     }
     if (dangling) {
       titleParts.push(
-        `No record with ${field} ${formatIssueValue(value)} exists`
+        t('tt.noRecord', { field, value: formatIssueValue(value) })
       );
     }
     if (!editable && !forbiddenEmpty) {
-      titleParts.push('no stop_time on this trip yet');
+      titleParts.push(t('tt.noStopTimeYet'));
     }
 
     // A booking rule is picked from a modal, so its sub-row wears the shared

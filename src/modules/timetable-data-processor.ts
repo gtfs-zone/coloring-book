@@ -27,6 +27,7 @@ import {
   RouteSequence,
 } from 'gtfs-zone-web-common/gtfs/route-sequence';
 import { routeGraph, RouteGraph } from 'gtfs-zone-web-common/gtfs/route-graph';
+import { t } from '../i18n/messages';
 
 /** Trimmed string value, or null when absent or blank. */
 function emptyToNull(raw: unknown): string | null {
@@ -223,7 +224,7 @@ export class TimetableDataProcessor {
     const route = await this.gtfsParser.gtfsDatabase.getRow('routes', route_id);
 
     if (!route) {
-      const error = `Route ${route_id} not found`;
+      const error = t('tt.routeNotFound', { id: route_id });
       console.error(`[TimetableDataProcessor] ${error}`);
       throw new Error(error);
     }
@@ -254,8 +255,8 @@ export class TimetableDataProcessor {
     if (trips.length === 0) {
       // Return empty timetable structure with default directions
       const defaultDirections: DirectionInfo[] = [
-        { id: '0', name: 'Outbound', tripCount: 0 },
-        { id: '1', name: 'Inbound', tripCount: 0 },
+        { id: '0', name: t('tt.outbound'), tripCount: 0 },
+        { id: '1', name: t('tt.inbound'), tripCount: 0 },
       ];
 
       return {
@@ -285,7 +286,7 @@ export class TimetableDataProcessor {
         }
         const stop = await this.relationships.getStopByIdAsync(ref.id);
         if (!stop) {
-          const error = `Stop ${ref.id} not found in stops.txt but referenced in stop_times.txt`;
+          const error = t('tt.stopMissing', { id: ref.id });
           console.error('GTFS Data Integrity Error:', error);
           throw new Error(error);
         }
