@@ -50,4 +50,32 @@ export const load = {
   'export.preparing': 'Preparing GTFS export...',
   'export.done': 'GTFS data exported successfully!',
   'export.failed': 'Failed to export GTFS data: {message}',
+  'db.contextInit': 'initialization',
+  'db.unknownError': 'Unknown error',
+  'db.errorDuring': 'A database error occurred during {context}.',
+  'db.stackTrace': 'Stack trace (for developers)',
+  'db.exportClear': 'Export & Clear',
+  'db.clearReload': 'Clear & Reload',
+  'db.errorTitle': 'Database Error',
+  'db.resetTitle': 'Reset Database',
+  'db.resetBody':
+    'This will permanently delete all stored GTFS data. Make sure to export any important data before proceeding.',
+  'db.resetting': 'Resetting database...',
+  'db.resetDone': 'Database reset successfully. Reloading page...',
+  'db.otherTabsTitle': 'Close the other tabs',
+  'db.otherTabsBody':
+    'Another GTFS.zone tab still has the database open, so it cannot be reset. Close every other GTFS.zone tab, then reload this page to finish the reset.',
+  'db.reload': 'Reload',
+  'db.resetFailed':
+    'Failed to reset database. Please clear browser data manually.',
+  'db.noIndexedDb':
+    'IndexedDB is not supported in this browser. GTFS.zone requires IndexedDB to function.',
+  'db.missingStores_one':
+    'The saved database is missing {count} table and could not be cleared ({outcome}). Close any other GTFS.zone tabs and reload.',
+  'db.missingStores_other':
+    'The saved database is missing {count} tables and could not be cleared ({outcome}). Close any other GTFS.zone tabs and reload.',
+  'tabLock.title': 'Tab not active',
+  'tabLock.body':
+    'This editor is open in another tab. Only one tab can edit at a time.',
+  'tabLock.useHere': 'Use here',
 } as const;

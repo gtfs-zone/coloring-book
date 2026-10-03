@@ -47,14 +47,7 @@ export interface GTFSFieldTypeMetadata {
   max?: number;
   decimals?: number;
   inputType?:
-    | 'text'
-    | 'number'
-    | 'email'
-    | 'url'
-    | 'tel'
-    | 'color'
-    | 'date'
-    | 'time';
+    'text' | 'number' | 'email' | 'url' | 'tel' | 'color' | 'date' | 'time';
   step?: number | string;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   zodValidator: (z: any) => any;

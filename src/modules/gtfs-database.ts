@@ -45,6 +45,7 @@ import {
 } from '../utils/gtfs-primary-keys';
 import { TimeFormatter } from '../utils/time-formatter';
 import { buildExportFilename } from '../utils/export-filename';
+import { t } from '../i18n/messages';
 
 /**
  * Which on-disk form the imported feed expressed its networks in.
@@ -287,10 +288,8 @@ export class GTFSDatabase {
 
       if (!capabilities.indexedDB) {
         databaseFallbackManager.showDatabaseError(
-          new Error(
-            'IndexedDB is not supported in this browser. GTFS.zone requires IndexedDB to function.'
-          ),
-          'initialization'
+          new Error(t('db.noIndexedDb')),
+          t('db.contextInit')
         );
         return;
       }
@@ -372,9 +371,9 @@ export class GTFSDatabase {
         if (outcome !== 'deleted') {
           databaseFallbackManager.showDatabaseError(
             new Error(
-              `The saved database is missing ${missing.length} table(s) and could not be cleared (${outcome}). Close any other GTFS.zone tabs and reload.`
+              t('db.missingStores', { count: missing.length, outcome })
             ),
-            'initialization'
+            t('db.contextInit')
           );
           return;
         }
@@ -390,8 +389,10 @@ export class GTFSDatabase {
     } catch (error) {
       console.error('Failed to initialize GTFSDatabase:', error);
 
-      databaseFallbackManager.showDatabaseError(error, 'initialization', () =>
-        this.exportCurrentBlobsAsZip()
+      databaseFallbackManager.showDatabaseError(
+        error,
+        t('db.contextInit'),
+        () => this.exportCurrentBlobsAsZip()
       );
     }
   }

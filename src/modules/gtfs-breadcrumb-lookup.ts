@@ -219,8 +219,7 @@ export class GTFSBreadcrumbLookup implements BreadcrumbLookup {
   async getZoneName(location_id: string): Promise<string> {
     try {
       const row = (await this.database.getRow('locations', 'locations')) as
-        | Partial<GeoJSON.FeatureCollection>
-        | undefined;
+        Partial<GeoJSON.FeatureCollection> | undefined;
       const feature = row?.features?.find(
         (f) => String(f.id ?? '') === location_id
       );

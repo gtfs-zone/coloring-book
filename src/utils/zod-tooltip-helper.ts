@@ -22,8 +22,7 @@ function getFieldDescription(schema: unknown, fieldName: string): string {
     const s = schema as Record<string, unknown>;
     // Access the schema shape - try multiple ways to be compatible
     const shape = ((s._def as Record<string, unknown>)?.shape || s.shape) as
-      | Record<string, unknown>
-      | undefined;
+      Record<string, unknown> | undefined;
 
     if (!shape) {
       return '';
@@ -48,8 +47,7 @@ function getFieldDescription(schema: unknown, fieldName: string): string {
     const description =
       (field.description as string | undefined) || // Direct access
       ((field._def as Record<string, unknown> | undefined)?.description as
-        | string
-        | undefined) || // Internal _def access
+        string | undefined) || // Internal _def access
       '';
 
     return description;

@@ -1,4 +1,5 @@
 import { generateId } from '../utils/uuid';
+import { t } from '../i18n/messages';
 
 interface TabLockMessage {
   type: string;
@@ -49,11 +50,11 @@ export class TabLockController {
       'fixed inset-0 z-[200] bg-base-300/80 backdrop-blur-sm flex items-center justify-center';
     overlay.innerHTML = `
       <div class="card bg-base-100 shadow-2xl p-8 text-center max-w-sm">
-        <h2 class="text-xl font-bold mb-2">Tab not active</h2>
+        <h2 class="text-xl font-bold mb-2">${t('tabLock.title')}</h2>
         <p class="text-base-content/70 mb-6 text-sm">
-          This editor is open in another tab. Only one tab can edit at a time.
+          ${t('tabLock.body')}
         </p>
-        <button id="tab-lock-use-here" class="btn btn-primary w-full">Use here</button>
+        <button id="tab-lock-use-here" class="btn btn-primary w-full">${t('tabLock.useHere')}</button>
       </div>
     `;
     overlay

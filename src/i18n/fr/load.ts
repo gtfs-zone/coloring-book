@@ -57,4 +57,33 @@ export const load: Translation<typeof en> = {
   'export.preparing': "Préparation de l'export GTFS...",
   'export.done': 'Données GTFS exportées.',
   'export.failed': "Échec de l'export des données GTFS : {message}",
+  'db.contextInit': "l'initialisation",
+  'db.unknownError': 'Erreur inconnue',
+  'db.errorDuring':
+    "Une erreur de base de données s'est produite lors de {context}.",
+  'db.stackTrace': 'Trace de pile (pour les développeurs)',
+  'db.exportClear': 'Exporter et vider',
+  'db.clearReload': 'Vider et recharger',
+  'db.errorTitle': 'Erreur de base de données',
+  'db.resetTitle': 'Réinitialiser la base de données',
+  'db.resetBody':
+    'Toutes les données GTFS enregistrées seront définitivement supprimées. Exportez les données importantes avant de continuer.',
+  'db.resetting': 'Réinitialisation de la base de données...',
+  'db.resetDone': 'Base de données réinitialisée. Rechargement de la page...',
+  'db.otherTabsTitle': 'Fermez les autres onglets',
+  'db.otherTabsBody':
+    'Un autre onglet GTFS.zone utilise encore la base de données, elle ne peut donc pas être réinitialisée. Fermez tous les autres onglets GTFS.zone, puis rechargez cette page pour terminer la réinitialisation.',
+  'db.reload': 'Recharger',
+  'db.resetFailed':
+    'Échec de la réinitialisation de la base de données. Effacez manuellement les données du navigateur.',
+  'db.noIndexedDb':
+    'Ce navigateur ne prend pas en charge IndexedDB, nécessaire au fonctionnement de GTFS.zone.',
+  'db.missingStores_one':
+    "Il manque {count} table à la base de données enregistrée et elle n'a pas pu être vidée ({outcome}). Fermez les autres onglets GTFS.zone et rechargez.",
+  'db.missingStores_other':
+    "Il manque {count} tables à la base de données enregistrée et elle n'a pas pu être vidée ({outcome}). Fermez les autres onglets GTFS.zone et rechargez.",
+  'tabLock.title': 'Onglet inactif',
+  'tabLock.body':
+    'Cet éditeur est ouvert dans un autre onglet. Un seul onglet peut modifier à la fois.',
+  'tabLock.useHere': 'Utiliser ici',
 };

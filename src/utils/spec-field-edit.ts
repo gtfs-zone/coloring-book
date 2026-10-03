@@ -22,11 +22,7 @@ import type { GTFSFieldSpec } from '../gtfs-spec/types';
 import type { z } from 'zod';
 
 export type SpecFieldKind =
-  | 'text'
-  | 'number'
-  | 'enum'
-  | 'foreign'
-  | 'constrained';
+  'text' | 'number' | 'enum' | 'foreign' | 'constrained';
 
 /**
  * Field types whose values come from a standard's closed set, and where that
@@ -149,8 +145,7 @@ export function validateFieldValue(
   }
 
   const schema = GTFSSchemas[tableName as keyof typeof GTFSSchemas] as
-    | z.ZodObject<z.ZodRawShape>
-    | undefined;
+    z.ZodObject<z.ZodRawShape> | undefined;
   // Zod 4 erases the shape to `$ZodType`, which has no `safeParse`.
   const fieldSchema = schema?.shape[field] as z.ZodTypeAny | undefined;
   if (!fieldSchema) {

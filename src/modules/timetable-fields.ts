@@ -14,11 +14,7 @@ import type { AlignedTrip } from './timetable-data-processor';
 
 /** The editor a field's sub-row opens on click. */
 export type StopTimeFieldKind =
-  | 'time'
-  | 'enum'
-  | 'number'
-  | 'text'
-  | 'booking_rule';
+  'time' | 'enum' | 'number' | 'text' | 'booking_rule';
 
 /**
  * Fields the timetable renders as structure, not as a sub-row: `trip_id` is the

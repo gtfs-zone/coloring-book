@@ -39,6 +39,7 @@ import {
   modesInCategory,
 } from '../utils/pathway-modes';
 import { getSpecUrl } from '../utils/field-component';
+import { t } from '../i18n/messages';
 
 /**
  * A link into the GTFS reference for one file, dropped after a `lede()` or
@@ -47,6 +48,13 @@ import { getSpecUrl } from '../utils/field-component';
  */
 function specLink(tableName: string, label: string): string {
   return `<a href="${getSpecUrl(tableName)}" target="_blank" rel="noopener noreferrer" class="link link-primary">${label}</a>`;
+}
+
+/** "Spec reference: ..." over `[file, label]` pairs. */
+function specReference(links: [string, string][]): string {
+  return t('help.specReference', {
+    links: links.map(([file, label]) => specLink(file, label)).join(', '),
+  });
 }
 
 const ICON_TABLE = icon(
@@ -98,219 +106,213 @@ const ICON_CLOCK = icon(
 
 const welcomePage: HelpPage = {
   id: 'welcome',
-  label: 'Welcome',
+  label: t('help.welcome.label'),
   group: 'Getting Started',
-  title: 'Load, edit, and export a GTFS feed',
+  title: t('help.welcome.title'),
   showOnce: true,
   render: () =>
     [
       eyebrow('GTFS.zone'),
-      lede(
-        'edit.gtfs.zone is a browser-based GTFS transit data editor. All data stays in your browser. No server, no account required.'
-      ),
+      lede(t('help.intro')),
       glyphList([
         {
           icon: ICON_LOAD,
-          term: 'Load a feed',
-          description: 'From a URL or a local file.',
+          term: t('help.welcome.load'),
+          description: t('help.welcome.loadText'),
         },
         {
           icon: ICON_TABLE,
-          term: 'Edit any table',
-          description: 'Agencies, routes, stops, trips, and every other file.',
+          term: t('help.welcome.edit'),
+          description: t('help.welcome.editText'),
         },
         {
           icon: ICON_MAP,
-          term: 'Place stops on the map',
-          description: 'Add and position stops directly on the map.',
+          term: t('help.welcome.place'),
+          description: t('help.welcome.placeText'),
         },
         {
           icon: ICON_CHECK,
-          term: 'Check the feed',
-          description: 'Validate against the GTFS spec as you go.',
+          term: t('help.welcome.check'),
+          description: t('help.welcome.checkText'),
         },
         {
           icon: ICON_EXPORT,
-          term: 'Export a zip',
-          description: 'Download a ready-to-publish GTFS feed.',
+          term: t('help.welcome.export'),
+          description: t('help.welcome.exportText'),
         },
       ]),
-      lede(
-        'Hover any property to see its GTFS description; click the property name to open the official GTFS reference.'
-      ),
+      lede(t('help.welcome.hover')),
     ].join(''),
 };
 
 const gettingStartedPage: HelpPage = {
   id: 'getting-started',
-  label: 'Writing a New Feed',
+  label: t('help.new.label'),
   group: 'Getting Started',
-  title: 'Building a feed from scratch',
+  title: t('help.new.title'),
   showOnce: true,
   render: () =>
     [
-      lede(
-        'Each object below references the one above it, so building in this order keeps everything connected.'
-      ),
+      lede(t('help.new.lede')),
       glyphList([
         {
           icon: ICON_DOC,
-          term: 'Fill in the feed information',
+          term: t('help.new.feedInfo'),
           description: '',
         },
-        { icon: ICON_BUILDING, term: 'Add an agency', description: '' },
+        { icon: ICON_BUILDING, term: t('help.new.agency'), description: '' },
         {
           icon: ICON_CALENDAR,
-          term: 'Add a few services',
-          description: 'The days the service runs.',
+          term: t('help.new.services'),
+          description: t('help.new.servicesText'),
         },
         {
           icon: ICON_ROUTE,
-          term: 'Add routes under the agency',
+          term: t('help.new.routes'),
           description: '',
         },
         {
           icon: ICON_CONNECT,
-          term: 'Connect a route to a service',
-          description: 'Do this by creating a trip.',
+          term: t('help.new.trip'),
+          description: t('help.new.tripText'),
         },
         {
           icon: ICON_STOP_TIME,
-          term: 'Add stops and times',
-          description: 'Fill in that trip’s stop times.',
+          term: t('help.new.stopTimes'),
+          description: t('help.new.stopTimesText'),
         },
       ]),
       lede(
-        `Spec reference: ${specLink('feed_info.txt', 'Feed Info')}, ${specLink('agency.txt', 'Agencies')}, ${specLink('calendar.txt', 'Calendar')}, ${specLink('routes.txt', 'Routes')}, ${specLink('trips.txt', 'Trips')}, ${specLink('stop_times.txt', 'Stop Times')}.`
+        specReference([
+          ['feed_info.txt', t('help.spec.feedInfo')],
+          ['agency.txt', t('help.spec.agencies')],
+          ['calendar.txt', t('help.spec.calendar')],
+          ['routes.txt', t('help.spec.routes')],
+          ['trips.txt', t('help.spec.trips')],
+          ['stop_times.txt', t('help.spec.stopTimes')],
+        ])
       ),
-      footnote('You can revisit this at any time from the Guide menu.'),
+      footnote(t('help.revisit')),
     ].join(''),
 };
 
 const shapesPage: HelpPage = {
   id: 'shapes',
-  label: 'Shapes',
+  label: t('help.shapes.label'),
   group: 'Getting Started',
-  title: 'Creating route shapes',
+  title: t('help.shapes.title'),
   showOnce: true,
   render: () =>
     [
-      lede(
-        'A shape is the path a vehicle follows on the map. It is separate from the sequence of stops a trip makes.'
-      ),
+      lede(t('help.shapes.lede')),
       glyphList([
         {
           icon: ICON_MAP,
-          term: 'Place your stops first',
-          description: 'Get your route’s stops in the right spots.',
+          term: t('help.shapes.stops'),
+          description: t('help.shapes.stopsText'),
         },
         {
           icon: ICON_WAYPOINTS,
-          term: 'Plan the path on brouter',
-          description:
-            'Open a trip in that route’s timetable and click "open in brouter".',
+          term: t('help.shapes.brouter'),
+          description: t('help.shapes.brouterText'),
         },
         {
           icon: ICON_EXPORT,
-          term: 'Export as GPX',
-          description: 'Export the planned path from brouter as a GPX file.',
+          term: t('help.shapes.gpx'),
+          description: t('help.shapes.gpxText'),
         },
         {
           icon: ICON_LOAD,
-          term: 'Import the shape',
-          description:
-            'Import that GPX file here in the Shapes manager. The same button also takes a GTFS feed, to copy one shape out of an existing feed.',
+          term: t('help.shapes.import'),
+          description: t('help.shapes.importText'),
         },
         {
           icon: ICON_CONNECT,
-          term: 'Link the shape',
-          description: 'Link the imported shape to your trips.',
+          term: t('help.shapes.link'),
+          description: t('help.shapes.linkText'),
         },
       ]),
-      lede(`Spec reference: ${specLink('shapes.txt', 'Shapes')}.`),
-      footnote('You can revisit this at any time from the Guide menu.'),
+      lede(specReference([['shapes.txt', t('help.spec.shapes')]])),
+      footnote(t('help.revisit')),
     ].join(''),
 };
 
 const faresPage: HelpPage = {
   id: 'fares',
-  label: 'Fares',
+  label: t('help.fares.label'),
   group: 'Getting Started',
-  title: 'How to specify fares in your GTFS feed',
+  title: t('help.fares.title'),
   showOnce: true,
   render: () =>
     [
-      lede(
-        'This editor uses GTFS-Fares V2. A few entities work together to describe what a rider pays.'
-      ),
+      lede(t('help.fares.lede')),
       glyphList([
         {
           icon: ICON_TICKET,
-          term: 'Define fare products',
-          description:
-            'The things a rider can buy, like a single ride or a day pass.',
+          term: t('help.fares.products'),
+          description: t('help.fares.productsText'),
         },
         {
           icon: ICON_CARD,
-          term: 'Define fare media and rider categories',
-          description:
-            'How a product is carried (e.g. a card, cash, an app) and who qualifies for it (e.g. adult, senior, student).',
+          term: t('help.fares.media'),
+          description: t('help.fares.mediaText'),
         },
         {
           icon: ICON_LEG,
-          term: 'Add fare leg rules',
-          description:
-            'Apply your fare products to specific legs of a journey.',
+          term: t('help.fares.legs'),
+          description: t('help.fares.legsText'),
         },
       ]),
       lede(
-        `Spec reference: ${specLink('fare_products.txt', 'Fare Products')}, ${specLink('fare_media.txt', 'Fare Media')}, ${specLink('fare_leg_rules.txt', 'Fare Leg Rules')}.`
+        specReference([
+          ['fare_products.txt', t('help.spec.fareProducts')],
+          ['fare_media.txt', t('help.spec.fareMedia')],
+          ['fare_leg_rules.txt', t('help.spec.fareLegRules')],
+        ])
       ),
-      footnote('You can revisit this at any time from the Guide menu.'),
+      footnote(t('help.revisit')),
     ].join(''),
 };
 
 const onDemandPage: HelpPage = {
   id: 'on-demand',
-  label: 'On-Demand',
+  label: t('help.onDemand.label'),
   group: 'Getting Started',
-  title: 'Describing on-demand service (GTFS Flex)',
+  title: t('help.onDemand.title'),
   showOnce: true,
   render: () =>
     [
-      lede(
-        'On-demand service is service a rider books rather than catches at a fixed time. GTFS Flex describes it with a few pieces that plug into an ordinary trip.'
-      ),
+      lede(t('help.onDemand.lede')),
       glyphList([
         {
           icon: ICON_ZONE,
-          term: 'A zone is an area, not a stop',
-          description:
-            'A polygon drawn on the map that a rider can be picked up in or dropped off anywhere inside. Zones live in locations.geojson, not in stops.txt.',
+          term: t('help.onDemand.zone'),
+          description: t('help.onDemand.zoneText'),
         },
         {
           icon: ICON_GROUP,
-          term: 'A location group is a set of stops',
-          description:
-            'When the service serves a handful of named stops rather than a whole area, group those stops instead of drawing a zone.',
+          term: t('help.onDemand.group'),
+          description: t('help.onDemand.groupText'),
         },
         {
           icon: ICON_BELL,
-          term: 'A booking rule says how to book',
-          description:
-            'How far in advance a rider has to call or tap, and where. Real time, same day, or by a cutoff on a prior day.',
+          term: t('help.onDemand.booking'),
+          description: t('help.onDemand.bookingText'),
         },
         {
           icon: ICON_CLOCK,
-          term: 'A stop_time ties them to a trip',
-          description:
-            'Give a stop_time a pickup and drop-off window instead of an arrival and departure, point it at a zone or location group, and name the booking rule it uses.',
+          term: t('help.onDemand.stopTime'),
+          description: t('help.onDemand.stopTimeText'),
         },
       ]),
       lede(
-        `Spec reference: ${specLink('locations.geojson', 'Locations')}, ${specLink('booking_rules.txt', 'Booking Rules')}, ${specLink('location_groups.txt', 'Location Groups')}.`
+        specReference([
+          ['locations.geojson', t('help.spec.locations')],
+          ['booking_rules.txt', t('help.spec.bookingRules')],
+          ['location_groups.txt', t('help.spec.locationGroups')],
+        ])
       ),
-      footnote('You can revisit this at any time from the Guide menu.'),
+      footnote(t('help.revisit')),
     ].join(''),
 };
 
@@ -318,15 +320,13 @@ const onDemandPage: HelpPage = {
 
 const ABOUT_APP: AboutApp = {
   name: 'edit.gtfs.zone',
-  blurb: [
-    'edit.gtfs.zone is a browser-based GTFS transit data editor. All data stays in your browser. No server, no account required.',
-  ],
-  contactSubject: 'edit.gtfs.zone feedback',
+  blurb: [t('help.intro')],
+  contactSubject: t('help.about.subject'),
   repo: 'gtfs-zone-editor',
   sibling: {
     name: 'viz.rt.gtfs.zone',
     href: 'https://viz.rt.gtfs.zone',
-    note: 'watch a GTFS Realtime feed on a live map',
+    note: t('help.about.sibling'),
   },
 };
 
@@ -334,15 +334,15 @@ const ABOUT_APP: AboutApp = {
 
 const mapKeyPage: HelpPage = {
   id: 'map-key',
-  label: 'Map Key',
+  label: t('help.mapKey.label'),
   group: 'Reference',
-  title: 'Reading the map symbols',
+  title: t('help.mapKey.title'),
   // Built from the same table the map styles itself from, so the key
   // cannot drift from what is drawn.
   render: () =>
     renderMapKey({
-      unlocatedLabel: 'Node with no location',
-      title: 'Pathways',
+      unlocatedLabel: t('help.mapKey.unlocated'),
+      title: t('help.mapKey.pathways'),
       rows: PATHWAY_CATEGORY_ORDER.map((category) => {
         const { color, dash } = PATHWAY_CATEGORIES[category];
         return modesInCategory(category)
@@ -358,51 +358,76 @@ const mapKeyPage: HelpPage = {
 
 const publishingPage: HelpPage = {
   id: 'publishing',
-  label: 'Publishing your Feed',
+  label: t('help.publish.label'),
   group: 'Getting Started',
-  title: 'Publishing your feed',
+  title: t('help.publish.title'),
   showOnce: true,
   render: () =>
     [
-      lede(
-        'A GTFS feed is only useful once riders and their apps can reach it. A few steps turn the file you just exported into a published feed.'
-      ),
+      lede(t('help.publish.lede')),
       glyphList([
         {
           icon: ICON_CHECK,
-          term: 'Validate with the canonical GTFS validator',
-          termHtml: `Validate with the ${renderExternalLink('https://gtfs-validator.mobilitydata.org/', 'canonical GTFS validator')}`,
-          description: 'Catch anything this editor does not check.',
+          term: t('help.publish.validator', {
+            link: t('help.publish.validatorLink'),
+          }),
+          termHtml: t('help.publish.validator', {
+            link: renderExternalLink(
+              'https://gtfs-validator.mobilitydata.org/',
+              t('help.publish.validatorLink')
+            ),
+          }),
+          description: t('help.publish.validatorText'),
         },
         {
           icon: ICON_CHECK,
-          term: "Keep the source feed's license",
-          description:
-            "If you started from someone else's feed, their license still covers what you publish. Credit them in attributions.txt.",
+          term: t('help.publish.license'),
+          description: t('help.publish.licenseText'),
         },
         {
           icon: ICON_EXPORT,
-          term: 'Host the zip at a stable URL',
-          description:
-            'Somewhere that does not move, so apps can keep fetching the latest version.',
+          term: t('help.publish.host'),
+          description: t('help.publish.hostText'),
         },
         {
           icon: ICON_CONNECT,
-          term: 'Register so apps can find your feed',
-          description:
-            'Add it to the Mobility Database and TransitLand Atlas, and submit it to Google Transit.',
-          descriptionHtml: `Add it to the ${renderExternalLink('https://mobilitydatabase.org/contribute', 'Mobility Database')} and ${renderExternalLink(TRANSITLAND_URL, 'TransitLand Atlas')}, and submit it to ${renderExternalLink('https://developers.google.com/transit/gtfs/', 'Google Transit')}.`,
+          term: t('help.publish.register'),
+          description: t('help.publish.registerText', {
+            mdb: 'Mobility Database',
+            atlas: 'TransitLand Atlas',
+            google: 'Google Transit',
+          }),
+          descriptionHtml: t('help.publish.registerText', {
+            mdb: renderExternalLink(
+              'https://mobilitydatabase.org/contribute',
+              'Mobility Database'
+            ),
+            atlas: renderExternalLink(TRANSITLAND_URL, 'TransitLand Atlas'),
+            google: renderExternalLink(
+              'https://developers.google.com/transit/gtfs/',
+              'Google Transit'
+            ),
+          }),
         },
         {
           icon: ICON_BELL,
-          term: 'Track your vehicles with GTFS Realtime',
-          termHtml: `Track your vehicles with ${renderExternalLink('https://gtfs.org/documentation/realtime/reference/', 'GTFS Realtime')}`,
-          description:
-            'Once the schedule is published, live vehicle positions, trip updates and service alerts are the next step.',
+          term: t('help.publish.realtime', { link: 'GTFS Realtime' }),
+          termHtml: t('help.publish.realtime', {
+            link: renderExternalLink(
+              'https://gtfs.org/documentation/realtime/reference/',
+              'GTFS Realtime'
+            ),
+          }),
+          description: t('help.publish.realtimeText'),
         },
       ]),
       footnote(
-        `You can revisit this at any time from the Guide menu. ${renderExternalLink('https://gtfs.org/getting-started/publish/', 'Publishing on gtfs.org')} covers the whole process.`
+        t('help.publish.footnote', {
+          link: renderExternalLink(
+            'https://gtfs.org/getting-started/publish/',
+            t('help.publish.footnoteLink')
+          ),
+        })
       ),
     ].join(''),
 };

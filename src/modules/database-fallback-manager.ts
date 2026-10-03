@@ -7,6 +7,7 @@ import { notify } from 'gtfs-zone-web-common/ui/notification-system';
 import { showModal } from 'gtfs-zone-web-common/ui/modal-utils';
 import { deleteDatabaseWithTimeout } from '../utils/idb-request';
 import { buildExportFilename } from '../utils/export-filename';
+import { t } from '../i18n/messages';
 
 export interface BrowserCapabilities {
   indexedDB: boolean;
@@ -190,18 +191,18 @@ export class DatabaseFallbackManager {
     const err =
       error instanceof Error
         ? error
-        : new Error(String(error || 'Unknown error'));
+        : new Error(String(error || t('db.unknownError')));
 
     console.error(`Database error in ${context}:`, err);
 
     const stack = err.stack ?? 'No stack trace available';
     const body = `
-      <p class="mb-2">A database error occurred during <strong>${context}</strong>.</p>
+      <p class="mb-2">${t('db.errorDuring', { context: `<strong>${context}</strong>` })}</p>
       <div class="rounded bg-base-200 px-3 py-2 font-mono text-sm mb-3">
-        <span class="text-error font-bold">${err.name}</span>: ${err.message || 'Unknown error'}
+        <span class="text-error font-bold">${err.name}</span>: ${err.message || t('db.unknownError')}
       </div>
       <details class="text-xs">
-        <summary class="cursor-pointer text-base-content/60 hover:text-base-content">Stack trace (for developers)</summary>
+        <summary class="cursor-pointer text-base-content/60 hover:text-base-content">${t('db.stackTrace')}</summary>
         <pre class="mt-2 overflow-x-auto whitespace-pre-wrap bg-base-200 p-2 rounded">${stack}</pre>
       </details>
     `;
@@ -214,7 +215,7 @@ export class DatabaseFallbackManager {
 
     if (exportFn) {
       actions.push({
-        label: 'Export & Clear',
+        label: t('db.exportClear'),
         className: 'btn-primary',
         onClick: async () => {
           const blob = await exportFn();
@@ -233,14 +234,14 @@ export class DatabaseFallbackManager {
     }
 
     actions.push({
-      label: 'Clear & Reload',
+      label: t('db.clearReload'),
       className: 'btn-error',
       onClick: async () => {
         await this.resetDatabase();
       },
     });
 
-    void showModal({ title: 'Database Error', body, actions });
+    void showModal({ title: t('db.errorTitle'), body, actions });
   }
 
   /**
@@ -248,20 +249,20 @@ export class DatabaseFallbackManager {
    */
   showDatabaseResetDialog(): void {
     void showModal({
-      title: 'Reset Database',
-      body: 'This will permanently delete all stored GTFS data. Make sure to export any important data before proceeding.',
+      title: t('db.resetTitle'),
+      body: t('db.resetBody'),
       enterAction: 0,
       escapeAction: 1,
       actions: [
         {
-          label: 'Reset Database',
+          label: t('db.resetTitle'),
           className: 'btn-error',
           onClick: async () => {
             await this.resetDatabase();
           },
         },
         {
-          label: 'Cancel',
+          label: t('common.cancel'),
           className: 'btn-outline',
           onClick: async () => {},
         },
@@ -279,14 +280,14 @@ export class DatabaseFallbackManager {
    * and never reports success or reloads on a delete that has not happened.
    */
   private async resetDatabase(): Promise<void> {
-    feedProgressIndicator.startLoading('reset', 'Resetting database...');
+    feedProgressIndicator.startLoading('reset', t('db.resetting'));
     try {
       this.closeConnection?.();
 
       const outcome = await deleteDatabaseWithTimeout('GTFSZoneDB');
 
       if (outcome === 'deleted') {
-        notify.success('Database reset successfully. Reloading page...');
+        notify.success(t('db.resetDone'));
         setTimeout(() => window.location.reload(), 1500);
         return;
       }
@@ -295,12 +296,12 @@ export class DatabaseFallbackManager {
         // The delete runs on its own the moment the last connection closes, so
         // the reload is held until it does rather than landing on a wedge.
         void showModal({
-          title: 'Close the other tabs',
-          body: 'Another GTFS.zone tab still has the database open, so it cannot be reset. Close every other GTFS.zone tab, then reload this page to finish the reset.',
+          title: t('db.otherTabsTitle'),
+          body: t('db.otherTabsBody'),
           enterAction: 0,
           actions: [
             {
-              label: 'Reload',
+              label: t('db.reload'),
               className: 'btn-primary',
               onClick: async () => {
                 window.location.reload();
@@ -311,13 +312,9 @@ export class DatabaseFallbackManager {
         return;
       }
 
-      notify.error(
-        'Failed to reset database. Please clear browser data manually.'
-      );
+      notify.error(t('db.resetFailed'));
     } catch (error) {
-      notify.error(
-        'Failed to reset database. Please clear browser data manually.'
-      );
+      notify.error(t('db.resetFailed'));
 
       console.error('Database reset failed:', error);
     } finally {
