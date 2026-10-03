@@ -82,6 +82,7 @@ import {
   validateFrequencyRow,
   frequencyPeriodKey,
 } from '../utils/frequency-rules';
+import { t } from '../i18n/messages';
 
 /**
  * Identifies one time cell across a re-render.
@@ -117,20 +118,19 @@ export interface TimetableTarget {
   direction_id?: string;
 }
 
-const OFFSET_ERROR =
-  'Offset must be signed minutes, MM:SS or HH:MM:SS, e.g. -5';
+const OFFSET_ERROR = t('sched.offsetError');
 
 /** The signed time-offset input shared by the copy and shift dialogs. */
 function offsetField(): EntityFormField {
   return {
     field: 'offset',
-    label: 'Time offset',
+    label: t('sched.offsetLabel'),
     type: 'text',
     presence: 'Optional',
     value: '0',
     placeholder: '+15',
     mono: true,
-    note: 'Signed minutes added to every time, e.g. <code>-5</code>. <code>MM:SS</code> (<code>1:30</code>) and <code>HH:MM:SS</code> (<code>+01:00:00</code>) also work.',
+    note: t('sched.offsetNote'),
   };
 }
 
@@ -851,14 +851,14 @@ export class ScheduleController {
     }));
 
     if (options.length === 0) {
-      notify.info('Every stop_times field is already shown', {
+      notify.info(t('sched.allFieldsShown'), {
         duration: 3000,
       });
       return;
     }
 
     const picked = await showOptionPickerModal({
-      title: 'Add a stop_times field',
+      title: t('sched.addFieldTitle'),
       options,
       searchable: true,
     });
@@ -969,9 +969,7 @@ export class ScheduleController {
       selectionStart: seed?.caret,
       className: 'time-input-live w-20 text-center font-mono',
       placeholder: '--:--:--',
-      title: windowField
-        ? 'Enter a pickup/drop-off window time, e.g. 9:30 or 09:30:00'
-        : 'Enter a time, e.g. 9:30 or 09:30:00',
+      title: windowField ? t('sched.enterWindowTime') : t('sched.enterTime'),
       arrowNavigation: true,
       onCommit: (value) => {
         if (windowField) {
@@ -1411,7 +1409,7 @@ export class ScheduleController {
 
     const options = await this.getStopOptions();
     const picked = await showOptionPickerModal({
-      title: 'Change stop',
+      title: t('sched.changeStop'),
       options,
       selectedValue: oldStopId,
       searchable: true,
@@ -1432,16 +1430,16 @@ export class ScheduleController {
   private async openAddStopPicker(): Promise<void> {
     const options = await this.getRefOptions();
     const picked = await showOptionPickerModal({
-      title: 'Add stop or zone',
+      title: t('sched.addStopOrZone'),
       options,
       searchable: true,
-      hint: "Stop not listed? It is easiest to add all of a route's stops on the map with the stop tool first, then add them here.",
+      hint: t('sched.stopNotListed'),
       // Two of the three kinds this lists are authored in the On-Demand modal.
       // Stops have no list page to send anyone to, so the label names what the
       // button actually opens.
       footerAction: this.onDemandOpen
         ? {
-            label: 'Manage zones and location groups...',
+            label: t('sched.manageZones'),
             onClick: () =>
               this.onDemandOpen?.({ table: GTFS_TABLES.LOCATION_GROUPS }),
           }
@@ -1543,7 +1541,7 @@ export class ScheduleController {
       GTFS_TABLES.BOOKING_RULES
     );
     const options: OptionPickerItem[] = [
-      { value: '', primary: '- none -' },
+      { value: '', primary: t('common.noneOption') },
       ...rules.map((rule) => {
         const id = String(rule.booking_rule_id ?? '');
         const message = String(rule.message ?? '').trim();
@@ -1561,21 +1559,21 @@ export class ScheduleController {
     ) {
       options.push({
         value: currentValue,
-        primary: `${formatIssueValue(currentValue)} (dangling reference)`,
+        primary: t('field.dangling', { value: formatIssueValue(currentValue) }),
       });
     }
 
     const picked = await showOptionPickerModal({
       title:
         field === 'pickup_booking_rule_id'
-          ? 'Pickup booking rule'
-          : 'Drop-off booking rule',
+          ? t('sched.pickupRule')
+          : t('sched.dropOffRule'),
       options,
       selectedValue: currentValue,
       searchable: true,
       footerAction: this.onDemandOpen
         ? {
-            label: 'Manage booking rules...',
+            label: t('sched.manageRules'),
             onClick: () =>
               this.onDemandOpen?.({
                 table: GTFS_TABLES.BOOKING_RULES,
@@ -1605,24 +1603,24 @@ export class ScheduleController {
     const currentValue = value ?? '';
     const shapeIds = this.gtfsParser.getShapeIds();
     const options = [
-      { value: '', primary: '- none -' },
+      { value: '', primary: t('common.noneOption') },
       ...shapeIds.map((sid) => ({ value: sid, primary: sid })),
     ];
     if (currentValue && !shapeIds.includes(currentValue)) {
       options.push({
         value: currentValue,
-        primary: `${formatIssueValue(currentValue)} (dangling reference)`,
+        primary: t('field.dangling', { value: formatIssueValue(currentValue) }),
       });
     }
 
     const picked = await showOptionPickerModal({
-      title: 'Select shape',
+      title: t('sched.selectShape'),
       options,
       selectedValue: currentValue,
       searchable: true,
       footerAction: this.shapesOpen
         ? {
-            label: 'Manage shapes...',
+            label: t('sched.manageShapes'),
             onClick: () => this.shapesOpen?.(),
           }
         : undefined,
@@ -1684,8 +1682,8 @@ export class ScheduleController {
 
     notify.success(
       shapeId === currentShapeId
-        ? `Replaced shape ${shapeId}`
-        : `Uploaded shape ${shapeId} for trip ${tripId}`
+        ? t('sched.replacedShape', { id: shapeId })
+        : t('sched.uploadedShape', { id: shapeId, trip: tripId })
     );
   }
 
@@ -1781,7 +1779,7 @@ export class ScheduleController {
         return {
           value: `location:${location_id}`,
           primary: name || location_id,
-          secondary: `On-demand zone - ${location_id}`,
+          secondary: t('sched.zoneSecondary', { id: location_id }),
         };
       });
       const groups = this.gtfsParser
@@ -1792,7 +1790,7 @@ export class ScheduleController {
           return {
             value: `location_group:${location_group_id}`,
             primary: name || location_group_id,
-            secondary: `Location group - ${location_group_id}`,
+            secondary: t('sched.groupSecondary', { id: location_group_id }),
           };
         })
         .filter((option) => option.value !== 'location_group:');
@@ -1895,7 +1893,7 @@ export class ScheduleController {
           this.showTimeError(
             trip_id,
             stop_id,
-            validation.errorMessage || 'Invalid time'
+            validation.errorMessage || t('sched.invalidTime')
           );
           return;
         }
@@ -1936,10 +1934,19 @@ export class ScheduleController {
       }
 
       const label = plan.isInsert
-        ? `Add stop ${stop_id} to trip ${trip_id}`
+        ? t('sched.labelAddStop', { stop: stop_id, trip: trip_id })
         : isClear
-          ? `Clear ${timeType} time for ${trip_id}/${stop_id}`
-          : `Set ${timeType} time for ${trip_id}/${stop_id} to ${castedTime}`;
+          ? t('sched.labelClearTime', {
+              type: timeType,
+              trip: trip_id,
+              stop: stop_id,
+            })
+          : t('sched.labelSetTime', {
+              type: timeType,
+              trip: trip_id,
+              stop: stop_id,
+              time: String(castedTime),
+            });
 
       // Clear the pending row before the patch is recorded: the patch event
       // drives the re-render, which must already show the stop as real.
@@ -1954,7 +1961,7 @@ export class ScheduleController {
       }
       console.log(`[ScheduleController] ${label}`);
       if (plan.isInsert) {
-        notify.success('Added stop to trip', { duration: 2000 });
+        notify.success(t('sched.addedStop'), { duration: 2000 });
       }
 
       // An insert renumbers every row after it, so the cell the user typed into
@@ -1969,7 +1976,7 @@ export class ScheduleController {
       }
     } catch (error) {
       console.error('Failed to update arrival/departure time:', error);
-      this.showTimeError(trip_id, stop_id, 'Failed to save time change');
+      this.showTimeError(trip_id, stop_id, t('sched.saveTimeFailed'));
     }
   }
 
@@ -2073,11 +2080,7 @@ export class ScheduleController {
           ? casted > other
           : casted < other;
       if (invalid) {
-        this.showTimeError(
-          trip_id,
-          rowId,
-          'Window start must be before or equal to window end'
-        );
+        this.showTimeError(trip_id, rowId, t('sched.windowOrder'));
         return;
       }
     }
@@ -2101,7 +2104,7 @@ export class ScheduleController {
       console.log(`[ScheduleController] ${label}`);
     } catch (error) {
       console.error('Failed to update pickup/drop-off window:', error);
-      this.showTimeError(trip_id, rowId, 'Failed to save window change');
+      this.showTimeError(trip_id, rowId, t('sched.saveWindowFailed'));
     }
   }
 
@@ -2169,7 +2172,7 @@ export class ScheduleController {
       );
     } catch (error) {
       console.error(`Failed to update ${field}:`, error);
-      this.showTimeError(trip_id, rowId, `Failed to save ${field}`);
+      this.showTimeError(trip_id, rowId, t('sched.saveFieldFailed', { field }));
     }
   }
 
@@ -2218,7 +2221,11 @@ export class ScheduleController {
         return;
       }
 
-      const label = `Add ${ref.kind} ${ref.id} to trip ${trip_id}`;
+      const label = t('sched.labelAddRef', {
+        kind: ref.kind,
+        id: ref.id,
+        trip: trip_id,
+      });
       // Clear the pending row before the patch is recorded: the patch event
       // drives the re-render, which must already show the row as real.
       this.clearPendingRowIfMatches(ref);
@@ -2229,10 +2236,10 @@ export class ScheduleController {
         return;
       }
       console.log(`[ScheduleController] ${label}`);
-      notify.success('Added on-demand row to trip', { duration: 2000 });
+      notify.success(t('sched.addedFlex'), { duration: 2000 });
     } catch (error) {
       console.error('Failed to create on-demand stop_time:', error);
-      this.showTimeError(trip_id, ref.id, 'Failed to save on-demand row');
+      this.showTimeError(trip_id, ref.id, t('sched.saveFlexFailed'));
     }
   }
 
@@ -2287,7 +2294,11 @@ export class ScheduleController {
         return;
       }
 
-      const label = `Add ${ref.kind} ${ref.id} to trip ${trip_id}`;
+      const label = t('sched.labelAddRef', {
+        kind: ref.kind,
+        id: ref.id,
+        trip: trip_id,
+      });
       const wrote = await this.commitStopTimePlan(plan, label);
       if (!wrote) {
         console.log(`No stop_time change for ${trip_id}/${ref.id}`);
@@ -2299,13 +2310,19 @@ export class ScheduleController {
       // opening the Changes panel.
       notify.success(
         inherited
-          ? `Added ${ref.id} to trip ${trip_id} (pickup ${inherited.shape.pickup_type}, drop-off ${inherited.shape.drop_off_type} copied from ${inherited.from})`
-          : `Added ${ref.id} to trip ${trip_id}`,
+          ? t('sched.addedRefInherited', {
+              id: ref.id,
+              trip: trip_id,
+              pickup: String(inherited.shape.pickup_type),
+              dropOff: String(inherited.shape.drop_off_type),
+              from: inherited.from,
+            })
+          : t('sched.addedRef', { id: ref.id, trip: trip_id }),
         { duration: 4000 }
       );
     } catch (error) {
       console.error('Failed to create on-demand stop_time:', error);
-      this.showTimeError(trip_id, ref.id, 'Failed to save on-demand row');
+      this.showTimeError(trip_id, ref.id, t('sched.saveFlexFailed'));
     }
   }
 
@@ -2360,18 +2377,18 @@ export class ScheduleController {
         );
         return;
       }
-      const label = `Remove ${rowId} from trip ${trip_id}`;
+      const label = t('sched.labelRemove', { row: rowId, trip: trip_id });
       const wrote = await this.commitStopTimePlan(plan, label);
       if (!wrote) {
         return;
       }
       console.log(`[ScheduleController] ${label}`);
-      notify.success(`Removed ${rowId} from trip ${trip_id}`, {
+      notify.success(t('sched.removed', { row: rowId, trip: trip_id }), {
         duration: 3000,
       });
     } catch (error) {
       console.error('Failed to delete stop_time:', error);
-      this.showTimeError(trip_id, rowId, 'Failed to remove row from trip');
+      this.showTimeError(trip_id, rowId, t('sched.removeFailed'));
     }
   }
 
@@ -2398,7 +2415,7 @@ export class ScheduleController {
       openInlineMenu(span, {
         currentValue: value ?? '',
         options: [
-          { value: '', label: '- (empty, same as 0)' },
+          { value: '', label: t('sched.emptySameAs0') },
           ...(getEnumOptions('exact_times') ?? []).map((opt) => ({
             value: String(opt.value),
             label: `${opt.value} - ${opt.label}`,
@@ -2417,9 +2434,7 @@ export class ScheduleController {
       className: 'w-full text-center font-mono',
       placeholder: fieldKind === 'time' ? '--:--:--' : '',
       title:
-        fieldKind === 'time'
-          ? 'Enter a time, e.g. 9:30 or 09:30:00'
-          : 'Seconds between departures',
+        fieldKind === 'time' ? t('sched.enterTime') : t('sched.secondsBetween'),
       onCommit: (newValue) =>
         this.updateFrequencyField(tripId, startTime, field, newValue),
     });
@@ -2493,7 +2508,7 @@ export class ScheduleController {
             { op: 'delete', table: 'frequencies', id: oldKey, record: row },
             { op: 'insert', table: 'frequencies', id: newKey, record: after },
           ],
-          `Move headway period of ${trip_id} to ${value}`
+          t('sched.labelMoveHeadway', { trip: trip_id, start: value })
         );
       }
       console.log(
@@ -2501,7 +2516,7 @@ export class ScheduleController {
       );
     } catch (error) {
       console.error(`Failed to update frequency ${field}:`, error);
-      notify.error(`Failed to save ${field}`);
+      notify.error(t('sched.saveFieldFailed', { field }));
     }
   }
 
@@ -2569,7 +2584,7 @@ export class ScheduleController {
       console.log(`[ScheduleController] Added headway period ${key}`);
     } catch (error) {
       console.error('Failed to add headway period:', error);
-      notify.error('Failed to add headway period');
+      notify.error(t('sched.addHeadwayFailed'));
     }
   }
 
@@ -2596,7 +2611,7 @@ export class ScheduleController {
       console.log(`[ScheduleController] Removed headway period ${key}`);
     } catch (error) {
       console.error('Failed to remove headway period:', error);
-      notify.error('Failed to remove headway period');
+      notify.error(t('sched.removeHeadwayFailed'));
     }
   }
 
@@ -2860,9 +2875,13 @@ export class ScheduleController {
       );
     } catch (error) {
       console.error('Failed to update trip property:', error);
-      notify.show(`Failed to update ${field} for trip ${trip_id}`, 'error', {
-        duration: 5000,
-      });
+      notify.show(
+        t('sched.tripPropFailed', { field, trip: trip_id }),
+        'error',
+        {
+          duration: 5000,
+        }
+      );
     }
   }
 
@@ -2884,7 +2903,7 @@ export class ScheduleController {
     message: string
   ): void {
     console.error(`Time error for ${trip_id}/${stop_id}: ${message}`);
-    notify.error(`Invalid time format: ${message}`, {
+    notify.error(t('sched.timeError', { message }), {
       duration: 5000,
     });
   }
@@ -3026,7 +3045,7 @@ export class ScheduleController {
       );
     } catch (error) {
       console.error('Error rendering schedule:', error);
-      return this.renderer.renderErrorHTML('Failed to generate schedule view');
+      return this.renderer.renderErrorHTML(t('sched.renderFailed'));
     }
   }
 
@@ -3161,7 +3180,7 @@ export class ScheduleController {
     });
 
     const picked = await showOptionPickerModal({
-      title: 'Timetable route',
+      title: t('sched.routePickerTitle'),
       options,
       searchable: true,
       ...(this.currentRouteId && { selectedValue: this.currentRouteId }),
@@ -3172,7 +3191,7 @@ export class ScheduleController {
 
     const target = await this.resolveTimetableTarget({ route_id: picked });
     if (!target) {
-      notify.warning(`Route ${picked} has no trips, so it has no timetable.`);
+      notify.warning(t('sched.routeNoTrips', { id: picked }));
       return;
     }
     await openTimetable(target.route_id, target.service_id);
@@ -3206,7 +3225,7 @@ export class ScheduleController {
       const range = formatDateRange(row);
       const detail = onRouteSet.has(service_id)
         ? range
-        : ['Not on this route yet', range].filter(Boolean).join(' - ');
+        : [t('sched.notOnRoute'), range].filter(Boolean).join(' - ');
       return {
         value: service_id,
         primary: service_id,
@@ -3217,11 +3236,11 @@ export class ScheduleController {
 
     let createNew = false;
     const picked = await showOptionPickerModal({
-      title: 'Timetable service',
+      title: t('sched.servicePickerTitle'),
       options,
       searchable: true,
       footerAction: {
-        label: 'New service…',
+        label: t('sched.newService'),
         onClick: () => {
           createNew = true;
         },
@@ -3367,12 +3386,12 @@ export class ScheduleController {
    */
   public async createNewTrip(): Promise<void> {
     if (!this.currentRouteId || !this.currentServiceId) {
-      notify.error('No timetable loaded');
+      notify.error(t('sched.noTimetable'));
       return;
     }
 
     await promptNewEntity({
-      title: 'New trip',
+      title: t('sched.newTrip'),
       id: {
         table: 'trips',
         suggested: await nextEntityId(
@@ -3398,12 +3417,12 @@ export class ScheduleController {
    */
   private async insertTrip(trip_id: string): Promise<void> {
     if (!this.currentRouteId || !this.currentServiceId) {
-      throw new Error('No timetable loaded');
+      throw new Error(t('sched.noTimetable'));
     }
 
     const validation = await this.validateTripId(trip_id);
     if (!validation.isValid) {
-      throw new Error(validation.errorMessage || 'Invalid trip ID');
+      throw new Error(validation.errorMessage || t('sched.invalidTripId'));
     }
 
     const tripData = {
@@ -3449,7 +3468,7 @@ export class ScheduleController {
       if (existingTrips.length > 0) {
         return {
           isValid: false,
-          errorMessage: 'Trip ID already exists, please choose another',
+          errorMessage: t('sched.tripIdTaken'),
         };
       }
 
@@ -3458,7 +3477,7 @@ export class ScheduleController {
       console.error('Error validating trip ID:', error);
       return {
         isValid: false,
-        errorMessage: 'Failed to validate trip ID',
+        errorMessage: t('sched.tripIdCheckFailed'),
       };
     }
   }
@@ -3496,7 +3515,9 @@ export class ScheduleController {
 
       const name = await this.refDisplayName(ref);
       if (name === null) {
-        notify.error(`${kind === 'stop' ? 'Stop' : 'Reference'} not found`);
+        notify.error(
+          kind === 'stop' ? t('sched.stopNotFound') : t('sched.refNotFound')
+        );
         return;
       }
 
@@ -3507,16 +3528,14 @@ export class ScheduleController {
       );
 
       notify.success(
-        ref.kind === 'stop'
-          ? 'Stop added. Enter a time for at least one trip to save.'
-          : 'Row added. Enter a pickup window for at least one trip to save.'
+        ref.kind === 'stop' ? t('sched.pendingStop') : t('sched.pendingFlex')
       );
 
       // Refresh the timetable to show the new pending row
       await this.refreshCurrentTimetable();
     } catch (error) {
       console.error('Failed to add row to timetable:', error);
-      notify.error('Failed to add row to timetable');
+      notify.error(t('sched.addRowFailed'));
     }
   }
 
@@ -3620,7 +3639,7 @@ export class ScheduleController {
         console.warn(
           `[ScheduleController] changeStopAtRow: no stop_times found for stop ${oldStopId}`
         );
-        notify.error('No stop times reference that stop in this direction');
+        notify.error(t('sched.noStopTimesForStop'));
         return;
       }
 
@@ -3634,12 +3653,17 @@ export class ScheduleController {
         data.route.route_short_name ||
         data.route.route_long_name ||
         data.route.route_id;
-      const label = `Changed stop "${oldName}" -> "${newName}" (Route ${routeLabel}, Direction ${this.currentDirectionId})`;
+      const label = t('sched.labelChangeStop', {
+        from: String(oldName),
+        to: String(newName),
+        route: String(routeLabel),
+        direction: String(this.currentDirectionId),
+      });
 
       await this.patchManager.recordBatch(ops, label);
     } catch (error) {
       console.error('[ScheduleController] changeStopAtRow failed:', error);
-      notify.error('Failed to change stop');
+      notify.error(t('sched.changeStopFailed'));
     }
   }
 
@@ -3658,13 +3682,13 @@ export class ScheduleController {
     try {
       const plan = await this.database.planTripResort(trip_id);
       if (!plan) {
-        notify.info(`Trip ${trip_id} is already in time order`, {
+        notify.info(t('sched.alreadySorted', { trip: trip_id }), {
           duration: 2000,
         });
         return;
       }
 
-      const label = `Sort trip ${trip_id} by time`;
+      const label = t('sched.labelSort', { trip: trip_id });
       const wrote = await this.commitStopTimePlan(plan, label);
       if (!wrote) {
         console.log(`No stop_time change sorting ${trip_id}`);
@@ -3672,12 +3696,15 @@ export class ScheduleController {
       }
       console.log(`[ScheduleController] ${label}`);
       notify.success(
-        `Sorted trip ${trip_id} by time (${plan.moved?.length ?? 0} rows moved)`,
+        t('sched.sorted', {
+          trip: trip_id,
+          count: plan.moved?.length ?? 0,
+        }),
         { duration: 3000 }
       );
     } catch (error) {
       console.error('Failed to sort trip by time:', error);
-      notify.error(`Failed to sort trip ${trip_id}`);
+      notify.error(t('sched.sortFailed', { trip: trip_id }));
     }
   }
 
@@ -3695,13 +3722,13 @@ export class ScheduleController {
     try {
       const plan = await this.database.planTripReverse(trip_id);
       if (!plan) {
-        notify.info(`Trip ${trip_id} has too few stops to reverse`, {
+        notify.info(t('sched.tooFewToReverse', { trip: trip_id }), {
           duration: 2000,
         });
         return;
       }
 
-      const label = `Reverse trip ${trip_id}`;
+      const label = t('sched.labelReverse', { trip: trip_id });
       const wrote = await this.commitStopTimePlan(plan, label);
       if (!wrote) {
         console.log(`No stop_time change reversing ${trip_id}`);
@@ -3710,12 +3737,14 @@ export class ScheduleController {
       const clearedShape = await this.clearTripShape(trip_id);
       console.log(`[ScheduleController] ${label}`);
       notify.success(
-        `Reversed trip ${trip_id}${clearedShape ? ' and cleared its shape' : ''}`,
+        t(clearedShape ? 'sched.reversedClearedShape' : 'sched.reversed', {
+          trip: trip_id,
+        }),
         { duration: 3000 }
       );
     } catch (error) {
       console.error('Failed to reverse trip:', error);
-      notify.error(`Failed to reverse trip ${trip_id}`);
+      notify.error(t('sched.reverseFailed', { trip: trip_id }));
     }
   }
 
@@ -3726,8 +3755,8 @@ export class ScheduleController {
    */
   public async shiftTrip(trip_id: string): Promise<void> {
     const values = await promptNewEntity({
-      title: `Shift trip ${trip_id}`,
-      createLabel: 'Shift times',
+      title: t('sched.shiftTitle', { trip: trip_id }),
+      createLabel: t('sched.shiftCreate'),
       fields: [offsetField()],
       validate: (v) =>
         TimeFormatter.parseSignedDuration(v.offset) === null
@@ -3743,23 +3772,31 @@ export class ScheduleController {
     try {
       const plan = await this.database.planTripShift(trip_id, offsetSeconds);
       if (!plan) {
-        notify.info(`Nothing to shift on trip ${trip_id}`, { duration: 2000 });
+        notify.info(t('sched.nothingToShift', { trip: trip_id }), {
+          duration: 2000,
+        });
         return;
       }
 
-      const label = `Shift trip ${trip_id} by ${offsetLabel}`;
+      const label = t('sched.labelShift', {
+        trip: trip_id,
+        offset: offsetLabel,
+      });
       const wrote = await this.commitStopTimePlan(plan, label);
       if (!wrote) {
         console.log(`No stop_time change shifting ${trip_id}`);
         return;
       }
       console.log(`[ScheduleController] ${label}`);
-      notify.success(`Shifted trip ${trip_id} by ${offsetLabel}`, {
-        duration: 3000,
-      });
+      notify.success(
+        t('sched.shifted', { trip: trip_id, offset: offsetLabel }),
+        {
+          duration: 3000,
+        }
+      );
     } catch (error) {
       console.error('Failed to shift trip:', error);
-      notify.error(`Failed to shift trip ${trip_id}`);
+      notify.error(t('sched.shiftFailed', { trip: trip_id }));
     }
   }
 
@@ -3775,13 +3812,13 @@ export class ScheduleController {
     const db = this.gtfsParser.gtfsDatabase;
     const source = (await db.queryRows('trips', { trip_id }))[0];
     if (!source) {
-      notify.error(`Trip ${trip_id} not found`);
+      notify.error(t('sched.tripNotFound', { trip: trip_id }));
       return;
     }
 
     await promptNewEntity({
-      title: `Copy trip ${trip_id}`,
-      createLabel: 'Copy trip',
+      title: t('sched.copyTitle', { trip: trip_id }),
+      createLabel: t('sched.copyCreate'),
       id: {
         table: 'trips',
         suggested: await nextEntityId(db, 'trips', 'trip'),
@@ -3790,10 +3827,10 @@ export class ScheduleController {
         offsetField(),
         {
           field: 'flip',
-          label: 'Reverse stop order and flip direction',
+          label: t('sched.flipLabel'),
           type: 'checkbox',
           presence: 'Optional',
-          note: 'Mirrors the times so the copy still runs forward. Clears shape_id and shape_dist_traveled.',
+          note: t('sched.flipNote'),
         },
       ],
       validate: (values) =>
@@ -3875,7 +3912,7 @@ export class ScheduleController {
     }
     this.invalidateCaches();
 
-    const label = `Copy trip ${trip_id} to ${newId}`;
+    const label = t('sched.labelCopy', { trip: trip_id, id: newId });
     await pm?.recordBatchInsert(
       [
         { table: 'trips', id: newId, record: newTrip },
@@ -3895,7 +3932,10 @@ export class ScheduleController {
 
     console.log(`[ScheduleController] ${label}`);
     notify.success(
-      `Copied trip ${trip_id} to ${newId}${flip ? ' (reversed, shape cleared)' : ''}`,
+      t(flip ? 'sched.copiedFlipped' : 'sched.copied', {
+        trip: trip_id,
+        id: newId,
+      }),
       { duration: 3000 }
     );
     await this.refreshCurrentTimetable();
@@ -3972,8 +4012,11 @@ export class ScheduleController {
       ];
       const label =
         stopTimes.length > 0
-          ? `Delete trip ${trip_id} + ${stopTimes.length} stop_time${stopTimes.length !== 1 ? 's' : ''}`
-          : `Delete trip ${trip_id}`;
+          ? t('delete.cascade', {
+              label: t('sched.deleteTripLabel', { trip: trip_id }),
+              parts: t('count.stopTimes', { count: stopTimes.length }),
+            })
+          : t('sched.deleteTripLabel', { trip: trip_id });
       await pm.recordBatchDelete(ops, label);
 
       console.log(
@@ -3983,28 +4026,46 @@ export class ScheduleController {
 
     if (stopTimes.length === 0) {
       await showModal({
-        title: 'Delete trip?',
-        body: `<p>Delete trip <strong>${trip_id}</strong>? This cannot be undone without undo.</p>`,
+        title: t('sched.deleteTripTitle'),
+        body: `<p>${t('sched.deleteTripBody', { trip: `<strong>${trip_id}</strong>` })}</p>`,
         enterAction: 1,
         escapeAction: 0,
         actions: [
-          { label: 'Cancel', className: 'btn-ghost', onClick: () => {} },
-          { label: 'Delete trip', className: 'btn-error', onClick: doDelete },
+          {
+            label: t('common.cancel'),
+            className: 'btn-ghost',
+            onClick: () => {},
+          },
+          {
+            label: t('sched.deleteTrip'),
+            className: 'btn-error',
+            onClick: doDelete,
+          },
         ],
       });
       return;
     }
 
     await showModal({
-      title: 'Trip has stop times',
-      body: `<p>Trip <strong>${trip_id}</strong> has <strong>${stopTimes.length} stop_time${stopTimes.length !== 1 ? 's' : ''}</strong>.</p>
-             <p class="mt-3">Deleting this trip will also remove all its stop times (reversible via undo).</p>`,
+      title: t('sched.tripHasStopTimes'),
+      body: `<p>${t('sched.tripHasStopTimesBody', {
+        trip: `<strong>${trip_id}</strong>`,
+        stopTimes: `<strong>${t('count.stopTimes', { count: stopTimes.length })}</strong>`,
+      })}</p>
+             <p class="mt-3">${t('sched.tripCascade')}</p>`,
       enterAction: 1,
       escapeAction: 0,
       actions: [
-        { label: 'Cancel', className: 'btn-ghost', onClick: () => {} },
         {
-          label: `Delete trip + ${stopTimes.length} stop_time${stopTimes.length !== 1 ? 's' : ''}`,
+          label: t('common.cancel'),
+          className: 'btn-ghost',
+          onClick: () => {},
+        },
+        {
+          label: t('delete.cascade', {
+            label: t('sched.deleteTrip'),
+            parts: t('count.stopTimes', { count: stopTimes.length }),
+          }),
           className: 'btn-error',
           onClick: doDelete,
         },
