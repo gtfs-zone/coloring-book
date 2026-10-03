@@ -53,6 +53,7 @@ Invariants (details in [docs/architecture.md](docs/architecture.md)):
 - **TypeScript**: strict mode, with `noUnusedLocals` and `noUnusedParameters`. Remove unused code rather than suppressing.
 - **CSS**: Tailwind CSS v4 + DaisyUI v5, configured in `src/styles/main.css` (no `tailwind.config.js`). The `@source` pointing into `node_modules/gtfs-zone-web-common/src` is what styles the shared modules. Write styles with Tailwind utility classes.
 - **UI**: conventions live in gtfs-zone-web-common's `AGENTS.md`.
+- **Copy**: UI strings live in `src/i18n/en/*.ts` (the source of the keys) and the matching `src/i18n/fr/*.ts`, read through `t()` from `src/i18n/messages.ts`. A new string goes in both. GTFS field names, file names and enum values stay literal inside messages.
 - **Testing**: no automated tests; changes are checked manually.
 - **Plans**: write plans to `CURRENT_PLAN.md` at the repo root as a
   checklist (`- [ ]`), ticked off as work lands. It is neither tracked nor
