@@ -6,6 +6,7 @@
  */
 
 import type { Shapes } from '../types/gtfs-entities';
+import { t } from '../i18n/messages';
 
 /** One shape's rows as a LineString feature, in shape_pt_sequence order. */
 export function shapeRowsToFeature(
@@ -41,7 +42,7 @@ export function shapeFeatureToPoints(
 ): Array<[number, number]> {
   const geometry = feature.geometry;
   if (!geometry) {
-    throw new Error('That feature has no geometry.');
+    throw new Error(t('shapeGeo.noGeometry'));
   }
 
   let coordinates: GeoJSON.Position[];
@@ -50,25 +51,21 @@ export function shapeFeatureToPoints(
   } else if (geometry.type === 'MultiLineString') {
     if (geometry.coordinates.length !== 1) {
       throw new Error(
-        `A shape is one line, but this MultiLineString has ${geometry.coordinates.length} parts. Join them into a single LineString first.`
+        t('shapeGeo.multiLine', { count: geometry.coordinates.length })
       );
     }
     coordinates = geometry.coordinates[0];
   } else {
-    throw new Error(
-      `A shape is a line, but this feature is a ${geometry.type}. Draw a LineString instead.`
-    );
+    throw new Error(t('shapeGeo.notLine', { type: geometry.type }));
   }
 
   if (coordinates.length < 2) {
-    throw new Error(
-      `A shape needs at least two points, this line has ${coordinates.length}.`
-    );
+    throw new Error(t('shapeGeo.tooFew', { count: coordinates.length }));
   }
 
   return coordinates.map(([lon, lat], i) => {
     if (!isFinite(lon) || !isFinite(lat)) {
-      throw new Error(`Point ${i + 1} has a non-numeric coordinate.`);
+      throw new Error(t('shapeGeo.badPoint', { n: i + 1 }));
     }
     return [lon, lat] as [number, number];
   });

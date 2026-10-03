@@ -42,6 +42,7 @@ import {
   type WarmSweep,
 } from './stop-times-validation-cache';
 import { CONFIG } from '../config';
+import { t } from '../i18n/messages';
 
 /** The offending row, so a message can be traced back to an editable object. */
 export interface ValidationEntity {
@@ -1297,11 +1298,11 @@ export class GTFSValidator {
       )) {
         const id = String(stop.stop_id ?? '').trim();
         if (id !== '') {
-          owners.set(id, 'a stops.txt stop_id');
+          owners.set(id, t('ids.ownerStop'));
         }
       }
       for (const id of zoneIds) {
-        owners.set(id, 'a locations.geojson id');
+        owners.set(id, t('ids.ownerZone'));
       }
 
       locationGroups.forEach((row, index: number) => {

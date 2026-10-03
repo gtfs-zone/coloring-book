@@ -1,5 +1,6 @@
 // Mounts the shell markup; must stay the first import.
 import './shell';
+import { applyZodLocale } from './i18n/zod-locale';
 import { GTFSParser } from './modules/gtfs-parser';
 import { MapController } from './modules/map-controller';
 import { Editor } from './modules/editor';
@@ -110,6 +111,8 @@ configureSpecMarkup({
     'inlining.svg': inliningSvg,
   },
 });
+
+applyZodLocale();
 
 declare global {
   interface Window {

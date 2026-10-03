@@ -1,3 +1,5 @@
+import { t } from '../i18n/messages';
+
 /**
  * geojson.io round-trip for on-demand zone geometry.
  *
@@ -110,7 +112,9 @@ async function decodeDataParam(data: string): Promise<string> {
       return await gunzip(fromBase64Url(data.slice(GZ_PREFIX.length)));
     } catch (error) {
       throw new Error(
-        `Could not decompress the geojson.io payload: ${error instanceof Error ? error.message : String(error)}`,
+        t('geoIo.decompress', {
+          message: error instanceof Error ? error.message : String(error),
+        }),
         { cause: error }
       );
     }
@@ -118,9 +122,7 @@ async function decodeDataParam(data: string): Promise<string> {
   if (data.startsWith(JSON_PREFIX)) {
     return decodeURIComponent(data.slice(JSON_PREFIX.length));
   }
-  throw new Error(
-    `Unsupported geojson.io payload encoding: expected a "${GZ_PREFIX}" or "${JSON_PREFIX}" prefix.`
-  );
+  throw new Error(t('geoIo.encoding', { gz: GZ_PREFIX, json: JSON_PREFIX }));
 }
 
 /**
@@ -134,7 +136,7 @@ export async function parseGeojsonIoInput(
 ): Promise<GeoJSON.FeatureCollection> {
   const trimmed = text.trim();
   if (!trimmed) {
-    throw new Error('Nothing pasted.');
+    throw new Error(t('geoIo.nothingPasted'));
   }
 
   let json: string;
@@ -143,13 +145,11 @@ export async function parseGeojsonIoInput(
     try {
       url = new URL(trimmed);
     } catch {
-      throw new Error('That does not parse as a URL.');
+      throw new Error(t('geoIo.notUrl'));
     }
     const data = extractDataParam(url);
     if (!data) {
-      throw new Error(
-        'This geojson.io URL carries no `data` parameter. Draw something first, or paste the GeoJSON itself.'
-      );
+      throw new Error(t('geoIo.noData'));
     }
     json = await decodeDataParam(data);
   } else {
@@ -161,7 +161,9 @@ export async function parseGeojsonIoInput(
     parsed = JSON.parse(json);
   } catch (error) {
     throw new Error(
-      `Not valid JSON: ${error instanceof Error ? error.message : String(error)}`,
+      t('geo.invalidJson', {
+        message: error instanceof Error ? error.message : String(error),
+      }),
       { cause: error }
     );
   }
@@ -169,11 +171,13 @@ export async function parseGeojsonIoInput(
   const collection = parsed as Partial<GeoJSON.FeatureCollection>;
   if (collection?.type !== 'FeatureCollection') {
     throw new Error(
-      `Expected a GeoJSON FeatureCollection, got ${JSON.stringify((collection as { type?: unknown })?.type ?? null)}.`
+      t('geoIo.notCollection', {
+        type: JSON.stringify((collection as { type?: unknown })?.type ?? null),
+      })
     );
   }
   if (!Array.isArray(collection.features)) {
-    throw new Error('FeatureCollection has no features array.');
+    throw new Error(t('geo.noFeaturesArray'));
   }
 
   return collection as GeoJSON.FeatureCollection;

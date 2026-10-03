@@ -11,6 +11,7 @@
 
 import { generateCompositeKeyFromRecord } from './gtfs-primary-keys';
 import { TimeFormatter } from './time-formatter';
+import { t } from '../i18n/messages';
 
 function cell(row: Record<string, unknown>, field: string): string {
   return String(row[field] ?? '').trim();
@@ -61,47 +62,50 @@ export function frequencyRowProblem(
 
   const trip_id = cell(row, 'trip_id');
   if (trip_id === '') {
-    return problem('trip_id', 'trip_id is required');
+    return problem('trip_id', t('freq.required', { field: 'trip_id' }));
   }
 
   const start = cell(row, 'start_time');
   if (start === '') {
-    return problem('start_time', 'start_time is required');
+    return problem('start_time', t('freq.required', { field: 'start_time' }));
   }
   const end = cell(row, 'end_time');
   if (end === '') {
-    return problem('end_time', 'end_time is required');
+    return problem('end_time', t('freq.required', { field: 'end_time' }));
   }
 
   const startSecs = TimeFormatter.timeToSeconds(start);
   if (startSecs === null) {
-    return problem('start_time', `start_time '${start}' is not a valid time`);
+    return problem(
+      'start_time',
+      t('freq.invalidTime', { field: 'start_time', value: start })
+    );
   }
   const endSecs = TimeFormatter.timeToSeconds(end);
   if (endSecs === null) {
-    return problem('end_time', `end_time '${end}' is not a valid time`);
+    return problem(
+      'end_time',
+      t('freq.invalidTime', { field: 'end_time', value: end })
+    );
   }
   if (endSecs <= startSecs) {
-    return problem('end_time', 'end_time must be later than start_time');
+    return problem('end_time', t('freq.endAfterStart'));
   }
 
   const headway = cell(row, 'headway_secs');
   if (headway === '') {
-    return problem('headway_secs', 'headway_secs is required');
-  }
-  if (!/^\d+$/.test(headway) || parseInt(headway, 10) <= 0) {
     return problem(
       'headway_secs',
-      `headway_secs '${headway}' must be a positive whole number of seconds`
+      t('freq.required', { field: 'headway_secs' })
     );
+  }
+  if (!/^\d+$/.test(headway) || parseInt(headway, 10) <= 0) {
+    return problem('headway_secs', t('freq.headway', { value: headway }));
   }
 
   const exact_times = cell(row, 'exact_times');
   if (exact_times !== '' && exact_times !== '0' && exact_times !== '1') {
-    return problem(
-      'exact_times',
-      `exact_times '${exact_times}' must be 0, 1 or empty`
-    );
+    return problem('exact_times', t('freq.exactTimes', { value: exact_times }));
   }
 
   // Intervals are half-open: "New headways may start at the exact time the
@@ -118,7 +122,10 @@ export function frequencyRowProblem(
     if (startSecs < siblingEnd && siblingStart < endSecs) {
       return problem(
         'start_time',
-        `headway period ${start}-${end} overlaps ${cell(sibling, 'start_time')}-${cell(sibling, 'end_time')} on the same trip`,
+        t('freq.overlap', {
+          period: `${start}-${end}`,
+          other: `${cell(sibling, 'start_time')}-${cell(sibling, 'end_time')}`,
+        }),
         'overlap'
       );
     }

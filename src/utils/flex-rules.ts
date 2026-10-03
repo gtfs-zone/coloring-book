@@ -1,3 +1,5 @@
+import { t } from '../i18n/messages';
+
 /**
  * The conditional-presence rules GTFS Flex puts on a row.
  *
@@ -32,10 +34,12 @@ export function validateFlexStopTimeRow(
   ].filter(([, value]) => value !== '');
 
   if (named.length === 0) {
-    return 'one of stop_id, location_group_id or location_id is required';
+    return t('flexRule.oneOf');
   }
   if (named.length > 1) {
-    return `${named.map(([field]) => field).join(' and ')} are mutually exclusive: name exactly one`;
+    return t('flexRule.exclusive', {
+      fields: named.map(([field]) => field).join(t('flexRule.and')),
+    });
   }
 
   const start = cell(row, 'start_pickup_drop_off_window');
@@ -43,10 +47,15 @@ export function validateFlexStopTimeRow(
   const hasWindow = start !== '' || end !== '';
 
   if ((start === '') !== (end === '')) {
-    return 'start_pickup_drop_off_window and end_pickup_drop_off_window must both be set, or both left empty';
+    return t('rule.bothOrNeither', {
+      a: 'start_pickup_drop_off_window',
+      b: 'end_pickup_drop_off_window',
+    });
   }
   if (!hasWindow && (location_group_id !== '' || location_id !== '')) {
-    return `a pickup/drop-off window is required when ${location_group_id !== '' ? 'location_group_id' : 'location_id'} is defined`;
+    return t('flexRule.windowRequired', {
+      field: location_group_id !== '' ? 'location_group_id' : 'location_id',
+    });
   }
   if (!hasWindow) {
     return null;
@@ -55,27 +64,27 @@ export function validateFlexStopTimeRow(
   const arrival = cell(row, 'arrival_time');
   const departure = cell(row, 'departure_time');
   if (arrival !== '' || departure !== '') {
-    return 'a pickup/drop-off window is forbidden when arrival_time or departure_time is defined';
+    return t('flexRule.windowForbidden');
   }
   if (start > end) {
-    return 'start_pickup_drop_off_window must not be later than end_pickup_drop_off_window';
+    return t('flexRule.windowOrder');
   }
 
   // Empty is equivalent to 0 for both, and 0 is forbidden under a window, so an
   // empty value is a violation rather than something to skip.
   const pickup_type = cell(row, 'pickup_type');
   if (pickup_type !== '1' && pickup_type !== '2') {
-    return 'pickup_type must be 1 or 2 when a pickup/drop-off window is defined';
+    return t('flexRule.pickupType');
   }
   const drop_off_type = cell(row, 'drop_off_type');
   if (drop_off_type !== '1' && drop_off_type !== '2' && drop_off_type !== '3') {
-    return 'drop_off_type must be 1, 2 or 3 when a pickup/drop-off window is defined';
+    return t('flexRule.dropOffType');
   }
 
   for (const field of ['continuous_pickup', 'continuous_drop_off']) {
     const value = cell(row, field);
     if (value !== '' && value !== '1') {
-      return `${field} must be 1 or empty when a pickup/drop-off window is defined`;
+      return t('flexRule.continuous', { field });
     }
   }
 
@@ -127,17 +136,13 @@ export function stopTimeFieldPresence(
       mark(
         field,
         'forbidden',
-        `${field} is forbidden when a pickup/drop-off window is defined`
+        t('rule.forbiddenWhen', { field, condition: t('cond.window') })
       );
     }
   } else {
     if (position?.isFirst || position?.isLast) {
       if (arrival === '') {
-        mark(
-          'arrival_time',
-          'required',
-          'arrival_time is required for the first and last stop of a trip'
-        );
+        mark('arrival_time', 'required', t('flexRule.firstLast'));
       }
     }
     if (cell(row, 'timepoint') === '1') {
@@ -145,14 +150,20 @@ export function stopTimeFieldPresence(
         mark(
           'arrival_time',
           'required',
-          'arrival_time is required when timepoint=1'
+          t('rule.requiredWhen', {
+            field: 'arrival_time',
+            condition: t('cond.timepoint'),
+          })
         );
       }
       if (departure === '') {
         mark(
           'departure_time',
           'required',
-          'departure_time is required when timepoint=1'
+          t('rule.requiredWhen', {
+            field: 'departure_time',
+            condition: t('cond.timepoint'),
+          })
         );
       }
     }
@@ -166,7 +177,7 @@ export function stopTimeFieldPresence(
       mark(
         field,
         'forbidden',
-        `${field} is forbidden when arrival_time or departure_time is defined`
+        t('rule.forbiddenWhen', { field, condition: t('cond.times') })
       );
       continue;
     }
@@ -177,13 +188,22 @@ export function stopTimeFieldPresence(
       mark(
         field,
         'required',
-        `${field} is required when ${location_group_id !== '' ? 'location_group_id' : 'location_id'} is defined`
+        t('rule.requiredWhen', {
+          field,
+          condition: t('cond.defined', {
+            field:
+              location_group_id !== '' ? 'location_group_id' : 'location_id',
+          }),
+        })
       );
     } else if (other !== '') {
       mark(
         field,
         'required',
-        'start_pickup_drop_off_window and end_pickup_drop_off_window must both be set, or both left empty'
+        t('rule.bothOrNeither', {
+          a: 'start_pickup_drop_off_window',
+          b: 'end_pickup_drop_off_window',
+        })
       );
     }
   }
@@ -194,29 +214,17 @@ export function stopTimeFieldPresence(
       mark(
         'pickup_type',
         'forbidden',
-        `pickup_type=${pickup_type} is forbidden when a pickup/drop-off window is defined; it must be 1 or 2`
+        t('flexRule.pickupForbidden', { value: pickup_type })
       );
     } else if (pickup_type === '') {
-      mark(
-        'pickup_type',
-        'required',
-        'pickup_type must be 1 or 2 when a pickup/drop-off window is defined; empty is equivalent to 0'
-      );
+      mark('pickup_type', 'required', t('flexRule.pickupEmpty'));
     }
 
     const drop_off_type = cell(row, 'drop_off_type');
     if (drop_off_type === '0') {
-      mark(
-        'drop_off_type',
-        'forbidden',
-        'drop_off_type=0 is forbidden when a pickup/drop-off window is defined; it must be 1, 2 or 3'
-      );
+      mark('drop_off_type', 'forbidden', t('flexRule.dropOffForbidden'));
     } else if (drop_off_type === '') {
-      mark(
-        'drop_off_type',
-        'required',
-        'drop_off_type must be 1, 2 or 3 when a pickup/drop-off window is defined; empty is equivalent to 0'
-      );
+      mark('drop_off_type', 'required', t('flexRule.dropOffEmpty'));
     }
 
     for (const field of ['continuous_pickup', 'continuous_drop_off']) {
@@ -225,7 +233,7 @@ export function stopTimeFieldPresence(
         mark(
           field,
           'forbidden',
-          `${field}=${value} is forbidden when a pickup/drop-off window is defined; it must be 1 or empty`
+          t('flexRule.continuousForbidden', { field, value })
         );
       }
     }
@@ -259,43 +267,67 @@ export function validateBookingRuleRow(
 
   if (booking_type === '1') {
     if (duration_min === '') {
-      return 'prior_notice_duration_min is required for booking_type=1';
+      return t('booking.requiredFor', {
+        field: 'prior_notice_duration_min',
+        type: '1',
+      });
     }
   } else if (duration_min !== '') {
-    return `prior_notice_duration_min is forbidden for booking_type=${booking_type}`;
+    return t('booking.forbiddenFor', {
+      field: 'prior_notice_duration_min',
+      type: booking_type,
+    });
   }
 
   if (duration_max !== '' && booking_type !== '1') {
-    return `prior_notice_duration_max is forbidden for booking_type=${booking_type}`;
+    return t('booking.forbiddenFor', {
+      field: 'prior_notice_duration_max',
+      type: booking_type,
+    });
   }
 
   if (booking_type === '2') {
     if (last_day === '') {
-      return 'prior_notice_last_day is required for booking_type=2';
+      return t('booking.requiredFor', {
+        field: 'prior_notice_last_day',
+        type: '2',
+      });
     }
   } else if (last_day !== '') {
-    return `prior_notice_last_day is forbidden for booking_type=${booking_type}`;
+    return t('booking.forbiddenFor', {
+      field: 'prior_notice_last_day',
+      type: booking_type,
+    });
   }
 
   if ((last_day === '') !== (last_time === '')) {
-    return 'prior_notice_last_day and prior_notice_last_time must both be set, or both left empty';
+    return t('rule.bothOrNeither', {
+      a: 'prior_notice_last_day',
+      b: 'prior_notice_last_time',
+    });
   }
 
   if (start_day !== '') {
     if (booking_type === '0') {
-      return 'prior_notice_start_day is forbidden for booking_type=0';
+      return t('booking.forbiddenFor', {
+        field: 'prior_notice_start_day',
+        type: '0',
+      });
     }
     if (booking_type === '1' && duration_max !== '') {
-      return 'prior_notice_start_day is forbidden for booking_type=1 when prior_notice_duration_max is defined';
+      return t('booking.startDayMax');
     }
   }
 
   if ((start_day === '') !== (start_time === '')) {
-    return 'prior_notice_start_day and prior_notice_start_time must both be set, or both left empty';
+    return t('rule.bothOrNeither', {
+      a: 'prior_notice_start_day',
+      b: 'prior_notice_start_time',
+    });
   }
 
   if (service_id !== '' && booking_type !== '2') {
-    return `prior_notice_service_id is only allowed for booking_type=2, not booking_type=${booking_type}`;
+    return t('booking.serviceOnly2', { type: booking_type });
   }
 
   return null;
@@ -316,5 +348,5 @@ export function validateLocationGroupId(
   if (!owner) {
     return null;
   }
-  return `location_group_id '${location_group_id}' is already used as ${owner}; the ID must be unique across stops.txt, locations.geojson and location_groups.txt`;
+  return t('ids.groupTaken', { id: location_group_id, owner });
 }

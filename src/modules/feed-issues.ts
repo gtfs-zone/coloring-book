@@ -21,6 +21,7 @@ import {
 import { deleteTrips, describeTripDelete } from '../utils/trip-delete';
 import { getEntityDisplay, renderOptionLabel } from '../utils/entity-display';
 import { generateCompositeKeyFromRecord } from '../utils/gtfs-primary-keys';
+import { t } from '../i18n/messages';
 
 /** Rows for the entity labels. Just the parser's sync read, narrowed. */
 export interface FeedIssueRowSource {
@@ -77,60 +78,65 @@ export interface IssueKind {
 
 /** `${file} rows ${text}`, the shape most labels take. */
 function rowsLabel(text: string): IssueKind['label'] {
-  return (group) => `${group.file} rows ${text}`;
-}
-
-function plural(count: number, noun: string): string {
-  return `${count} ${noun}${count === 1 ? '' : 's'}`;
+  return (group) => t('issues.rows', { file: group.file, text });
 }
 
 const ISSUE_KINDS: Record<string, IssueKind> = {
-  MISSING_REQUIRED_FIELD: { label: rowsLabel('missing a required field') },
-  MISSING_REQUIRED_FILE: { label: rowsLabel('missing a required file') },
+  MISSING_REQUIRED_FIELD: {
+    label: rowsLabel(t('issues.missingRequiredField')),
+  },
+  MISSING_REQUIRED_FILE: { label: rowsLabel(t('issues.missingRequiredFile')) },
   INVALID_REFERENCE: {
     label: (group) => {
       if (group.file === 'routes.txt' && group.field === 'agency_id') {
-        return 'routes with an agency_id not in agency.txt';
+        return t('issues.routesBadAgency');
       }
       return group.field
-        ? `${group.file} rows with a ${group.field} that does not exist`
-        : `${group.file} rows referencing a record that does not exist`;
+        ? t('issues.badRefField', { file: group.file, field: group.field })
+        : t('issues.badRef', { file: group.file });
     },
     note: (group) =>
       group.file === 'routes.txt' && group.field === 'agency_id'
-        ? "These routes won't appear under any agency until agency_id is fixed."
+        ? t('issues.routesBadAgencyNote')
         : undefined,
   },
-  EMPTY_FILE: { label: rowsLabel('empty') },
-  DUPLICATE_ID: { label: rowsLabel('duplicate id') },
-  INVALID_COORDINATE: { label: rowsLabel('invalid coordinate') },
-  INVALID_DATE_FORMAT: { label: rowsLabel('invalid date') },
-  INVALID_TIME_FORMAT: { label: rowsLabel('invalid time') },
-  INVALID_NUMBER: { label: rowsLabel('invalid number') },
-  INVALID_URL: { label: rowsLabel('invalid URL') },
+  EMPTY_FILE: { label: rowsLabel(t('issues.empty')) },
+  DUPLICATE_ID: { label: rowsLabel(t('issues.duplicateId')) },
+  INVALID_COORDINATE: { label: rowsLabel(t('issues.invalidCoordinate')) },
+  INVALID_DATE_FORMAT: { label: rowsLabel(t('issues.invalidDate')) },
+  INVALID_TIME_FORMAT: { label: rowsLabel(t('issues.invalidTime')) },
+  INVALID_NUMBER: { label: rowsLabel(t('issues.invalidNumber')) },
+  INVALID_URL: { label: rowsLabel(t('issues.invalidUrl')) },
   INVALID_CODE: {
     label: (group) =>
-      `${group.file} rows whose ${group.field || 'value'} is not a valid code`,
+      t('issues.invalidCode', {
+        file: group.file,
+        field: group.field || t('issues.value'),
+      }),
   },
   INVALID_GEOMETRY: {
-    label: (group) => `${group.file} zones with an invalid geometry`,
+    label: (group) => t('issues.invalidGeometry', { file: group.file }),
   },
   CONDITIONAL_PRESENCE: {
-    label: rowsLabel('missing a conditionally required field'),
+    label: rowsLabel(t('issues.conditional')),
   },
-  UNKNOWN_ROUTE_TYPE: { label: rowsLabel('unknown route_type') },
-  UNKNOWN_LOCATION_TYPE: { label: rowsLabel('unknown location_type') },
-  INVALID_EXCEPTION_TYPE: { label: rowsLabel('invalid exception_type') },
-  INVALID_AREA_ASSIGNMENT: { label: rowsLabel('invalid area assignment') },
+  UNKNOWN_ROUTE_TYPE: { label: rowsLabel(t('issues.unknownRouteType')) },
+  UNKNOWN_LOCATION_TYPE: { label: rowsLabel(t('issues.unknownLocationType')) },
+  INVALID_EXCEPTION_TYPE: {
+    label: rowsLabel(t('issues.invalidExceptionType')),
+  },
+  INVALID_AREA_ASSIGNMENT: { label: rowsLabel(t('issues.invalidArea')) },
   TRIP_WITHOUT_STOP_TIMES: {
-    label: rowsLabel('without any stop_times'),
+    label: rowsLabel(t('issues.noStopTimes')),
     actions: [
       {
         id: 'delete-trips',
-        label: 'Delete trips',
+        label: t('issues.deleteTrips'),
         destructive: true,
         confirm: (entities) =>
-          `Delete ${plural(entities.length, 'trip')} with no stop_times, and any frequencies rows of those trips? This is one undo step.`,
+          t('issues.deleteTripsConfirm', {
+            trips: t('count.trips', { count: entities.length }),
+          }),
         run: async (entities, deps) =>
           describeTripDelete(
             await deleteTrips(
@@ -142,45 +148,47 @@ const ISSUE_KINDS: Record<string, IssueKind> = {
     ],
   },
   ORPHANED_STOP: {
-    label: rowsLabel('with no coordinates of their own or from a parent'),
-    note: () =>
-      'These are not drawn on the map. Give each one coordinates, or a parent_station that has them.',
+    label: rowsLabel(t('issues.orphaned')),
+    note: () => t('issues.orphanedNote'),
   },
   UNPAIRED_FLEX_ROW: {
-    label: rowsLabel('with an unpaired pickup/drop-off window'),
-    note: () =>
-      'Other trips on the route pair this window with a second row for the other direction of travel.',
+    label: rowsLabel(t('issues.unpairedFlex')),
+    note: () => t('issues.unpairedFlexNote'),
   },
   RIDER_CATEGORY_DEFAULT: {
-    label: () => 'fare products without exactly one default rider category',
+    label: () => t('issues.riderDefault'),
   },
-  NETWORK_ID_CONFLICT: { label: rowsLabel('conflicting network_id') },
-  MISSING_CALENDAR_FILE: { label: rowsLabel('missing calendar file') },
+  NETWORK_ID_CONFLICT: { label: rowsLabel(t('issues.networkConflict')) },
+  MISSING_CALENDAR_FILE: { label: rowsLabel(t('issues.missingCalendar')) },
   MISSING_COORDS_INHERITED: {
-    label: rowsLabel('inheriting coordinates from a parent'),
+    label: rowsLabel(t('issues.inheritedCoords')),
   },
   UNCLEAN_VALUE: {
     label: (group) =>
       group.field
-        ? `${group.file} rows whose ${group.field} carries hidden whitespace`
-        : rowsLabel('with hidden whitespace in a value')(group),
-    note: () =>
-      'A quoted CSV field that swallowed the line ending. The extra characters are invisible but count, so an id carrying them matches nothing.',
+        ? t('issues.hiddenWhitespaceField', {
+            file: group.file,
+            field: group.field,
+          })
+        : rowsLabel(t('issues.hiddenWhitespace'))(group),
+    note: () => t('issues.hiddenWhitespaceNote'),
     actions: [
       {
         id: 'fix-whitespace',
-        label: 'Fix',
+        label: t('issues.fix'),
         confirm: (entities) =>
-          `Clean the hidden whitespace in ${plural(entities.length, 'value')}? This is one undo step.`,
+          t('issues.fixConfirm', {
+            values: t('issues.values', { count: entities.length }),
+          }),
         run: async (entities, deps) =>
           describeWhitespaceFix(await applyWhitespaceFix(entities, deps)),
       },
     ],
   },
-  DUPLICATE_KEY: { label: rowsLabel('sharing a primary key with another row') },
-  FREQUENCY_OVERLAP: { label: rowsLabel('with overlapping headway periods') },
+  DUPLICATE_KEY: { label: rowsLabel(t('issues.duplicateKey')) },
+  FREQUENCY_OVERLAP: { label: rowsLabel(t('issues.frequencyOverlap')) },
   FREQUENCY_END_AMBIGUOUS: {
-    label: rowsLabel('whose end_time lands on a departure'),
+    label: rowsLabel(t('issues.frequencyEnd')),
   },
 };
 
@@ -630,11 +638,11 @@ export function renderEntityIssueNote(file: string, recordId: string): string {
     return '';
   }
   return renderIssueCard(
-    'Issues with this record',
+    t('issues.recordTitle'),
     refs.map((ref) => ({
-      label: `${ref.field} refers to '${ref.value}', which does not exist`,
+      label: t('issues.danglingRef', { field: ref.field, value: ref.value }),
       count: 1,
-      note: 'Pick an existing value below, or create the record it refers to.',
+      note: t('issues.danglingNote'),
     }))
   );
 }

@@ -1,4 +1,5 @@
 import type { Shapes } from '../types/gtfs-entities';
+import { t } from '../i18n/messages';
 
 export async function parseGPX(file: File, shapeId: string): Promise<Shapes[]> {
   const text = await file.text();
@@ -6,7 +7,7 @@ export async function parseGPX(file: File, shapeId: string): Promise<Shapes[]> {
   const trkpts = doc.querySelectorAll('trkpt');
 
   if (trkpts.length === 0) {
-    throw new Error('No track points found in GPX file');
+    throw new Error(t('gpx.noPoints'));
   }
 
   const result: Shapes[] = [];
@@ -26,7 +27,7 @@ export async function parseGPX(file: File, shapeId: string): Promise<Shapes[]> {
   }
 
   if (result.length === 0) {
-    throw new Error('No valid track points found in GPX file');
+    throw new Error(t('gpx.noValidPoints'));
   }
 
   return result;

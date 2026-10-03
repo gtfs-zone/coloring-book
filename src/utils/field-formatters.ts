@@ -11,6 +11,7 @@
 import { GTFSFieldType, validateFieldType } from '../types/gtfs-field-types';
 import { fromInputValue, toInputValue } from './gtfs-date';
 import { TimeFormatter } from './time-formatter';
+import { t } from '../i18n/messages';
 
 export interface FieldFormatter {
   /**
@@ -84,13 +85,13 @@ const dateFormatter: FieldFormatter = {
       const day = parseInt(str.substring(6, 8), 10);
 
       if (month < 1 || month > 12) {
-        return { valid: false, error: 'Month must be between 01 and 12' };
+        return { valid: false, error: t('value.month') };
       }
       if (day < 1 || day > 31) {
-        return { valid: false, error: 'Day must be between 01 and 31' };
+        return { valid: false, error: t('value.day') };
       }
       if (year < 1900 || year > 2200) {
-        return { valid: false, error: 'Year must be between 1900 and 2200' };
+        return { valid: false, error: t('value.year') };
       }
     }
 
@@ -170,17 +171,17 @@ const timeFormatter: FieldFormatter = {
       const seconds = parseInt(parts[2], 10);
 
       if (isNaN(hours) || isNaN(minutes) || isNaN(seconds)) {
-        return { valid: false, error: 'Time must contain valid numbers' };
+        return { valid: false, error: t('value.timeNumbers') };
       }
       if (minutes < 0 || minutes > 59) {
-        return { valid: false, error: 'Minutes must be between 00 and 59' };
+        return { valid: false, error: t('value.minutes') };
       }
       if (seconds < 0 || seconds > 59) {
-        return { valid: false, error: 'Seconds must be between 00 and 59' };
+        return { valid: false, error: t('value.seconds') };
       }
       // Hours can exceed 24 for next-day times
       if (hours < 0) {
-        return { valid: false, error: 'Hours cannot be negative' };
+        return { valid: false, error: t('value.hoursNegative') };
       }
     }
 
@@ -242,7 +243,7 @@ const latitudeFormatter: FieldFormatter = {
   validate(value: string | number): { valid: boolean; error?: string } {
     const num = typeof value === 'number' ? value : parseFloat(String(value));
     if (isNaN(num)) {
-      return { valid: false, error: 'Must be a valid number' };
+      return { valid: false, error: t('value.validNumber') };
     }
     return validateFieldType(num, GTFSFieldType.Latitude);
   },
@@ -273,7 +274,7 @@ const longitudeFormatter: FieldFormatter = {
   validate(value: string | number): { valid: boolean; error?: string } {
     const num = typeof value === 'number' ? value : parseFloat(String(value));
     if (isNaN(num)) {
-      return { valid: false, error: 'Must be a valid number' };
+      return { valid: false, error: t('value.validNumber') };
     }
     return validateFieldType(num, GTFSFieldType.Longitude);
   },
@@ -312,10 +313,10 @@ const integerFormatter: FieldFormatter = {
   validate(value: string | number): { valid: boolean; error?: string } {
     const num = typeof value === 'number' ? value : parseInt(String(value), 10);
     if (isNaN(num)) {
-      return { valid: false, error: 'Must be a valid integer' };
+      return { valid: false, error: t('value.validInteger') };
     }
     if (!Number.isInteger(num)) {
-      return { valid: false, error: 'Must be an integer (no decimal places)' };
+      return { valid: false, error: t('value.integerNoDecimals') };
     }
     return { valid: true };
   },
@@ -337,7 +338,7 @@ const floatFormatter: FieldFormatter = {
   validate(value: string | number): { valid: boolean; error?: string } {
     const num = typeof value === 'number' ? value : parseFloat(String(value));
     if (isNaN(num)) {
-      return { valid: false, error: 'Must be a valid number' };
+      return { valid: false, error: t('value.validNumber') };
     }
     return { valid: true };
   },

@@ -6,6 +6,7 @@
 import { GTFS_TABLES } from '../types/gtfs';
 import { LOCATIONS_TABLE } from '../modules/zone-store';
 import { specStoreName } from './spec-field-edit';
+import { t } from '../i18n/messages';
 
 interface RowSource {
   getAllRows(tableName: string): Promise<Record<string, unknown>[]>;
@@ -29,13 +30,13 @@ export async function readIdOwners(
   for (const stop of stops) {
     const id = String(stop.stop_id ?? '').trim();
     if (id !== '') {
-      owners.set(id, 'a stops.txt stop_id');
+      owners.set(id, t('ids.ownerStop'));
     }
   }
   for (const feature of await readZoneFeatures(database)) {
     const id = String(feature.id ?? '').trim();
     if (id !== '') {
-      owners.set(id, 'a locations.geojson id');
+      owners.set(id, t('ids.ownerZone'));
     }
   }
   return owners;
@@ -59,7 +60,7 @@ export async function readNewLocationIdOwners(
   for (const group of groups) {
     const id = String(group.location_group_id ?? '').trim();
     if (id !== '' && !owners.has(id)) {
-      owners.set(id, 'a location_groups.txt location_group_id');
+      owners.set(id, t('ids.ownerGroup'));
     }
   }
   return owners;
@@ -71,7 +72,5 @@ export function locationIdClash(
   id: string
 ): string | null {
   const owner = owners.get(id);
-  return owner
-    ? `"${id}" is already used as ${owner}; the ID must be unique across stops.txt, locations.geojson and location_groups.txt.`
-    : null;
+  return owner ? t('ids.taken', { id, owner }) : null;
 }

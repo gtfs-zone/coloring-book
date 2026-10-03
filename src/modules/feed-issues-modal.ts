@@ -35,6 +35,7 @@ import {
   navigateToStop,
   openTimetable,
 } from './navigation-actions';
+import { t } from '../i18n/messages';
 
 /**
  * Confirm and run one action on one group. Re-reads the group after a
@@ -52,22 +53,22 @@ export async function runFeedIssueAction(
   const group = getFeedIssueGroup(key);
   if (!group || group.entities.length === 0) {
     console.warn(`[FeedIssues] ${key} is no longer an issue`);
-    notify.warning('This issue is already gone');
+    notify.warning(t('issues.gone'));
     return false;
   }
   const action = getIssueAction(group, actionId);
   if (!action) {
     console.error(`[FeedIssues] no action ${actionId} for ${key}`);
-    notify.error(`Unknown issue action ${actionId}`);
+    notify.error(t('issues.unknownAction', { id: actionId }));
     return false;
   }
 
   let confirmed = false;
   await showModal({
-    title: `${escapeHtml(action.label)}?`,
+    title: t('issues.confirmTitle', { label: escapeHtml(action.label) }),
     body: `<p>${escapeHtml(action.confirm(group.entities))}</p>`,
     actions: [
-      { label: 'Cancel', className: 'btn-ghost', onClick: () => {} },
+      { label: t('common.cancel'), className: 'btn-ghost', onClick: () => {} },
       {
         label: escapeHtml(action.label),
         className: action.destructive ? 'btn-error' : 'btn-primary',
@@ -179,7 +180,7 @@ export async function showFeedIssuesModal(
   }
 
   await showSidebarModal({
-    title: 'Feed issues',
+    title: t('issues.title'),
     initialId: initialKey,
     entries: groups.map((group) => {
       const key = groupKey(group);
@@ -201,7 +202,7 @@ export async function showFeedIssuesModal(
           const key = button.getAttribute('data-issue-key') ?? '';
           const actionId = button.getAttribute('data-issue-action') ?? '';
           if (!deps) {
-            notify.error('This feed is open read-only, so it cannot be fixed');
+            notify.error(t('page.readOnly'));
             return;
           }
           button.disabled = true;

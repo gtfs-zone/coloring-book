@@ -1,3 +1,5 @@
+import { t } from '../i18n/messages';
+
 /**
  * The conditional-presence rules that span two fields of one row.
  *
@@ -27,7 +29,7 @@ export function validateTimeframeRow(
   const start = cell(row, 'start_time');
   const end = cell(row, 'end_time');
   if ((start === '') !== (end === '')) {
-    return 'start_time and end_time must both be set, or both left empty';
+    return t('rule.bothOrNeither', { a: 'start_time', b: 'end_time' });
   }
   for (const [field, value] of [
     ['start_time', start],
@@ -38,10 +40,10 @@ export function validateTimeframeRow(
     }
     const seconds = localTimeSeconds(value);
     if (seconds === null) {
-      return `${field} must be a wall-clock time in HH:MM:SS format`;
+      return t('rule.wallClock', { field });
     }
     if (seconds > DAY_SECONDS) {
-      return `${field} must not be later than 24:00:00`;
+      return t('rule.notAfter24', { field });
     }
   }
   return null;
@@ -53,7 +55,7 @@ export function validateFareLegJoinRuleRow(
   const from = cell(row, 'from_stop_id');
   const to = cell(row, 'to_stop_id');
   if ((from === '') !== (to === '')) {
-    return 'from_stop_id and to_stop_id must both be set, or both left empty';
+    return t('rule.bothOrNeither', { a: 'from_stop_id', b: 'to_stop_id' });
   }
   return null;
 }
@@ -64,7 +66,10 @@ export function validateFareTransferRuleRow(
   const limit = cell(row, 'duration_limit');
   const type = cell(row, 'duration_limit_type');
   if ((limit === '') !== (type === '')) {
-    return 'duration_limit and duration_limit_type must both be set, or both left empty';
+    return t('rule.bothOrNeither', {
+      a: 'duration_limit',
+      b: 'duration_limit_type',
+    });
   }
   return null;
 }
@@ -81,14 +86,20 @@ export function validateTransferRow(
   if (linkedTrips) {
     for (const field of ['from_trip_id', 'to_trip_id']) {
       if (cell(row, field) === '') {
-        return `${field} is required when transfer_type is ${transferType}`;
+        return t('rule.requiredWhen', {
+          field,
+          condition: t('cond.transferType', { type: transferType }),
+        });
       }
     }
     return null;
   }
   for (const field of ['from_stop_id', 'to_stop_id']) {
     if (cell(row, field) === '') {
-      return `${field} is required when transfer_type is empty, 0, 1, 2, or 3`;
+      return t('rule.requiredWhen', {
+        field,
+        condition: t('cond.transferTypeStops'),
+      });
     }
   }
   return null;

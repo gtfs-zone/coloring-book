@@ -20,6 +20,7 @@ import { TimeFormatter } from './time-formatter';
 import type { OptionPickerItem } from '../modules/option-picker-modal';
 import type { GTFSFieldSpec } from '../gtfs-spec/types';
 import type { z } from 'zod';
+import { t } from '../i18n/messages';
 
 export type SpecFieldKind =
   'text' | 'number' | 'enum' | 'foreign' | 'constrained';
@@ -118,7 +119,7 @@ export function coerceFieldValue(
   if (isNumericField(spec)) {
     const num = Number(trimmed);
     if (Number.isNaN(num)) {
-      return { error: 'Must be a number' };
+      return { error: t('value.mustBeNumber') };
     }
     return { value: num };
   }
@@ -141,7 +142,7 @@ export function validateFieldValue(
   value: string | number
 ): string | null {
   if (value === '') {
-    return spec.presence === 'Required' ? 'This field is required' : null;
+    return spec.presence === 'Required' ? t('value.required') : null;
   }
 
   const schema = GTFSSchemas[tableName as keyof typeof GTFSSchemas] as
@@ -155,7 +156,7 @@ export function validateFieldValue(
   const result = fieldSchema.safeParse(value);
   return result.success
     ? null
-    : (result.error.issues[0]?.message ?? 'Invalid value');
+    : (result.error.issues[0]?.message ?? t('value.invalid'));
 }
 
 /** Plain-text display for a value, before escaping. */

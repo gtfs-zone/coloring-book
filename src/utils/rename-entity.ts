@@ -17,6 +17,7 @@ import {
   getNaturalKeyField,
 } from './gtfs-primary-keys';
 import { CONFIG } from '../config';
+import { t } from '../i18n/messages';
 
 /**
  * The database handle a rename needs. Structural rather than `GTFSDatabase`
@@ -103,10 +104,10 @@ function fieldIsPartOfKey(table: string, field: string): boolean {
 /** The empty and whitespace checks every new ID must pass. */
 export function validateIdText(id: string): string | null {
   if (id === '') {
-    return 'ID cannot be empty';
+    return t('renameRule.empty');
   }
   if (id !== id.trim()) {
-    return 'ID cannot start or end with whitespace';
+    return t('renameRule.whitespace');
   }
   return null;
 }
@@ -126,7 +127,7 @@ export async function validateNewId(
   }
   const clash = await db.getRow(table, id);
   if (clash) {
-    return `${table} already has a row with ID "${id}"`;
+    return t('renameRule.taken', { table, id });
   }
   return null;
 }
@@ -142,7 +143,7 @@ export async function validateRenameTarget(
   newId: string
 ): Promise<string | null> {
   if (newId !== '' && newId === oldId) {
-    return 'ID is unchanged';
+    return t('renameRule.unchanged');
   }
   return validateNewId(db, table, newId);
 }
