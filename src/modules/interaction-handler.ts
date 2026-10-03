@@ -20,6 +20,7 @@ import {
 import { resolveThemeColor } from 'gtfs-zone-web-common/util/theme-color';
 import { GTFS_TABLES } from '../types/gtfs';
 import { renderSpecFieldLabelContent } from '../utils/field-component';
+import { t } from '../i18n/messages';
 
 /** The marker shown while the New stop modal is open. */
 const PENDING_STOP_SOURCE = 'pending-stop';
@@ -342,7 +343,7 @@ export class InteractionHandler {
     let stop_id: string | null = null;
     try {
       await promptNewEntity({
-        title: 'New stop',
+        title: t('map.newStop'),
         id: {
           table: 'stops',
           suggested: firstFreeId('stop', owners.keys()),
@@ -442,11 +443,11 @@ export class InteractionHandler {
 
     if (locationType === 1) {
       showModal({
-        title: 'Invalid stop',
-        body: '<p>Stations (location_type=1) cannot be pathway endpoints. Select a platform, entrance, generic node, or boarding area.</p>',
+        title: t('map.invalidStop'),
+        body: `<p>${t('map.stationNotEndpoint')}</p>`,
         enterAction: 0,
         escapeAction: 0,
-        actions: [{ label: 'OK', onClick: () => {} }],
+        actions: [{ label: t('map.ok'), onClick: () => {} }],
       });
       return;
     }
@@ -454,7 +455,7 @@ export class InteractionHandler {
     if (this.addPathwayFirstStopId === null) {
       this.addPathwayFirstStopId = stop_id;
       await this.showAddPathwayNotification(
-        `From: ${stop_id}. Now click the second stop to connect.`
+        t('map.pathwayFrom', { id: stop_id })
       );
       return;
     }
@@ -465,11 +466,11 @@ export class InteractionHandler {
 
     if (fromStopId === toStopId) {
       showModal({
-        title: 'Invalid pathway',
-        body: '<p>The two endpoints must be different stops.</p>',
+        title: t('map.invalidPathway'),
+        body: `<p>${t('map.sameEndpoints')}</p>`,
         enterAction: 0,
         escapeAction: 0,
-        actions: [{ label: 'OK', onClick: () => {} }],
+        actions: [{ label: t('map.ok'), onClick: () => {} }],
       });
       return;
     }
@@ -478,18 +479,18 @@ export class InteractionHandler {
       this.gtfsParser.getFileDataSyncTyped<Pathways>('pathways.txt') || [];
     const endpoints = `
       <div>
-        <div class="label">${renderSpecFieldLabelContent(GTFS_TABLES.PATHWAYS, 'from_stop_id', 'From Stop')}</div>
+        <div class="label">${renderSpecFieldLabelContent(GTFS_TABLES.PATHWAYS, 'from_stop_id', t('map.fromStop'))}</div>
         <div class="font-mono text-sm bg-base-200 px-3 py-2 rounded">${fromStopId}</div>
       </div>
       <div>
-        <div class="label">${renderSpecFieldLabelContent(GTFS_TABLES.PATHWAYS, 'to_stop_id', 'To Stop')}</div>
+        <div class="label">${renderSpecFieldLabelContent(GTFS_TABLES.PATHWAYS, 'to_stop_id', t('map.toStop'))}</div>
         <div class="font-mono text-sm bg-base-200 px-3 py-2 rounded">${toStopId}</div>
       </div>
     `;
 
     void promptNewEntity({
-      title: 'New Pathway',
-      createLabel: 'Create Pathway',
+      title: t('map.newPathway'),
+      createLabel: t('map.createPathway'),
       intro: endpoints,
       id: {
         table: 'pathways',
@@ -502,19 +503,19 @@ export class InteractionHandler {
         {
           field: 'pathway_mode',
           tableName: GTFS_TABLES.PATHWAYS,
-          label: 'Pathway Mode',
+          label: t('map.pathwayMode'),
           value: '1',
         },
         {
           field: 'is_bidirectional',
           tableName: GTFS_TABLES.PATHWAYS,
-          label: 'Bidirectional',
+          label: t('map.bidirectional'),
           value: '1',
         },
       ],
       validate: (v) => {
         if (v.pathway_mode === '7' && v.is_bidirectional === '1') {
-          return 'Exit gates (mode 7) must not be bidirectional.';
+          return t('map.exitGateOneWay');
         }
         return null;
       },
@@ -745,9 +746,7 @@ export class InteractionHandler {
       previousMode !== MapMode.ADD_PATHWAY &&
       newMode === MapMode.ADD_PATHWAY
     ) {
-      void this.showAddPathwayNotification(
-        'Click two stops to make a pathway between them.'
-      );
+      void this.showAddPathwayNotification(t('map.clickTwoStops'));
     } else if (
       previousMode === MapMode.ADD_PATHWAY &&
       newMode !== MapMode.ADD_PATHWAY

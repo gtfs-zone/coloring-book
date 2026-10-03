@@ -44,6 +44,7 @@ import {
   stopFadeOpacity,
   type StopFadeBands,
 } from 'gtfs-zone-web-common/map/layer-specs';
+import { t } from '../i18n/messages';
 
 export interface StopLayerOptions {
   showBackground: boolean;
@@ -681,7 +682,7 @@ export class LayerManager {
         },
         properties: {
           stop_id: stop.stop_id,
-          stop_name: stop.stop_name || 'Unnamed Stop',
+          stop_name: stop.stop_name || t('map.unnamedStop'),
           stop_code: stop.stop_code || '',
           stop_desc: stop.stop_desc || '',
           location_type: stopType,

@@ -39,6 +39,7 @@ import type { Stops } from '../types/gtfs-entities';
 import { getStopDisplay, renderCardLabel } from '../utils/entity-display';
 import { escapeHtml } from 'gtfs-zone-web-common/util/escape-html';
 import { routeColor } from 'gtfs-zone-web-common/gtfs/route-colors';
+import { t } from '../i18n/messages';
 
 /**
  * Marks a diagram row. Carries either `data-stop-id` (opens the stop page) or
@@ -57,7 +58,9 @@ function statsNotes(sequence: RouteSequence, index: number): string {
     notes.push(ends);
   }
   if (isMinority(stats, sequence.totalTrips)) {
-    notes.push(`${stats.serves} of ${sequence.totalTrips} trips`);
+    notes.push(
+      t('map.servedBy', { serves: stats.serves, total: sequence.totalTrips })
+    );
   }
 
   return notes
@@ -98,7 +101,8 @@ function renderRow(
   const row = isStop ? stopsById.get(stop.ref.id) : undefined;
   // Same badge wording as the timetable's flex name block, so a zone reads the
   // same in both views.
-  const kindLabel = stop.ref.kind === 'location_group' ? 'Group' : 'Zone';
+  const kindLabel =
+    stop.ref.kind === 'location_group' ? t('tt.group') : t('tt.zone');
   const label = isStop
     ? renderCardLabel(
         getStopDisplay(
@@ -110,7 +114,7 @@ function renderRow(
       )}`;
   const revisit =
     stop.occurrence > 0
-      ? `<span class="opacity-50 text-xs ml-1">(visit ${stop.occurrence + 1})</span>`
+      ? `<span class="opacity-50 text-xs ml-1">${t('tt.visit', { n: stop.occurrence + 1 })}</span>`
       : '';
 
   return `
@@ -122,7 +126,7 @@ function renderRow(
           ? `data-stop-id="${escapeHtml(stop.ref.id)}"`
           : `data-flex-kind="${escapeHtml(stop.ref.kind)}" data-flex-id="${escapeHtml(stop.ref.id)}"`
       }
-      title="Served by ${stats.serves} of ${sequence.totalTrips} trips"
+      title="${t('map.servedByTitle', { serves: stats.serves, total: sequence.totalTrips })}"
     >
       ${rail}
       <div class="py-1 min-h-8 flex items-center gap-2 min-w-0 pr-2">
@@ -193,7 +197,7 @@ export function renderRouteDiagram(
 
   return `
     <div class="space-y-4">
-      <h2 class="text-lg font-semibold">Route diagram</h2>
+      <h2 class="text-lg font-semibold">${t('map.routeDiagram')}</h2>
       <div class="card bg-base-100 shadow-lg">
         <div class="card-body p-4 space-y-4">
           ${sections}

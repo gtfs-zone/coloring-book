@@ -37,6 +37,7 @@ import {
   SearchPlaceMarker,
   type PlacePayload,
 } from 'gtfs-zone-web-common/map/place-search';
+import { t } from '../i18n/messages';
 
 // Map interaction modes
 export enum MapMode {
@@ -1688,8 +1689,8 @@ export class MapController {
 
       // Show error notification
       const errorMessage =
-        error instanceof Error ? error.message : 'Unknown error';
-      notify.error(`Failed to update stop coordinates: ${errorMessage}`);
+        error instanceof Error ? error.message : t('db.unknownError');
+      notify.error(t('map.coordsFailed', { message: errorMessage }));
 
       // Refresh map to revert visual changes
       await this.updateMap();

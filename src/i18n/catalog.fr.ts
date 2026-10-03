@@ -5,6 +5,7 @@ import { common } from './fr/common';
 import { fields } from './fr/fields';
 import { help } from './fr/help';
 import { load } from './fr/load';
+import { map } from './fr/map';
 import { modals } from './fr/modals';
 import { pages } from './fr/pages';
 import { shapes } from './fr/shapes';
@@ -19,6 +20,7 @@ export const fr: Translation<typeof en> = {
   ...fields,
   ...help,
   ...load,
+  ...map,
   ...modals,
   ...pages,
   ...shapes,

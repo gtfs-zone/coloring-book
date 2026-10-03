@@ -11,6 +11,7 @@ import type { GTFSParser } from './gtfs-parser';
 import { GTFS_TABLES } from '../types/gtfs';
 import { patchUpdate } from '../utils/patch-utils';
 import type { GTFSDatabaseRecord } from './gtfs-database';
+import { t } from '../i18n/messages';
 
 /** Object store and row key for locations.geojson. */
 export const LOCATIONS_TABLE = 'locations';
@@ -199,20 +200,16 @@ export function mergeZoneFeatures(
             (feature.properties as Record<string, unknown> | null)?.id ?? ''
           );
     if (!id) {
-      throw new Error(
-        'A pasted feature has no id. Every zone needs an `id` matching its location_id.'
-      );
+      throw new Error(t('geo.pastedNoId'));
     }
     if (incomingById.has(id)) {
-      throw new Error(`Duplicate zone id in the pasted GeoJSON: ${id}`);
+      throw new Error(t('geo.duplicateId', { id }));
     }
     // geojson.io returns a feature it could not draw with a null geometry.
     // Storing that is how a zone loses its polygon, so refuse it here.
     const type = feature.geometry?.type;
     if (type !== 'Polygon' && type !== 'MultiPolygon') {
-      throw new Error(
-        `Zone ${id} came back with geometry ${String(type)}, expected a Polygon or MultiPolygon. Draw the zone in geojson.io first, then Share and paste the link.`
-      );
+      throw new Error(t('geo.notPolygon', { id, type: String(type) }));
     }
     incomingById.set(id, feature);
   }
@@ -365,9 +362,7 @@ export async function setZoneProperties(
   const features = getZoneFeatures(parser);
   const target = features.find((f) => String(f.id ?? '') === location_id);
   if (!target) {
-    throw new Error(
-      `Zone ${location_id} is no longer in locations.geojson. Reload the page.`
-    );
+    throw new Error(t('geo.zoneGone', { id: location_id }));
   }
 
   const merged = { ...(target.properties ?? {}) } as Record<string, unknown>;

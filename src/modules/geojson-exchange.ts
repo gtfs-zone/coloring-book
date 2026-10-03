@@ -18,6 +18,7 @@ import {
 } from 'gtfs-zone-web-common/gtfs/feed-selection';
 import { showModal } from 'gtfs-zone-web-common/ui/modal-utils';
 import { escapeHtml } from 'gtfs-zone-web-common/util/escape-html';
+import { t } from '../i18n/messages';
 
 /** Chooses which feature of a pasted collection the caller meant. */
 export type FeaturePicker = (
@@ -42,10 +43,10 @@ export function pickFeatureById(
     return collection.features[0];
   }
   const ids = collection.features
-    .map((f) => String(f.id ?? '(no id)'))
+    .map((f) => String(f.id ?? t('geo.noId')))
     .join(', ');
   throw new Error(
-    `No feature with id "${id}" in the GeoJSON. Found: ${ids || 'nothing'}.`
+    t('geo.noFeatureWithId', { id, found: ids || t('geo.nothing') })
   );
 }
 
@@ -56,9 +57,7 @@ export function pickLoneFeature(
   if (collection.features.length === 1) {
     return collection.features[0];
   }
-  throw new Error(
-    `Expected one feature, got ${collection.features.length}. Keep only the one you want.`
-  );
+  throw new Error(t('geo.expectedOne', { count: collection.features.length }));
 }
 
 /**
@@ -72,7 +71,7 @@ export async function readIncomingFeature(
 ): Promise<GeoJSON.Feature> {
   const trimmed = text.trim();
   if (!trimmed) {
-    throw new Error('The editor is empty.');
+    throw new Error(t('geo.editorEmpty'));
   }
 
   if (isEncodedGeojsonIoUrl(trimmed)) {
@@ -85,7 +84,9 @@ export async function readIncomingFeature(
   } catch (error) {
     // The SyntaxError message already carries the character offset.
     throw new Error(
-      `Not valid JSON: ${error instanceof Error ? error.message : String(error)}`,
+      t('geo.invalidJson', {
+        message: error instanceof Error ? error.message : String(error),
+      }),
       { cause: error }
     );
   }
@@ -97,12 +98,12 @@ export async function readIncomingFeature(
   if (value?.type === 'FeatureCollection') {
     const collection = parsed as GeoJSON.FeatureCollection;
     if (!Array.isArray(collection.features)) {
-      throw new Error('FeatureCollection has no features array.');
+      throw new Error(t('geo.noFeaturesArray'));
     }
     return pick(collection);
   }
   throw new Error(
-    `Expected a GeoJSON Feature or FeatureCollection, got ${JSON.stringify(value?.type ?? null)}.`
+    t('geo.expectedFeature', { type: JSON.stringify(value?.type ?? null) })
   );
 }
 
@@ -116,29 +117,28 @@ export async function promptForGeojsonUrl(): Promise<{
   let corsInput: HTMLInputElement | null = null;
 
   await showModal({
-    title: 'Import GeoJSON from URL',
+    title: t('geo.importTitle'),
     body: `
       <div class="space-y-3">
         <p class="text-sm opacity-70">
-          Paste a geojson.io share link, or the URL of a GeoJSON file to fetch.
-          Nothing is saved until you press Save.
+          ${t('geo.importBody')}
         </p>
         <fieldset class="fieldset">
-          <label class="label" for="geojson-import-url">URL</label>
+          <label class="label" for="geojson-import-url">${t('geo.url')}</label>
           <input id="geojson-import-url" type="text"
             class="input input-bordered w-full font-mono text-xs geojson-import-url"
             placeholder="https://geojson.io/?data=gz:... or https://example.org/shape.geojson" />
         </fieldset>
         <label class="label cursor-pointer justify-start gap-2">
           <input type="checkbox" class="toggle toggle-sm geojson-import-cors" checked />
-          <span class="label-text">Use CORS proxy</span>
+          <span class="label-text">${t('geo.useCors')}</span>
         </label>
       </div>
     `,
     actions: [
-      { label: 'Cancel', onClick: () => {} },
+      { label: t('common.cancel'), onClick: () => {} },
       {
-        label: 'Fetch',
+        label: t('geo.fetch'),
         className: 'btn-primary',
         onClick: () => {
           const url = urlInput?.value.trim() ?? '';
@@ -222,9 +222,7 @@ export interface GeojsonExchangeBlockOptions {
   rows?: number;
 }
 
-const DEFAULT_HINT =
-  'To pull an edit back in, use Share in geojson.io and paste the link here. ' +
-  'geojson.io no longer keeps the data in the address bar while you draw.';
+const DEFAULT_HINT = t('geo.defaultHint');
 
 /** Markup for the exchange block. Pair with `attachGeojsonExchangeHandlers`. */
 export function renderGeojsonExchangeBlock(
@@ -233,7 +231,7 @@ export function renderGeojsonExchangeBlock(
   const id = escapeHtml(options.instanceId);
   const editLink = options.editUrl
     ? `<a href="${escapeHtml(options.editUrl)}" target="_blank" rel="noopener" class="btn btn-xs btn-outline">
-         Edit in geojson.io
+         ${t('geo.editIn')}
        </a>`
     : '';
   const saveButton = options.saveLabel
@@ -248,7 +246,7 @@ export function renderGeojsonExchangeBlock(
       <div class="flex items-center justify-between gap-2">
         <div>${options.title ? `<h3 class="font-semibold">${escapeHtml(options.title)}</h3>` : ''}</div>
         <div class="flex items-center gap-2">
-          <button class="btn btn-xs btn-outline geojson-exchange-import">Import from URL</button>
+          <button class="btn btn-xs btn-outline geojson-exchange-import">${t('geo.importFromUrl')}</button>
           ${editLink}
         </div>
       </div>

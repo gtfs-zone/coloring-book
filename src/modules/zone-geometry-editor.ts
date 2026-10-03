@@ -27,6 +27,8 @@ import {
 } from './zone-store';
 import { notify } from 'gtfs-zone-web-common/ui/notification-system';
 import { escapeHtml } from 'gtfs-zone-web-common/util/escape-html';
+import { t } from '../i18n/messages';
+import { formatNumber } from 'gtfs-zone-web-common/i18n/fmt';
 
 export interface ZoneGeometryDependencies {
   gtfsParser: GTFSParser;
@@ -69,10 +71,13 @@ export function pickZoneFeature(
     return drawn[0];
   }
   const described = collection.features
-    .map((f) => `${String(f.id ?? '(no id)')}: ${String(f.geometry?.type)}`)
+    .map((f) => `${String(f.id ?? t('geo.noId'))}: ${String(f.geometry?.type)}`)
     .join(', ');
   throw new Error(
-    `No polygon for zone "${location_id}" in the GeoJSON. Found: ${described || 'nothing'}.`
+    t('geo.noPolygon', {
+      id: location_id,
+      found: described || t('geo.nothing'),
+    })
   );
 }
 
@@ -110,23 +115,23 @@ export async function renderZoneGeometrySection(
   const emptyWarning = drawn
     ? ''
     : `<div class="alert alert-warning">
-          <span>This zone has no geometry. Draw it in geojson.io or paste GeoJSON below.</span>
+          <span>${t('geo.noGeometry')}</span>
         </div>`;
 
   return `
     <div class="space-y-3 zone-geometry-section" data-location-id="${escapeHtml(location_id)}">
       ${emptyWarning}
       <dl class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm">
-        <dt class="opacity-60">Type</dt><dd class="font-mono">${escapeHtml(feature.geometry?.type ?? 'none')}</dd>
-        <dt class="opacity-60">Vertices</dt><dd class="font-mono">${zoneVertexCount(feature)}</dd>
-        <dt class="opacity-60">Bounds</dt><dd class="font-mono text-xs">${escapeHtml(boundsLabel)}</dd>
+        <dt class="opacity-60">${t('geo.type')}</dt><dd class="font-mono">${escapeHtml(feature.geometry?.type ?? 'none')}</dd>
+        <dt class="opacity-60">${t('geo.vertices')}</dt><dd class="font-mono">${formatNumber(zoneVertexCount(feature))}</dd>
+        <dt class="opacity-60">${t('geo.bounds')}</dt><dd class="font-mono text-xs">${escapeHtml(boundsLabel)}</dd>
       </dl>
       ${renderGeojsonExchangeBlock({
         instanceId: exchangeId(location_id),
         featureJson: JSON.stringify(feature, null, 2),
         editUrl,
-        title: 'Geometry',
-        saveLabel: 'Save geometry',
+        title: t('shapes.geometry'),
+        saveLabel: t('shapes.saveGeometry'),
       })}
     </div>
   `;
@@ -153,9 +158,7 @@ export function attachZoneGeometryHandlers(
     onApply: async (edited) => {
       const current = getZoneFeatures(deps.gtfsParser);
       if (!current.some((f) => String(f.id ?? '') === location_id)) {
-        throw new Error(
-          `Zone ${location_id} is no longer in locations.geojson. Reload the page.`
-        );
+        throw new Error(t('geo.zoneGone', { id: location_id }));
       }
 
       const merged = mergeZoneFeatures(
@@ -168,7 +171,7 @@ export function attachZoneGeometryHandlers(
         deps.patchManager,
         merged.features
       );
-      notify.success(`Updated geometry for zone ${location_id}`);
+      notify.success(t('geo.zoneUpdated', { id: location_id }));
       deps.onGeometryChanged?.(location_id);
     },
   });

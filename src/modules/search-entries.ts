@@ -22,6 +22,7 @@ import {
   stopMarker,
   type SearchEntry,
 } from 'gtfs-zone-web-common/ui/search-controller';
+import { t } from '../i18n/messages';
 
 /** Non-empty values only, so the haystack has no runs of blanks to match into. */
 function haystack(...parts: (string | undefined)[]): string {
@@ -113,7 +114,7 @@ export async function buildSearchEntries(
       icon: neutralMarker(),
       primary: name || location_id,
       secondary: location_id,
-      haystack: haystack(name, location_id, 'zone on-demand'),
+      haystack: haystack(name, location_id, t('search.zoneTerms')),
       priority: 3,
     });
   }
@@ -132,7 +133,7 @@ export async function buildSearchEntries(
       icon: neutralMarker(),
       primary: name || location_group_id,
       secondary: location_group_id,
-      haystack: haystack(name, location_group_id, 'location group'),
+      haystack: haystack(name, location_group_id, t('search.groupTerms')),
       priority: 3,
     });
   }
