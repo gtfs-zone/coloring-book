@@ -41,6 +41,9 @@ import {
 import { notify } from 'gtfs-zone-web-common/ui/notification-system';
 import { promptNewEntity } from './entity-form-modal';
 import { firstFreeId } from '../utils/inline-entity-creator';
+import { t } from '../i18n/messages';
+import { getLocale } from 'gtfs-zone-web-common/i18n/index';
+import { formatNumber } from 'gtfs-zone-web-common/i18n/fmt';
 
 /**
  * The stops of the simplify slider, in metres of allowed deviation. The
@@ -52,14 +55,19 @@ import { firstFreeId } from '../utils/inline-entity-creator';
 const SIMPLIFY_LEVELS = [1, 2, 5, 10, 25];
 const DEFAULT_SIMPLIFY_LEVEL = 2;
 
-/** Metres as feet, which is how the distances here are read. */
+/** A distance in feet in English and in metres elsewhere. */
 function formatDistance(metres: number): string {
-  return `${Math.round(metres * 3.28084).toLocaleString()} ft`;
+  return getLocale() === 'en'
+    ? t('shapes.feet', { n: Math.round(metres * 3.28084) })
+    : t('shapes.metres', { n: Math.round(metres) });
 }
 
 /** "Within 16 ft (5 m) of the original line." for a slider stop. */
 function toleranceSentence(toleranceMetres: number): string {
-  return `Within ${formatDistance(toleranceMetres)} (${toleranceMetres} m) of the original line.`;
+  return t('shapes.within', {
+    distance: formatDistance(toleranceMetres),
+    metres: toleranceMetres,
+  });
 }
 
 /** One route/service/direction combination that uses a shape. */
@@ -153,7 +161,7 @@ async function parseShapesFromZip(file: File): Promise<ZipShapeCandidate[]> {
   const zip = await JSZip.loadAsync(await file.arrayBuffer());
   const shapeRows = await readZipCsv(zip, 'shapes.txt');
   if (shapeRows.length === 0) {
-    throw new Error('No shapes.txt in this feed, or it has no rows.');
+    throw new Error(t('shapes.noShapesTxt'));
   }
 
   const byShape = new Map<string, Shapes[]>();
@@ -189,7 +197,7 @@ async function parseShapesFromZip(file: File): Promise<ZipShapeCandidate[]> {
     );
   }
   if (byShape.size === 0) {
-    throw new Error('No usable shape points found in this feed.');
+    throw new Error(t('shapes.noUsablePoints'));
   }
 
   const routeById = new Map<string, Record<string, string>>();
@@ -213,7 +221,7 @@ async function parseShapesFromZip(file: File): Promise<ZipShapeCandidate[]> {
     const label = [
       routeLabel,
       headsign,
-      direction === '' ? '' : `Direction ${direction}`,
+      direction === '' ? '' : t('shapes.direction', { id: direction }),
     ]
       .filter(Boolean)
       .join(' - ');
@@ -250,12 +258,12 @@ async function pickShapeFromCandidates(
   candidates: ZipShapeCandidate[]
 ): Promise<ZipShapeCandidate | null> {
   const picked = await showOptionPickerModal({
-    title: 'Import a shape from this feed',
-    placeholder: 'Search shapes...',
+    title: t('shapes.importFromFeed'),
+    placeholder: t('shapes.search'),
     options: candidates.map((c) => ({
       value: c.shapeId,
       primary: c.usages.length > 0 ? c.usages.join('; ') : c.shapeId,
-      secondary: `${c.points.length} pts`,
+      secondary: t('shapes.pts', { count: c.points.length }),
       detail: c.usages.length > 0 ? c.shapeId : undefined,
     })),
   });
@@ -297,17 +305,17 @@ interface ShapeSource {
 
 /** Naming-modal title for a new shape, by where its points came from. */
 const NEW_SHAPE_TITLES: Record<ShapeSource['kind'], string> = {
-  gtfs: 'Import shape from GTFS feed',
-  gpx: 'New shape from GPX',
-  geojson: 'New shape from GeoJSON',
+  gtfs: t('shapes.titleGtfs'),
+  gpx: t('shapes.titleGpx'),
+  geojson: t('shapes.titleGeojson'),
 };
 
 /** Title for the error modal shown when a source cannot be read. */
 function sourceErrorTitle(kind: ShapeSource['kind']): string {
   if (kind === 'gtfs') {
-    return 'GTFS Error';
+    return t('shapes.errorGtfs');
   }
-  return kind === 'geojson' ? 'GeoJSON Error' : 'GPX Error';
+  return kind === 'geojson' ? t('shapes.errorGeojson') : t('shapes.errorGpx');
 }
 
 async function showSourceError(title: string, error: unknown): Promise<void> {
@@ -315,7 +323,7 @@ async function showSourceError(title: string, error: unknown): Promise<void> {
     title,
     body: `<p>${escapeHtml(error instanceof Error ? error.message : String(error))}</p>`,
     escapeAction: 0,
-    actions: [{ label: 'OK', onClick: () => {} }],
+    actions: [{ label: t('shapes.ok'), onClick: () => {} }],
   });
 }
 
@@ -323,29 +331,28 @@ async function showSourceError(title: string, error: unknown): Promise<void> {
 async function pickShapeSourceKind(): Promise<'file' | 'paste' | null> {
   let choice: 'file' | 'paste' | null = null;
   await showModal({
-    title: 'Add a shape',
+    title: t('shapes.addTitle'),
     body: `
       <p class="text-base-content/60 text-sm">
-        Load a GPX track, a GTFS feed or a GeoJSON file from disk, or paste a
-        GeoJSON line (or a geojson.io share link).
+        ${t('shapes.addBody')}
       </p>
     `,
     escapeAction: 2,
     actions: [
       {
-        label: 'Choose a file',
+        label: t('shapes.chooseFile'),
         className: 'btn-primary',
         onClick: () => {
           choice = 'file';
         },
       },
       {
-        label: 'Paste GeoJSON or link',
+        label: t('shapes.paste'),
         onClick: () => {
           choice = 'paste';
         },
       },
-      { label: 'Cancel', onClick: () => {} },
+      { label: t('common.cancel'), onClick: () => {} },
     ],
   });
   return choice;
@@ -365,42 +372,37 @@ async function pickShapeUploadTarget(
   tripCount: number
 ): Promise<'replace' | 'new' | null> {
   let choice: 'replace' | 'new' | null = null;
-  const usage =
-    tripCount === 1
-      ? '1 trip uses this shape and will change.'
-      : `${tripCount} trips use this shape and will all change.`;
+  const usage = t('shapes.tripsWillChange', { count: tripCount });
 
   await showModal({
-    title: 'Replace or create',
+    title: t('shapes.replaceOrCreate'),
     body: `
       <div class="space-y-2">
         <p class="text-sm">
-          This trip already uses shape
-          <strong class="font-mono">${escapeHtml(shapeId)}</strong>.
+          ${t('shapes.tripUsesShape', { id: `<strong class="font-mono">${escapeHtml(shapeId)}</strong>` })}
         </p>
         <p class="text-base-content/60 text-sm">${escapeHtml(usage)}</p>
         <p class="text-base-content/60 text-sm">
-          Creating a new shape leaves the old one in the feed, unused by this
-          trip.
+          ${t('shapes.newLeavesOld')}
         </p>
       </div>
     `,
     escapeAction: 2,
     actions: [
       {
-        label: `Replace shape ${escapeHtml(shapeId)} in place`,
+        label: t('shapes.replaceInPlace', { id: escapeHtml(shapeId) }),
         className: 'btn-primary',
         onClick: () => {
           choice = 'replace';
         },
       },
       {
-        label: 'Create a new shape',
+        label: t('shapes.createNew'),
         onClick: () => {
           choice = 'new';
         },
       },
-      { label: 'Cancel', onClick: () => {} },
+      { label: t('common.cancel'), onClick: () => {} },
     ],
   });
   return choice;
@@ -417,19 +419,19 @@ async function pickPastedShapePoints(): Promise<Array<
   let result: Array<[number, number]> | null = null;
 
   await showModal({
-    title: 'Paste GeoJSON or link',
+    title: t('shapes.paste'),
     body: renderGeojsonExchangeBlock({
       instanceId,
       featureJson: '',
       placeholder:
         '{ "type": "Feature", "geometry": { "type": "LineString", ... } }',
-      hint: 'A LineString Feature, a FeatureCollection holding one line, or a geojson.io share link.',
+      hint: t('shapes.pasteHint'),
       rows: 10,
     }),
     escapeAction: 1,
     actions: [
       {
-        label: 'Use this line',
+        label: t('shapes.useLine'),
         className: 'btn-primary',
         onClick: async () => {
           const input = geojsonExchangeInput(document, instanceId);
@@ -450,7 +452,7 @@ async function pickPastedShapePoints(): Promise<Array<
           return;
         },
       },
-      { label: 'Cancel', onClick: () => {} },
+      { label: t('common.cancel'), onClick: () => {} },
     ],
     onMount: () => {
       attachGeojsonExchangeHandlers(document, {
@@ -487,7 +489,7 @@ async function pickShapeSource(): Promise<ShapeSource | null> {
     }
     return {
       kind: 'geojson',
-      label: `Pasted GeoJSON (${pasted.length} pts)`,
+      label: t('shapes.pastedLabel', { count: pasted.length }),
       buildRows: (shapeId) =>
         Promise.resolve(pointsToShapeRows(shapeId, pasted)),
     };
@@ -505,12 +507,12 @@ async function pickShapeSource(): Promise<ShapeSource | null> {
         await readIncomingFeature(await file.text(), pickLoneFeature)
       );
     } catch (e) {
-      await showSourceError('GeoJSON Error', e);
+      await showSourceError(t('shapes.errorGeojson'), e);
       return null;
     }
     return {
       kind: 'geojson',
-      label: `${file.name} (${points.length} pts)`,
+      label: t('shapes.fileLabel', { name: file.name, count: points.length }),
       buildRows: (shapeId) =>
         Promise.resolve(pointsToShapeRows(shapeId, points)),
     };
@@ -528,7 +530,7 @@ async function pickShapeSource(): Promise<ShapeSource | null> {
   try {
     picked = await pickShapeFromCandidates(await parseShapesFromZip(file));
   } catch (e) {
-    await showSourceError('GTFS Error', e);
+    await showSourceError(t('shapes.errorGtfs'), e);
     return null;
   }
   if (!picked) {
@@ -538,7 +540,11 @@ async function pickShapeSource(): Promise<ShapeSource | null> {
   const source = picked;
   return {
     kind: 'gtfs',
-    label: `${file.name} - shape ${source.shapeId} (${source.points.length} pts)`,
+    label: t('shapes.zipLabel', {
+      name: file.name,
+      id: source.shapeId,
+      count: source.points.length,
+    }),
     buildRows: (shapeId) =>
       Promise.resolve(renumberPoints(source.points, shapeId)),
   };
@@ -568,7 +574,7 @@ async function promptNewShapeId(opts: {
       keyField: 'shape_id',
       suggested: firstFreeId('shape', opts.existing.keys()),
       taken: async (id) =>
-        opts.existing.has(id) ? `Shape "${id}" already exists.` : null,
+        opts.existing.has(id) ? t('shapes.idTaken', { id }) : null,
     },
     fields: [],
     validate: () => null,
@@ -659,13 +665,13 @@ async function pickSimplifyLevel(
     },
     actions: [
       {
-        label: 'Simplify',
+        label: t('shapes.simplify'),
         className: 'btn-primary',
         onClick: () => {
           confirmed = true;
         },
       },
-      { label: 'Cancel', onClick: () => {} },
+      { label: t('common.cancel'), onClick: () => {} },
     ],
   });
 
@@ -678,7 +684,7 @@ function renderTimetableChip(usage: TimetableUsage): string {
     getRouteDisplay(usage.route as Record<string, string>)
   );
   const directionLabel = usage.direction_id
-    ? `Direction ${usage.direction_id}`
+    ? t('shapes.direction', { id: usage.direction_id })
     : '';
   const label = [routeLabel, usage.service_id, directionLabel]
     .filter(Boolean)
@@ -699,24 +705,26 @@ function renderTimetableChip(usage: TimetableUsage): string {
 /** "Origin to Destination" for one shape, or a muted placeholder. */
 function renderEndpoints(usage: ShapeUsage): string {
   if (!usage.origin || !usage.destination) {
-    return '<span class="text-base-content/40">Unknown</span>';
+    return `<span class="text-base-content/40">${t('shapes.unknown')}</span>`;
   }
-  return `${escapeHtml(usage.origin)} to ${escapeHtml(usage.destination)}`;
+  return t('shapes.endpoints', {
+    origin: escapeHtml(usage.origin),
+    destination: escapeHtml(usage.destination),
+  });
 }
 
 function renderBody(shapes: Map<string, ShapeUsage>): string {
-  const uploadBtn = `<button class="btn btn-sm btn-primary" data-action="new">${renderUploadIcon()} Upload shape</button>`;
+  const uploadBtn = `<button class="btn btn-sm btn-primary" data-action="new">${renderUploadIcon()} ${t('shapes.upload')}</button>`;
   const helpText = `
     <p class="text-base-content/60 text-sm mb-4">
-      Manage every shape in the feed here. Shapes are assigned to trips in
-      the timetable.
+      ${t('shapes.help')}
     </p>
   `;
 
   if (shapes.size === 0) {
     return `
       ${helpText}
-      <p class="text-base-content/60 text-sm mb-4">No shapes in this feed.</p>
+      <p class="text-base-content/60 text-sm mb-4">${t('shapes.none')}</p>
       ${uploadBtn}
     `;
   }
@@ -727,18 +735,18 @@ function renderBody(shapes: Map<string, ShapeUsage>): string {
       ([shapeId, usage]) => `
         <tr>
           <td class="font-mono text-sm break-all">${escapeHtml(shapeId)}</td>
-          <td>${usage.pointCount}</td>
-          <td>${usage.tripCount}</td>
+          <td>${formatNumber(usage.pointCount)}</td>
+          <td>${formatNumber(usage.tripCount)}</td>
           <td class="text-sm">${renderEndpoints(usage)}</td>
           <td>
             <div class="flex flex-wrap gap-x-2 gap-y-1">${usage.timetables.map(renderTimetableChip).join('')}</div>
           </td>
           <td>
             <div class="flex gap-1">
-              <button class="btn btn-xs btn-ghost" data-action="replace" data-shape-id="${escapeHtml(shapeId)}" title="Replace from a file or a paste">${renderUploadIcon()}</button>
-              <button class="btn btn-xs btn-ghost" data-action="geojson-io" data-shape-id="${escapeHtml(shapeId)}" title="Edit in geojson.io">${renderRouteWaypointsIcon()}</button>
-              <button class="btn btn-xs btn-ghost" data-action="simplify" data-shape-id="${escapeHtml(shapeId)}" title="Simplify shape">${renderSimplifyIcon()}</button>
-              <button class="btn btn-xs btn-ghost text-error" data-action="delete" data-shape-id="${escapeHtml(shapeId)}" title="Delete shape">${renderTrashIcon()}</button>
+              <button class="btn btn-xs btn-ghost" data-action="replace" data-shape-id="${escapeHtml(shapeId)}" title="${t('shapes.replaceTip')}">${renderUploadIcon()}</button>
+              <button class="btn btn-xs btn-ghost" data-action="geojson-io" data-shape-id="${escapeHtml(shapeId)}" title="${t('shapes.editGeojsonIo')}">${renderRouteWaypointsIcon()}</button>
+              <button class="btn btn-xs btn-ghost" data-action="simplify" data-shape-id="${escapeHtml(shapeId)}" title="${t('shapes.simplifyShape')}">${renderSimplifyIcon()}</button>
+              <button class="btn btn-xs btn-ghost text-error" data-action="delete" data-shape-id="${escapeHtml(shapeId)}" title="${t('shapes.deleteShape')}">${renderTrashIcon()}</button>
             </div>
           </td>
         </tr>`
@@ -747,12 +755,19 @@ function renderBody(shapes: Map<string, ShapeUsage>): string {
 
   // The upload button sits below the scroll container so it stays reachable
   // with hundreds of shapes.
-  const simplifyAllBtn = `<button class="btn btn-sm" data-action="simplify-all">${renderSimplifyIcon()} Simplify all</button>`;
+  const simplifyAllBtn = `<button class="btn btn-sm" data-action="simplify-all">${renderSimplifyIcon()} ${t('shapes.simplifyAll')}</button>`;
 
   return `
     ${helpText}
     ${renderScrollableTable(
-      ['Shape ID', 'Points', 'Trips', 'Runs', 'Timetables', 'Actions'],
+      [
+        t('shapes.colId'),
+        t('shapes.colPoints'),
+        t('shapes.colTrips'),
+        t('shapes.colRuns'),
+        t('shapes.colTimetables'),
+        t('shapes.colActions'),
+      ],
       rows
     )}
     <div class="mt-4 flex gap-2">
@@ -872,11 +887,11 @@ export class ShapesManager {
     let currentShapes = await this.getShapes();
 
     await showModal({
-      title: 'Shapes',
+      title: t('shapes.title'),
       body: `<div id="shapes-panel">${renderBody(currentShapes)}</div>`,
       escapeAction: 0,
       boxClassName: 'max-w-6xl w-11/12',
-      actions: [{ label: 'Close', onClick: () => {} }],
+      actions: [{ label: t('common.close'), onClick: () => {} }],
       onMount: (close) => {
         const panel = document.getElementById('shapes-panel');
         if (!panel) {
@@ -935,18 +950,21 @@ export class ShapesManager {
   ): Promise<void> {
     let confirmed = false;
     await showModal({
-      title: 'Delete shape',
-      body: `<p>Delete shape <strong class="font-mono">${escapeHtml(shapeId)}</strong> and all ${pointCount} point${pointCount !== 1 ? 's' : ''}?</p>`,
+      title: t('shapes.deleteShape'),
+      body: `<p>${t('shapes.deleteBody', {
+        id: `<strong class="font-mono">${escapeHtml(shapeId)}</strong>`,
+        points: t('shapes.points', { count: pointCount }),
+      })}</p>`,
       escapeAction: 1,
       actions: [
         {
-          label: 'Delete',
+          label: t('common.delete'),
           className: 'btn-error',
           onClick: () => {
             confirmed = true;
           },
         },
-        { label: 'Cancel', onClick: () => {} },
+        { label: t('common.cancel'), onClick: () => {} },
       ],
     });
     if (!confirmed) {
@@ -964,7 +982,7 @@ export class ShapesManager {
     await this.gtfsParser.deleteShapeRows(keys);
     await this.patchManager.recordBatchDelete(
       toDelete.map((r, i) => ({ table: 'shapes', id: keys[i], record: r })),
-      `Delete shape ${shapeId}`
+      t('shapes.labelDelete', { id: shapeId })
     );
     console.log(
       `[ShapesManager] Deleted shape ${shapeId} (${keys.length} points)`
@@ -1049,7 +1067,7 @@ export class ShapesManager {
     await this.replaceShapeRows(
       shapeId,
       newRows,
-      `Replace shape ${shapeId} (${newRows.length} pts)`
+      t('shapes.labelReplace', { id: shapeId, count: newRows.length })
     );
   }
 
@@ -1064,10 +1082,10 @@ export class ShapesManager {
     const rows = await this.getShapeRows(shapeId);
     if (rows.length === 0) {
       await showModal({
-        title: 'Edit in geojson.io',
-        body: `<p>Shape <strong class="font-mono">${escapeHtml(shapeId)}</strong> has no points.</p>`,
+        title: t('shapes.editGeojsonIo'),
+        body: `<p>${t('shapes.noPoints', { id: `<strong class="font-mono">${escapeHtml(shapeId)}</strong>` })}</p>`,
         escapeAction: 0,
-        actions: [{ label: 'OK', onClick: () => {} }],
+        actions: [{ label: t('shapes.ok'), onClick: () => {} }],
       });
       return;
     }
@@ -1080,16 +1098,16 @@ export class ShapesManager {
     const instanceId = `shape-${shapeId}`;
 
     await showModal({
-      title: `Edit shape ${escapeHtml(shapeId)}`,
+      title: t('shapes.editTitle', { id: escapeHtml(shapeId) }),
       body: renderGeojsonExchangeBlock({
         instanceId,
         featureJson: JSON.stringify(feature, null, 2),
         editUrl,
-        title: 'Geometry',
-        saveLabel: 'Save geometry',
+        title: t('shapes.geometry'),
+        saveLabel: t('shapes.saveGeometry'),
       }),
       escapeAction: 0,
-      actions: [{ label: 'Close', onClick: () => {} }],
+      actions: [{ label: t('common.close'), onClick: () => {} }],
       onMount: (close) => {
         attachGeojsonExchangeHandlers(document, {
           instanceId,
@@ -1101,9 +1119,13 @@ export class ShapesManager {
             await this.replaceShapeRows(
               shapeId,
               pointsToShapeRows(shapeId, points),
-              `Edit shape ${shapeId} (${rows.length} -> ${points.length} pts)`
+              t('shapes.labelEdit', {
+                id: shapeId,
+                from: rows.length,
+                to: points.length,
+              })
             );
-            notify.success(`Updated shape ${shapeId}`);
+            notify.success(t('shapes.updated', { id: shapeId }));
             close();
           },
         });
@@ -1132,10 +1154,13 @@ export class ShapesManager {
 
     if (rows.length <= 2) {
       await showModal({
-        title: 'Simplify shape',
-        body: `<p>Shape <strong class="font-mono">${escapeHtml(shapeId)}</strong> has only ${rows.length} point${rows.length !== 1 ? 's' : ''}; there is nothing to simplify.</p>`,
+        title: t('shapes.simplifyShape'),
+        body: `<p>${t('shapes.tooFew', {
+          id: `<strong class="font-mono">${escapeHtml(shapeId)}</strong>`,
+          points: t('shapes.points', { count: rows.length }),
+        })}</p>`,
         escapeAction: 0,
-        actions: [{ label: 'OK', onClick: () => {} }],
+        actions: [{ label: t('shapes.ok'), onClick: () => {} }],
       });
       return;
     }
@@ -1149,15 +1174,22 @@ export class ShapesManager {
       const { rows: keptRows, deviation } = previews[index];
       const removed = rows.length - keptRows.length;
       return [
-        `keeps ${keptRows.length.toLocaleString()} of ${rows.length.toLocaleString()} points (${removed.toLocaleString()} removed)`,
-        `max deviation ${formatDistance(deviation.max)}, average ${formatDistance(deviation.mean)}`,
+        t('shapes.keeps', {
+          kept: keptRows.length,
+          total: rows.length,
+          removed,
+        }),
+        t('shapes.deviation', {
+          max: formatDistance(deviation.max),
+          mean: formatDistance(deviation.mean),
+        }),
       ].join('\n');
     };
 
     const levelIndex = await pickSimplifyLevel(
-      'Simplify shape',
+      t('shapes.simplifyShape'),
       `<p class="text-base-content/60 text-sm">
-         Shape <span class="font-mono">${escapeHtml(shapeId)}</span> has ${rows.length} points.
+         ${t('shapes.hasPoints', { id: `<span class="font-mono">${escapeHtml(shapeId)}</span>`, count: rows.length })}
        </p>`,
       describe
     );
@@ -1200,7 +1232,11 @@ export class ShapesManager {
           record: r,
         })),
       ],
-      `Simplify shape ${shapeId} (${rows.length} -> ${newRows.length} pts)`
+      t('shapes.labelSimplify', {
+        id: shapeId,
+        from: rows.length,
+        to: newRows.length,
+      })
     );
     console.log(
       `[ShapesManager] Simplified shape ${shapeId} from ${rows.length} to ${newRows.length} points at ${SIMPLIFY_LEVELS[levelIndex]}m`
@@ -1242,10 +1278,10 @@ export class ShapesManager {
 
     if (targets.length === 0) {
       await showModal({
-        title: 'Simplify all shapes',
-        body: `<p>No shape in this feed has more than two points; there is nothing to simplify.</p>`,
+        title: t('shapes.simplifyAllTitle'),
+        body: `<p>${t('shapes.nothingToSimplify')}</p>`,
         escapeAction: 0,
-        actions: [{ label: 'OK', onClick: () => {} }],
+        actions: [{ label: t('shapes.ok'), onClick: () => {} }],
       });
       return;
     }
@@ -1263,13 +1299,18 @@ export class ShapesManager {
         (max, p) => Math.max(max, p.deviation.max),
         0
       );
-      return `keeps ${kept.toLocaleString()} of ${totalPoints.toLocaleString()} points across ${targets.length} shape${targets.length !== 1 ? 's' : ''}; worst deviation ${formatDistance(worst)}.`;
+      return t('shapes.keepsAcross', {
+        kept,
+        total: totalPoints,
+        shapes: t('shapes.count', { count: targets.length }),
+        worst: formatDistance(worst),
+      });
     };
 
     const levelIndex = await pickSimplifyLevel(
-      'Simplify all shapes',
+      t('shapes.simplifyAllTitle'),
       `<p class="text-base-content/60 text-sm">
-         ${targets.length} shape${targets.length !== 1 ? 's' : ''} with ${totalPoints} points in total.
+         ${t('shapes.totalPoints', { shapes: t('shapes.count', { count: targets.length }), count: totalPoints })}
        </p>`,
       describe
     );
@@ -1323,7 +1364,11 @@ export class ShapesManager {
     // replay direction may hold two rows on one key.
     await this.patchManager.recordBatchMixed(
       [...deleteOps, ...insertOps],
-      `Simplify ${changedShapes} shape${changedShapes !== 1 ? 's' : ''} (${deleteKeys.length} -> ${insertRows.length} pts)`
+      t('shapes.labelSimplifyAll', {
+        shapes: t('shapes.count', { count: changedShapes }),
+        from: deleteKeys.length,
+        to: insertRows.length,
+      })
     );
     console.log(
       `[ShapesManager] Simplified ${changedShapes} shapes from ${deleteKeys.length} to ${insertRows.length} points at ${SIMPLIFY_LEVELS[levelIndex]}m`
@@ -1353,7 +1398,7 @@ export class ShapesManager {
             id: insertKeys[i],
             record: r,
           })),
-          `New shape ${shapeId} (${newRows.length} pts)`
+          t('shapes.labelNew', { id: shapeId, count: newRows.length })
         );
         console.log(
           `[ShapesManager] Inserted new shape ${shapeId} (${newRows.length} points)`
@@ -1407,14 +1452,17 @@ export class ShapesManager {
         await this.replaceShapeRows(
           currentShapeId,
           newRows,
-          `Replace shape ${currentShapeId} (${newRows.length} pts)`
+          t('shapes.labelReplace', {
+            id: currentShapeId,
+            count: newRows.length,
+          })
         );
         return currentShapeId;
       }
     }
 
     return promptNewShapeId({
-      title: 'Upload shape for this trip',
+      title: t('shapes.uploadForTrip'),
       source,
       existing,
       commit: async (shapeId, newRows) => {
@@ -1455,7 +1503,11 @@ export class ShapesManager {
 
         await this.patchManager.recordBatchMixed(
           ops,
-          `Upload shape ${shapeId} for trip ${tripId} (${newRows.length} pts)`
+          t('shapes.labelUpload', {
+            id: shapeId,
+            trip: tripId,
+            count: newRows.length,
+          })
         );
         console.log(
           `[ShapesManager] Inserted shape ${shapeId} (${newRows.length} points) and assigned it to trip ${tripId}`

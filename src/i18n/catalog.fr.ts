@@ -6,6 +6,7 @@ import { fields } from './fr/fields';
 import { help } from './fr/help';
 import { load } from './fr/load';
 import { pages } from './fr/pages';
+import { shapes } from './fr/shapes';
 import { shell } from './fr/shell';
 import { timetable } from './fr/timetable';
 import { views } from './fr/views';
@@ -18,6 +19,7 @@ export const fr: Translation<typeof en> = {
   ...help,
   ...load,
   ...pages,
+  ...shapes,
   ...shell,
   ...timetable,
   ...views,

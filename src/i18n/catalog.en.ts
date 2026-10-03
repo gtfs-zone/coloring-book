@@ -4,6 +4,7 @@ import { fields } from './en/fields';
 import { help } from './en/help';
 import { load } from './en/load';
 import { pages } from './en/pages';
+import { shapes } from './en/shapes';
 import { shell } from './en/shell';
 import { timetable } from './en/timetable';
 import { views } from './en/views';
@@ -16,6 +17,7 @@ export const en = {
   ...help,
   ...load,
   ...pages,
+  ...shapes,
   ...shell,
   ...timetable,
   ...views,
